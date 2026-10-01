@@ -1,0 +1,43 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node (UI, Phase 4)
+node_modules/
+.next/
+
+# Secrets — API 키는 환경변수/키체인으로만 관리
+.env
+.env.*
+!.env.example
+
+# Tractus 로컬 데이터·인덱스 (개발 중 저장소 안에 생성될 경우 대비)
+.tractus/
+meetings/
+
+# 모델 가중치·오디오 (저장소에 포함하지 않음)
+models/
+*.gguf
+*.safetensors
+*.wav
+*.mp3
+*.m4a
+*.opus
+*.webm
+
+# Editor
+.idea/
+.vscode/
