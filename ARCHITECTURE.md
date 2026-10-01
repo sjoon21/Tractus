@@ -9,6 +9,7 @@
 
 | 날짜 | 버전 | 변경 |
 | --- | --- | --- |
+| 2026-10-01 | v3.3 | Phase 0 실행 계획 구체화: 개발 기기 1대(M3·16GB)로 한정, 모델·데이터셋을 저장소 안 `models/`·`data/`에 저장, 런타임은 mlx-audio로 단일화(llama.cpp는 Windows 단계로 연기), 데이터셋 확정(FLEURS·HiKE·AI Hub 회의·AMI), 대조군 비교 규칙과 판정 기준 추가 |
 | 2026-10-01 | v3.2 | **프로젝트명 `Audius` → `Tractus`.** 사유: `Audius`는 2018년부터 운영 중인 탈중앙화 음악 스트리밍 서비스(audius.co, GitHub `AudiusProject`)와 이름이 겹침. 폴더 `~/workspace/Audius` → `~/workspace/Tractus`, 데이터 디렉터리 `~/Tractus/`, 설정 `~/.config/tractus/`, 인덱스 `.tractus/`, CLI `tractus` |
 | 2026-10-01 | v3.1 | ASR을 macOS 우선으로 전환. 기본 트랙 Qwen3-ASR-1.7B MLX 8bit, 저사양 트랙 0.6B MLX 8bit. Nemotron 3.5는 실시간 후보로 보류, Fun-ASR-Nano(LiteRT)·Confucius4-R2T2 제외 |
 | 2026-10-01 | v3 | Local-first + LLM API 접근 구조로 재설계, Apache-2.0 확정, 화자 분리 제외 |
@@ -111,7 +112,7 @@
 
 > 주의: 같은 "MLX 8bit"라도 **런타임마다 가중치 리포가 다르다.** aufklarer 변환본은 speech-swift 전용이고, mlx-audio는 `mlx-community` 변환본을 쓴다.
 >
-> 세 런타임 모두 OpenAI 호환 엔드포인트를 갖고 있어서 앱 코드는 `ASR_BASE_URL`만 바꾸면 된다. 런타임을 결정하는 기준은 Phase 0에서 측정할 속도와 메모리뿐이다.
+> 세 런타임 모두 OpenAI 호환 엔드포인트를 갖고 있어서 앱 코드는 `ASR_BASE_URL`만 바꾸면 된다. Phase 0은 mlx-audio로만 측정한다(§8). 다른 런타임은 Windows 지원이나 네이티브 앱 단계에서 속도·메모리만 다시 잰다.
 
 **트랙 정의 (Phase 0 실측으로 확정):**
 
@@ -343,19 +344,85 @@ Claude Code, Codex CLI, Gemini CLI가 Tractus를 도구로 쓰도록 **로컬 st
 
 | Phase | 범위 | 완료 기준 |
 | --- | --- | --- |
-| **0. ASR 선정 (Mac)** | 매트릭스: Qwen3-ASR 1.7B·0.6B (MLX 8bit) × 런타임(mlx-audio, llama.cpp Q8_0) + 대조군 Whisper-turbo + 참고 Nemotron 3.5. 기기: 8GB·16GB·32GB+ Mac. 지표: CER(ko), WER(en), **코드스위칭 구간 정확도**, RTF, 최대 메모리, 1시간 파일 완주 여부 | 기본·저사양 트랙의 모델과 런타임 확정 |
+| **0. ASR 선정 (Mac)** | 개발 기기 1대(M3·16GB)에서 4개 모델(Qwen3-ASR 1.7B·0.6B, 대조군 Whisper-turbo, 참고 Nemotron 3.5)을 mlx-audio로 측정. 지표: CER(ko), WER(en), 코드스위칭 MER·PIER, RTF, 최대 메모리, 1시간 파일 완주 여부. 상세는 아래 "Phase 0 실행 계획" | 기본·저사양 트랙의 모델 확정 |
 | **1. 전사 CLI** | `tractus transcribe <file>` → §4.1 레이아웃 생성. VAD 청킹, 이어하기, 용어집 | 1시간 한국어 회의를 두 트랙 모두에서 완주 |
 | **2. LLM 연동** | 공급자 설정, 요약·Action Item, 검증·재시도, 5개 공급자 스모크 테스트 | 같은 전사로 5개 공급자 모두 스키마 통과 |
 | **3. 검색 + MCP** | 임베딩, FTS5 bigram, RRF, MCP 서버, 3개 CLI 등록 가이드 | Claude Code·Codex·Gemini CLI에서 과거 회의 질의 성공 |
 | **4. UI + 녹음** | 플레이어-텍스트 동기화, 메모 편집, 브라우저/데스크톱 녹음 | |
 | 이후 | 화자 분리(§2.4 C), 단어 타임스탬프, 실시간 전사(Nemotron 3.5 재평가), **Windows 지원(llama.cpp GGUF 경로)** | 필요가 확인될 때 |
 
-### Phase 0 테스트셋
+### Phase 0 실행 계획
 
-- AI Hub `회의 음성` / `주요 영역별 회의 음성인식 데이터`에서 30–60분 분량 샘플 (이용약관 확인)
-- 직접 녹음한 한·영 혼용 회의 2–3건 (영어 기술 용어가 많은 개발 회의 포함)
-- 영어 회의 샘플 1건
-- 정답 전사는 수작업 교정본을 사용하고, CER 계산 전 띄어쓰기와 문장부호를 정규화한다
+#### 환경 (2026-10-01 확정)
+
+| 항목 | 결정 |
+| --- | --- |
+| 테스트 기기 | **현재 개발 기기 1대만 쓴다.** Apple M3(8코어), 통합 메모리 16GB, macOS 26.6. 다른 기기와 비교하지 않는다 |
+| 저사양(8GB) 판정 | 8GB Mac은 직접 측정할 수 없다. 0.6B의 **최대 메모리 예산**으로 대신 판정한다(아래 판정 기준) |
+| 런타임 | **mlx-audio 하나.** Qwen3-ASR·Whisper·Nemotron 3.5를 모두 지원해 네 모델을 같은 런타임에서 비교할 수 있다. llama.cpp Q8_0 측정은 Windows 지원 단계로 미룬다 |
+| 모델 저장 위치 | 저장소 안 `models/` (`.gitignore` 처리됨). 예: `hf download mlx-community/Qwen3-ASR-1.7B-8bit --local-dir models/qwen3-asr-1.7b-8bit` |
+| 데이터셋 저장 위치 | 저장소 안 `data/` (`.gitignore` 처리됨). AI Hub 데이터는 재배포가 금지되므로 커밋하지 않는다 |
+
+#### 모델과 역할
+
+| 모델 | 가중치 (`models/` 아래) | 역할 | 이 비교로 답할 질문 |
+| --- | --- | --- | --- |
+| Qwen3-ASR-1.7B 8bit | `mlx-community/Qwen3-ASR-1.7B-8bit` | 기본 트랙 후보 | — |
+| Qwen3-ASR-0.6B 8bit | `mlx-community/Qwen3-ASR-0.6B-8bit` | 저사양 트랙 후보 | — |
+| Whisper-large-v3-turbo | `mlx-community/whisper-large-v3-turbo` | **대조군** | Qwen3-ASR이 가장 널리 쓰이는 기본값보다 실제로 나은가 |
+| Nemotron 3.5 ASR Streaming 0.6B | `mlx-community/nemotron-3.5-asr-streaming-0.6b` | **참고** (실시간 트랙 예비 후보) | 같은 0.6B급에서 정확도를 얼마나 잃고, 속도·메모리를 얼마나 얻는가 |
+
+#### 공정 비교 규칙
+
+- 네 모델 모두 같은 파이프라인(§2.3: FFmpeg 16kHz mono → Silero VAD 청킹 → mlx-audio)을 거친다. 모델마다 바뀌는 것은 모델 경로뿐이다.
+- 같은 오디오, 같은 청크 경계, 같은 텍스트 정규화, 같은 채점 스크립트를 쓴다.
+- 언어 설정은 두 조건으로 잰다: 자동 감지, 고정(`ko`, Nemotron은 `ko-KR`).
+- Nemotron은 파일 전사에 가장 유리한 1.12초 청크로 돌린다. 지연 시간별 측정(80ms–560ms)은 실시간 트랙이 로드맵에 올라올 때 한다.
+- 용어집 프롬프트 비교는 Qwen3-ASR(context)과 Whisper(`initial_prompt`)만 한다. Nemotron(RNN-T)은 프롬프트 입력이 없다.
+- 모델 로드 시간은 RTF에서 뺀다. 워밍업 1회 뒤에 잰다.
+
+#### 데이터셋
+
+| # | 데이터셋 | 측정 대상 | 사용 분량 | 라이선스·입수 |
+| --- | --- | --- | --- | --- |
+| D-1 | FLEURS `ko_kr` test ([google/fleurs](https://huggingface.co/datasets/google/fleurs)) | **파이프라인 검증.** 공개 수치(1.7B 2.57%, 0.6B 3.72%, Nemotron 7.12%)를 재현하는지 확인 | test 전체 (낭독체 짧은 발화) | CC-BY-4.0, 바로 다운로드 |
+| D-2 | HiKE ([thetaone-ai/HiKE](https://huggingface.co/datasets/thetaone-ai/HiKE)) | **한·영 코드스위칭.** MER, PIER, 단어·구·문장 수준별 오류 | 1,121개 발화 전체 (2–25초, 자연 발화, 개발·비즈니스·의료 등 주제) | Apache-2.0, 비게이트 |
+| D-3 | AI Hub 주요 영역별 회의 음성인식 데이터 ([dataSetSn=464](https://www.aihub.or.kr/aihubdata/data/view.do?dataSetSn=464)) | **한국어 실제 회의.** CER, 겹침 발화·잡음 구간 | Validation에서 30–60분 회의 3건 | 내국인만 신청 가능, 승인 필요, 재배포 금지 |
+| D-4 | AMI Meeting Corpus ([edinburghcstr/ami](https://huggingface.co/datasets/edinburghcstr/ami) `ihm` test) | **영어 회의.** WER | test 16개 회의(약 9시간) 중 3건 | CC-BY-4.0 |
+| D-5 | 1시간 장시간 파일 | **완주 여부, 반복 출력, 최대 메모리, RTF** | 1건. D-3 또는 AMI Mix-Headset 원본 중 가장 긴 회의를 쓰고, 60분이 안 되면 이어 붙인다 | D-3·D-4와 같음 |
+
+- D-1에서 우리 CER이 공개 수치와 1%p 넘게 다르면 파이프라인이나 정규화가 잘못된 것이다. 이를 먼저 고치고 D-2 이후로 넘어간다.
+- D-3은 데이터를 받은 뒤 원본이 회의 세션 단위인지 발화 단위인지 확인한다. 발화 단위면 같은 세션의 발화를 시간순으로 이어 붙여 정답 전사를 만든다.
+- 직접 녹음한 한·영 혼용 회의는 선택 사항이다. D-2와 D-3이 공개 데이터로 코드스위칭과 장시간 회의를 각각 덮는다. 다만 "장시간 + 코드스위칭"을 함께 덮는 공개 데이터는 없다. 판정이 애매하면 1건을 녹음하고 수작업으로 교정한 전사를 만들어 추가한다.
+
+#### 지표와 채점
+
+| 지표 | 계산 방법 |
+| --- | --- |
+| CER (ko) | `jiwer`. 문장부호와 공백을 지운 뒤 문자 단위로 계산하고, 영어는 소문자로 바꾼다. 숫자 표기 차이("3개" vs "세 개")는 정규화하지 않고 오류로 둔 뒤, 표본 검토에서 비중을 확인한다 |
+| WER (en) | Whisper `EnglishTextNormalizer`를 적용한 뒤 `jiwer`로 계산한다 |
+| MER · PIER | **HiKE 공식 평가 스크립트를 그대로 쓴다**(`BaseASR` 인터페이스 구현). 논문 수치와 바로 비교할 수 있다 |
+| RTF | 처리 시간 ÷ 오디오 길이 |
+| 최대 메모리 | MLX 피크(`mx.get_peak_memory()`)와 프로세스 RSS(`/usr/bin/time -l`)를 함께 기록한다 |
+| 반복 출력 | D-5에서 같은 문장이 연속 3회 이상 나온 구간의 수 |
+| 완주 | D-5를 크래시나 중단 없이 끝내는지 |
+
+#### 실험 매트릭스
+
+| 실험 | 모델 | 데이터셋 | 조건 |
+| --- | --- | --- | --- |
+| E1 기본 비교 | 4개 전부 | D-1 ~ D-4 | 언어 자동 / 고정 |
+| E2 장시간 | 4개 전부 | D-5 | 언어 고정 |
+| E3 용어집 | 1.7B, Whisper | D-2, D-3 | 용어집 없음 / 있음 |
+| E4 청크 길이 | 1.7B | D-3 | 15초 / 30초 / 60초 |
+| E5 4bit (조건부) | 0.6B 4bit | D-2, D-3, D-5 | 0.6B 8bit가 메모리 예산을 넘을 때만 |
+
+#### 판정 기준 (잠정)
+
+- **기본 트랙:** 1.7B가 D-2 MER과 D-3 CER에서 모두 Whisper보다 낮고, D-5를 완주하며, RTF ≤ 0.2(1시간 회의를 12분 안에)이면 확정한다. Whisper가 어느 한쪽에서라도 이기면 §2.2를 다시 검토한다.
+- **저사양 트랙:** 0.6B의 D-5 최대 메모리가 3GB 이하이고(8GB Mac에서 OS·브라우저와 함께 돌린다고 가정), D-2·D-3에서 Whisper보다 나쁘지 않으면 확정한다. 메모리 예산을 넘으면 E5를 돌린다.
+- **Nemotron:** 트랙 결정에는 쓰지 않는다. 0.6B 대비 정확도 차이와 RTF·메모리를 기록해 실시간 트랙 재평가 자료로 남긴다. 단 D-3 CER이 0.6B보다 낮으면 저사양 후보로 올린다.
+- **파이프라인 기본값:** E1의 언어 조건, E3의 용어집, E4의 청크 길이 결과로 Phase 1 기본값을 정한다.
 
 ---
 

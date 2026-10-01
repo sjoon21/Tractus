@@ -30,6 +30,7 @@ meetings/
 
 # 모델 가중치·오디오 (저장소에 포함하지 않음)
 models/
+data/
 *.gguf
 *.safetensors
 *.wav
