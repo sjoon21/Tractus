@@ -1,0 +1,91 @@
+{
+ "schema_version": 1,
+ "meeting_id": "01KWZKT9M0T5YFCND21XGZFT8G",
+ "provider": "synthetic",
+ "model": "handwritten",
+ "generated_at": "2026-07-08T10:00:00+09:00",
+ "title": "3분기 예산 계획",
+ "summary": "3분기 인프라·GPU·채용 예산을 논의했다. 2분기 AWS 비용이 예산 대비 15% 초과해 개발 EKS 클러스터를 야간에 scale down하기로 했다. H100 GPU 서버 구매는 보류하고 3분기에는 클라우드 GPU를 월 800만 원 한도로 쓴다. 채용은 backend 개발자 두 명만 진행한다. 3분기 총 예산은 인프라 5억 1천, 채용 1억 2천이다.",
+ "topics": [
+  {
+   "title": "인프라 비용 절감",
+   "segment_ids": [
+    "s0002",
+    "s0003",
+    "s0004",
+    "s0005"
+   ]
+  },
+  {
+   "title": "GPU 서버 구매",
+   "segment_ids": [
+    "s0006",
+    "s0007",
+    "s0008"
+   ]
+  },
+  {
+   "title": "하반기 채용 예산",
+   "segment_ids": [
+    "s0009",
+    "s0010",
+    "s0011"
+   ]
+  },
+  {
+   "title": "3분기 예산 총괄",
+   "segment_ids": [
+    "s0001",
+    "s0012"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "text": "개발 EKS 클러스터를 야간에 scale down한다",
+   "segment_ids": [
+    "s0003",
+    "s0004"
+   ]
+  },
+  {
+   "text": "3분기 GPU 서버 구매는 보류하고 클라우드 GPU 예산 월 800만 원을 잡는다",
+   "segment_ids": [
+    "s0008"
+   ]
+  },
+  {
+   "text": "ML 엔지니어 채용은 보류하고 backend 개발자 두 명만 3분기에 채용한다",
+   "segment_ids": [
+    "s0010"
+   ]
+  }
+ ],
+ "action_items": [
+  {
+   "task": "개발 클러스터 야간 scale down 적용",
+   "owner": "최도윤",
+   "due": "7월 31일",
+   "segment_ids": [
+    "s0004",
+    "s0005"
+   ]
+  },
+  {
+   "task": "backend 채용 공고 게시",
+   "owner": "정하은",
+   "due": "이번 주 금요일",
+   "segment_ids": [
+    "s0011"
+   ]
+  },
+  {
+   "task": "3분기 예산안 재무팀 제출",
+   "owner": null,
+   "due": "다음 주 화요일",
+   "segment_ids": [
+    "s0012"
+   ]
+  }
+ ]
+}

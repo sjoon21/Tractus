@@ -1,0 +1,151 @@
+{
+ "schema_version": 1,
+ "meeting_id": "01M2PZ6MR0KZ0R3C1T2RHWN1E4",
+ "title": "4분기 예산 및 OKR 회의",
+ "created_at": "2026-09-17T15:00:00+09:00",
+ "audio": {
+  "file": "audio.opus",
+  "duration_sec": 200.42,
+  "source": "4분기 예산 및 OKR 회의.m4a",
+  "sha256": "synthetic"
+ },
+ "asr": {
+  "model": "synthetic",
+  "track": "standard",
+  "runtime": "none",
+  "language": "auto",
+  "hotwords": []
+ },
+ "segments": [
+  {
+   "id": "s0001",
+   "start": 0.0,
+   "end": 12.67,
+   "text": "4분기 예산이랑 OKR 회의 시작하겠습니다. 3분기 집행 실적부터 보고 4분기 예산안을 조정하겠습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0002",
+   "start": 13.27,
+   "end": 31.49,
+   "text": "3분기 인프라 예산은 5억 1천 잡았는데 실제로는 4억 6천 썼어요. 야간 scale down 효과가 컸고 클라우드 GPU는 예상보다 덜 썼습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0003",
+   "start": 32.09,
+   "end": 51.42,
+   "text": "반대로 LLM API 비용이 새로 생겼어요. 고객 상담 요약 기능 때문에 9월에만 1,500만 원이 나왔고 4분기엔 월 2,500만 원까지 늘 것 같습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0004",
+   "start": 52.02,
+   "end": 68.47,
+   "text": "그 정도면 모델을 작은 걸로 바꾸거나 캐싱을 넣어야겠네요. prompt caching 적용하면 30~40% 줄일 수 있다고 들었어요.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0005",
+   "start": 69.07,
+   "end": 84.4,
+   "text": "네, 그럼 4분기 LLM API 예산은 월 2,000만 원 상한으로 두고, 넘으면 작은 모델로 자동 전환하는 걸로 결정하죠.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0006",
+   "start": 85.0,
+   "end": 98.33,
+   "text": "마케팅 예산은 4분기에 20% 줄이기로 경영진 쪽에서 얘기가 됐어요. 오프라인 행사를 하나 취소하는 걸로요.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0007",
+   "start": 98.93,
+   "end": 110.93,
+   "text": "아쉽지만 동의합니다. 그럼 11월 개발자 컨퍼런스 부스는 취소하고 온라인 웨비나로 대체하겠습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0008",
+   "start": 111.53,
+   "end": 127.98,
+   "text": "GPU 서버 구매 건도 다시 봐야 하는데요. 3분기 클라우드 GPU 사용량이 월 평균 300만 원 수준이라 구매할 이유가 약해졌어요.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0009",
+   "start": 128.58,
+   "end": 139.69,
+   "text": "그럼 GPU 서버 구매는 올해는 하지 않는 걸로 하죠. 내년 1분기에 다시 검토하겠습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0010",
+   "start": 140.29,
+   "end": 159.62,
+   "text": "OKR은 세 개로 정리했어요. 검색 p95 latency 300 밀리초 유지, 모바일 crash-free 99.5%, 그리고 신규 고객사 3곳 온보딩입니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0011",
+   "start": 160.22,
+   "end": 172.0,
+   "text": "좋습니다. 4분기 예산안 최종본은 재무팀 강민호 님이 9월 30일까지 확정해 주시기로 했습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0012",
+   "start": 172.6,
+   "end": 188.38,
+   "text": "ML 엔지니어 채용은 4분기에도 보류하고, backend 채용 두 명 중 한 명은 이미 입사했으니 남은 한 명만 진행하겠습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0013",
+   "start": 188.98,
+   "end": 199.42,
+   "text": "OKR 문서는 제가 내일까지 Confluence에 올리겠습니다. 다들 수고하셨습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  }
+ ]
+}

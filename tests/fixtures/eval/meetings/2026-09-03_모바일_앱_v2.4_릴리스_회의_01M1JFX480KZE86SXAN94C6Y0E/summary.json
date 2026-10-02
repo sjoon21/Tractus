@@ -1,0 +1,76 @@
+{
+ "schema_version": 1,
+ "meeting_id": "01M1JFX480KZE86SXAN94C6Y0E",
+ "provider": "synthetic",
+ "model": "handwritten",
+ "generated_at": "2026-09-03T11:00:00+09:00",
+ "title": "모바일 앱 v2.4 릴리스 일정과 QA",
+ "summary": "모바일 앱 v2.4(다크 모드, 결제 화면 개편)의 일정과 QA 범위를 정했다. 결제 화면 디자인 수정으로 출시일을 9월 10일에서 9월 17일로 미뤘다. 결제 변경이 커서 regression test 범위를 넓히고 iOS 16 이하 구형 기기 결제 실패 케이스를 확인한다. 다크 모드의 텍스트 대비가 WCAG 기준에 못 미쳐 색상 토큰을 다시 받는다. 출시 기준에 crash-free 99.5% 이상을 넣었다.",
+ "topics": [
+  {
+   "title": "v2.4 출시 일정",
+   "segment_ids": [
+    "s0001",
+    "s0002",
+    "s0003",
+    "s0004",
+    "s0005"
+   ]
+  },
+  {
+   "title": "모바일 regression test 범위",
+   "segment_ids": [
+    "s0006",
+    "s0007",
+    "s0008"
+   ]
+  },
+  {
+   "title": "다크 모드 접근성",
+   "segment_ids": [
+    "s0009",
+    "s0010"
+   ]
+  },
+  {
+   "title": "crash-free 목표",
+   "segment_ids": [
+    "s0011",
+    "s0012"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "text": "v2.4 출시일을 9월 17일로 확정한다",
+   "segment_ids": [
+    "s0005"
+   ]
+  },
+  {
+   "text": "출시 기준에 crash-free 99.5% 이상을 넣는다",
+   "segment_ids": [
+    "s0012"
+   ]
+  }
+ ],
+ "action_items": [
+  {
+   "task": "모바일 regression 테스트 케이스 목록 정리",
+   "owner": "박지영",
+   "due": "9월 8일",
+   "segment_ids": [
+    "s0007",
+    "s0008"
+   ]
+  },
+  {
+   "task": "WCAG 대비 기준을 맞춘 다크 모드 색상 토큰 전달",
+   "owner": "윤서아",
+   "due": "이번 주 금요일",
+   "segment_ids": [
+    "s0010"
+   ]
+  }
+ ]
+}

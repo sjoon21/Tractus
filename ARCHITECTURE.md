@@ -9,6 +9,7 @@
 
 | 날짜 | 버전 | 변경 |
 | --- | --- | --- |
+| 2026-10-02 | v3.7 | **Phase 3 완료.** 검색 색인(FTS5 음절 bigram + sqlite-vec, strict 우선 + 벡터 가중 0.3 결합), 로컬 임베딩(Qwen3-Embedding-0.6B bf16, mlx-lm), MCP 서버 7개 도구(세그먼트 단위 인용, `save_summary`). Gemini CLI → Antigravity CLI. 실제 ASR 평가에서 동일 가중 RRF가 키워드보다 나빠(hit@1 0.50 vs 0.85) 결합 방식 변경 |
 | 2026-10-02 | v3.6 | **Phase 2 (Upstage) 완료.** `tractus summarize` — 요약·주제·결정·할 일 추출, strict JSON + Pydantic 검증 + segment_ids 검증 + 1회 재요청. `.env`/`.env.local` 개발 환경. 구독형 CLI 조사 결과 API 키 방식만 채택(agy 사용 금지). 나머지 공급자는 키 대기, 대안은 MCP |
 | 2026-10-02 | v3.5 | **Phase 1 완료.** `tractus transcribe` CLI (`src/tractus/`). ASR은 mlx-audio 프로세스 내 호출로 변경(D1, `hotwords` 때문), VAD는 MLX 포팅 Silero로 torch 제거, 라우드니스 정규화 제외, 반복 루프 방지 규칙 확정, 스키마에 `title`·`audio.source`·`audio.sha256`·`asr.hotwords` 추가 |
 | 2026-10-02 | v3.4 | **Phase 0 완료.** 기본 트랙 Qwen3-ASR-1.7B, 저사양 트랙 0.6B 확정. Phase 1 기본값: 언어 자동 감지, `hotwords` 용어집, 30초 청크, 반복 루프 방지. Nemotron은 코드스위칭 성능 때문에 저사양 후보에서 제외. 벤치마크 코드 `bench/` 추가 |
@@ -29,8 +30,8 @@
 | D3 | **화자 분리 제외** (스키마에 `speaker: null` 슬롯만 유지) | 경량화. 추후 LLM 또는 경량 모델로 추가 |
 | D4 | LLM 공급자: **로컬 Gemma 4 31B, OpenAI(Codex 포함), Claude, Gemini, Upstage Solar** | 전부 OpenAI 호환 엔드포인트 보유 (차이점은 §3.3) |
 | D5 | **데이터는 로컬 파일이 원본**, SQLite는 재생성 가능한 인덱스 | 메모·전사가 기기를 떠나지 않음. 사용자가 다른 도구(Obsidian, 에이전트 CLI)로 직접 열람 가능 |
-| D6 | 임베딩 기본값 **로컬 Qwen3-Embedding-0.6B**, 상용 API는 선택 | 메모를 로컬에 두려는 원칙과 일치. CPU로도 개인 규모 처리 가능 |
-| D7 | Claude Code · Codex CLI · Gemini CLI 연동은 **MCP 서버**로 제공 | 세 CLI 모두 MCP 지원. 에이전트가 자기 구독/키로 Tractus 데이터를 도구로 조회 |
+| D6 | 임베딩 기본값 **로컬 Qwen3-Embedding-0.6B** (공식 가중치 bf16, mlx-lm으로 실행), 상용 API는 선택 | 메모를 로컬에 두려는 원칙과 일치. M3에서 약 11문단/초, 질의 1건 약 50ms (§4.2) |
+| D7 | Claude Code · Codex CLI · **Antigravity CLI(agy)** 연동은 **MCP 서버**로 제공 | 세 CLI 모두 MCP 지원. 에이전트가 자기 구독/키로 Tractus 데이터를 도구로 조회. Gemini CLI는 2026-06 개인 계정 지원이 끝나 agy로 대체 (§5) |
 
 > **"Claude, Codex, Gemini에서 쓸 수 있게"의 해석:** 두 가지로 모두 대응한다. ① Tractus가 이 3사 모델을 **LLM 공급자로 호출**(§3), ② 3사 에이전트 CLI가 Tractus를 **도구로 호출**(§5, MCP). 사용자의 구독 계정(OAuth)을 앱이 대신 사용하는 방식은 채택하지 않는다.
 >
@@ -60,7 +61,7 @@
 │        ▼                                                                       │
 │  index.sqlite (FTS5 + sqlite-vec)  ◀── [임베딩 엔드포인트] 기본: 로컬 Qwen3-Emb  │
 │        │                                                                       │
-│        ├──▶ MCP 서버 (stdio) ─────▶ Claude Code / Codex CLI / Gemini CLI       │
+│        ├──▶ MCP 서버 (stdio) ─────▶ Claude Code / Codex CLI / Antigravity CLI  │
 │        │                                                                       │
 └────────┼───────────────────────────────────────────────────────────────────────┘
          │  (사용자가 선택한 작업에 한해 텍스트만 전송)
@@ -280,41 +281,89 @@ Anthropic은 OpenAI 호환 레이어를 "테스트·비교용이며 장기 운�
 
 ### 4.2 임베딩
 
-| 옵션 | 위치 | 라이선스 | 비고 |
+**결정 (2026-10-02 실측): 공식 `Qwen/Qwen3-Embedding-0.6B` 가중치(Apache-2.0, revision `97b0c614` 고정)를 bf16으로 mlx-lm(MIT)에 올려 직접 실행한다.** 1024차원, 오른쪽 패딩 + 마지막(EOS) 토큰 풀링 + L2 정규화, 질의에만 `Instruct: …\nQuery:` 지시문(모델 카드 기본값, 영어)을 붙인다.
+
+| 확인 항목 | 결과 |
+| --- | --- |
+| 정확도 | torch fp32 참조 구현 대비 코사인 최소 0.9998, 모델 카드 예시 점수 오차 0.003 이내 |
+| 속도·메모리 (M3) | 400자 한국어 약 11문단/초, 질의 1건 약 50ms, 피크 1.4–1.8GiB, 첫 로드 약 3초 |
+| 제외: `mlx-embeddings` | **GPL-3**이라 Apache-2.0 배포물의 의존성으로 쓸 수 없다 |
+| 제외: mxfp8 · 4bit-DWQ 변환본 | fp32 대비 최저 코사인 0.88 / 0.90으로 품질 손실이 크다. 이 기기에서는 양자화가 오히려 느리다 |
+| 제외: 왼쪽 패딩 | 패딩 마스크 없이 쓰면 결과가 틀린다(코사인 0.63) |
+
+- 인덱스 메타에 `embedding_model`(저장소·revision·dtype·차원·지시문)을 저장한다. 값이 달라지면 벡터 테이블을 새로 만들고 전부 다시 임베딩한다.
+- 임베딩 모델이 없거나 올리지 못하면 **키워드 검색만** 한다. 벡터가 빠진 청크는 다음 `tractus index`에서 채운다.
+- 청크는 연속 세그먼트를 300–500자로 묶고, 각 세그먼트의 ID·시각·텍스트를 함께 저장한다(세그먼트 단위 인용용).
+
+| 다른 옵션 | 위치 | 라이선스 | 비고 |
 | --- | --- | --- | --- |
-| **Qwen3-Embedding-0.6B** | 로컬 (llama.cpp / Ollama / TEI) | Apache-2.0 | **기본값**. CPU로 개인 규모 처리 가능, 다국어 상위권 |
-| BGE-M3 | 로컬 | MIT | 대안 |
+| BGE-M3 | 로컬 | MIT | mlx-lm에 XLM-RoBERTa 구현이 없어 미검증 |
 | OpenAI embeddings | API | — | |
 | Gemini `gemini-embedding-001` | API (OpenAI 호환) | — | |
-| Upstage `solar-embedding-2-*` | API (OpenAI 호환) | — | **query/passage 모델이 분리**됨 → 설정에 `query_model`/`passage_model` 두 필드 필요. 1세대 Embed는 2026-12-31 서비스 종료 |
+| Upstage `solar-embedding-2-*` | API (OpenAI 호환) | — | query/passage 모델이 분리됨. 1세대 Embed는 2026-12-31 서비스 종료 |
 | ~~Claude~~ | — | — | 임베딩 API 없음 |
 | ~~EmbeddingGemma~~ | — | Gemma 이용약관 | Apache-2.0이 아니라 기본값에서 제외 |
 
-- 벡터 테이블에 `embedding_model`을 함께 저장하고, 설정된 모델과 다르면 **재색인을 강제**한다(서로 다른 모델의 벡터는 같은 공간에서 비교할 수 없음).
-- 청크 단위는 VAD 세그먼트를 묶은 300–500자 정도로 하고, 원본 `segment_ids`와 시각을 함께 저장한다.
-
 ### 4.3 검색
 
-- **SQLite + FTS5 + sqlite-vec**를 쓴다. 단일 파일이고 서버가 필요 없다. sqlite-vec은 0.1.x(pre-1.0)라 버전을 고정하며, 개인 규모(수십만 청크)에서는 brute-force KNN으로 충분하다.
-- **한국어 키워드 검색 주의:** FTS5 `trigram` 토크나이저는 3글자 미만 질의를 찾지 못하는데, "예산"·"회의"처럼 2음절 단어가 대부분이다. 앱에서 **음절 bigram으로 전처리한 텍스트를 FTS5(unicode61)에 넣는다.** 의존성이 없고 몇 줄이면 된다. 형태소 분석기(Kiwi 등)는 정확도가 실측으로 부족할 때만 검토한다.
-- 하이브리드 결합은 키워드 결과와 벡터 결과를 **RRF(Reciprocal Rank Fusion)**로 합친다. 리랭커는 기본 경로에서 제외한다.
+**SQLite 하나에 FTS5(키워드) + sqlite-vec 0.1.9(벡터, 버전 고정)를 둔다.** 위치는 `$TRACTUS_HOME/.tractus/index.sqlite`이고, 파일에서 언제든 다시 만들 수 있는 캐시다.
+
+- **한국어 키워드:** FTS5 `trigram`은 2음절 질의("예산", "회의")를 못 찾는다. 앱에서 **음절 bigram**으로 바꾼 텍스트를 FTS5(unicode61)에 넣는다. bigram은 공백을 넘지 않고, 영문은 소문자 단어, 숫자는 쉼표를 뗀다(`v2.4` → `v` + `2.4`). 질의는 단어마다 phrase로 묶어 AND로 찾고, 모자라면 조사를 뗀 어간의 OR 질의로 보충한다(`partial`). 리서치 합성 코퍼스에서 bigram AND 재현율 0.96, trigram 0.33, unicode61 원문 0.30.
+- **형태소 분석기는 쓰지 않는다.** Kiwi는 LGPL-3이라 기본 의존성에서 제외했다.
+- **결합: strict 우선 + 가중 RRF.** 질의 단어가 모두 들어 있는 키워드 결과를 bm25 순으로 먼저 놓고, 나머지(일부만 맞은 키워드 + 벡터)는 RRF(k=60, 벡터 가중 0.3)로 뒤에 붙인다. 리랭커는 쓰지 않는다.
+- **요약 항목(결정·할 일)은 검색 색인에 넣지 않는다.** 넣으면 가상 평가셋 hit@1이 0.97 → 0.87로 떨어졌다. 에이전트는 `get_summary`, `list_action_items`로 따로 본다.
+- **동기화:** transcript.json의 stat(mtime·크기)이 같으면 건너뛰고, 다르면 sha256을 비교해 바뀐 회의만 다시 색인한다. 잘못된 회의 파일은 오류로 기록하고 나머지는 계속 색인한다. 벡터 쓰기는 끝에서 한 번에 하며, 빠진 벡터도 이때 채운다.
+- **날짜 필터**는 준 경우에만 건다. 키워드 쪽은 meetings 조인, 벡터 쪽은 vec0 메타데이터 열(`meeting_date`)로 KNN 안에서 거른다.
+
+**검색 평가 (2026-10-02, `bench/search_eval.py` · `bench/aihub_search_eval.py`)**
+
+| 결합 방식 | 가상 회의 5건·30질의 hit@1 / MRR | AI Hub 실제 ASR 4세션·139질의 hit@1 / hit@5 / MRR |
+| --- | --- | --- |
+| 키워드만 | 0.90 / 0.94 | 0.85 / 0.88 / 0.86 |
+| 벡터만 | 0.83 / 0.91 | 0.23 / 0.38 / 0.30 |
+| RRF 동일 가중 | 0.97 / 0.98 | 0.50 / 0.70 / 0.60 |
+| **strict 우선 + 벡터 0.3 (채택)** | **0.97 / 0.98** | **0.80 / 0.91 / 0.85** |
+
+- 가상 평가셋은 손으로 만든 의미 질의(예: "돈 문제 논의한 회의")가 들어 있다. 하지만 청크가 15개뿐이라 hit@5는 모든 방식에서 1.0으로 포화된다. 그래서 hit@1과 MRR로 비교한다.
+- AI Hub 평가셋은 사람이 쓴 정답 전사에서 LLM 없이 뽑은 어휘 질의(영문 용어, 드문 단어, 문장 조각)다. 이 질의로 Tractus의 실제 ASR 전사를 검색한다. 질의가 어휘 위주라 키워드에 유리하고, 의미 질의는 들어 있지 않다.
+- 동일 가중 RRF는 회의가 길어지면 벡터 쪽 잡음이 정확한 키워드 결과를 밀어낸다. 벡터가 확실히 도움이 되는 경우는 영문 용어 질의다. ASR이 "MRI"를 한글로 적어도 벡터는 찾는다(term 질의 hit@5: 키워드 0.45, 채택안 0.80).
+- AI Hub 평가는 지표만 출력한다. 질의·전사 텍스트는 출력하지 않고 저장소 밖에 둔다.
 
 ---
 
 ## 5. 에이전트 연동 — MCP 서버
 
-Claude Code, Codex CLI, Gemini CLI가 Tractus를 도구로 쓰도록 **로컬 stdio MCP 서버**를 제공한다. 에이전트는 각자의 구독이나 키로 동작하고, Tractus는 로컬 데이터 조회만 담당한다.
+Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 **로컬 stdio MCP 서버**(`tractus mcp`, 공식 SDK `mcp` 2.2)를 제공한다. 에이전트는 각자의 구독이나 키로 동작하고, Tractus는 로컬 데이터 조회와 요약 저장만 담당한다. **MCP 서버는 LLM을 호출하지 않는다.**
 
-| 도구 | 기능 |
-| --- | --- |
-| `search_meetings(query, limit)` | 하이브리드 검색 → 세그먼트 + 회의 메타데이터 |
-| `get_transcript(meeting_id, start?, end?)` | 전사 본문 (구간 지정 가능) |
-| `get_summary(meeting_id)` | summary.md |
-| `list_action_items(status?)` | 전체 회의의 할 일 목록 |
-| `transcribe(path)` | 로컬 파일 전사 실행 (긴 작업 → 작업 ID 반환) |
+| 도구 | 기능 | 주석 |
+| --- | --- | --- |
+| `status()` | 데이터 위치, 회의·청크·벡터 수, 색인 오류, 안내 | 읽기 전용 |
+| `search_meetings(query, limit, date_from?, date_to?, meeting_id?)` | 하이브리드 검색. 결과마다 세그먼트 2–3개와 **세그먼트별 `cite`** | 읽기 전용 |
+| `list_meetings(date_from?, date_to?)` | 회의 목록 (날짜순, 요약 유무) | 읽기 전용 |
+| `get_transcript(meeting_id, offset, max_segments)` | `[s0012 00:05:31] 텍스트` 줄 형식, `next_offset`로 페이지 이동 | 읽기 전용 |
+| `get_summary(meeting_id)` | summary.md | 읽기 전용 |
+| `list_action_items(meeting_id?, date_from?, date_to?)` | 요약이 있는 회의들의 할 일 + 요약이 없는 회의 목록 | 읽기 전용 |
+| `save_summary(meeting_id, summary, author)` | 에이전트가 쓴 요약을 스키마·segment_ids 검증 후 저장 (`provider: mcp`, `model: author`) | **쓰기** |
 
-- 세 CLI의 등록 방법(`claude mcp add`, Codex `config.toml`, Gemini `settings.json`)은 README에 예시로 제공한다.
-- MCP 서버는 LLM을 호출하지 않는다. 요약·추론은 호출한 에이전트가 직접 수행하므로 키가 중복되지 않는다.
+- **인용 형식:** `[meeting_id#s0012 00:05:31]`. 검색 결과는 세그먼트 여러 개를 묶은 청크라, 청크 단위로 인용하면 엉뚱한 세그먼트를 가리킨다(초기 구현에서 Codex·agy가 그렇게 인용함). 그래서 세그먼트마다 `cite`를 준다.
+- **도구는 모두 async다.** SDK는 sync 도구를 워커 스레드에서 돌리는데, sqlite 연결과 MLX 스트림은 스레드에 묶여 있다.
+- **MCP 서버는 임베딩하지 않는다.** 회의가 많으면 첫 동기화가 몇 분 걸려 stdio 응답이 멈추기 때문이다. 새 회의는 키워드로 바로 검색되고, 벡터는 transcribe·summarize 뒤의 자동 색인이나 `tractus index`가 채운다(`status`가 남은 수를 알려 줌).
+- **예상된 실패는 `ToolError`로 돌려준다**(없는 회의, 잘못된 segment_ids). 그 외 예외는 SDK가 메시지를 가린다.
+- **stdout은 JSON-RPC 전용이다.** 로그와 모델 로딩 출력은 stderr로 보낸다(실제 하위 프로세스 테스트로 확인).
+- 등록 방법은 README "MCP 연동"에 있다. 주의할 점이 셋 있다.
+  - Codex는 셸 환경변수를 MCP 서버에 넘기지 않는다. `env`를 직접 지정해야 한다.
+  - agy 헤드리스 모드는 전역 `~/.gemini/antigravity-cli/settings.json`의 `permissions.allow`에 `mcp(tractus/*)`가 있어야 도구를 허용한다. 워크스페이스 설정은 무시된다.
+  - Gemini CLI는 개인 계정에서 `IneligibleTierError`로 인증이 막혀 지원 대상에서 뺐다.
+
+**인수 테스트 (2026-10-02, 가상 회의 코퍼스, 각 CLI 헤드리스 실행)**
+
+| CLI | 과거 회의 질의 ("regression test 담당자·기한, 근거 인용") | 요약 작성 → `save_summary` |
+| --- | --- | --- |
+| Claude Code 2.1 | ✅ 정답 세그먼트 s0007 인용, 20초 | ✅ 결정 3·할 일 3, 검증 통과 (데이터의 요일 오류까지 지적) |
+| Codex CLI 0.158 | ✅ s0007 인용 | ✅ 결정 4·할 일 2, 검증 통과 |
+| Antigravity CLI 1.2 | ✅ s0007 인용, 41초 | ✅ 결정 3·할 일 2, 검증 통과 |
+
+세 CLI 모두 할 일(담당자 박지영 9월 8일, 윤서아 금요일)을 사람이 쓴 기준 요약과 같게 뽑았다. API 키가 없는 공급자의 요약 품질은 이 경로(§0, Phase 2 대안)로 비교한다.
 
 ---
 
@@ -355,8 +404,9 @@ Claude Code, Codex CLI, Gemini CLI가 Tractus를 도구로 쓰도록 **로컬 st
 | ASR 런타임 (macOS) | mlx-audio (라이브러리로 직접 호출) | MIT | `hotwords` 때문에 서버 대신 프로세스 안에서 호출 (D1). Windows 대비용은 llama.cpp `llama-server` |
 | VAD | Silero VAD v6 (mlx-audio MLX 포팅) | MIT | torch 불필요 |
 | 오디오 변환 | FFmpeg (**외부 바이너리로 호출**) | LGPL/GPL | 번들하지 않음 → Apache-2.0 배포물과 분리 |
-| 저장 | SQLite + sqlite-vec | Public Domain / MIT·Apache | |
-| MCP | 공식 MCP Python SDK | MIT | |
+| 저장·검색 | SQLite FTS5 + sqlite-vec 0.1.9 (고정) | Public Domain / MIT·Apache | pre-1.0이라 업그레이드 시 테스트 재실행 |
+| 임베딩 런타임 | mlx-lm (Qwen3Model) | MIT | mlx-embeddings는 GPL-3이라 제외 |
+| MCP | 공식 MCP Python SDK `mcp` 2.2 (`MCPServer`) | MIT | 2.x에서 FastMCP가 MCPServer로 이름이 바뀜 |
 | UI (Phase 4) | Next.js + wavesurfer.js + TipTap, 또는 Tauri 데스크톱 셸 | MIT | Phase 3 이후 결정 |
 
 모델 가중치는 저장소에 포함하지 않고 사용자가 `hf download`로 받는다. 다운로드 링크와 명령은 `README.md`에 있다. 라이선스: Qwen3-ASR · Qwen3-ForcedAligner · Qwen3-Embedding · Gemma 4는 Apache-2.0, Silero VAD는 MIT.
@@ -370,7 +420,7 @@ Claude Code, Codex CLI, Gemini CLI가 Tractus를 도구로 쓰도록 **로컬 st
 | **0. ASR 선정 (Mac)** ✅ 2026-10-02 | 개발 기기 1대(M3·16GB)에서 4개 모델(Qwen3-ASR 1.7B·0.6B, 대조군 Whisper-turbo, 참고 Nemotron 3.5)을 mlx-audio로 측정. 지표: CER(ko), WER(en), 코드스위칭 MER·PIER, RTF, 최대 메모리, 1시간 파일 완주 여부. 상세는 아래 "Phase 0 실행 계획" | 기본·저사양 트랙의 모델 확정 |
 | **1. 전사 CLI** ✅ 2026-10-02 | `tractus transcribe <file>` → §4.1 레이아웃 생성. VAD 청킹, 이어하기, 용어집 | 1시간 한국어 회의를 두 트랙 모두에서 완주 → AI Hub 66분 회의: lite 4.1분(CER 9.22%), standard 10.1분(CER 7.23%). Ctrl+C·`kill -9` 후 재실행으로 173/173 청크 복구 |
 | **2. LLM 연동** 🔶 2026-10-02 | 공급자 설정, 요약·Action Item, 검증·재시도, 5개 공급자 스모크 테스트 | 같은 전사로 5개 공급자 모두 스키마 통과 → **Upstage(solar-pro4) 통과**(재요청 없이 3/3, 1회 7초). OpenAI·Claude·Gemini는 API 키를 받는 대로 `pytest -m llm`으로 확인. 키가 끝내 없으면 Phase 3 MCP로 각 CLI에서 품질을 본다 |
-| **3. 검색 + MCP** | 임베딩, FTS5 bigram, RRF, MCP 서버, 3개 CLI 등록 가이드 | Claude Code·Codex·Gemini CLI에서 과거 회의 질의 성공 |
+| **3. 검색 + MCP** ✅ 2026-10-02 | 임베딩, FTS5 bigram, RRF, MCP 서버, 3개 CLI 등록 가이드 | Claude Code·Codex·Gemini CLI에서 과거 회의 질의 성공 → Gemini CLI 대신 agy. **세 CLI 모두 질의(정답 세그먼트 인용)와 요약 저장 성공** (§5) |
 | **4. UI + 녹음** | 플레이어-텍스트 동기화, 메모 편집, 브라우저/데스크톱 녹음 | |
 | 이후 | 화자 분리(§2.4 C), 단어 타임스탬프, 실시간 전사(Nemotron 3.5 재평가), **Windows 지원(llama.cpp GGUF 경로)** | 필요가 확인될 때 |
 

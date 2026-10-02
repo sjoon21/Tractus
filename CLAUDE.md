@@ -39,9 +39,22 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 | `llm.py` | 공급자 표(`PROVIDERS`), `complete_json`: strict JSON + Pydantic 검증 + 1회 재요청 |
 | `summarize.py` | 요약 스키마, segment_ids 검증, summary.md/json |
 | `env.py` | `.env` / `.env.local` 로더 |
-| `cli.py` | `tractus transcribe`, `tractus summarize` |
+| `paths.py` | `TRACTUS_HOME`, `TRACTUS_MODELS_DIR` 해석 (CLI·MCP 공용) |
+| `embed.py` | Qwen3-Embedding-0.6B (공식 가중치 bf16, mlx-lm), `LazyEmbedder` |
+| `index.py` | SQLite FTS5 음절 bigram + sqlite-vec, 증분 동기화, strict 우선 + 가중 RRF |
+| `mcp_server.py` | MCP 서버 7개 도구 (`build_server(home, embedder)`) |
+| `cli.py` | `tractus transcribe`, `summarize`, `index`, `search`, `mcp` |
 
 환경변수는 `.env.example`에 모두 있다. 개발 중에는 저장소 루트의 `.env`(기본값)와 `.env.local`(API 키)을 CLI가 읽는다. 우선순위는 셸 > `.env.local` > `.env`.
+
+## 검색·MCP 규칙
+
+- 검색 결합 방식이나 토크나이저를 바꾸면 `bench/search_eval.py`(가상)와 `bench/aihub_search_eval.py`(AI Hub, 로컬 전용)를 **둘 다** 돌려 비교한다. 가상 평가셋만 보면 동일 가중 RRF가 좋아 보이지만, 실제 ASR 전사에서는 키워드 단독보다 나빴다.
+- 임베딩 모델·revision·지시문을 바꾸면 `embed.MODEL_ID`가 바뀌어 벡터가 전부 다시 만들어진다.
+- `mlx-embeddings`(GPL-3), Kiwi(LGPL-3) 같은 copyleft 의존성을 넣지 않는다.
+- MCP 도구는 async로 쓴다(sqlite·MLX는 스레드에 묶임). 예상된 실패는 `ToolError`로 던진다. stdout에는 아무것도 출력하지 않는다.
+- MCP 서버는 임베딩하지 않는다(`sync(embed=False)`). 벡터는 CLI가 만든다.
+- 에이전트 CLI 인수 테스트에는 `tests/fixtures/eval`(가상 회의)만 쓴다. AI Hub 전사가 들어 있는 홈을 MCP에 연결하지 않는다.
 
 ## LLM 규칙
 
@@ -57,6 +70,8 @@ uv run pytest                                       # 단위·CLI 테스트 (모
 uv run pytest -m slow                               # 실제 모델 테스트
 uv run pytest -m llm                                # 실제 LLM API 스모크 (키 있는 공급자만)
 uv run tractus summarize <meeting_id>               # 요약
+uv run tractus index / search "<질의>"              # 색인, 검색
+uv run python bench/search_eval.py                  # 검색 평가 (가상)
 uv run tractus transcribe <파일>                    # 전사
 
 cd bench && uv sync                                 # 벤치마크 의존성

@@ -4,7 +4,7 @@ import json
 import os
 import time
 import warnings
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
 
@@ -20,8 +20,10 @@ from tractus import audio  # noqa: E402
 from tractus import summarize as summ  # noqa: E402
 from tractus.env import load_env  # noqa: E402
 from tractus.llm import LLMError, make_client, resolve_provider  # noqa: E402
+from tractus.paths import home_dir, models_dir  # noqa: E402
 from tractus.asr import SR, Transcriber  # noqa: E402
-from tractus.store import Job, find_job, find_transcribed, load_glossary, meeting_dir_name, new_ulid, write_transcript  # noqa: E402
+from tractus.store import Job, find_job, find_meeting_dir, find_transcribed, load_glossary, meeting_dir_name, new_ulid, write_transcript  # noqa: E402
+from tractus.store import _hms  # noqa: E402
 from tractus.vad import find_chunks  # noqa: E402
 
 app = typer.Typer(add_completion=False, help="Local-first 회의 전사·회의록 도구")
@@ -43,14 +45,6 @@ class Language(str, Enum):
 MODELS = {Track.standard: "mlx-community/Qwen3-ASR-1.7B-8bit", Track.lite: "mlx-community/Qwen3-ASR-0.6B-8bit"}
 VAD_MODEL = "mlx-community/silero-vad-v6"
 STANDARD_MIN_MEMORY = 16 * 1024**3
-
-
-def home_dir() -> Path:
-    return Path(os.environ.get("TRACTUS_HOME", Path.home() / "Tractus")).expanduser()
-
-
-def models_dir() -> Path:
-    return Path(os.environ.get("TRACTUS_MODELS_DIR", home_dir() / "models")).expanduser()
 
 
 def local_model(repo: str) -> Path:
@@ -161,6 +155,15 @@ def _run(job: Job, pcm) -> None:
 
     elapsed = time.perf_counter() - t0
     t = write_transcript(job)
+    # ASR 모델을 내린 뒤 색인한다: 1.7B(3.6GB)와 임베딩 모델(1.4GB)이 통합 메모리에 함께 올라가지 않게
+    del transcriber
+    import gc
+
+    import mlx.core as mx
+
+    gc.collect()
+    mx.clear_cache()
+    _sync_index_quietly()
     rtf = f" (RTF {elapsed / job.duration_sec:.3f})" if not done and job.duration_sec else ""  # 이어하기면 일부만 처리해 RTF가 의미 없음
     console.print(
         f"완료: 세그먼트 {len(t['segments'])}개, 반복 출력 보정 {repaired}건, {elapsed / 60:.1f}분{rtf}\n"
@@ -169,15 +172,34 @@ def _run(job: Job, pcm) -> None:
 
 
 def resolve_meeting(ref: str) -> Path:
-    """회의 폴더 경로 또는 meeting_id(일부)로 회의 폴더를 찾는다."""
-    path = Path(ref).expanduser()
-    if (path / "transcript.json").is_file():
-        return path
-    hits = [d for d in (home_dir() / "meetings").glob(f"*{ref}*") if (d / "transcript.json").is_file()]
-    if len(hits) != 1:
-        found = "없습니다" if not hits else f"{len(hits)}개입니다: " + ", ".join(d.name for d in hits[:5])
-        raise typer.BadParameter(f"{ref!r}에 맞는 전사된 회의가 {found}", param_hint="MEETING")
-    return hits[0]
+    try:
+        return find_meeting_dir(home_dir() / "meetings", ref)
+    except LookupError as e:
+        raise typer.BadParameter(str(e), param_hint="MEETING") from e
+
+
+def _open_index():
+    from tractus.embed import load_embedder
+    from tractus.index import Index
+
+    return Index(home_dir(), embedder=load_embedder(models_dir()))
+
+
+def _sync_index_quietly() -> None:
+    """transcribe·summarize 뒤에 검색 색인을 갱신한다. 실패해도 본 작업 결과는 그대로 둔다."""
+    try:
+        with console.status("검색 색인 갱신 중…"):
+            idx = _open_index()
+            try:
+                r = idx.sync()
+            finally:
+                idx.close()
+        if r.added or r.updated:
+            console.print(f"검색 색인: 추가 {r.added}, 갱신 {r.updated}")
+        if r.errors:
+            console.print(f"[yellow]색인하지 못한 항목 {len(r.errors)}개 — `tractus index`로 자세히 확인[/yellow]")
+    except Exception as e:  # noqa: BLE001 — 색인은 언제든 `tractus index`로 다시 만들 수 있다
+        console.print(f"[yellow]검색 색인 갱신 실패 (`tractus index`로 다시 시도):[/yellow] {escape(str(e))}")
 
 
 @app.command()
@@ -206,10 +228,74 @@ def summarize(
         console.print(f"[red]{provider or os.environ.get('TRACTUS_LLM_PROVIDER')} API 오류:[/red] {escape(str(e))}")
         raise typer.Exit(1)
     summ.write_summary(d, result, transcript, p.name, m)
+    _sync_index_quietly()
     console.print(
         f"완료: 주제 {len(result.topics)}개, 결정 {len(result.decisions)}개, 할 일 {len(result.action_items)}개 "
         f"({time.perf_counter() - t0:.0f}초)\n{d / 'summary.md'}"
     )
+
+
+@app.command()
+def index(rebuild: bool = typer.Option(False, "--rebuild", help="색인 파일을 지우고 처음부터 다시 만든다")) -> None:
+    """회의 폴더를 검색 색인(~/Tractus/.tractus/index.sqlite)에 반영한다. 바뀐 회의만 처리한다."""
+    t0 = time.perf_counter()
+    with console.status("색인 중… (처음에는 임베딩 모델을 올리느라 몇 초 걸립니다)"):
+        idx = _open_index()
+        try:
+            r = idx.rebuild() if rebuild else idx.sync()  # rebuild는 파일을 지우지 않고 같은 DB를 비운다 (실행 중인 MCP 서버도 같은 DB를 봄)
+            st = idx.stats()
+            has_embedder = idx.embedder is not None
+        finally:
+            idx.close()
+    console.print(
+        f"회의 {st['meetings']}개, 청크 {st['chunks']}개, 벡터 {st['vectors']}개 "
+        f"(추가 {r.added}, 갱신 {r.updated}, 삭제 {r.removed}, 임베딩 {r.embedded}, {time.perf_counter() - t0:.1f}초)"
+    )
+    if not has_embedder:
+        console.print("[yellow]임베딩 모델이 없거나 올리지 못해 키워드 검색만 됩니다. README '모델 받기'의 qwen3-embedding-0.6b를 확인하세요.[/yellow]")
+    elif st["vectors"] < st["chunks"]:
+        console.print(f"[yellow]벡터가 없는 청크 {st['chunks'] - st['vectors']}개가 남았습니다.[/yellow]")
+    for err in r.errors:
+        console.print(f"[yellow]건너뜀:[/yellow] {escape(err)}")
+
+
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="검색어"),
+    limit: int = typer.Option(10, "--limit", "-n"),
+    date_from: str = typer.Option(None, "--from", help="YYYY-MM-DD", callback=lambda v: _iso_date(v, "--from")),
+    date_to: str = typer.Option(None, "--to", help="YYYY-MM-DD", callback=lambda v: _iso_date(v, "--to")),
+) -> None:
+    """과거 회의를 하이브리드(키워드 + 의미) 검색한다."""
+    idx = _open_index()
+    try:
+        idx.sync()
+        res = idx.search(query, limit=limit, date_from=date_from, date_to=date_to)
+    finally:
+        idx.close()
+    if not res.hits:
+        console.print("결과 없음")
+    for h in res.hits:
+        print(f"{h.date} {h.title} ({'+'.join(h.matched)})")
+        for s in h.segments:
+            print(f"  [{h.meeting_id[-6:]}#{s['id']} {_hms(s['start'])}] {s['text'][:120]}")
+
+
+def _iso_date(value: str | None, name: str) -> str | None:
+    if value is None:
+        return None
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError as e:
+        raise typer.BadParameter(f"{name}는 YYYY-MM-DD 형식이어야 합니다: {value!r}") from e
+
+
+@app.command()
+def mcp() -> None:
+    """MCP 서버(stdio)를 실행한다. Claude Code·Codex·agy에 등록해서 쓴다 (README 'MCP 연동')."""
+    from tractus.mcp_server import main as serve
+
+    serve()
 
 
 if __name__ == "__main__":

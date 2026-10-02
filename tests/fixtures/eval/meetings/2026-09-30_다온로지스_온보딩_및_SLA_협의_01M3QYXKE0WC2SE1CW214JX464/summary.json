@@ -1,0 +1,87 @@
+{
+ "schema_version": 1,
+ "meeting_id": "01M3QYXKE0WC2SE1CW214JX464",
+ "provider": "synthetic",
+ "model": "handwritten",
+ "generated_at": "2026-09-30T10:30:00+09:00",
+ "title": "다온로지스 온보딩·SLA 협의",
+ "summary": "고객사 다온로지스의 SLA, 데이터 연동, 온보딩 일정을 협의했다. 고객사는 가용성 99.9%와 응답시간 500 밀리초를 요구했고, 응답시간 SLA는 p95 500 밀리초로 제안하며 위반 시 월 이용료 10%를 크레딧으로 보상한다. 데이터 연동은 첫 3개월 SFTP CSV 배치로 시작해 webhook으로 전환한다. 장애는 Sev1만 24시간 대응한다. 10월 13일 킥오프, 11월 첫째 주 운영 오픈 일정이다.",
+ "topics": [
+  {
+   "title": "SLA 조건",
+   "segment_ids": [
+    "s0001",
+    "s0002",
+    "s0003",
+    "s0004"
+   ]
+  },
+  {
+   "title": "데이터 연동 방식",
+   "segment_ids": [
+    "s0005",
+    "s0006"
+   ]
+  },
+  {
+   "title": "온보딩 일정",
+   "segment_ids": [
+    "s0007",
+    "s0012"
+   ]
+  },
+  {
+   "title": "장애 대응 체계",
+   "segment_ids": [
+    "s0008",
+    "s0009"
+   ]
+  },
+  {
+   "title": "계약서 초안",
+   "segment_ids": [
+    "s0010",
+    "s0011"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "text": "응답시간 SLA는 p95 500 밀리초로 제안하고 위반 시 월 이용료 10%를 크레딧으로 보상한다",
+   "segment_ids": [
+    "s0004"
+   ]
+  },
+  {
+   "text": "첫 3개월은 SFTP CSV 배치로 연동하고 안정화 후 webhook으로 전환한다",
+   "segment_ids": [
+    "s0006"
+   ]
+  },
+  {
+   "text": "Sev1 장애만 24시간 대응하고 나머지는 다음 영업일에 처리하도록 계약서에 명시한다",
+   "segment_ids": [
+    "s0009"
+   ]
+  }
+ ],
+ "action_items": [
+  {
+   "task": "SLA·장애 대응 범위를 반영한 계약서 초안 작성 및 발송",
+   "owner": "문가은",
+   "due": "10월 7일",
+   "segment_ids": [
+    "s0010",
+    "s0011"
+   ]
+  },
+  {
+   "task": "연동 API 문서와 sandbox 계정 준비",
+   "owner": "배준호",
+   "due": "킥오프 전",
+   "segment_ids": [
+    "s0012"
+   ]
+  }
+ ]
+}

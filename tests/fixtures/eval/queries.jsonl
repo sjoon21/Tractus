@@ -1,0 +1,30 @@
+{"qid": "q01", "type": "keyword_ko", "query": "예산", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0001", "s0002", "s0008", "s0009", "s0012"], "01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0001", "s0002", "s0005", "s0006", "s0011"]}}
+{"qid": "q02", "type": "keyword_ko", "query": "채용", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0001", "s0009", "s0010", "s0011", "s0012"], "01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0012"]}}
+{"qid": "q03", "type": "keyword_ko", "query": "출시일", "gold": {"01M1JFX480KZE86SXAN94C6Y0E": ["s0003", "s0005"]}}
+{"qid": "q04", "type": "keyword_ko", "query": "캐시", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0005", "s0006", "s0007"], "01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0004"]}}
+{"qid": "q05", "type": "keyword_ko", "query": "계약서", "gold": {"01M3QYXKE0WC2SE1CW214JX464": ["s0009", "s0010"]}}
+{"qid": "q06", "type": "keyword_ko", "query": "추석", "gold": {"01M1JFX480KZE86SXAN94C6Y0E": ["s0004"]}}
+{"qid": "q07", "type": "keyword_en", "query": "latency", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0001", "s0002", "s0009", "s0011"], "01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0010"], "01M3QYXKE0WC2SE1CW214JX464": ["s0003"]}}
+{"qid": "q08", "type": "keyword_en", "query": "Redis", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0005", "s0006", "s0007"]}}
+{"qid": "q09", "type": "keyword_en", "query": "regression test", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0009", "s0010"], "01M1JFX480KZE86SXAN94C6Y0E": ["s0006", "s0007", "s0008"]}}
+{"qid": "q10", "type": "keyword_en", "query": "Elasticsearch wildcard", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0003"]}}
+{"qid": "q11", "type": "keyword_en", "query": "EKS scale down", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0002", "s0003", "s0005"], "01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0002"]}}
+{"qid": "q12", "type": "keyword_en", "query": "webhook", "gold": {"01M3QYXKE0WC2SE1CW214JX464": ["s0005", "s0006"]}}
+{"qid": "q13", "type": "keyword_en", "query": "crash-free", "gold": {"01M1JFX480KZE86SXAN94C6Y0E": ["s0011", "s0012"], "01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0010"]}}
+{"qid": "q14", "type": "keyword_en", "query": "H100", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0006"]}}
+{"qid": "q15", "type": "semantic", "query": "돈 문제 논의한 회의", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0001", "s0012"], "01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0001"]}}
+{"qid": "q16", "type": "semantic", "query": "검색이 느려진 원인이 뭐였어?", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0003"]}}
+{"qid": "q17", "type": "semantic", "query": "배포 전에 성능 저하를 잡는 방법", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0008", "s0009", "s0011", "s0012"]}}
+{"qid": "q18", "type": "semantic", "query": "서버 비용 아끼는 아이디어", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0003"]}}
+{"qid": "q19", "type": "semantic", "query": "고객사가 요구한 응답 속도 보장 조건", "gold": {"01M3QYXKE0WC2SE1CW214JX464": ["s0002", "s0003", "s0004"]}}
+{"qid": "q20", "type": "semantic", "query": "장애가 났을 때 연락 체계", "gold": {"01M3QYXKE0WC2SE1CW214JX464": ["s0008", "s0009"]}}
+{"qid": "q21", "type": "semantic", "query": "어두운 화면 테마의 접근성 문제", "gold": {"01M1JFX480KZE86SXAN94C6Y0E": ["s0009", "s0010"]}}
+{"qid": "q22", "type": "semantic", "query": "AI 모델 호출 요금이 너무 많이 나온다", "gold": {"01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0003", "s0004", "s0005"]}}
+{"qid": "q23", "type": "time", "query": "7월 회의에서 결정된 것", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0003", "s0008", "s0010"]}, "filters": {"date_from": "2026-07-01", "date_to": "2026-07-31"}}
+{"qid": "q24", "type": "time", "query": "8월 회의 결정 사항", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0006", "s0012"]}, "filters": {"date_from": "2026-08-01", "date_to": "2026-08-31"}}
+{"qid": "q25", "type": "time", "query": "9월 말 고객사 미팅에서 합의한 내용", "gold": {"01M3QYXKE0WC2SE1CW214JX464": ["s0004", "s0006", "s0009"]}, "filters": {"date_from": "2026-09-21", "date_to": "2026-09-30"}}
+{"qid": "q26", "type": "time", "query": "9월 17일 회의에서 GPU 서버는 어떻게 하기로 했어?", "gold": {"01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0009"]}, "filters": {"date_from": "2026-09-17", "date_to": "2026-09-17"}}
+{"qid": "q27", "type": "cross", "query": "who owns the regression test", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0009", "s0010"], "01M1JFX480KZE86SXAN94C6Y0E": ["s0007", "s0008"]}}
+{"qid": "q28", "type": "cross", "query": "GPU 서버 구매 결정은 어떻게 바뀌었나", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0007", "s0008"], "01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0008", "s0009"]}}
+{"qid": "q29", "type": "cross", "query": "모바일 regression test 담당자", "gold": {"01M1JFX480KZE86SXAN94C6Y0E": ["s0007"]}}
+{"qid": "q30", "type": "cross", "query": "3분기 인프라 예산 실제로 얼마 썼어", "gold": {"01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0002"]}}

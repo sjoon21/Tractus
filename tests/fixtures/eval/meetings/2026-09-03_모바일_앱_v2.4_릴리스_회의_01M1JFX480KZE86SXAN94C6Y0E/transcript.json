@@ -1,0 +1,141 @@
+{
+ "schema_version": 1,
+ "meeting_id": "01M1JFX480KZE86SXAN94C6Y0E",
+ "title": "모바일 앱 v2.4 릴리스 회의",
+ "created_at": "2026-09-03T11:00:00+09:00",
+ "audio": {
+  "file": "audio.opus",
+  "duration_sec": 188.93,
+  "source": "모바일 앱 v2.4 릴리스 회의.m4a",
+  "sha256": "synthetic"
+ },
+ "asr": {
+  "model": "synthetic",
+  "track": "standard",
+  "runtime": "none",
+  "language": "auto",
+  "hotwords": []
+ },
+ "segments": [
+  {
+   "id": "s0001",
+   "start": 0.0,
+   "end": 18.22,
+   "text": "모바일 앱 v2.4 릴리스 회의 시작하겠습니다. 이번 릴리스 핵심은 다크 모드랑 결제 화면 개편이고, 오늘은 일정이랑 QA 범위를 확정해야 합니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0002",
+   "start": 18.82,
+   "end": 32.38,
+   "text": "개발은 다크 모드가 90% 정도 됐고 결제 화면은 디자인 수정 요청이 들어와서 이틀 정도 더 걸릴 것 같아요.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0003",
+   "start": 32.98,
+   "end": 51.42,
+   "text": "원래 출시일이 9월 10일이었는데 결제 화면 때문에 9월 17일로 미루는 게 안전할 것 같습니다. App Store 심사도 보통 2~3일 걸리니까요.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0004",
+   "start": 52.02,
+   "end": 64.24,
+   "text": "추석 연휴가 9월 24일부터라 17일은 괜찮을 것 같아요. 연휴 전에 핫픽스 대응할 시간도 있고요.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0005",
+   "start": 64.84,
+   "end": 72.84,
+   "text": "좋아요. 그럼 v2.4 출시일은 9월 17일로 확정합니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0006",
+   "start": 73.44,
+   "end": 93.67,
+   "text": "QA는 결제 화면 변경이 커서 regression test 범위를 넓혀야 할 것 같아요. 특히 iOS 16 이하 구형 기기에서 결제 실패 케이스를 꼭 봐야 합니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0007",
+   "start": 94.27,
+   "end": 110.93,
+   "text": "모바일 regression test는 박지영 님이 담당해 주세요. 테스트 케이스 목록은 9월 8일 화요일까지 정리해 주시면 좋겠습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0008",
+   "start": 111.53,
+   "end": 128.2,
+   "text": "네, 제가 9월 8일까지 regression 테스트 케이스 정리해서 공유드릴게요. 자동화 안 된 결제 시나리오는 수동으로 돌리겠습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0009",
+   "start": 128.8,
+   "end": 141.47,
+   "text": "다크 모드는 접근성 쪽도 봐야 해요. 텍스트 대비가 WCAG 기준에 못 미치는 화면이 몇 개 있었어요.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0010",
+   "start": 142.07,
+   "end": 154.29,
+   "text": "그건 디자인팀 윤서아 님이 이번 주 금요일까지 대비 기준 맞춘 색상 토큰을 다시 주시기로 했습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0011",
+   "start": 154.89,
+   "end": 175.33,
+   "text": "마지막으로 crash 리포트요. Firebase Crashlytics에서 지난 버전 crash-free 비율이 99.2%였는데 이번엔 99.5% 이상을 목표로 하죠.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0012",
+   "start": 175.93,
+   "end": 187.93,
+   "text": "네 그럼 출시 기준에 crash-free 99.5% 이상을 넣는 걸로 하겠습니다. 수고하셨습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  }
+ ]
+}

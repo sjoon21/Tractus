@@ -27,6 +27,8 @@ node_modules/
 # Tractus 로컬 데이터·인덱스 (개발 중 저장소 안에 생성될 경우 대비)
 .tractus/
 meetings/
+# 가상 회의 평가 코퍼스(tests/fixtures/eval)는 커밋한다
+!tests/fixtures/eval/meetings/
 
 # 모델 가중치·오디오 (저장소에 포함하지 않음)
 models/

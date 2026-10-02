@@ -5,7 +5,7 @@
 
 - 라이선스: [Apache-2.0](LICENSE)
 - 설계 문서: [ARCHITECTURE.md](ARCHITECTURE.md)
-- 진행 상황: Phase 0(ASR 모델 선정)·Phase 1(전사 CLI) 완료, **Phase 2(LLM 요약) Upstage 연동 완료** — 다른 공급자는 API 키 대기
+- 진행 상황: Phase 0(ASR 모델 선정)·Phase 1(전사 CLI)·Phase 2(LLM 요약, Upstage)·**Phase 3(검색 + MCP) 완료** → 다음은 Phase 4(UI + 녹음)
 
 ## ASR 모델 (확정, 2026-10-02)
 
@@ -66,9 +66,14 @@ hf download mlx-community/Qwen3-ASR-1.7B-8bit --local-dir $TRACTUS_MODELS_DIR/qw
 hf download mlx-community/Qwen3-ASR-0.6B-8bit --local-dir $TRACTUS_MODELS_DIR/qwen3-asr-0.6b-8bit
 # VAD (1.3 MB, 두 트랙 공용)
 hf download mlx-community/silero-vad-v6 --local-dir $TRACTUS_MODELS_DIR/silero-vad-v6
+# 검색용 임베딩 (1.1 GB, 선택 — 없으면 키워드 검색만 함). revision을 고정해서 받습니다
+hf download Qwen/Qwen3-Embedding-0.6B --revision 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3 --local-dir $TRACTUS_MODELS_DIR/qwen3-embedding-0.6b
 ```
 
-VAD는 [mlx-community/silero-vad-v6](https://huggingface.co/mlx-community/silero-vad-v6)(Silero VAD v6의 MLX 포팅, MIT)입니다.
+| 모델 | 용도 | 라이선스 |
+| --- | --- | --- |
+| [mlx-community/silero-vad-v6](https://huggingface.co/mlx-community/silero-vad-v6) | 무음 기준 청크 분할 (Silero VAD v6의 MLX 포팅) | MIT |
+| [Qwen/Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) | 의미 검색 (공식 가중치를 mlx-lm으로 실행) | Apache-2.0 |
 
 ## 사용법
 
@@ -117,19 +122,76 @@ uv run tractus summarize 01K6X3 --provider upstage --model solar-pro4
 
 `TRACTUS_LOCAL_ONLY=1`이면 원격 공급자를 막습니다. 구독형 CLI(`claude -p`, `codex exec`, `agy`)는 약관 문제로 공급자로 쓰지 않습니다(ARCHITECTURE.md §0).
 
+### 검색
+
+```bash
+uv run tractus index                     # 색인 갱신 (transcribe·summarize 뒤에는 자동으로 됨)
+uv run tractus index --rebuild           # 처음부터 다시
+uv run tractus search "GPU 서버 구매" --from 2026-07-01 --to 2026-09-30
+```
+
+키워드(한국어 음절 bigram)와 의미(로컬 임베딩)를 함께 씁니다. 색인은 `~/Tractus/.tractus/index.sqlite`에 있고, 지워도 회의 폴더에서 다시 만들어집니다.
+
+## MCP 연동 (Claude Code · Codex · Antigravity)
+
+에이전트 CLI가 Tractus를 도구로 써서 과거 회의를 검색합니다. 근거를 `[meeting_id#s0012 00:05:31]` 형식으로 인용하고, 요약을 직접 써서 저장할 수도 있습니다. **MCP 서버는 LLM을 호출하지 않습니다.** 추론은 각 CLI가 자기 구독·키로 합니다.
+
+먼저 한 번 색인합니다(벡터는 CLI 쪽에서 만듭니다): `uv run tractus index`
+
+아래 예시의 `/path/to/Tractus`는 이 저장소 경로입니다. `.venv/bin/tractus`는 `uv sync` 뒤에 생깁니다.
+
+**Claude Code** — 이름을 `-e`보다 앞에 둡니다.
+
+```bash
+claude mcp add -s user tractus -e TRACTUS_HOME=$HOME/Tractus -e TRACTUS_MODELS_DIR=/path/to/Tractus/models \
+  -- /path/to/Tractus/.venv/bin/tractus mcp
+```
+
+**Codex CLI** — Codex는 셸 환경변수를 MCP 서버에 넘기지 않으므로 `env`를 꼭 적습니다. `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.tractus]
+command = "/path/to/Tractus/.venv/bin/tractus"
+args = ["mcp"]
+env = { TRACTUS_HOME = "/Users/me/Tractus", TRACTUS_MODELS_DIR = "/path/to/Tractus/models" }
+# 읽기 도구는 자동 승인됩니다. 요약 저장(save_summary)까지 묻지 않고 쓰려면 다음 줄을 추가합니다.
+# tools.save_summary.approval_mode = "approve"
+```
+
+**Antigravity CLI (agy)**
+
+```bash
+agy mcp add --env TRACTUS_HOME=$HOME/Tractus --env TRACTUS_MODELS_DIR=/path/to/Tractus/models \
+  tractus /path/to/Tractus/.venv/bin/tractus mcp
+```
+
+헤드리스(`agy -p`)에서 쓰려면 `~/.gemini/antigravity-cli/settings.json`의 `permissions.allow`에 `"mcp(tractus/*)"`를 추가합니다. 워크스페이스 설정은 무시됩니다. Gemini CLI는 개인 계정 지원이 끝나 대상에서 뺐습니다.
+
+| 도구 | 기능 |
+| --- | --- |
+| `status` | 데이터 위치, 색인 상태 (결과가 비어 보이면 먼저 확인) |
+| `search_meetings` | 하이브리드 검색, 날짜·회의 필터, 세그먼트별 인용 표기 |
+| `list_meetings` | 기간별 회의 목록 |
+| `get_transcript` | 전사 원문 (페이지 단위) |
+| `get_summary` / `list_action_items` | 요약, 할 일 |
+| `save_summary` | 에이전트가 쓴 요약을 검증해서 저장 (유일한 쓰기 도구) |
+
+예: `claude -p "지난 분기 GPU 서버 구매 결정이 어떻게 바뀌었는지 내 회의 기록에서 찾아서 근거와 함께 알려줘"`
+
 ### 개발
 
 ```bash
 uv run pytest            # 단위·CLI 테스트 (모델·API 키 불필요)
 uv run pytest -m slow    # 실제 모델로 짧은 음성 전사 (models/ 필요)
 uv run pytest -m llm     # 실제 LLM API 스모크 테스트 (키가 있는 공급자만, 가상 회의 전사 사용)
+uv run python bench/search_eval.py   # 검색 평가 (가상 회의 5건, 질의 30개)
 ```
 
 ## 저장소 구조
 
 ```text
 ARCHITECTURE.md   설계 백본 (결정 사항, 로드맵, Phase 0 결과)
-src/tractus/      CLI, 전사 파이프라인, LLM 요약 (audio · vad · asr · store · llm · summarize · env · cli)
+src/tractus/      CLI, 전사, LLM 요약, 검색, MCP (audio · vad · asr · store · llm · summarize · embed · index · mcp_server · cli)
 tests/            pytest
 bench/            Phase 0 ASR 벤치마크 (코드, 지표 요약, 리포트)
 models/           모델 가중치 (git 제외, 직접 받음)

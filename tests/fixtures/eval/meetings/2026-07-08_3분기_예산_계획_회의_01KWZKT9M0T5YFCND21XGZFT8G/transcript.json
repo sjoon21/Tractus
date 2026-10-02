@@ -1,0 +1,141 @@
+{
+ "schema_version": 1,
+ "meeting_id": "01KWZKT9M0T5YFCND21XGZFT8G",
+ "title": "3분기 예산 계획 회의",
+ "created_at": "2026-07-08T10:00:00+09:00",
+ "audio": {
+  "file": "audio.opus",
+  "duration_sec": 195.38,
+  "source": "3분기 예산 계획 회의.m4a",
+  "sha256": "synthetic"
+ },
+ "asr": {
+  "model": "synthetic",
+  "track": "standard",
+  "runtime": "none",
+  "language": "auto",
+  "hotwords": []
+ },
+ "segments": [
+  {
+   "id": "s0001",
+   "start": 0.0,
+   "end": 16.22,
+   "text": "네 3분기 예산 계획 회의 시작하겠습니다. 오늘은 인프라 비용, GPU 서버 구매, 그리고 하반기 채용 예산 세 가지를 보겠습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0002",
+   "start": 16.82,
+   "end": 33.71,
+   "text": "2분기에 AWS 비용이 월 평균 4,200만 원 나왔어요. 예산 대비 15% 초과인데 대부분 EKS 노드랑 S3 egress 비용입니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0003",
+   "start": 34.31,
+   "end": 57.2,
+   "text": "EKS는 개발 클러스터를 밤에 내리면 꽤 줄일 수 있을 것 같아요. 야간에 node group을 0으로 scale down하는 스크립트를 넣으면 월 600만 원 정도 아낄 수 있습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0004",
+   "start": 57.8,
+   "end": 65.8,
+   "text": "좋네요. 그건 최도윤 님이 7월 말까지 적용해 주시죠.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0005",
+   "start": 66.4,
+   "end": 75.51,
+   "text": "네 7월 31일까지 개발 클러스터 야간 scale down 적용하겠습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0006",
+   "start": 76.11,
+   "end": 93.0,
+   "text": "다음은 GPU 서버인데요. 사내 LLM 실험용으로 H100 두 장짜리 서버를 사자는 요청이 있었어요. 견적은 대당 9,800만 원입니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0007",
+   "start": 93.6,
+   "end": 115.6,
+   "text": "클라우드 GPU를 빌리면 시간당 비용이 비싸긴 한데, 실험이 매일 있는 게 아니라서 구매는 좀 이른 것 같아요. 3분기에는 클라우드로 쓰고 사용량을 보고 4분기에 다시 판단하죠.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0008",
+   "start": 116.2,
+   "end": 129.53,
+   "text": "동의합니다. 그럼 3분기 GPU 서버 구매는 보류하고 클라우드 GPU 예산으로 월 800만 원을 잡겠습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0009",
+   "start": 130.13,
+   "end": 151.91,
+   "text": "마지막으로 채용 예산입니다. 하반기에 backend 개발자 두 명, ML 엔지니어 한 명을 뽑으려고 하는데 채용 플랫폼 비용 포함해서 3분기에 1억 2천만 원 정도 필요합니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0010",
+   "start": 152.51,
+   "end": 164.51,
+   "text": "ML 엔지니어는 GPU 구매 보류랑 엮여 있으니까 일단 backend 두 명만 3분기에 진행하죠.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0011",
+   "start": 165.11,
+   "end": 176.0,
+   "text": "네, 그럼 채용 공고는 인사팀 정하은 님이 이번 주 금요일까지 올려 주시기로 하겠습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0012",
+   "start": 176.6,
+   "end": 194.38,
+   "text": "정리하면 3분기 총 예산은 인프라 5억 1천, 채용 1억 2천입니다. 예산안은 제가 다음 주 화요일까지 재무팀에 제출하겠습니다. 수고하셨습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  }
+ ]
+}

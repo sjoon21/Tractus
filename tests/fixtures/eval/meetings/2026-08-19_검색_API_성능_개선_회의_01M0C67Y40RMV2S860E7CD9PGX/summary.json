@@ -1,0 +1,79 @@
+{
+ "schema_version": 1,
+ "meeting_id": "01M0C67Y40RMV2S860E7CD9PGX",
+ "provider": "synthetic",
+ "model": "handwritten",
+ "generated_at": "2026-08-19T14:00:00+09:00",
+ "title": "검색 API latency 개선",
+ "summary": "지난주 배포 후 검색 API p95 latency가 280 밀리초에서 1.2초로 올라간 문제를 다뤘다. 원인은 자동완성 기능의 Elasticsearch wildcard 쿼리였다. 자동완성을 edge n-gram analyzer로 바꾸고 인기 검색어를 Redis에 캐싱해 p95 300 밀리초 이하로 복구하기로 했다. 재발 방지를 위해 CI에 검색 regression test를 추가하고, 첫 한 달은 경고만 준 뒤 배포 차단으로 전환한다.",
+ "topics": [
+  {
+   "title": "검색 latency 원인 분석",
+   "segment_ids": [
+    "s0001",
+    "s0002",
+    "s0003"
+   ]
+  },
+  {
+   "title": "자동완성·캐시 개선안",
+   "segment_ids": [
+    "s0004",
+    "s0005",
+    "s0006",
+    "s0007"
+   ]
+  },
+  {
+   "title": "검색 regression test와 배포 gate",
+   "segment_ids": [
+    "s0008",
+    "s0009",
+    "s0010",
+    "s0011",
+    "s0012"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "text": "자동완성을 edge n-gram analyzer로 바꾸고 인기 검색어 Redis 캐시를 도입한다 (목표 p95 300 밀리초 이하)",
+   "segment_ids": [
+    "s0006"
+   ]
+  },
+  {
+   "text": "latency 기준 초과 시 첫 한 달은 경고만 주고 이후 배포 차단으로 전환한다",
+   "segment_ids": [
+    "s0012"
+   ]
+  }
+ ],
+ "action_items": [
+  {
+   "task": "Elasticsearch reindex 및 edge n-gram analyzer 변경",
+   "owner": "한지민",
+   "due": "8월 26일",
+   "segment_ids": [
+    "s0007"
+   ]
+  },
+  {
+   "task": "인기 검색어 Redis 캐시 도입",
+   "owner": "오태양",
+   "due": "8월 26일",
+   "segment_ids": [
+    "s0007"
+   ]
+  },
+  {
+   "task": "CI에 검색 regression test suite 추가",
+   "owner": "이서준",
+   "due": "9월 첫째 주",
+   "segment_ids": [
+    "s0009",
+    "s0010"
+   ]
+  }
+ ]
+}

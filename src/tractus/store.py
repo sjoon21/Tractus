@@ -16,7 +16,7 @@ JOB_FILE = ".job.json"
 CHUNKS_FILE = ".chunks.jsonl"
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
-__all__ = ["Job", "Segment", "find_job", "load_glossary", "meeting_dir_name", "new_ulid", "render_markdown", "write_transcript"]
+__all__ = ["Job", "Segment", "find_job", "find_meeting_dir", "load_glossary", "meeting_dir_name", "new_ulid", "render_markdown", "write_transcript"]
 
 
 def new_ulid(ms: int | None = None) -> str:
@@ -116,6 +116,19 @@ def find_transcribed(meetings: Path, sha256: str) -> Path | None:
         if found:
             return p.parent
     return None
+
+
+def find_meeting_dir(meetings: Path, ref: str) -> Path:
+    """회의 폴더 경로 또는 meeting_id(일부)로 전사된 회의 폴더를 찾는다. 없거나 여러 개면 LookupError."""
+    path = Path(ref).expanduser()
+    if (path / "transcript.json").is_file():
+        return path
+    ref = ref.strip()
+    hits = [d for d in sorted(meetings.glob("*")) if ref and ref in d.name and (d / "transcript.json").is_file()] if ref else []
+    if len(hits) != 1:
+        found = "없습니다" if not hits else f"{len(hits)}개입니다: " + ", ".join(d.name for d in hits[:5])
+        raise LookupError(f"{ref!r}에 맞는 전사된 회의가 {found}")
+    return hits[0]
 
 
 def write_transcript(job: Job) -> dict:

@@ -1,0 +1,159 @@
+"""MCP 서버 테스트. 대부분 in-process Client, 마지막 하나는 실제 stdio 하위 프로세스(stdout 오염 검사)."""
+
+import json
+import os
+import shutil
+import sys
+from pathlib import Path
+
+import anyio
+import pytest
+from mcp import Client, StdioServerParameters
+
+from tractus.mcp_server import build_server
+
+from test_index import EVAL, FakeEmbedder
+
+BUDGET = "01KWZKT9M0T5YFCND21XGZFT8G"  # 3분기 예산 계획 회의 (2026-07-08)
+RELEASE = "01M1JFX480KZE86SXAN94C6Y0E"  # 모바일 앱 v2.4 릴리스 회의
+
+
+@pytest.fixture
+def home(tmp_path):
+    shutil.copytree(EVAL / "meetings", tmp_path / "meetings")
+    return tmp_path
+
+
+def call(server, tool, args=None):
+    async def go():
+        async with Client(server) as c:
+            return await c.call_tool(tool, args or {})
+
+    return anyio.run(go)
+
+
+def structured(result):
+    assert not result.is_error, result.content
+    return result.structured_content
+
+
+def text(result):
+    assert not result.is_error, result.content
+    return "".join(c.text for c in result.content)
+
+
+def test_tools_are_listed_with_read_only_hints(home):
+    async def go():
+        async with Client(build_server(home, FakeEmbedder())) as c:
+            return {t.name: t for t in (await c.list_tools()).tools}
+
+    tools = anyio.run(go)
+    assert set(tools) == {"status", "search_meetings", "list_meetings", "get_transcript", "get_summary", "list_action_items", "save_summary"}
+    assert all(tools[n].annotations.read_only_hint for n in tools if n != "save_summary")
+    assert tools["save_summary"].annotations.read_only_hint is False
+
+
+def test_search_syncs_index_and_returns_citations(home):
+    from tractus.index import Index
+
+    emb = FakeEmbedder()
+    Index(home, embedder=emb).sync()  # 벡터는 CLI 쪽 동기화가 만든다
+    r = structured(call(build_server(home, emb), "search_meetings", {"query": "latency", "limit": 3}))
+    assert r["vector_used"] and r["hits"]
+    h = r["hits"][0]
+    s = h["segments"][0]
+    assert s["cite"] == f"[{h['meeting_id']}#{s['id']} {s['time']}]"
+    assert any("latency" in x["text"].lower() for x in h["segments"])
+
+
+def test_search_date_filter(home):
+    r = structured(call(build_server(home, FakeEmbedder()), "search_meetings", {"query": "예산", "date_from": "2026-07-01", "date_to": "2026-07-31"}))
+    assert r["hits"] and {h["meeting_id"] for h in r["hits"]} == {BUDGET}
+
+
+def test_list_meetings_sorted_with_summary_flag(home):
+    r = structured(call(build_server(home, None), "list_meetings", {"date_from": "2026-09-01"}))
+    dates = [m["date"] for m in r["meetings"]]
+    assert dates == sorted(dates) and dates[0] >= "2026-09-01" and all(m["has_summary"] for m in r["meetings"])
+
+
+def test_get_transcript_paginates_with_segment_lines(home):
+    srv = build_server(home, None)
+    page = text(call(srv, "get_transcript", {"meeting_id": RELEASE[-8:], "offset": 0, "max_segments": 5}))
+    assert "[s0001 00:00:00]" in page and "[s0006" not in page and "next_offset: 5" in page
+    last = text(call(srv, "get_transcript", {"meeting_id": RELEASE, "offset": 10, "max_segments": 50}))
+    assert "[s0011" in last and "next_offset" not in last
+
+
+def test_unknown_meeting_is_tool_error(home):
+    r = call(build_server(home, None), "get_transcript", {"meeting_id": "nope"})
+    assert r.is_error and "nope" in "".join(c.text for c in r.content)
+
+
+def test_get_summary_and_action_items(home):
+    srv = build_server(home, None)
+    assert "## 할 일" in text(call(srv, "get_summary", {"meeting_id": RELEASE}))
+    items = structured(call(srv, "list_action_items", {"date_from": "2026-09-03", "date_to": "2026-09-03"}))["items"]
+    assert items and all(i["meeting_id"] == RELEASE and i["cite"].startswith(f"[{RELEASE}#") for i in items)
+
+
+def test_save_summary_validates_segment_ids_and_writes_files(home):
+    srv = build_server(home, None)
+    (d,) = [p for p in (home / "meetings").iterdir() if RELEASE in p.name]
+    (d / "summary.json").unlink()
+    (d / "summary.md").unlink()
+    good = {"title": "릴리스", "summary": "요약", "topics": [{"title": "출시", "segment_ids": ["s0003"]}],
+            "decisions": [], "action_items": [{"task": "QA", "owner": None, "due": None, "segment_ids": ["s0004"]}]}
+    bad = {**good, "decisions": [{"text": "x", "segment_ids": ["s9999"]}]}
+    r = call(srv, "save_summary", {"meeting_id": RELEASE, "summary": bad, "author": "claude-code"})
+    assert r.is_error and "s9999" in "".join(c.text for c in r.content) and not (d / "summary.json").exists()
+    ok = structured(call(srv, "save_summary", {"meeting_id": RELEASE, "summary": good, "author": "claude-code"}))
+    assert ok["saved"].endswith("summary.md")
+    data = json.loads((d / "summary.json").read_text(encoding="utf-8"))
+    assert data["provider"] == "mcp" and data["model"] == "claude-code"
+
+
+def test_status_reports_home_and_vector_availability(home):
+    r = structured(call(build_server(home, None), "status"))
+    assert r["home"] == str(home) and r["meetings"] == 5 and r["vector_search"] is False and r["hint"]
+
+
+def test_mcp_sync_does_not_embed_but_reports_missing_vectors(home):
+    from tractus.index import Index
+
+    emb = FakeEmbedder()
+    Index(home, embedder=emb).sync()  # CLI가 벡터까지 만든 상태
+    calls = emb.calls
+    new = home / "meetings" / "2026-10-01_추가_01NEWMEETING00000000000000"
+    new.mkdir()
+    (new / "transcript.json").write_text(json.dumps({"meeting_id": "01NEWMEETING00000000000000", "title": "추가", "created_at": "2026-10-01",
+        "segments": [{"id": "s0001", "start": 0, "end": 10, "text": "새로 추가된 회의의 예산 이야기"}]}, ensure_ascii=False), encoding="utf-8")
+    r = structured(call(build_server(home, emb), "status"))
+    assert emb.calls == calls  # MCP 동기화는 임베딩하지 않는다
+    assert r["vectors"] < r["indexed_chunks"] and "tractus index" in r["hint"]
+
+
+def test_corrupt_files_do_not_break_listing_tools(home):
+    (d,) = [p for p in (home / "meetings").iterdir() if RELEASE in p.name]
+    (d / "summary.json").write_text("{", encoding="utf-8")
+    bad = home / "meetings" / "2026-01-01_broken_01BROKEN000000000000000000"
+    bad.mkdir()
+    (bad / "transcript.json").write_text("[]", encoding="utf-8")
+    srv = build_server(home, None)
+    assert len(structured(call(srv, "list_meetings"))["meetings"]) == 5
+    assert structured(call(srv, "list_action_items"))["items"]
+    assert structured(call(srv, "search_meetings", {"query": "예산"}))["hits"]
+
+
+def test_stdio_server_keeps_stdout_clean(home, tmp_path):
+    """실제 `python -m tractus.mcp_server`를 띄워 JSON-RPC 이외 출력이 stdout에 섞이지 않는지 본다."""
+    env = {**os.environ, "TRACTUS_HOME": str(home), "TRACTUS_MODELS_DIR": str(tmp_path / "no-models")}
+    params = StdioServerParameters(command=sys.executable, args=["-m", "tractus.mcp_server"], env=env, cwd=str(tmp_path))
+    errors = []
+
+    async def go():
+        async with Client(params, message_handler=lambda m: errors.append(m) if isinstance(m, Exception) else None) as c:
+            return await c.call_tool("search_meetings", {"query": "Redis"})
+
+    r = anyio.run(go)
+    assert not r.is_error and r.structured_content["hits"] and not errors

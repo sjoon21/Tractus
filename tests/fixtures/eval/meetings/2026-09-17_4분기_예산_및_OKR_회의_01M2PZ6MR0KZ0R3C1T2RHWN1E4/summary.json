@@ -1,0 +1,98 @@
+{
+ "schema_version": 1,
+ "meeting_id": "01M2PZ6MR0KZ0R3C1T2RHWN1E4",
+ "provider": "synthetic",
+ "model": "handwritten",
+ "generated_at": "2026-09-17T15:00:00+09:00",
+ "title": "4분기 예산과 OKR",
+ "summary": "3분기 집행 실적을 검토하고 4분기 예산과 OKR을 정했다. 3분기 인프라는 계획 5억 1천 대비 4억 6천을 썼다. 새로 생긴 LLM API 비용은 월 2,000만 원 상한을 두고 초과 시 작은 모델로 자동 전환한다. 마케팅 예산 20% 감축에 따라 11월 개발자 컨퍼런스 부스를 취소하고 웨비나로 대체한다. GPU 서버 구매는 올해 하지 않으며, OKR은 검색 p95 latency 300 밀리초 유지, crash-free 99.5%, 신규 고객사 3곳 온보딩이다.",
+ "topics": [
+  {
+   "title": "3분기 집행 실적",
+   "segment_ids": [
+    "s0001",
+    "s0002"
+   ]
+  },
+  {
+   "title": "LLM API 비용",
+   "segment_ids": [
+    "s0003",
+    "s0004",
+    "s0005"
+   ]
+  },
+  {
+   "title": "마케팅 예산 감축",
+   "segment_ids": [
+    "s0006",
+    "s0007"
+   ]
+  },
+  {
+   "title": "GPU 서버 구매 재검토",
+   "segment_ids": [
+    "s0008",
+    "s0009"
+   ]
+  },
+  {
+   "title": "4분기 OKR",
+   "segment_ids": [
+    "s0010",
+    "s0013"
+   ]
+  },
+  {
+   "title": "채용 계획",
+   "segment_ids": [
+    "s0012"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "text": "4분기 LLM API 예산을 월 2,000만 원 상한으로 두고 초과 시 작은 모델로 자동 전환한다",
+   "segment_ids": [
+    "s0005"
+   ]
+  },
+  {
+   "text": "11월 개발자 컨퍼런스 부스를 취소하고 온라인 웨비나로 대체한다",
+   "segment_ids": [
+    "s0006",
+    "s0007"
+   ]
+  },
+  {
+   "text": "GPU 서버 구매는 올해 하지 않고 내년 1분기에 재검토한다",
+   "segment_ids": [
+    "s0009"
+   ]
+  },
+  {
+   "text": "ML 엔지니어 채용은 4분기에도 보류하고 남은 backend 한 명만 채용한다",
+   "segment_ids": [
+    "s0012"
+   ]
+  }
+ ],
+ "action_items": [
+  {
+   "task": "4분기 예산안 최종본 확정",
+   "owner": "강민호",
+   "due": "9월 30일",
+   "segment_ids": [
+    "s0011"
+   ]
+  },
+  {
+   "task": "OKR 문서 Confluence 게시",
+   "owner": null,
+   "due": "내일",
+   "segment_ids": [
+    "s0013"
+   ]
+  }
+ ]
+}
