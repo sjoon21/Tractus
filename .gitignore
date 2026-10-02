@@ -42,3 +42,9 @@ data/
 # Editor
 .idea/
 .vscode/
+
+# Phase 0 벤치마크
+bench/third_party/
+bench/results/raw/
+bench/cache/
+bench/results/*.log
