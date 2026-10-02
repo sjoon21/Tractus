@@ -1,0 +1,26 @@
+[project]
+name = "tractus"
+version = "0.1.0"
+description = "Local-first 회의 전사·회의록 도구"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = [
+    "mlx-audio>=0.5.7",
+    "typer>=0.12",
+]
+
+[project.scripts]
+tractus = "tractus.cli:app"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: 실제 모델을 돌리는 테스트 (`pytest -m slow`)"]
+addopts = "-m 'not slow'"

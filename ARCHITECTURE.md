@@ -9,6 +9,7 @@
 
 | 날짜 | 버전 | 변경 |
 | --- | --- | --- |
+| 2026-10-02 | v3.5 | **Phase 1 완료.** `tractus transcribe` CLI (`src/tractus/`). ASR은 mlx-audio 프로세스 내 호출로 변경(D1, `hotwords` 때문), VAD는 MLX 포팅 Silero로 torch 제거, 라우드니스 정규화 제외, 반복 루프 방지 규칙 확정, 스키마에 `title`·`audio.source`·`audio.sha256`·`asr.hotwords` 추가 |
 | 2026-10-02 | v3.4 | **Phase 0 완료.** 기본 트랙 Qwen3-ASR-1.7B, 저사양 트랙 0.6B 확정. Phase 1 기본값: 언어 자동 감지, `hotwords` 용어집, 30초 청크, 반복 루프 방지. Nemotron은 코드스위칭 성능 때문에 저사양 후보에서 제외. 벤치마크 코드 `bench/` 추가 |
 | 2026-10-01 | v3.3 | Phase 0 실행 계획 구체화: 개발 기기 1대(M3·16GB)로 한정, 모델·데이터셋을 저장소 안 `models/`·`data/`에 저장, 런타임은 mlx-audio로 단일화(llama.cpp는 Windows 단계로 연기), 데이터셋 확정(FLEURS·HiKE·AI Hub 회의·AMI), 대조군 비교 규칙과 판정 기준 추가 |
 | 2026-10-01 | v3.2 | **프로젝트명 `Audius` → `Tractus`.** 사유: `Audius`는 2018년부터 운영 중인 탈중앙화 음악 스트리밍 서비스(audius.co, GitHub `AudiusProject`)와 이름이 겹침. 폴더 `~/workspace/Audius` → `~/workspace/Tractus`, 데이터 디렉터리 `~/Tractus/`, 설정 `~/.config/tractus/`, 인덱스 `.tractus/`, CLI `tractus` |
@@ -22,7 +23,7 @@
 
 | # | 결정 | 근거 |
 | --- | --- | --- |
-| D1 | 모든 모델 접근은 **OpenAI 호환 API 3종**으로 통일: `chat/completions`, `embeddings`, `audio/transcriptions` | 로컬·상용 교체가 설정 변경만으로 가능. 앱 코드는 `openai` SDK 하나만 의존 |
+| D1 | LLM·임베딩 접근은 **OpenAI 호환 API**(`chat/completions`, `embeddings`)로 통일. **ASR은 mlx-audio를 프로세스 안에서 호출**한다(2026-10-02 변경) | 로컬·상용 교체가 설정 변경만으로 가능. ASR은 `mlx_audio.server`의 `/v1/audio/transcriptions`가 `hotwords`를 모델까지 전달하지 않아 용어집을 못 쓰므로 직접 호출한다. 클라우드 ASR이 필요해지면 같은 `Transcriber` 인터페이스 뒤에 HTTP 구현을 추가한다 |
 | D2 | **ASR은 로컬 필수 실행, macOS(Apple Silicon) 우선.** 투트랙: **기본 = Qwen3-ASR-1.7B MLX 8bit**, **저사양 = Qwen3-ASR-0.6B MLX 8bit**. Windows/Linux는 후순위(GGUF 경로 예약) | Apache-2.0, Fleurs-ko CER 2.57% / 3.72%, 두 트랙이 같은 모델 계열이라 파이프라인·프롬프트가 동일 (§2) |
 | D3 | **화자 분리 제외** (스키마에 `speaker: null` 슬롯만 유지) | 경량화. 추후 LLM 또는 경량 모델로 추가 |
 | D4 | LLM 공급자: **로컬 Gemma 4 31B, OpenAI(Codex 포함), Claude, Gemini, Upstage Solar** | 전부 OpenAI 호환 엔드포인트 보유 (차이점은 §3.3) |
@@ -39,8 +40,8 @@
 ```
 ┌──────────────────────────── 사용자 기기 (항상 로컬) ────────────────────────────┐
 │                                                                                │
-│  녹음/업로드 ─▶ FFmpeg(16kHz mono) ─▶ Silero VAD 청킹 ─▶ [ASR 엔드포인트]        │
-│                                                          Qwen3-ASR (로컬 고정) │
+│  녹음/업로드 ─▶ FFmpeg(16kHz mono) ─▶ Silero VAD 청킹 ─▶ Qwen3-ASR (mlx-audio)  │
+│                                                          프로세스 내 호출·로컬 │
 │                                                                │               │
 │                                                                ▼               │
 │  ~/Tractus/ (원본 데이터)  ◀──── transcript.json / transcript.md / notes.md      │
@@ -59,7 +60,7 @@
 | 구성요소 | 위치 | 상용 대체 가능? | 비고 |
 | --- | --- | --- | --- |
 | 오디오 원본 | **로컬 고정** | ✗ | 외부 전송 없음 |
-| ASR | **로컬 고정** | 인터페이스상 가능(OpenAI 호환), 기본 비활성 | 오디오는 가장 민감한 데이터. 클라우드 ASR은 옵션으로만 열어둠 |
+| ASR | **로컬 고정** | 현재 ✗ (필요 시 `Transcriber` 뒤에 HTTP 구현 추가) | 오디오는 가장 민감한 데이터. mlx-audio를 프로세스 안에서 호출한다(D1) |
 | 전사·메모·요약 저장 | **로컬 고정** | ✗ | Markdown + JSON 파일 |
 | 검색 인덱스 | **로컬 고정** | ✗ | SQLite 단일 파일 |
 | 임베딩 | 로컬 기본 | ○ (OpenAI, Gemini, Upstage) | 공급자 변경 시 전체 재색인 필요 (§4.2) |
@@ -107,13 +108,13 @@
 
 | 런타임 | 언어 | OpenAI 호환 `/v1/audio/transcriptions` | 장점 | 주의 |
 | --- | --- | --- | --- | --- |
-| **mlx-audio** (`mlx-community/Qwen3-ASR-*-8bit`) | Python | ✓ (`mlx_audio.server`) | 코어(Python)와 같은 언어, ForcedAligner·스트리밍 API 포함 | 1차 채택 |
+| **mlx-audio** (`mlx-community/Qwen3-ASR-*-8bit`) | Python | ✓ (`mlx_audio.server`, 단 `hotwords` 미전달) | 코어(Python)와 같은 언어, ForcedAligner·스트리밍 API 포함 | **채택.** 서버가 아니라 라이브러리로 직접 호출 (D1) |
 | speech-swift (`aufklarer/Qwen3-ASR-1.7B-MLX-8bit`) | Swift | 실시간 WebSocket(`/v1/realtime`) 중심 | MLX+CoreML 하이브리드, Silero VAD·화자분리(pyannote/Sortformer)·Nemotron까지 한 패키지, `brew install speech` | macOS 15+ 필요. **네이티브 Mac 앱(Phase 4) 단계의 유력 후보** |
 | llama.cpp (`unslothai/Qwen3-ASR-1.7B-GGUF:Q8_0`) | C++ | ✓ (`llama-server`) | 크로스플랫폼 → **Windows 지원 시 그대로 재사용** | **b9173 이상 필수**(이전 빌드는 반복 출력 버그), `asr_text` 출력 형식 이슈(#26749)를 어댑터에서 처리 |
 
 > 주의: 같은 "MLX 8bit"라도 **런타임마다 가중치 리포가 다르다.** aufklarer 변환본은 speech-swift 전용이고, mlx-audio는 `mlx-community` 변환본을 쓴다.
 >
-> 세 런타임 모두 OpenAI 호환 엔드포인트를 갖고 있어서 앱 코드는 `ASR_BASE_URL`만 바꾸면 된다. Phase 0은 mlx-audio로만 측정한다(§8). 다른 런타임은 Windows 지원이나 네이티브 앱 단계에서 속도·메모리만 다시 잰다.
+> 세 런타임 모두 OpenAI 호환 엔드포인트를 갖고 있지만, Tractus는 용어집(`hotwords`)을 쓰려고 mlx-audio를 라이브러리로 직접 호출한다(D1). 다른 런타임은 Windows 지원이나 네이티브 앱 단계에서 `Transcriber` 구현을 추가하고 속도·메모리를 다시 잰다.
 
 **트랙 정의 (2026-10-02 Phase 0 실측으로 확정, §8 "Phase 0 결과"):**
 
@@ -130,18 +131,21 @@
 
 ```
 입력(m4a/mp3/wav/webm)
-  → FFmpeg: 16kHz mono PCM, 라우드니스 정규화
-  → Silero VAD: 무음 기준 분할, 청크 ≤ 30초 (경계는 무음 지점)
-  → 청크별 POST /v1/audio/transcriptions   (language: 자동 | ko | en, prompt: 용어집)
+  → FFmpeg: 16kHz mono PCM (+ 보관용 audio.opus 32kbps)
+  → Silero VAD (MLX 포팅): 무음 기준 분할, 청크 ≤ 30초 (경계는 무음 지점)
+  → 청크별 Qwen3-ASR generate (language: 자동, hotwords: 용어집, max_tokens: 청크 길이 비례)
   → 세그먼트 = 청크 텍스트 + 청크 시작/끝 시각
-  → transcript.json + transcript.md 저장 (청크 단위로 저장 → 중단 후 이어하기)
+  → 청크마다 .chunks.jsonl에 기록 (중단 후 같은 명령으로 이어하기)
+  → 끝나면 transcript.json + transcript.md 저장
 ```
 
 - **타임스탬프:** 화자 분리가 없으므로 단어 단위 타임스탬프는 1차 범위에서 제외한다. VAD 청크 경계가 곧 세그먼트 타임스탬프이며, "문장 클릭 → 해당 위치 재생" UX에는 이것으로 충분하다. 단어 단위가 필요해지면 **Qwen3-ForcedAligner-0.6B**(Apache-2.0, 한국어 포함 11개 언어, 5분 단위)를 후처리로 추가한다.
 - **용어집 주입:** 참석자 이름·제품명·약어를 프롬프트로 전달해 ASR 단계에서 고유명사 오류를 줄인다. 모델별 지원 방식이 달라 어댑터에서 처리한다. Qwen3-ASR은 `hotwords`로 넣는다(Phase 0: 용어 재현율 72% → 84%).
 - **언어:** 청크별 자동 감지가 기본이다. `ko`로 고정하면 영어 위주 발화를 번역하거나 반복 루프에 빠진다(Phase 0). 고정은 사용자 설정으로만 연다.
 - **청크 크기:** 최대 30초. Phase 0에서 15·30·60초의 CER 차이는 0.3%p 안이었다.
-- **반복 루프 방지:** 청크 길이에 비례한 `max_tokens` 상한을 두고, 반복을 감지하면 언어 자동 감지로 한 번 재시도한다.
+- **라우드니스 정규화는 하지 않는다.** Phase 0 측정이 정규화 없이 이뤄졌고, 효과를 측정하지 않은 처리를 넣지 않는다.
+- **VAD:** `mlx-community/silero-vad-v6`(MLX 포팅, 1.3MB). Phase 0의 torch 버전과 발화 구간이 100% 같아 torch 의존성 없이 쓴다.
+- **반복 루프 방지:** `max_tokens = 16 × 청크 초 + 32`(정상 발화 p99 6.4토큰/초의 약 2.5배). 4글자 이상이 연속 3회 반복되거나 상한에 닿으면 루프로 보고, 언어 고정이면 자동 감지로 한 번 재시도, 그래도 반복이면 반복 구간을 한 번만 남긴다. Phase 0 출력 기준 오탐은 HiKE 1/1121, AI Hub 5시간 0건.
 
 ### 2.4 화자 분리 — 추후 경로
 
@@ -305,8 +309,9 @@ Claude Code, Codex CLI, Gemini CLI가 Tractus를 도구로 쓰도록 **로컬 st
   "schema_version": 1,
   "meeting_id": "01J9X...",
   "created_at": "2026-10-01T14:00:00+09:00",
-  "audio": { "file": "audio.opus", "duration_sec": 3612.4 },
-  "asr": { "model": "mlx-community/Qwen3-ASR-1.7B-8bit", "track": "standard", "runtime": "mlx-audio", "language": "auto" },
+  "title": "주간회의",
+  "audio": { "file": "audio.opus", "duration_sec": 3612.4, "source": "주간회의.m4a", "sha256": "…" },  // sha256: 같은 파일 재전사 방지·이어하기 식별
+  "asr": { "model": "mlx-community/Qwen3-ASR-1.7B-8bit", "track": "standard", "runtime": "mlx-audio", "language": "auto", "hotwords": ["WTO"] },
   "segments": [
     {
       "id": "s0001",
@@ -331,14 +336,14 @@ Claude Code, Codex CLI, Gemini CLI가 Tractus를 도구로 쓰도록 **로컬 st
 | 코어 / CLI / 로컬 API | Python 3.12, FastAPI, Typer | MIT | |
 | LLM·임베딩·ASR 클라이언트 | `openai` SDK | Apache-2.0 | 유일한 모델 클라이언트 |
 | 검증 | Pydantic v2 | MIT | |
-| ASR 런타임 (macOS) | mlx-audio (`mlx_audio.server`) | MIT | 별도 프로세스로 실행, OpenAI 호환 엔드포인트로만 통신. Windows 대비용은 llama.cpp `llama-server` |
-| VAD | Silero VAD | MIT | |
+| ASR 런타임 (macOS) | mlx-audio (라이브러리로 직접 호출) | MIT | `hotwords` 때문에 서버 대신 프로세스 안에서 호출 (D1). Windows 대비용은 llama.cpp `llama-server` |
+| VAD | Silero VAD v6 (mlx-audio MLX 포팅) | MIT | torch 불필요 |
 | 오디오 변환 | FFmpeg (**외부 바이너리로 호출**) | LGPL/GPL | 번들하지 않음 → Apache-2.0 배포물과 분리 |
 | 저장 | SQLite + sqlite-vec | Public Domain / MIT·Apache | |
 | MCP | 공식 MCP Python SDK | MIT | |
 | UI (Phase 4) | Next.js + wavesurfer.js + TipTap, 또는 Tauri 데스크톱 셸 | MIT | Phase 3 이후 결정 |
 
-모델 가중치는 저장소에 포함하지 않고 첫 실행 시 사용자가 다운로드한다. 기본 모델 라이선스는 `MODELS.md`에 정리한다: Qwen3-ASR · Qwen3-ForcedAligner · Qwen3-Embedding · Gemma 4는 Apache-2.0, Whisper는 MIT.
+모델 가중치는 저장소에 포함하지 않고 사용자가 `hf download`로 받는다. 다운로드 링크와 명령은 `README.md`에 있다. 라이선스: Qwen3-ASR · Qwen3-ForcedAligner · Qwen3-Embedding · Gemma 4는 Apache-2.0, Silero VAD는 MIT.
 
 ---
 
@@ -347,7 +352,7 @@ Claude Code, Codex CLI, Gemini CLI가 Tractus를 도구로 쓰도록 **로컬 st
 | Phase | 범위 | 완료 기준 |
 | --- | --- | --- |
 | **0. ASR 선정 (Mac)** ✅ 2026-10-02 | 개발 기기 1대(M3·16GB)에서 4개 모델(Qwen3-ASR 1.7B·0.6B, 대조군 Whisper-turbo, 참고 Nemotron 3.5)을 mlx-audio로 측정. 지표: CER(ko), WER(en), 코드스위칭 MER·PIER, RTF, 최대 메모리, 1시간 파일 완주 여부. 상세는 아래 "Phase 0 실행 계획" | 기본·저사양 트랙의 모델 확정 |
-| **1. 전사 CLI** | `tractus transcribe <file>` → §4.1 레이아웃 생성. VAD 청킹, 이어하기, 용어집 | 1시간 한국어 회의를 두 트랙 모두에서 완주 |
+| **1. 전사 CLI** ✅ 2026-10-02 | `tractus transcribe <file>` → §4.1 레이아웃 생성. VAD 청킹, 이어하기, 용어집 | 1시간 한국어 회의를 두 트랙 모두에서 완주 → AI Hub 66분 회의: lite 4.1분(CER 9.22%), standard 10.1분(CER 7.23%). Ctrl+C·`kill -9` 후 재실행으로 173/173 청크 복구 |
 | **2. LLM 연동** | 공급자 설정, 요약·Action Item, 검증·재시도, 5개 공급자 스모크 테스트 | 같은 전사로 5개 공급자 모두 스키마 통과 |
 | **3. 검색 + MCP** | 임베딩, FTS5 bigram, RRF, MCP 서버, 3개 CLI 등록 가이드 | Claude Code·Codex·Gemini CLI에서 과거 회의 질의 성공 |
 | **4. UI + 녹음** | 플레이어-텍스트 동기화, 메모 편집, 브라우저/데스크톱 녹음 | |

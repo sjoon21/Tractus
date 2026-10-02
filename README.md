@@ -5,7 +5,7 @@
 
 - 라이선스: [Apache-2.0](LICENSE)
 - 설계 문서: [ARCHITECTURE.md](ARCHITECTURE.md)
-- 진행 상황: **Phase 0(ASR 모델 선정) 완료** → 다음은 Phase 1(전사 CLI)
+- 진행 상황: Phase 0(ASR 모델 선정) 완료, **Phase 1(전사 CLI) 완료** → 다음은 Phase 2(LLM 요약)
 
 ## ASR 모델 (확정, 2026-10-02)
 
@@ -38,29 +38,71 @@ Phase 0 실측으로 두 트랙을 정했습니다. 두 모델은 같은 계열�
 - [uv](https://docs.astral.sh/uv/), Python 3.12 이상
 - FFmpeg (`brew install ffmpeg`)
 
-### 모델 받기
-
-저장소 루트에서 실행합니다. `hf`는 `huggingface_hub` CLI입니다(`uv tool install "huggingface_hub[cli]"` 또는 `pip install -U "huggingface_hub[cli]"`).
+### 설치
 
 ```bash
-# 기본 트랙 (2.3 GB)
-hf download mlx-community/Qwen3-ASR-1.7B-8bit --local-dir models/qwen3-asr-1.7b-8bit
-
-# 저사양 트랙 (1.0 GB)
-hf download mlx-community/Qwen3-ASR-0.6B-8bit --local-dir models/qwen3-asr-0.6b-8bit
+git clone https://github.com/sjoon21/Tractus.git && cd Tractus
+uv sync            # .venv에 tractus CLI 설치
 ```
 
-받은 모델이 동작하는지 확인합니다.
+### 모델 받기
+
+ASR 모델 하나(트랙에 맞게)와 VAD 모델을 받습니다. `hf`는 `huggingface_hub` CLI입니다(`uv tool install "huggingface_hub[cli]"`).
 
 ```bash
-cd bench && uv sync
-uv run python -c "from mlx_audio.stt.utils import load; m = load('../models/qwen3-asr-0.6b-8bit'); print(m.generate('<녹음 파일>.wav').text)"
+export TRACTUS_MODELS_DIR=$PWD/models   # 모델 위치. 생략하면 ~/Tractus/models
+
+# 기본 트랙 (2.3 GB)
+hf download mlx-community/Qwen3-ASR-1.7B-8bit --local-dir $TRACTUS_MODELS_DIR/qwen3-asr-1.7b-8bit
+# 저사양 트랙 (1.0 GB)
+hf download mlx-community/Qwen3-ASR-0.6B-8bit --local-dir $TRACTUS_MODELS_DIR/qwen3-asr-0.6b-8bit
+# VAD (1.3 MB, 두 트랙 공용)
+hf download mlx-community/silero-vad-v6 --local-dir $TRACTUS_MODELS_DIR/silero-vad-v6
+```
+
+VAD는 [mlx-community/silero-vad-v6](https://huggingface.co/mlx-community/silero-vad-v6)(Silero VAD v6의 MLX 포팅, MIT)입니다.
+
+## 사용법
+
+```bash
+uv run tractus transcribe 주간회의.m4a
+uv run tractus transcribe 주간회의.m4a --title "3분기 예산 회의" -t 김철수 -t "Project Atlas"
+uv run tractus transcribe 주간회의.m4a --track lite      # 0.6B 모델
+```
+
+전사가 끝나면 `~/Tractus/meetings/` 아래에 회의 폴더가 생깁니다. 위치는 `TRACTUS_HOME` 환경변수로 바꿀 수 있습니다.
+
+```text
+~/Tractus/meetings/2026-10-02_3분기_예산_회의_01K6.../
+├── audio.opus        원본을 mono Opus 32kbps로 보관 (1시간 약 14MB)
+├── transcript.json   기계용 원본 (스키마: ARCHITECTURE.md §6)
+└── transcript.md     사람·에이전트용, [HH:MM:SS] 타임스탬프
+```
+
+| 옵션 | 설명 |
+| --- | --- |
+| `--track standard\|lite` | 생략하면 메모리 16GB 이상이면 `standard`(1.7B), 아니면 `lite`(0.6B) |
+| `--language auto\|ko\|en` | 기본 `auto`. `ko`로 고정하면 영어 위주 발화를 번역할 수 있어 권장하지 않습니다 |
+| `-t`, `--term` | 이 회의의 용어(참석자 이름, 제품명). 여러 번 지정할 수 있습니다 |
+| `--title` | 회의 제목. 생략하면 파일 이름 |
+
+- **용어집:** `~/Tractus/glossary.md`에 `- 용어` 형식으로 적어 두면 모든 회의에 적용됩니다. `-t`로 준 용어와 합쳐서 전달됩니다.
+- **이어하기:** 중간에 Ctrl+C로 멈추거나 종료돼도 같은 명령을 다시 실행하면 끝난 청크 다음부터 이어서 진행합니다.
+- **중복 방지:** 이미 전사한 파일(같은 SHA-256)은 다시 전사하지 않습니다. 다시 하려면 회의 폴더를 지우세요.
+
+### 개발
+
+```bash
+uv run pytest            # 단위·CLI 테스트 (모델 불필요)
+uv run pytest -m slow    # 실제 모델로 짧은 음성 전사 (models/ 필요)
 ```
 
 ## 저장소 구조
 
 ```text
 ARCHITECTURE.md   설계 백본 (결정 사항, 로드맵, Phase 0 결과)
+src/tractus/      CLI와 전사 파이프라인 (audio · vad · asr · store · cli)
+tests/            pytest
 bench/            Phase 0 ASR 벤치마크 (코드, 지표 요약, 리포트)
 models/           모델 가중치 (git 제외, 직접 받음)
 data/             벤치마크 데이터셋 (git 제외)
