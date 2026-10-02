@@ -9,6 +9,7 @@
 
 | 날짜 | 버전 | 변경 |
 | --- | --- | --- |
+| 2026-10-02 | v3.6 | **Phase 2 (Upstage) 완료.** `tractus summarize` — 요약·주제·결정·할 일 추출, strict JSON + Pydantic 검증 + segment_ids 검증 + 1회 재요청. `.env`/`.env.local` 개발 환경. 구독형 CLI 조사 결과 API 키 방식만 채택(agy 사용 금지). 나머지 공급자는 키 대기, 대안은 MCP |
 | 2026-10-02 | v3.5 | **Phase 1 완료.** `tractus transcribe` CLI (`src/tractus/`). ASR은 mlx-audio 프로세스 내 호출로 변경(D1, `hotwords` 때문), VAD는 MLX 포팅 Silero로 torch 제거, 라우드니스 정규화 제외, 반복 루프 방지 규칙 확정, 스키마에 `title`·`audio.source`·`audio.sha256`·`asr.hotwords` 추가 |
 | 2026-10-02 | v3.4 | **Phase 0 완료.** 기본 트랙 Qwen3-ASR-1.7B, 저사양 트랙 0.6B 확정. Phase 1 기본값: 언어 자동 감지, `hotwords` 용어집, 30초 청크, 반복 루프 방지. Nemotron은 코드스위칭 성능 때문에 저사양 후보에서 제외. 벤치마크 코드 `bench/` 추가 |
 | 2026-10-01 | v3.3 | Phase 0 실행 계획 구체화: 개발 기기 1대(M3·16GB)로 한정, 모델·데이터셋을 저장소 안 `models/`·`data/`에 저장, 런타임은 mlx-audio로 단일화(llama.cpp는 Windows 단계로 연기), 데이터셋 확정(FLEURS·HiKE·AI Hub 회의·AMI), 대조군 비교 규칙과 판정 기준 추가 |
@@ -31,7 +32,17 @@
 | D6 | 임베딩 기본값 **로컬 Qwen3-Embedding-0.6B**, 상용 API는 선택 | 메모를 로컬에 두려는 원칙과 일치. CPU로도 개인 규모 처리 가능 |
 | D7 | Claude Code · Codex CLI · Gemini CLI 연동은 **MCP 서버**로 제공 | 세 CLI 모두 MCP 지원. 에이전트가 자기 구독/키로 Tractus 데이터를 도구로 조회 |
 
-> **"Claude, Codex, Gemini에서 쓸 수 있게"의 해석:** 두 가지로 모두 대응한다. ① Tractus가 이 3사 모델을 **LLM 공급자로 호출**(§3), ② 3사 에이전트 CLI가 Tractus를 **도구로 호출**(§5, MCP). 사용자의 구독 계정(OAuth)을 앱이 대신 사용하는 방식은 각 사 약관상 제한되는 추세라 채택하지 않는다.
+> **"Claude, Codex, Gemini에서 쓸 수 있게"의 해석:** 두 가지로 모두 대응한다. ① Tractus가 이 3사 모델을 **LLM 공급자로 호출**(§3), ② 3사 에이전트 CLI가 Tractus를 **도구로 호출**(§5, MCP). 사용자의 구독 계정(OAuth)을 앱이 대신 사용하는 방식은 채택하지 않는다.
+>
+> **구독형 CLI 조사 (2026-10-02):**
+>
+> | CLI | 비대화형 실행 | 약관 | 판단 |
+> | --- | --- | --- | --- |
+> | Claude Code `claude -p` | ✓ (`--json-schema`) | 본인 스크립트는 구독 사용량에서 차감되는 공식 용도. 단 서드파티 제품이 claude.ai 로그인을 제공하는 것은 사전 승인 없이 금지. `--bare`는 API 키만 받음 | 제품 기능으로 넣지 않음 |
+> | Codex `codex exec` | ✓ (`--output-schema`) | OpenAI 문서는 프로그래밍 방식 워크플로에 API 키 사용을 권장 | 제품 기능으로 넣지 않음 |
+> | Antigravity `agy -p` | ✓ | "서드파티 소프트웨어로 Antigravity에 접근하면 약관 위반" — 계정 정지 사례 있음. Google은 AI Studio API 키를 대안으로 안내 | **사용 금지** |
+>
+> 따라서 LLM 공급자는 API 키 방식만 둔다. 키가 없는 공급자는 ②(MCP)로 각 CLI에서 Tractus를 호출해 품질을 본다.
 
 ---
 
@@ -165,6 +176,8 @@
 
 ### 3.1 공급자 설정
 
+> **Phase 2 구현 (2026-10-02):** 공급자 5개(base_url, 키 환경변수, 기본 모델, `json_schema` 지원 여부)는 `src/tractus/llm.py`의 `PROVIDERS`에 내장했다. 선택과 키는 환경변수로 준다: `TRACTUS_LLM_PROVIDER`, `TRACTUS_LLM_MODEL`, `TRACTUS_LOCAL_ONLY`, `<공급자>_API_KEY`. 개발 중에는 저장소 루트의 `.env`(기본값)와 `.env.local`(키)에서 읽는다(우선순위: 셸 > `.env.local` > `.env`). 아래 `config.toml`은 사용자가 공급자를 추가·수정해야 할 때 도입한다.
+
 앱 코드는 `openai` SDK 하나만 쓰고, 공급자는 설정 파일로만 정의한다. API 키는 환경변수나 OS 키체인에서 읽고, 설정 파일에는 저장하지 않는다.
 
 ```toml
@@ -213,7 +226,7 @@ qa      = "gemma-local"
 | 항목 | OpenAI | Claude (호환 레이어) | Gemini (호환, beta) | Upstage | 로컬 (vLLM/Ollama/llama.cpp) |
 | --- | --- | --- | --- | --- | --- |
 | Chat Completions | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `response_format` JSON Schema | ✓ | **무시됨** | ✓ | 확인 필요 | ✓ (guided decoding) |
+| `response_format` JSON Schema | ✓ | **무시됨** | ✓ | ✓ **strict 필수** (2026-10-02 실측) | ✓ (guided decoding) |
 | tool `strict` | ✓ | **무시됨** | 부분 | 확인 필요 | 서버별 상이 |
 | Embeddings | ✓ | **없음** | ✓ (`gemini-embedding-001` 등) | ✓ (query/passage **모델 분리**) | 서버별 상이 |
 | 오디오 입력 | ✓ | **제거됨** | ✓ | ✗ | 모델별 상이 |
@@ -233,10 +246,12 @@ Anthropic은 OpenAI 호환 레이어를 "테스트·비교용이며 장기 운�
 | 작업 | 입력 | 출력 (Pydantic 스키마) |
 | --- | --- | --- |
 | 전사 교정 (선택) | 세그먼트 배열 `[{id, text}]` + 용어집 | `[{id, corrected_text}]` — 원문은 보존하고 diff로 표시 |
-| 요약 | 전사 전체 (1시간 ≈ 2–3만 토큰, 한 번에 입력) | `{title, summary, topics[{title, start, end}], decisions[], action_items[{task, owner?, due?, segment_ids[]}]}` |
+| 요약 | 전사 전체 (1시간 ≈ 2–3만 토큰, 한 번에 입력) | `{title, summary, topics[{title, segment_ids[]}], decisions[{text, segment_ids[]}], action_items[{task, owner\|null, due\|null, segment_ids[]}]}`. 주제 시간 범위는 segment_ids에서 계산한다 |
 | Q&A | 질문 + 로컬 검색 결과(§4) | `{answer, citations[{meeting_id, segment_id}]}` |
 
-- 모든 추출 항목에 **근거 `segment_ids`를 필수**로 둔다. UI에서 클릭하면 해당 오디오 위치로 이동하고, 환각 여부를 검증하는 데도 쓴다.
+- 모든 추출 항목에 **근거 `segment_ids`를 필수**로 둔다. UI에서 클릭하면 해당 오디오 위치로 이동하고, 환각 여부를 검증하는 데도 쓴다. 전사에 없는 ID나 빈 근거는 검증 실패로 보고 1회 재요청한다.
+- 화자 분리가 없으므로 "제가 하겠습니다"처럼 말한 사람만 가리키는 할 일은 owner를 null로 둔다(모델이 "화자" 같은 값을 지어내는 것을 막는 규칙).
+- AI Hub처럼 외부 반출이 제한된 데이터의 전사는 원격 공급자로 보내지 않는다. 스모크 테스트는 가상 회의 전사(`tests/fixtures/sample_meeting.json`)만 쓴다.
 - Gemma 4 31B 컨텍스트 안에 1시간 회의가 충분히 들어가므로 map-reduce 요약은 기본 경로에서 제외한다(입력 길이가 컨텍스트를 넘을 때만 사용).
 
 ---
@@ -253,6 +268,7 @@ Anthropic은 OpenAI 호환 레이어를 "테스트·비교용이며 장기 운�
 │       ├── transcript.json       # 기계용 원본 (§6 스키마)
 │       ├── transcript.md         # 사람/에이전트용 (타임스탬프 포함)
 │       ├── summary.md            # LLM 산출물 (frontmatter에 provider/model 기록)
+│       ├── summary.json          # 같은 내용의 기계용 원본 (MCP list_action_items 등에서 사용)
 │       └── notes.md              # 사용자 메모
 ├── glossary.md                   # 용어집 (ASR 프롬프트 + LLM 교정에 공용)
 └── .tractus/
@@ -353,7 +369,7 @@ Claude Code, Codex CLI, Gemini CLI가 Tractus를 도구로 쓰도록 **로컬 st
 | --- | --- | --- |
 | **0. ASR 선정 (Mac)** ✅ 2026-10-02 | 개발 기기 1대(M3·16GB)에서 4개 모델(Qwen3-ASR 1.7B·0.6B, 대조군 Whisper-turbo, 참고 Nemotron 3.5)을 mlx-audio로 측정. 지표: CER(ko), WER(en), 코드스위칭 MER·PIER, RTF, 최대 메모리, 1시간 파일 완주 여부. 상세는 아래 "Phase 0 실행 계획" | 기본·저사양 트랙의 모델 확정 |
 | **1. 전사 CLI** ✅ 2026-10-02 | `tractus transcribe <file>` → §4.1 레이아웃 생성. VAD 청킹, 이어하기, 용어집 | 1시간 한국어 회의를 두 트랙 모두에서 완주 → AI Hub 66분 회의: lite 4.1분(CER 9.22%), standard 10.1분(CER 7.23%). Ctrl+C·`kill -9` 후 재실행으로 173/173 청크 복구 |
-| **2. LLM 연동** | 공급자 설정, 요약·Action Item, 검증·재시도, 5개 공급자 스모크 테스트 | 같은 전사로 5개 공급자 모두 스키마 통과 |
+| **2. LLM 연동** 🔶 2026-10-02 | 공급자 설정, 요약·Action Item, 검증·재시도, 5개 공급자 스모크 테스트 | 같은 전사로 5개 공급자 모두 스키마 통과 → **Upstage(solar-pro4) 통과**(재요청 없이 3/3, 1회 7초). OpenAI·Claude·Gemini는 API 키를 받는 대로 `pytest -m llm`으로 확인. 키가 끝내 없으면 Phase 3 MCP로 각 CLI에서 품질을 본다 |
 | **3. 검색 + MCP** | 임베딩, FTS5 bigram, RRF, MCP 서버, 3개 CLI 등록 가이드 | Claude Code·Codex·Gemini CLI에서 과거 회의 질의 성공 |
 | **4. UI + 녹음** | 플레이어-텍스트 동기화, 메모 편집, 브라우저/데스크톱 녹음 | |
 | 이후 | 화자 분리(§2.4 C), 단어 타임스탬프, 실시간 전사(Nemotron 3.5 재평가), **Windows 지원(llama.cpp GGUF 경로)** | 필요가 확인될 때 |

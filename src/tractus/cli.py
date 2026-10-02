@@ -1,5 +1,6 @@
 """tractus CLI."""
 
+import json
 import os
 import time
 import warnings
@@ -12,9 +13,13 @@ warnings.filterwarnings("ignore")
 
 import typer  # noqa: E402
 from rich.console import Console  # noqa: E402
+from rich.markup import escape  # noqa: E402
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn  # noqa: E402
 
 from tractus import audio  # noqa: E402
+from tractus import summarize as summ  # noqa: E402
+from tractus.env import load_env  # noqa: E402
+from tractus.llm import LLMError, make_client, resolve_provider  # noqa: E402
 from tractus.asr import SR, Transcriber  # noqa: E402
 from tractus.store import Job, find_job, find_transcribed, load_glossary, meeting_dir_name, new_ulid, write_transcript  # noqa: E402
 from tractus.vad import find_chunks  # noqa: E402
@@ -66,7 +71,8 @@ def recommended_track() -> Track:
 
 @app.callback()
 def main() -> None:
-    """서브커맨드를 유지하려고 둔 콜백 (`tractus transcribe ...`)."""
+    """개발 중에는 현재 폴더의 .env / .env.local을 읽는다 (셸 환경변수가 우선)."""
+    load_env(Path.cwd())
 
 
 @app.command()
@@ -81,7 +87,7 @@ def transcribe(
     try:
         _transcribe(file, title, track, language, term)
     except audio.FFmpegError as e:
-        console.print(f"[red]오디오 처리 실패:[/red] {e}")
+        console.print(f"[red]오디오 처리 실패:[/red] {escape(str(e))}")
         raise typer.Exit(1)
 
 
@@ -159,6 +165,50 @@ def _run(job: Job, pcm) -> None:
     console.print(
         f"완료: 세그먼트 {len(t['segments'])}개, 반복 출력 보정 {repaired}건, {elapsed / 60:.1f}분{rtf}\n"
         f"{job.dir / 'transcript.md'}"
+    )
+
+
+def resolve_meeting(ref: str) -> Path:
+    """회의 폴더 경로 또는 meeting_id(일부)로 회의 폴더를 찾는다."""
+    path = Path(ref).expanduser()
+    if (path / "transcript.json").is_file():
+        return path
+    hits = [d for d in (home_dir() / "meetings").glob(f"*{ref}*") if (d / "transcript.json").is_file()]
+    if len(hits) != 1:
+        found = "없습니다" if not hits else f"{len(hits)}개입니다: " + ", ".join(d.name for d in hits[:5])
+        raise typer.BadParameter(f"{ref!r}에 맞는 전사된 회의가 {found}", param_hint="MEETING")
+    return hits[0]
+
+
+@app.command()
+def summarize(
+    meeting: str = typer.Argument(..., help="회의 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
+    provider: str = typer.Option(None, "--provider", help="upstage | openai | claude | gemini | gemma-local. 생략하면 TRACTUS_LLM_PROVIDER"),
+    model: str = typer.Option(None, "--model", help="모델 ID. 생략하면 TRACTUS_LLM_MODEL 또는 공급자 기본값"),
+) -> None:
+    """전사본으로 요약·결정 사항·할 일을 만들어 summary.md와 summary.json에 저장한다. 전사 텍스트만 공급자에 전송한다."""
+    from openai import APIError
+
+    d = resolve_meeting(meeting)
+    transcript = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+    if not transcript["segments"]:
+        console.print("[red]전사된 세그먼트가 없어 요약할 수 없습니다.[/red]")
+        raise typer.Exit(1)
+    try:
+        p, m = resolve_provider(provider, model)
+        t0 = time.perf_counter()
+        with console.status(f"{p.name}/{m}로 요약 중… (세그먼트 {len(transcript['segments'])}개)"):
+            result = summ.summarize(make_client(p), p, m, transcript)
+    except LLMError as e:
+        console.print(f"[red]{escape(str(e))}[/red]")  # 검증 오류의 [type=…] 같은 대괄호를 rich 마크업으로 해석하지 않게 한다
+        raise typer.Exit(1)
+    except APIError as e:
+        console.print(f"[red]{provider or os.environ.get('TRACTUS_LLM_PROVIDER')} API 오류:[/red] {escape(str(e))}")
+        raise typer.Exit(1)
+    summ.write_summary(d, result, transcript, p.name, m)
+    console.print(
+        f"완료: 주제 {len(result.topics)}개, 결정 {len(result.decisions)}개, 할 일 {len(result.action_items)}개 "
+        f"({time.perf_counter() - t0:.0f}초)\n{d / 'summary.md'}"
     )
 
 

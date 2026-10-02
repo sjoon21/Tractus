@@ -5,7 +5,7 @@
 
 - 라이선스: [Apache-2.0](LICENSE)
 - 설계 문서: [ARCHITECTURE.md](ARCHITECTURE.md)
-- 진행 상황: Phase 0(ASR 모델 선정) 완료, **Phase 1(전사 CLI) 완료** → 다음은 Phase 2(LLM 요약)
+- 진행 상황: Phase 0(ASR 모델 선정)·Phase 1(전사 CLI) 완료, **Phase 2(LLM 요약) Upstage 연동 완료** — 다른 공급자는 API 키 대기
 
 ## ASR 모델 (확정, 2026-10-02)
 
@@ -43,6 +43,14 @@ Phase 0 실측으로 두 트랙을 정했습니다. 두 모델은 같은 계열�
 ```bash
 git clone https://github.com/sjoon21/Tractus.git && cd Tractus
 uv sync            # .venv에 tractus CLI 설치
+cp .env.example .env   # 개발 기본값 (경로, LLM 공급자)
+```
+
+API 키는 `.env.local`에 넣습니다(git 제외). 우선순위는 셸 환경변수 > `.env.local` > `.env`입니다.
+
+```bash
+# .env.local
+UPSTAGE_API_KEY=up_...
 ```
 
 ### 모델 받기
@@ -90,18 +98,38 @@ uv run tractus transcribe 주간회의.m4a --track lite      # 0.6B 모델
 - **이어하기:** 중간에 Ctrl+C로 멈추거나 종료돼도 같은 명령을 다시 실행하면 끝난 청크 다음부터 이어서 진행합니다.
 - **중복 방지:** 이미 전사한 파일(같은 SHA-256)은 다시 전사하지 않습니다. 다시 하려면 회의 폴더를 지우세요.
 
+### 요약·결정 사항·할 일
+
+```bash
+uv run tractus summarize 01K6X3          # meeting_id 일부 또는 회의 폴더 경로
+uv run tractus summarize 01K6X3 --provider upstage --model solar-pro4
+```
+
+회의 폴더에 `summary.md`(사람용)와 `summary.json`(기계용)이 생깁니다. 모든 주제·결정·할 일에는 근거 세그먼트와 타임스탬프가 붙습니다. **LLM 공급자에는 전사 텍스트만 전송되고 오디오는 전송되지 않습니다.**
+
+| 공급자 (`--provider`) | 키 | 기본 모델 | 상태 |
+| --- | --- | --- | --- |
+| `upstage` | `UPSTAGE_API_KEY` | `solar-pro4` | ✅ 검증됨 |
+| `openai` | `OPENAI_API_KEY` | 없음 (`--model` 필요) | 키 대기 |
+| `claude` | `ANTHROPIC_API_KEY` | `claude-sonnet-5-5` | 키 대기 |
+| `gemini` | `GEMINI_API_KEY` | 없음 (`--model` 필요) | 키 대기 |
+| `gemma-local` | 없음 (`localhost:11434`) | `gemma4:31b` | 로컬 서버 필요 |
+
+`TRACTUS_LOCAL_ONLY=1`이면 원격 공급자를 막습니다. 구독형 CLI(`claude -p`, `codex exec`, `agy`)는 약관 문제로 공급자로 쓰지 않습니다(ARCHITECTURE.md §0).
+
 ### 개발
 
 ```bash
-uv run pytest            # 단위·CLI 테스트 (모델 불필요)
+uv run pytest            # 단위·CLI 테스트 (모델·API 키 불필요)
 uv run pytest -m slow    # 실제 모델로 짧은 음성 전사 (models/ 필요)
+uv run pytest -m llm     # 실제 LLM API 스모크 테스트 (키가 있는 공급자만, 가상 회의 전사 사용)
 ```
 
 ## 저장소 구조
 
 ```text
 ARCHITECTURE.md   설계 백본 (결정 사항, 로드맵, Phase 0 결과)
-src/tractus/      CLI와 전사 파이프라인 (audio · vad · asr · store · cli)
+src/tractus/      CLI, 전사 파이프라인, LLM 요약 (audio · vad · asr · store · llm · summarize · env · cli)
 tests/            pytest
 bench/            Phase 0 ASR 벤치마크 (코드, 지표 요약, 리포트)
 models/           모델 가중치 (git 제외, 직접 받음)

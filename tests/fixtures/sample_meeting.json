@@ -1,0 +1,20 @@
+{
+ "schema_version": 1,
+ "meeting_id": "01SAMPLEMEETING00000000000",
+ "title": "주간 개발 회의",
+ "created_at": "2026-10-02T10:00:00+09:00",
+ "audio": {"file": "audio.opus", "duration_sec": 420.0, "source": "sample.m4a", "sha256": "sample"},
+ "asr": {"model": "synthetic", "track": "standard", "runtime": "none", "language": "auto", "hotwords": []},
+ "segments": [
+  {"id": "s0001", "start": 0.0, "end": 24.5, "text": "네 그럼 주간 개발 회의 시작하겠습니다. 오늘 안건은 세 가지예요. 결제 API latency 문제, 다음 릴리스 일정, 그리고 온보딩 문서입니다.", "lang": "ko", "speaker": null, "corrected_text": null, "words": null},
+  {"id": "s0002", "start": 25.0, "end": 52.0, "text": "결제 API 쪽은 지난주부터 p95 latency가 800 밀리초까지 올라갔어요. 원인은 DB connection pool이 꽉 차는 것 같습니다.", "lang": "ko", "speaker": null, "corrected_text": null, "words": null},
+  {"id": "s0003", "start": 53.0, "end": 80.0, "text": "pool size를 20에서 50으로 늘리고 slow query 로그를 먼저 보는 게 좋겠어요. 그건 김민수 님이 이번 주 수요일까지 확인해 주실 수 있나요?", "lang": "ko", "speaker": null, "corrected_text": null, "words": null},
+  {"id": "s0004", "start": 81.0, "end": 95.0, "text": "네 제가 수요일까지 slow query 분석해서 공유드리겠습니다.", "lang": "ko", "speaker": null, "corrected_text": null, "words": null},
+  {"id": "s0005", "start": 96.0, "end": 130.0, "text": "다음은 릴리스 일정인데요. 원래 10월 15일이었는데 결제 이슈 때문에 일주일 미루는 게 어떨까요? QA 기간도 부족했고요.", "lang": "ko", "speaker": null, "corrected_text": null, "words": null},
+  {"id": "s0006", "start": 131.0, "end": 160.0, "text": "동의합니다. 그럼 릴리스는 10월 22일로 확정하죠. 마케팅 팀에는 제가 오늘 중으로 알리겠습니다.", "lang": "ko", "speaker": null, "corrected_text": null, "words": null},
+  {"id": "s0007", "start": 161.0, "end": 200.0, "text": "QA는 박지영 님이 regression test 범위를 다시 잡아 주시면 좋겠어요. 다음 주 월요일까지요.", "lang": "ko", "speaker": null, "corrected_text": null, "words": null},
+  {"id": "s0008", "start": 201.0, "end": 240.0, "text": "마지막으로 온보딩 문서는 지금 Notion이랑 Confluence에 흩어져 있어서 신규 입사자가 헷갈려 해요. 한 곳으로 모으면 좋겠습니다.", "lang": "ko", "speaker": null, "corrected_text": null, "words": null},
+  {"id": "s0009", "start": 241.0, "end": 280.0, "text": "어디로 모을지는 아직 의견이 갈리니까 다음 회의에서 다시 논의하죠. 각자 장단점만 정리해 오면 될 것 같아요.", "lang": "ko", "speaker": null, "corrected_text": null, "words": null},
+  {"id": "s0010", "start": 281.0, "end": 300.0, "text": "네 좋습니다. 오늘 회의는 여기까지 하겠습니다. 수고하셨습니다.", "lang": "ko", "speaker": null, "corrected_text": null, "words": null}
+ ]
+}

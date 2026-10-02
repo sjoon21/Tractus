@@ -22,6 +22,7 @@ def env(tmp_path, monkeypatch):
         d.mkdir(parents=True)
         (d / "config.json").write_text("{}")
     (home / "glossary.md").write_text("- WTO\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)  # 저장소 루트의 .env / .env.local을 읽지 않게 한다
     monkeypatch.setenv("TRACTUS_HOME", str(home))
     monkeypatch.delenv("TRACTUS_MODELS_DIR", raising=False)
     monkeypatch.setattr(cli, "find_chunks", lambda pcm, vad_dir: CHUNKS)
@@ -106,3 +107,56 @@ def test_unreadable_audio_exits_with_message(env, fake_asr, tmp_path):
     bad.write_bytes(b"not audio")
     result = run(bad)
     assert result.exit_code == 1 and "오디오 처리 실패" in result.output
+
+
+def test_summarize_writes_summary_files(env, fake_asr, monkeypatch):
+    home, wav = env
+    assert run(wav).exit_code == 0
+    (d,) = (home / "meetings").iterdir()
+    meeting_id = d.name.rsplit("_", 1)[1]
+
+    from tractus import summarize as summ
+
+    reply = {
+        "title": "주간회의", "summary": "요약", "topics": [{"title": "t", "segment_ids": ["s0001"]}],
+        "decisions": [], "action_items": [{"task": "견적", "owner": None, "due": None, "segment_ids": ["s0002"]}],
+    }
+    calls = []
+
+    def fake_summarize(client, provider, model, transcript):
+        calls.append((provider.name, model, len(transcript["segments"])))
+        return summ.MeetingSummary.model_validate(reply)
+
+    monkeypatch.setattr(cli.summ, "summarize", fake_summarize)
+    monkeypatch.setattr(cli, "make_client", lambda p: None)
+    monkeypatch.setenv("UPSTAGE_API_KEY", "k")
+    result = CliRunner().invoke(cli.app, ["summarize", meeting_id[-6:], "--provider", "upstage"])
+    assert result.exit_code == 0, result.output
+    assert calls == [("upstage", "solar-pro4", 3)]
+    data = json.loads((d / "summary.json").read_text(encoding="utf-8"))
+    assert data["provider"] == "upstage" and data["action_items"][0]["segment_ids"] == ["s0002"]
+    assert "- [ ] 견적 [00:00:03]" in (d / "summary.md").read_text(encoding="utf-8")
+
+
+def test_summarize_without_key_explains(env, fake_asr, monkeypatch):
+    home, wav = env
+    assert run(wav).exit_code == 0
+    (d,) = (home / "meetings").iterdir()
+    monkeypatch.delenv("UPSTAGE_API_KEY", raising=False)
+    result = CliRunner().invoke(cli.app, ["summarize", str(d), "--provider", "upstage"])
+    assert result.exit_code == 1 and "UPSTAGE_API_KEY" in result.output
+
+
+def test_error_text_with_brackets_is_printed_verbatim(env, fake_asr, monkeypatch):
+    home, wav = env
+    assert run(wav).exit_code == 0
+    (d,) = (home / "meetings").iterdir()
+
+    def boom(*a, **k):
+        raise cli.LLMError("검증 실패 [type=missing, input_value={}] [/x]")
+
+    monkeypatch.setattr(cli.summ, "summarize", boom)
+    monkeypatch.setattr(cli, "make_client", lambda p: None)
+    monkeypatch.setenv("UPSTAGE_API_KEY", "k")
+    result = CliRunner().invoke(cli.app, ["summarize", str(d), "--provider", "upstage"])
+    assert result.exit_code == 1 and "[type=missing" in result.output

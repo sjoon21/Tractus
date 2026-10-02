@@ -36,15 +36,27 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 | `vad.py` | VAD 발화 구간 → 30초 이하 청크 |
 | `asr.py` | `Transcriber`: 청크 전사, 토큰 상한, 반복 루프 재시도·보정 |
 | `store.py` | 회의 폴더, `.job.json`·`.chunks.jsonl`(이어하기), transcript.json/md |
-| `cli.py` | `tractus transcribe` |
+| `llm.py` | 공급자 표(`PROVIDERS`), `complete_json`: strict JSON + Pydantic 검증 + 1회 재요청 |
+| `summarize.py` | 요약 스키마, segment_ids 검증, summary.md/json |
+| `env.py` | `.env` / `.env.local` 로더 |
+| `cli.py` | `tractus transcribe`, `tractus summarize` |
 
-환경변수: `TRACTUS_HOME`(기본 `~/Tractus`), `TRACTUS_MODELS_DIR`(기본 `$TRACTUS_HOME/models`). 개발 중에는 `TRACTUS_MODELS_DIR=$PWD/models`.
+환경변수는 `.env.example`에 모두 있다. 개발 중에는 저장소 루트의 `.env`(기본값)와 `.env.local`(API 키)을 CLI가 읽는다. 우선순위는 셸 > `.env.local` > `.env`.
+
+## LLM 규칙
+
+- 공급자는 OpenAI 호환 API 키 방식만 쓴다. `claude -p`, `codex exec`, `agy`를 공급자로 붙이지 않는다(약관, ARCHITECTURE.md §0).
+- 모든 추출 항목은 근거 `segment_ids`가 필수다. 프롬프트·스키마를 바꾸면 `uv run pytest -m llm`으로 확인한다.
+- **AI Hub 데이터의 전사를 원격 LLM에 보내지 않는다.** 테스트는 `tests/fixtures/sample_meeting.json`(가상 회의)만 쓴다.
+- API 키를 코드·로그·커밋·대화에 남기지 않는다. `.env.local`에만 둔다.
 
 ## 자주 쓰는 명령
 
 ```bash
 uv run pytest                                       # 단위·CLI 테스트 (모델 불필요)
 uv run pytest -m slow                               # 실제 모델 테스트
+uv run pytest -m llm                                # 실제 LLM API 스모크 (키 있는 공급자만)
+uv run tractus summarize <meeting_id>               # 요약
 uv run tractus transcribe <파일>                    # 전사
 
 cd bench && uv sync                                 # 벤치마크 의존성
