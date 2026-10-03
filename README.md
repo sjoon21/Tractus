@@ -87,9 +87,11 @@ uv run tractus transcribe 주간회의.m4a --track lite      # 0.6B 모델
 
 ```text
 ~/Tractus/meetings/2026-10-02_3분기_예산_회의_01K6.../
-├── audio.opus        원본을 mono Opus 32kbps로 보관 (1시간 약 14MB)
+├── audio.ogg         원본을 mono Ogg Opus 32kbps로 보관 (1시간 약 14MB, Obsidian에서 재생 가능)
 ├── transcript.json   기계용 원본 (스키마: ARCHITECTURE.md §6)
-└── transcript.md     사람·에이전트용, [HH:MM:SS] 타임스탬프
+├── transcript.md     사람·에이전트용, [HH:MM:SS] 타임스탬프 (녹음 중 메모·북마크 포함)
+├── transcript.vtt    WebVTT 자막 (플레이어 동기화용)
+└── memos.json        녹음 중 메모·북마크 (데스크톱 앱으로 녹음했을 때)
 ```
 
 | 옵션 | 설명 |
@@ -98,6 +100,8 @@ uv run tractus transcribe 주간회의.m4a --track lite      # 0.6B 모델
 | `--language auto\|ko\|en` | 기본 `auto`. `ko`로 고정하면 영어 위주 발화를 번역할 수 있어 권장하지 않습니다 |
 | `-t`, `--term` | 이 회의의 용어(참석자 이름, 제품명). 여러 번 지정할 수 있습니다 |
 | `--title` | 회의 제목. 생략하면 파일 이름 |
+| `--recording <폴더>` | 데스크톱 녹음기(`tractus-rec`)가 만든 녹음 폴더를 전사 (마이크·시스템 트랙을 섞음). 끝나면 녹음 폴더를 정리하고, `--keep-tracks`면 원본 트랙을 `tracks/`에 보관 |
+| `--progress-json` | 진행 상황을 stdout에 JSON Lines로 출력 (데스크톱 앱용, `docs/desktop.md`) |
 
 - **용어집:** `~/Tractus/glossary.md`에 `- 용어` 형식으로 적어 두면 모든 회의에 적용됩니다. `-t`로 준 용어와 합쳐서 전달됩니다.
 - **이어하기:** 중간에 Ctrl+C로 멈추거나 종료돼도 같은 명령을 다시 실행하면 끝난 청크 다음부터 이어서 진행합니다.

@@ -58,6 +58,7 @@ class Job:
     language: str  # "auto" | "ko" | "en"
     hotwords: list[str] = field(default_factory=list)
     chunks: list[tuple[int, int]] = field(default_factory=list)
+    audio_file: str = "audio.opus"  # 새 작업은 audio.ogg. 값이 없는 예전 .job.json은 audio.opus
 
     def save(self) -> None:
         data = {k: v for k, v in asdict(self).items() if k != "dir"}
@@ -156,12 +157,13 @@ def write_transcript(job: Job) -> dict:
         "meeting_id": job.meeting_id,
         "title": job.title,
         "created_at": job.created_at,
-        "audio": {"file": "audio.opus", "duration_sec": job.duration_sec, "source": job.source, "sha256": job.sha256},
+        "audio": {"file": job.audio_file, "duration_sec": job.duration_sec, "source": job.source, "sha256": job.sha256},
         "asr": {"model": job.model, "track": job.track, "runtime": "mlx-audio", "language": job.language, "hotwords": job.hotwords},
         "segments": segments,
     }
-    # transcript.json이 완료 표시다. md를 먼저 쓰고 json을 마지막에 써야 중간 종료 시 md 없는 "완료"가 생기지 않는다.
-    _write_atomic(job.dir / "transcript.md", render_markdown(transcript))
+    # transcript.json이 완료 표시다. md·vtt를 먼저 쓰고 json을 마지막에 써야 중간 종료 시 md 없는 "완료"가 생기지 않는다.
+    _write_atomic(job.dir / "transcript.md", render_markdown(transcript, load_memos(job.dir)))
+    _write_atomic(job.dir / "transcript.vtt", render_vtt(transcript))
     _write_atomic(job.dir / "transcript.json", json.dumps(transcript, ensure_ascii=False, indent=1))
     (job.dir / JOB_FILE).unlink()
     (job.dir / CHUNKS_FILE).unlink(missing_ok=True)
@@ -173,8 +175,35 @@ def _hms(sec: float) -> str:
     return f"{sec // 3600:02d}:{sec % 3600 // 60:02d}:{sec % 60:02d}"
 
 
-def render_markdown(t: dict) -> str:
-    """사람·에이전트용 전사. frontmatter는 Obsidian 등에서 그대로 읽힌다."""
+MEMOS_FILE = "memos.json"
+_MARK_LABEL = {"memo": "메모", "bookmark": "북마크"}
+
+
+def load_memos(d: Path) -> list[dict]:
+    """녹음 중 남긴 메모·북마크 [{t, kind, text}]. 없거나 읽을 수 없으면 빈 목록."""
+    try:
+        memos = json.loads((d / MEMOS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return sorted((m for m in memos if isinstance(m, dict) and isinstance(m.get("t"), (int, float))), key=lambda m: m["t"])
+
+
+def _vtt_time(sec: float) -> str:
+    ms = round(sec * 1000)
+    return f"{ms // 3_600_000:02d}:{ms // 60_000 % 60:02d}:{ms // 1000 % 60:02d}.{ms % 1000:03d}"
+
+
+def render_vtt(t: dict) -> str:
+    """WebVTT 자막. 큐 ID는 세그먼트 ID (브라우저 <track>, Obsidian Media Extended가 그대로 읽음)."""
+    cues = [
+        f"{s['id']}\n{_vtt_time(s['start'])} --> {_vtt_time(s['end'])}\n{s['text'].replace('-->', '→')}"
+        for s in t["segments"] if s["text"]
+    ]
+    return "WEBVTT\n\n" + "\n\n".join(cues) + "\n"
+
+
+def render_markdown(t: dict, memos: list[dict] | None = None) -> str:
+    """사람·에이전트용 전사. frontmatter는 Obsidian 등에서 그대로 읽힌다. 메모·북마크는 시각 순으로 끼워 넣는다."""
     head = [
         "---",
         f"meeting_id: {t['meeting_id']}",
@@ -187,7 +216,12 @@ def render_markdown(t: dict) -> str:
         f"# {t['title']}",
         "",
     ]
-    lines = [f"[{_hms(s['start'])}] {s['text']}" for s in t["segments"] if s["text"]]
+    rows = [(s["start"], 0, f"[{_hms(s['start'])}] {s['text']}") for s in t["segments"] if s["text"]]
+    for m in memos or []:
+        label = _MARK_LABEL.get(m.get("kind"), "메모")
+        text = f" {m['text']}" if m.get("text") else ""
+        rows.append((m["t"], 1, f"[{_hms(m['t'])}] ({label}){text}"))
+    lines = [r[2] for r in sorted(rows, key=lambda r: (r[0], r[1]))]
     return "\n".join(head + lines) + "\n"
 
 

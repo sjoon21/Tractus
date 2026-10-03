@@ -1,0 +1,20 @@
+[package]
+name = "tractus-app"
+version = "0.1.0"
+description = "Tractus 데스크톱 앱"
+license = "Apache-2.0"
+edition = "2021"
+
+[lib]
+name = "tractus_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+percent-encoding = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ulid = "1"

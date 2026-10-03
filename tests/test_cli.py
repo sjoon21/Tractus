@@ -3,6 +3,7 @@
 import json
 import re
 import subprocess
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -65,7 +66,7 @@ def test_transcribe_creates_meeting_layout(env, fake_asr):
     assert result.exit_code == 0, result.output
     (d,) = (home / "meetings").iterdir()
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_주간회의_[0-9A-Z]{26}", d.name)
-    assert sorted(p.name for p in d.iterdir()) == ["audio.opus", "transcript.json", "transcript.md"]
+    assert sorted(p.name for p in d.iterdir()) == ["audio.ogg", "transcript.json", "transcript.md", "transcript.vtt"]
     t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
     assert t["asr"]["model"] == cli.MODELS[cli.Track.lite] and t["asr"]["hotwords"] == ["WTO", "김철수"]
     assert [s["text"] for s in t["segments"]] == ["청크0", "청크1", "청크2"]
@@ -130,8 +131,10 @@ def test_summarize_writes_summary_files(env, fake_asr, monkeypatch):
     monkeypatch.setattr(cli.summ, "summarize", fake_summarize)
     monkeypatch.setattr(cli, "make_client", lambda p: None)
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
-    result = CliRunner().invoke(cli.app, ["summarize", meeting_id[-6:], "--provider", "upstage"])
+    result = CliRunner().invoke(cli.app, ["summarize", meeting_id[-6:], "--provider", "upstage", "--progress-json"])
     assert result.exit_code == 0, result.output
+    ev = events(result.stdout)
+    assert ev[0] == {"event": "stage", "stage": "summarize"} and ev[-1]["event"] == "done" and ev[-1]["meeting_id"].endswith(meeting_id[-6:])
     assert calls == [("upstage", "solar-pro4", 3)]
     data = json.loads((d / "summary.json").read_text(encoding="utf-8"))
     assert data["provider"] == "upstage" and data["action_items"][0]["segment_ids"] == ["s0002"]
@@ -160,3 +163,65 @@ def test_error_text_with_brackets_is_printed_verbatim(env, fake_asr, monkeypatch
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
     result = CliRunner().invoke(cli.app, ["summarize", str(d), "--provider", "upstage"])
     assert result.exit_code == 1 and "[type=missing" in result.output
+
+
+def make_recording(tmp_path, marks=None):
+    rec = tmp_path / "recordings" / "01RECORDING0000000000000000"
+    rec.mkdir(parents=True)
+    for name, freq in (("mic", 440), ("system", 660)):
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", f"sine=frequency={freq}:duration=8", "-ar", "48000", "-ac", "1", str(rec / f"{name}.wav")], check=True)
+    (rec / "recording.json").write_text(json.dumps({
+        "schema_version": 1, "started_at": "2026-10-02T14:00:00+09:00", "duration": 8.0,
+        "tracks": {"mic": "mic.wav", "system": "system.wav"},
+        "marks": marks if marks is not None else [{"t": 3.5, "kind": "memo", "text": "예산 다시 확인"}, {"t": 6.0, "kind": "bookmark", "text": None}],
+    }, ensure_ascii=False), encoding="utf-8")
+    return rec
+
+
+def events(output: str) -> list[dict]:
+    return [json.loads(line) for line in output.splitlines() if line.startswith("{")]
+
+
+def test_transcribe_recording_with_progress_json(env, fake_asr, tmp_path):
+    home, _ = env
+    rec = make_recording(tmp_path)
+    result = CliRunner().invoke(cli.app, ["transcribe", "--recording", str(rec), "--progress-json"])
+    assert result.exit_code == 0, result.output
+    ev = events(result.stdout)
+    stages = [e["stage"] for e in ev if e["event"] == "stage"]
+    assert stages[:3] == ["decode", "vad", "encode"] and "transcribe" in stages
+    assert [e for e in ev if e["event"] == "progress"][-1] == {"event": "progress", "done": 3, "total": 3}
+    done = ev[-1]
+    assert done["event"] == "done" and Path(done["meeting_dir"]).is_dir()
+    d = Path(done["meeting_dir"])
+    assert d.name.startswith("2026-10-02_") and (d / "audio.ogg").exists() and not rec.exists()
+    t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+    assert t["audio"]["file"] == "audio.ogg" and t["created_at"].startswith("2026-10-02T14:00:00")
+    assert json.loads((d / "memos.json").read_text(encoding="utf-8"))[0] == {"t": 3.5, "kind": "memo", "text": "예산 다시 확인"}
+    md = (d / "transcript.md").read_text(encoding="utf-8")
+    assert "[00:00:03] (메모) 예산 다시 확인" in md and "[00:00:06] (북마크)" in md
+    vtt = (d / "transcript.vtt").read_text(encoding="utf-8")
+    assert vtt.startswith("WEBVTT") and "s0001\n00:00:00.000 --> 00:00:02.000\n청크0" in vtt
+
+
+def test_recording_keep_tracks_moves_wavs(env, fake_asr, tmp_path):
+    rec = make_recording(tmp_path, marks=[])
+    result = CliRunner().invoke(cli.app, ["transcribe", "--recording", str(rec), "--keep-tracks", "--progress-json"])
+    assert result.exit_code == 0, result.output
+    d = Path(events(result.stdout)[-1]["meeting_dir"])
+    assert sorted(p.name for p in (d / "tracks").iterdir()) == ["mic.wav", "recording.json", "system.wav"] and not rec.exists()
+    assert not (d / "memos.json").exists()
+
+
+def test_progress_json_reports_errors(env, fake_asr, tmp_path):
+    bad = tmp_path / "bad.m4a"
+    bad.write_bytes(b"not audio")
+    result = CliRunner().invoke(cli.app, ["transcribe", str(bad), "--progress-json"])
+    assert result.exit_code == 1 and events(result.stdout)[-1]["event"] == "error"
+
+
+def test_transcribe_requires_exactly_one_source(env, fake_asr, tmp_path):
+    _, wav = env
+    assert CliRunner().invoke(cli.app, ["transcribe"]).exit_code != 0
+    rec = make_recording(tmp_path)
+    assert CliRunner().invoke(cli.app, ["transcribe", str(wav), "--recording", str(rec)]).exit_code != 0

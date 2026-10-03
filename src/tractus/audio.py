@@ -26,23 +26,35 @@ def _run(args: list[str], capture: bool = False) -> bytes:
     return proc.stdout if capture else b""
 
 
-def decode(path: Path) -> np.ndarray:
-    """임의 형식(m4a/mp3/wav/webm…)을 16kHz mono float32로 디코딩한다."""
-    raw = _run(["-i", str(path), "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"], capture=True)
+def _inputs(paths: list[Path]) -> list[str]:
+    """입력이 여러 개(녹음의 마이크·시스템 트랙)면 amix로 섞는다. normalize=0: 트랙 수만큼 음량을 줄이지 않는다."""
+    args = [a for p in paths for a in ("-i", str(p))]
+    if len(paths) > 1:
+        args += ["-filter_complex", f"amix=inputs={len(paths)}:duration=longest:normalize=0"]
+    return args
+
+
+def decode(paths: Path | list[Path]) -> np.ndarray:
+    """임의 형식(m4a/mp3/wav/webm…)을 16kHz mono float32로 디코딩한다. 여러 파일이면 섞는다."""
+    paths = [paths] if isinstance(paths, Path) else paths
+    raw = _run([*_inputs(paths), "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"], capture=True)
     audio = np.frombuffer(raw, dtype=np.float32)
     if audio.size == 0:
-        raise FFmpegError(f"오디오 트랙이 비어 있습니다: {path}")
+        raise FFmpegError(f"오디오 트랙이 비어 있습니다: {', '.join(map(str, paths))}")
     return audio
 
 
-def encode_opus(src: Path, dst: Path) -> None:
-    """보관용 mono Opus 32kbps (1시간 약 14MB)."""
-    _run(["-y", "-i", str(src), "-vn", "-ac", "1", "-c:a", "libopus", "-b:a", "32k", "-application", "voip", str(dst)])
+def encode_opus(srcs: Path | list[Path], dst: Path) -> None:
+    """보관용 mono Opus 32kbps (1시간 약 14MB). dst 확장자가 .ogg면 Ogg 컨테이너 (Obsidian은 .opus를 열지 못함)."""
+    srcs = [srcs] if isinstance(srcs, Path) else srcs
+    _run(["-y", *_inputs(srcs), "-vn", "-ac", "1", "-c:a", "libopus", "-b:a", "32k", "-application", "voip", str(dst)])
 
 
-def sha256(path: Path) -> str:
+def sha256(paths: Path | list[Path]) -> str:
+    """파일 내용의 SHA-256. 여러 파일이면 순서대로 이어서 해시한다 (녹음 트랙 묶음 식별용)."""
     h = hashlib.sha256()
-    with path.open("rb") as f:
-        for block in iter(lambda: f.read(1 << 20), b""):
-            h.update(block)
+    for path in [paths] if isinstance(paths, Path) else paths:
+        with path.open("rb") as f:
+            for block in iter(lambda: f.read(1 << 20), b""):
+                h.update(block)
     return h.hexdigest()

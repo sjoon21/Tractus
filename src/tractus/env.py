@@ -1,4 +1,4 @@
-"""개발용 `.env` / `.env.local` 로더. 우선순위: 셸 환경변수 > .env.local > .env.
+"""`.env` / `.env.local` 로더. 우선순위: 셸 환경변수 > 현재 폴더(.env.local > .env) > $TRACTUS_HOME(.env.local > .env).
 
 `.env`에는 비밀이 아닌 개발 기본값을, `.env.local`에는 API 키를 둔다. 둘 다 git에서 제외된다.
 """
@@ -26,6 +26,15 @@ def _parse(text: str) -> dict[str, str]:
             value = re.sub(r"\s+#.*$", "", value)
         out[key] = value
     return out
+
+
+def load_env_all() -> None:
+    """현재 폴더(개발: 저장소 루트)를 먼저 읽고, 그다음 데이터 폴더를 읽는다.
+    데스크톱 앱처럼 저장소 밖에서 실행해도 $TRACTUS_HOME/.env.local의 API 키·모델 위치를 쓸 수 있게 한다."""
+    from tractus.paths import home_dir
+
+    load_env(Path.cwd())
+    load_env(home_dir())
 
 
 def load_env(root: Path) -> None:

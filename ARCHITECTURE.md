@@ -9,6 +9,7 @@
 
 | 날짜 | 버전 | 변경 |
 | --- | --- | --- |
+| 2026-10-02 | v3.8 | **Phase 4 시작: B안(Tauri) 우선, D안(메뉴바 + Obsidian) 백업.** 공용 녹음 헬퍼 `tractus-rec`(Swift, 마이크 + Core Audio process tap 2트랙), Tauri 앱 `app/` 초안, 코어 변경(audio.ogg, transcript.vtt, memos.json, `--recording`, `--keep-tracks`, `--progress-json`, `$TRACTUS_HOME/.env.local`). 구성 요소 계약: `docs/desktop.md` |
 | 2026-10-02 | v3.7 | **Phase 3 완료.** 검색 색인(FTS5 음절 bigram + sqlite-vec, strict 우선 + 벡터 가중 0.3 결합), 로컬 임베딩(Qwen3-Embedding-0.6B bf16, mlx-lm), MCP 서버 7개 도구(세그먼트 단위 인용, `save_summary`). Gemini CLI → Antigravity CLI. 실제 ASR 평가에서 동일 가중 RRF가 키워드보다 나빠(hit@1 0.50 vs 0.85) 결합 방식 변경 |
 | 2026-10-02 | v3.6 | **Phase 2 (Upstage) 완료.** `tractus summarize` — 요약·주제·결정·할 일 추출, strict JSON + Pydantic 검증 + segment_ids 검증 + 1회 재요청. `.env`/`.env.local` 개발 환경. 구독형 CLI 조사 결과 API 키 방식만 채택(agy 사용 금지). 나머지 공급자는 키 대기, 대안은 MCP |
 | 2026-10-02 | v3.5 | **Phase 1 완료.** `tractus transcribe` CLI (`src/tractus/`). ASR은 mlx-audio 프로세스 내 호출로 변경(D1, `hotwords` 때문), VAD는 MLX 포팅 Silero로 torch 제거, 라우드니스 정규화 제외, 반복 루프 방지 규칙 확정, 스키마에 `title`·`audio.source`·`audio.sha256`·`asr.hotwords` 추가 |
@@ -143,7 +144,7 @@
 
 ```
 입력(m4a/mp3/wav/webm)
-  → FFmpeg: 16kHz mono PCM (+ 보관용 audio.opus 32kbps)
+  → FFmpeg: 16kHz mono PCM (+ 보관용 audio.ogg: Ogg Opus 32kbps. 녹음 폴더면 마이크·시스템 트랙을 amix로 섞음)
   → Silero VAD (MLX 포팅): 무음 기준 분할, 청크 ≤ 30초 (경계는 무음 지점)
   → 청크별 Qwen3-ASR generate (language: 자동, hotwords: 용어집, max_tokens: 청크 길이 비례)
   → 세그먼트 = 청크 텍스트 + 청크 시작/끝 시각
@@ -170,6 +171,8 @@
 | C. 로컬 경량 모델 | pyannote community-1 (코드 MIT, 가중치 CC-BY-4.0) | GPU 없이 CPU로도 동작할 만큼 가벼워, 병목은 연산량이 아니라 통합 복잡도 |
 
 > 실제로 화자 분리가 필요해지면 **C가 가장 현실적**이다. A는 보조 수단으로 둔다.
+
+> **우선순위 상향 (2026-10-02):** 주 사용 사례가 **여러 명이 한 방에 모이는 대면 회의**(마이크 1개)로 확인됐다. 화상회의처럼 "나/상대" 트랙으로 나눌 수 없으므로, "누가 말했나"는 음성 기반 화자 분리(C)로만 얻을 수 있다. Phase 4 녹음이 안정되면 다음 후보로 둔다. 후보는 pyannote community-1, FluidAudio·speech-swift의 Sortformer(Apache-2.0, Swift)다. 대면 회의 실녹음으로 DER을 측정해 고른다.
 
 ---
 
@@ -265,7 +268,10 @@ Anthropic은 OpenAI 호환 레이어를 "테스트·비교용이며 장기 운�
 ~/Tractus/
 ├── meetings/
 │   └── 2026-10-01_주간회의_01J9X.../
-│       ├── audio.opus            # 원본 (재인코딩 보관)
+│       ├── audio.ogg             # 원본 (Ogg Opus 재인코딩 보관. Phase 1 회의는 audio.opus, Obsidian은 .opus를 열지 못함)
+│       ├── transcript.vtt        # WebVTT 자막 (큐 ID = 세그먼트 ID). 브라우저 <track>, Obsidian Media Extended용
+│       ├── memos.json            # 녹음 중 메모·북마크 [{t, kind, text}] (있을 때만)
+│       ├── tracks/               # --keep-tracks일 때 녹음 원본 트랙 (화자 분리 대비)
 │       ├── transcript.json       # 기계용 원본 (§6 스키마)
 │       ├── transcript.md         # 사람/에이전트용 (타임스탬프 포함)
 │       ├── summary.md            # LLM 산출물 (frontmatter에 provider/model 기록)
@@ -375,7 +381,7 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
   "meeting_id": "01J9X...",
   "created_at": "2026-10-01T14:00:00+09:00",
   "title": "주간회의",
-  "audio": { "file": "audio.opus", "duration_sec": 3612.4, "source": "주간회의.m4a", "sha256": "…" },  // sha256: 같은 파일 재전사 방지·이어하기 식별
+  "audio": { "file": "audio.ogg", "duration_sec": 3612.4, "source": "주간회의.m4a", "sha256": "…" },  // sha256: 같은 파일 재전사 방지·이어하기 식별
   "asr": { "model": "mlx-community/Qwen3-ASR-1.7B-8bit", "track": "standard", "runtime": "mlx-audio", "language": "auto", "hotwords": ["WTO"] },
   "segments": [
     {
@@ -407,7 +413,8 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 | 저장·검색 | SQLite FTS5 + sqlite-vec 0.1.9 (고정) | Public Domain / MIT·Apache | pre-1.0이라 업그레이드 시 테스트 재실행 |
 | 임베딩 런타임 | mlx-lm (Qwen3Model) | MIT | mlx-embeddings는 GPL-3이라 제외 |
 | MCP | 공식 MCP Python SDK `mcp` 2.2 (`MCPServer`) | MIT | 2.x에서 FastMCP가 MCPServer로 이름이 바뀜 |
-| UI (Phase 4) | Next.js + wavesurfer.js + TipTap, 또는 Tauri 데스크톱 셸 | MIT | Phase 3 이후 결정 |
+| UI (Phase 4) | Tauri 2 + React + TypeScript (B안). 백업은 SwiftUI 메뉴바 녹음기 + Obsidian 플러그인 (D안) | MIT·Apache | 2026-10-02 결정, `docs/desktop.md` |
+| 녹음 (Phase 4) | `tractus-rec` (Swift): AVAudioEngine 마이크 + Core Audio process tap 시스템 오디오, 2트랙 WAV | — | B·D 공용 |
 
 모델 가중치는 저장소에 포함하지 않고 사용자가 `hf download`로 받는다. 다운로드 링크와 명령은 `README.md`에 있다. 라이선스: Qwen3-ASR · Qwen3-ForcedAligner · Qwen3-Embedding · Gemma 4는 Apache-2.0, Silero VAD는 MIT.
 
@@ -421,7 +428,7 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 | **1. 전사 CLI** ✅ 2026-10-02 | `tractus transcribe <file>` → §4.1 레이아웃 생성. VAD 청킹, 이어하기, 용어집 | 1시간 한국어 회의를 두 트랙 모두에서 완주 → AI Hub 66분 회의: lite 4.1분(CER 9.22%), standard 10.1분(CER 7.23%). Ctrl+C·`kill -9` 후 재실행으로 173/173 청크 복구 |
 | **2. LLM 연동** 🔶 2026-10-02 | 공급자 설정, 요약·Action Item, 검증·재시도, 5개 공급자 스모크 테스트 | 같은 전사로 5개 공급자 모두 스키마 통과 → **Upstage(solar-pro4) 통과**(재요청 없이 3/3, 1회 7초). OpenAI·Claude·Gemini는 API 키를 받는 대로 `pytest -m llm`으로 확인. 키가 끝내 없으면 Phase 3 MCP로 각 CLI에서 품질을 본다 |
 | **3. 검색 + MCP** ✅ 2026-10-02 | 임베딩, FTS5 bigram, RRF, MCP 서버, 3개 CLI 등록 가이드 | Claude Code·Codex·Gemini CLI에서 과거 회의 질의 성공 → Gemini CLI 대신 agy. **세 CLI 모두 질의(정답 세그먼트 인용)와 요약 저장 성공** (§5) |
-| **4. UI + 녹음** | 플레이어-텍스트 동기화, 메모 편집, 브라우저/데스크톱 녹음 | |
+| **4. UI + 녹음** 🔶 진행 중 | B안(Tauri 앱) 우선, D안(메뉴바 녹음기 + Obsidian 플러그인) 백업. 공용: 녹음 헬퍼 `tractus-rec`, 코어 변경(audio.ogg, transcript.vtt, memos.json, `--recording`, `--progress-json`). 계약: `docs/desktop.md` | `docs/desktop.md` §4 판정 기준으로 B안을 평가해 확정 |
 | 이후 | 화자 분리(§2.4 C), 단어 타임스탬프, 실시간 전사(Nemotron 3.5 재평가), **Windows 지원(llama.cpp GGUF 경로)** | 필요가 확인될 때 |
 
 ### Phase 0 실행 계획
@@ -539,7 +546,7 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 
 ## 9. 열린 질문
 
-1. 기본 실행 형태: CLI + 로컬 웹 UI vs 데스크톱 앱(Tauri). 녹음 UX 때문에 결국 데스크톱이 유리할 가능성이 큼
+1. ~~기본 실행 형태~~ → **2026-10-02: 데스크톱 앱.** B안(Tauri)을 먼저 만들어 보고, 부족하면 D안(메뉴바 녹음기 + Obsidian 플러그인)으로 간다. 근거: 시스템 오디오(상대방 목소리) 녹음은 어느 쪽이든 네이티브 코드(Core Audio process tap)가 필요하고, Obsidian(Electron)은 시스템 오디오 권한이 없다
 2. Gemma 4 31B 배치: 사용자 기기 vs 팀 공용 서버. VRAM 경합(§2.2) 정책이 여기에 달려 있음
 3. 클라우드 ASR 옵션을 UI에 노출할지, 설정 파일에만 둘지
 4. ~~제품명~~ → **해결 (2026-10-01): `Tractus`로 변경** (§변경 이력 참고). 공개 전 상표(KIPRIS·USPTO)·도메인·GitHub org·PyPI 패키지명 선점 확인은 여전히 필요

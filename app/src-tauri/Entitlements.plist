@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 서명하면 hardened runtime이 켜진다. 이때 마이크는 이 entitlement가 있어야 쓸 수 있다 (녹음 헬퍼가 이 앱의 권한으로 녹음함).
+     시스템 오디오(process tap)는 entitlement가 없고 Info.plist의 NSAudioCaptureUsageDescription만 필요하다. -->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+</dict>
+</plist>

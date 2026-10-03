@@ -46,3 +46,20 @@ def test_empty_shell_value_does_not_block_file_value(tmp_path, monkeypatch):
     import os
 
     assert os.environ["TRACTUS_Y"] == "from_local"
+
+
+def test_home_env_is_read_after_cwd(tmp_path, monkeypatch):
+    from tractus.env import load_env_all
+
+    cwd, home = tmp_path / "cwd", tmp_path / "home"
+    cwd.mkdir(), home.mkdir()
+    (cwd / ".env").write_text("TRACTUS_Z=from_cwd\n")
+    (home / ".env.local").write_text("TRACTUS_Z=from_home\nTRACTUS_W=only_home\n")
+    monkeypatch.chdir(cwd)
+    monkeypatch.setenv("TRACTUS_HOME", str(home))
+    for k in ("TRACTUS_Z", "TRACTUS_W"):
+        monkeypatch.delenv(k, raising=False)
+    load_env_all()
+    import os
+
+    assert (os.environ["TRACTUS_Z"], os.environ["TRACTUS_W"]) == ("from_cwd", "only_home")

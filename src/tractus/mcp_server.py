@@ -278,12 +278,12 @@ def main() -> None:
     import os
 
     from tractus.embed import load_embedder
-    from tractus.env import load_env
+    from tractus.env import load_env_all
     from tractus.paths import home_dir, models_dir
 
     os.environ.setdefault("TQDM_DISABLE", "1")
     logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="tractus-mcp %(levelname)s %(message)s")
-    load_env(Path.cwd())
+    load_env_all()
     home = home_dir()
     with contextlib.redirect_stdout(sys.stderr):
         embedder = load_embedder(models_dir())
