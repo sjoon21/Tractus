@@ -19,7 +19,7 @@ from mcp_types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from tractus.index import Index
-from tractus.store import _hms, find_meeting_dir
+from tractus.store import _hms, find_meeting_dir, speaker_name
 from tractus.summarize import MeetingSummary, check_segment_ids, write_summary
 
 log = logging.getLogger("tractus.mcp")
@@ -28,7 +28,7 @@ INSTRUCTIONS = """Tractus: 사용자의 로컬 회의 기록(음성 전사·요�
 - 과거 회의에 관한 질문은 먼저 search_meetings로 근거를 찾고, 답에는 실제로 근거가 된 세그먼트의 cite 값([meeting_id#s0012 00:05:31])을 그대로 붙인다. 검색 결과 하나에 세그먼트가 여러 개 들어 있으니 내용이 있는 세그먼트를 골라 인용한다.
 - "7월 회의", "지난주"처럼 시점이 있으면 date_from/date_to(YYYY-MM-DD)를 채운다. 어떤 회의가 있는지는 list_meetings로 본다.
 - 결정 사항·할 일은 get_summary, list_action_items로 본다. 전사 원문은 get_transcript로 페이지 단위(next_offset)로 읽는다.
-- 전사는 음성 인식 결과라 오인식이 있을 수 있다. 화자 정보는 없다.
+- 전사는 음성 인식 결과라 오인식이 있을 수 있다. 화자는 목소리로 자동 추정한 값이다(틀릴 수 있음). S1·S2 같은 라벨은 사람 이름이 아니고, 이름으로 보이면 사용자가 지정한 것이다. 화자 표시가 없으면 모르는 것이다.
 - 요약을 만들어 달라는 요청이면 get_transcript로 전사를 끝까지 읽고, save_summary로 저장한다. 모든 항목에 근거 segment_ids를 넣는다."""
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
@@ -36,6 +36,11 @@ WRITES_SUMMARY = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idemp
 
 Date = Annotated[str | None, Field(description="YYYY-MM-DD (포함). 회의 날짜 기준", pattern=r"^\d{4}-\d{2}-\d{2}$")]
 MeetingRef = Annotated[str, Field(description="meeting_id (뒤 6–8자만 써도 됨) 또는 회의 폴더 경로")]
+
+
+def _who(t: dict, s: dict) -> str:
+    name = speaker_name(t, s.get("speaker"))
+    return f" {name}" if name else ""
 
 
 def _cite(meeting_id: str, segment_ids: list[str], start: float) -> str:
@@ -46,6 +51,7 @@ class HitSegment(BaseModel):
     id: str
     time: str = Field(description="HH:MM:SS")
     text: str
+    speaker: str | None = Field(default=None, description="화자 (사용자가 지정한 이름 또는 자동 추정 라벨 S1…, 모르면 null)")
     cite: str = Field(description="이 세그먼트를 근거로 쓸 때 답에 그대로 붙이는 인용 표기")
 
 
@@ -185,7 +191,7 @@ def build_server(home: Path, embedder) -> MCPServer:
             hits=[
                 SearchHit(
                     meeting_id=h.meeting_id, title=h.title, date=h.date, matched=h.matched, vector_distance=h.distance,
-                    segments=[HitSegment(id=s["id"], time=_hms(s["start"]), text=s["text"], cite=_cite(h.meeting_id, [s["id"]], s["start"])) for s in h.segments],
+                    segments=[HitSegment(id=s["id"], time=_hms(s["start"]), text=s["text"], speaker=s.get("speaker"), cite=_cite(h.meeting_id, [s["id"]], s["start"])) for s in h.segments],
                 )
                 for h in res.hits
             ],
@@ -214,12 +220,12 @@ def build_server(home: Path, embedder) -> MCPServer:
         offset: Annotated[int, Field(ge=0, description="건너뛸 세그먼트 수")] = 0,
         max_segments: Annotated[int, Field(ge=1, le=500)] = 200,
     ) -> str:
-        """회의 전사 원문. 줄마다 `[세그먼트ID HH:MM:SS] 텍스트`. 남은 세그먼트가 있으면 마지막 줄에 next_offset이 붙는다."""
+        """회의 전사 원문. 줄마다 `[세그먼트ID HH:MM:SS 화자] 텍스트` (화자를 모르면 생략). 남은 세그먼트가 있으면 마지막 줄에 next_offset이 붙는다."""
         _, t = meeting(meeting_id)
         segs = t["segments"]
         page = segs[offset : offset + max_segments]
         head = f"# {t.get('title', '')} ({(t.get('created_at') or '')[:10]}, meeting_id {t['meeting_id']}, 세그먼트 {offset + 1}–{offset + len(page)} / {len(segs)})"
-        lines = [f"[{s['id']} {_hms(s['start'])}] {s.get('corrected_text') or s['text']}" for s in page]
+        lines = [f"[{s['id']} {_hms(s['start'])}{_who(t, s)}] {s.get('corrected_text') or s['text']}" for s in page]
         tail = [f"next_offset: {offset + len(page)}"] if offset + len(page) < len(segs) else ["(끝)"]
         return "\n".join([head, *lines, *tail])
 

@@ -34,3 +34,18 @@ def test_provider_returns_valid_summary(name):
     assert any("22" in d.text for d in s.decisions), s.model_dump()  # 릴리스 10월 22일 확정
     assert not any("Notion" in d.text or "Confluence" in d.text for d in s.decisions), "미결 안건을 결정으로 넣음"
     assert not any(a.owner and ("화자" in a.owner or "발언자" in a.owner) for a in s.action_items), "알 수 없는 담당자를 지어냄"
+
+
+@pytest.mark.llm
+def test_auto_speaker_labels_are_not_used_as_owner():
+    """이름 없는 화자 라벨(S1, S2)이 붙은 전사에서도 owner에 라벨을 넣지 않는다. 기본 공급자 하나만 본다."""
+    import re
+
+    try:
+        provider, model = resolve_provider(None, None)
+    except LLMError as e:
+        pytest.skip(str(e))
+    t = {**TRANSCRIPT, "schema_version": 2, "speakers": {"S1": {"name": None}, "S2": {"name": None}},
+         "segments": [{**s, "speaker": f"S{i % 2 + 1}"} for i, s in enumerate(TRANSCRIPT["segments"])]}
+    s = summarize(make_client(provider), provider, model, t)
+    assert not any(a.owner and re.fullmatch(r"\s*S\d+\s*", a.owner) for a in s.action_items), s.model_dump()

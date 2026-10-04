@@ -209,3 +209,43 @@ def test_fuse_puts_strict_keyword_hits_first_and_downweights_vectors():
     assert order[0] == 7  # strict 결과가 벡터 1위보다 앞
     assert order.index(5) < order.index(1)  # 일부만 맞은 키워드 1위(5)가 벡터 1위(1)보다 앞 (벡터 가중 0.3)
     assert score[7] > 1 > score[5]
+
+
+def test_make_chunks_carry_speaker_display_name():
+    segs = [{"id": "s0001", "start": 0, "end": 1, "text": "가", "speaker": "S1"}, {"id": "s0002", "start": 1, "end": 2, "text": "나", "speaker": "S2"},
+            {"id": "s0003", "start": 2, "end": 3, "text": "다"}]
+    (c,) = make_chunks(segs, {"S1": {"name": "김민수"}, "S2": {"name": None}})
+    assert [s["speaker"] for s in c["segments"]] == ["김민수", "S2", None]
+
+
+def test_rename_reindexes_meeting_with_new_speaker(home):
+    idx = Index(home)
+    idx.sync()
+    (d,) = [p for p in (home / "meetings").iterdir() if "01M1JFX" in p.name]
+    t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+    t["segments"][0]["speaker"] = "S1"
+    t["speakers"] = {"S1": {"name": "블루베리씨"}}
+    (d / "transcript.json").write_text(json.dumps(t, ensure_ascii=False), encoding="utf-8")
+    assert idx.sync().updated == 1
+    word = t["segments"][0]["text"].split()[0]
+    segs = [s for h in idx.search(word, meeting_id=t["meeting_id"]).hits for s in h.segments]
+    assert any(s["id"] == "s0001" and s["speaker"] == "블루베리씨" for s in segs)
+
+
+def test_speaker_edit_reuses_vectors_and_only_embeds_changed_chunks(home):
+    emb = FakeEmbedder()
+    idx = Index(home, embedder=emb)
+    idx.sync()
+    vectors = idx.stats()["vectors"]
+    (d,) = [p for p in (home / "meetings").iterdir() if "01M1JFX" in p.name]
+    t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+    t["segments"][0]["speaker"] = "S1"
+    t["speakers"] = {"S1": {"name": "블루베리씨"}}
+    (d / "transcript.json").write_text(json.dumps(t, ensure_ascii=False), encoding="utf-8")
+    r = idx.sync()
+    assert r.updated == 1 and r.embedded == 0 and idx.stats()["vectors"] == vectors  # 화자만 바뀌면 청크 본문이 같아 다시 임베딩하지 않는다
+    assert Index(home).sync(embed=False).unchanged == 5  # 임베딩 모델 없이도 (MCP·화자 편집) 벡터는 남는다
+
+    t["segments"][-1]["text"] = t["segments"][-1]["text"][::-1]  # 길이가 같아 청크 경계는 그대로
+    (d / "transcript.json").write_text(json.dumps(t, ensure_ascii=False), encoding="utf-8")
+    assert idx.sync().embedded == 1  # 본문이 바뀐 청크만

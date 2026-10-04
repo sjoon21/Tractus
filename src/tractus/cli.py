@@ -25,7 +25,10 @@ from tractus.env import load_env_all  # noqa: E402
 from tractus.llm import LLMError, make_client, resolve_provider  # noqa: E402
 from tractus.paths import home_dir, models_dir  # noqa: E402
 from tractus.asr import SR, Transcriber  # noqa: E402
-from tractus.store import MEMOS_FILE, Job, find_job, find_meeting_dir, find_transcribed, load_glossary, meeting_dir_name, new_ulid, write_transcript  # noqa: E402
+from tractus.diarize import MAX_SPEAKERS, MODEL_DIR as DIARIZER_DIR, MODEL_REPO as DIARIZER_REPO, MODEL_REVISION as DIARIZER_REVISION  # noqa: E402
+from tractus.diarize import load_diarizer, split_chunks  # noqa: E402
+from tractus.store import MEMOS_FILE, Job, apply_speaker_edit, find_job, find_meeting_dir, find_transcribed, load_glossary, meeting_dir_name  # noqa: E402
+from tractus.store import new_ulid, save_transcript, speaker_name, write_transcript  # noqa: E402
 from tractus.store import _hms  # noqa: E402
 from tractus.vad import find_chunks  # noqa: E402
 
@@ -124,6 +127,8 @@ def transcribe(
     language: Language = typer.Option(Language.auto, "--language", help="auto 권장. ko로 고정하면 영어 발화를 번역할 수 있음"),
     term: list[str] = typer.Option([], "--term", "-t", help="이 회의의 용어 (참석자 이름·제품명). 여러 번 지정 가능"),
     keep_tracks: bool = typer.Option(False, "--keep-tracks", help="녹음 원본 트랙을 지우지 않고 회의 폴더의 tracks/로 옮긴다"),
+    no_diarize: bool = typer.Option(False, "--no-diarize", help="화자 분리를 하지 않는다 (segment.speaker = null)"),
+    max_speakers: int = typer.Option(None, "--max-speakers", min=1, max=MAX_SPEAKERS, help=f"화자 수 상한 (1–{MAX_SPEAKERS}). 말한 시간이 많은 N명만 남기고 나머지는 가까운 화자에 붙인다"),
     progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
 ) -> None:
     """녹음을 전사해 회의 폴더(audio.ogg, transcript.json/md/vtt)를 만든다. 중단돼도 같은 명령으로 이어서 진행한다."""
@@ -132,7 +137,7 @@ def transcribe(
         raise typer.BadParameter("녹음 파일 또는 --recording 폴더 중 하나만 지정하세요")
     try:
         source = _source_from_file(file) if file else _source_from_recording(recording)
-        _transcribe(source, title, track, language, term, keep_tracks)
+        _transcribe(source, title, track, language, term, keep_tracks, not no_diarize, max_speakers)
     except audio.FFmpegError as e:
         Events.emit("error", message=str(e))
         console.print(f"[red]오디오 처리 실패:[/red] {escape(str(e))}")
@@ -142,7 +147,9 @@ def transcribe(
         raise
 
 
-def _transcribe(source: Source, title: str | None, track: Track | None, language: Language, term: list[str], keep_tracks: bool) -> None:
+def _transcribe(
+    source: Source, title: str | None, track: Track | None, language: Language, term: list[str], keep_tracks: bool, diarize: bool, max_speakers: int | None
+) -> None:
     audio.require_ffmpeg()
     meetings = home_dir() / "meetings"
     meetings.mkdir(parents=True, exist_ok=True)
@@ -161,18 +168,53 @@ def _transcribe(source: Source, title: str | None, track: Track | None, language
         Events.emit("stage", stage="decode")
         pcm = audio.decode(source.paths)
     else:
-        job, pcm = _new_job(source, meetings, digest, title, track or recommended_track(), language, term)
+        job, pcm = _new_job(source, meetings, digest, title, track or recommended_track(), language, term, diarize, max_speakers)
 
     _run(job, pcm, source, keep_tracks)
 
 
-def _new_job(source: Source, meetings: Path, digest: str, title: str | None, track: Track, language: Language, terms: list[str]):
+def _warn(code: str, message: str) -> None:
+    Events.emit("warning", code=code, message=message)
+    console.print(f"[yellow]{escape(message)}[/yellow]")
+
+
+def _free_mlx() -> None:
+    """내린 모델의 MLX 버퍼를 돌려준다. 다음 모델과 통합 메모리에 함께 올라가지 않게 한다."""
+    import gc
+
+    import mlx.core as mx
+
+    gc.collect()
+    mx.clear_cache()
+
+
+def _diarize(pcm, max_speakers: int | None) -> tuple[list, dict | None]:
+    """회의 전체 화자 분리 → (turn 목록, transcript.json의 diarization). 모델이 없거나 실패하면 화자 없이 진행한다."""
+    try:
+        diarizer = load_diarizer(models_dir())
+        if diarizer is None:
+            path = models_dir() / DIARIZER_DIR
+            _warn("diarizer_missing", f"화자 분리 모델이 없어 화자 분리 없이 전사합니다: {path}\n  hf download {DIARIZER_REPO} --revision {DIARIZER_REVISION} --local-dir {path}")
+            return [], None
+        Events.emit("stage", stage="diarize")
+        return diarizer.diarize(pcm, max_speakers), diarizer.info
+    except Exception as e:  # noqa: BLE001 — 화자 분리 실패가 전사를 막지 않는다
+        _warn("diarizer_failed", f"화자 분리에 실패해 화자 분리 없이 전사합니다: {e}")
+        return [], None
+
+
+def _new_job(
+    source: Source, meetings: Path, digest: str, title: str | None, track: Track, language: Language, terms: list[str], diarize: bool, max_speakers: int | None
+):
     vad_dir, _ = local_model(VAD_MODEL), local_model(MODELS[track])  # 오래 걸리는 작업 전에 모델부터 확인
-    with console.status("오디오 디코딩·VAD 분할 중…"):
+    with console.status("오디오 디코딩·VAD·화자 분리 중…"):
         Events.emit("stage", stage="decode")
         pcm = audio.decode(source.paths)
         Events.emit("stage", stage="vad")
         chunks = find_chunks(pcm, vad_dir)
+        turns, diarization = _diarize(pcm, max_speakers) if diarize else ([], None)
+        _free_mlx()  # 화자 분리 모델을 내린 뒤 ASR 모델을 올린다
+        chunks = split_chunks(chunks, turns)
 
     meeting_id = new_ulid()
     title = title or source.title
@@ -190,9 +232,11 @@ def _new_job(source: Source, meetings: Path, digest: str, title: str | None, tra
         dir=d, meeting_id=meeting_id, sha256=digest, source=source.name, title=title,
         created_at=source.recorded.isoformat(timespec="seconds"), duration_sec=round(len(pcm) / SR, 2),
         model=MODELS[track], track=track.value, language=language.value, hotwords=hotwords, chunks=chunks, audio_file="audio.ogg",
+        diarizer=diarization,
     )
     job.save()
-    console.print(f"회의 폴더: {d}\n트랙 {track.value} ({MODELS[track]}), 청크 {len(chunks)}개, 용어 {len(hotwords)}개")
+    n_spk = len({c[2] for c in chunks} - {None})
+    console.print(f"회의 폴더: {d}\n트랙 {track.value} ({MODELS[track]}), 청크 {len(chunks)}개, 화자 {n_spk}명(추정), 용어 {len(hotwords)}개")
     return job, pcm
 
 
@@ -226,7 +270,7 @@ def _run(job: Job, pcm, source: Source, keep_tracks: bool) -> None:
         with Progress(*columns, console=console) as progress:
             bar = progress.add_task("", total=len(job.chunks), completed=len(done))
             for n, i in enumerate(todo, len(done) + 1):
-                s, e = job.chunks[i]
+                s, e, _ = job.chunks[i]
                 seg = transcriber.transcribe(pcm[s:e], language=lang, hotwords=job.hotwords)
                 job.append(i, seg)
                 repaired += seg.repaired
@@ -241,12 +285,7 @@ def _run(job: Job, pcm, source: Source, keep_tracks: bool) -> None:
     t = write_transcript(job)
     # ASR 모델을 내린 뒤 색인한다: 1.7B(3.6GB)와 임베딩 모델(1.4GB)이 통합 메모리에 함께 올라가지 않게
     del transcriber
-    import gc
-
-    import mlx.core as mx
-
-    gc.collect()
-    mx.clear_cache()
+    _free_mlx()
     _finish_recording(source, job.dir, keep_tracks)
     Events.emit("stage", stage="index")
     _sync_index_quietly()
@@ -272,13 +311,16 @@ def _open_index():
     return Index(home_dir(), embedder=load_embedder(models_dir()))
 
 
-def _sync_index_quietly() -> None:
-    """transcribe·summarize 뒤에 검색 색인을 갱신한다. 실패해도 본 작업 결과는 그대로 둔다."""
+def _sync_index_quietly(embed: bool = True) -> None:
+    """transcribe·summarize 뒤에 검색 색인을 갱신한다. 실패해도 본 작업 결과는 그대로 둔다.
+    embed=False면 임베딩 모델(1.4 GB)을 올리지 않는다. 화자 편집은 청크 본문을 바꾸지 않아 기존 벡터를 그대로 쓴다."""
+    from tractus.index import Index
+
     try:
         with console.status("검색 색인 갱신 중…"):
-            idx = _open_index()
+            idx = _open_index() if embed else Index(home_dir())
             try:
-                r = idx.sync()
+                r = idx.sync(embed=embed)
             finally:
                 idx.close()
         if r.added or r.updated:
@@ -377,7 +419,8 @@ def search(
     for h in res.hits:
         print(f"{h.date} {h.title} ({'+'.join(h.matched)})")
         for s in h.segments:
-            print(f"  [{h.meeting_id[-6:]}#{s['id']} {_hms(s['start'])}] {s['text'][:120]}")
+            who = f" {s['speaker']}" if s.get("speaker") else ""
+            print(f"  [{h.meeting_id[-6:]}#{s['id']} {_hms(s['start'])}{who}] {s['text'][:120]}")
 
 
 def _iso_date(value: str | None, name: str) -> str | None:
@@ -387,6 +430,67 @@ def _iso_date(value: str | None, name: str) -> str | None:
         return date.fromisoformat(value).isoformat()
     except ValueError as e:
         raise typer.BadParameter(f"{name}는 YYYY-MM-DD 형식이어야 합니다: {value!r}") from e
+
+
+speakers_app = typer.Typer(help="회의의 화자 보기·이름 짓기·고치기. transcript.json과 md·vtt를 다시 쓰고 검색 색인을 갱신한다 (오디오는 건드리지 않음)")
+app.add_typer(speakers_app, name="speakers")
+
+
+@speakers_app.callback()
+def speakers_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="회의 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
+    ctx.obj = resolve_meeting(meeting)
+
+
+def _read_transcript(d: Path) -> dict:
+    return json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+
+
+@speakers_app.command("list")
+def speakers_list(ctx: typer.Context, as_json: bool = typer.Option(False, "--json", help="JSON으로 stdout에 출력 (데스크톱 앱용)")) -> None:
+    """화자별 이름·세그먼트 수·발화 시간."""
+    t = _read_transcript(ctx.obj)
+    rows = [
+        {"label": label, "name": (info or {}).get("name"), "display": speaker_name(t, label),
+         "segments": sum(1 for s in t["segments"] if s.get("speaker") == label),
+         "talk_sec": round(sum(s["end"] - s["start"] for s in t["segments"] if s.get("speaker") == label), 2)}
+        for label, info in (t.get("speakers") or {}).items()
+    ]
+    if as_json:
+        print(json.dumps({"meeting_id": t["meeting_id"], "speakers": rows, "diarization": t.get("diarization")}, ensure_ascii=False))
+        return
+    if not rows:
+        print("화자 정보가 없습니다 (화자 분리 없이 전사됨). `tractus speakers <회의> set <세그먼트> new`로 직접 붙일 수 있습니다")
+    for r in rows:
+        print(f"{r['label']}\t{r['name'] or '-'}\t세그먼트 {r['segments']}개\t{_hms(r['talk_sec'])}")
+
+
+def _edit_speakers(d: Path, op: str, *args: str) -> None:
+    try:
+        t = apply_speaker_edit(_read_transcript(d), op, *args)
+    except ValueError as e:
+        console.print(f"[red]{escape(str(e))}[/red]")
+        raise typer.Exit(1)
+    save_transcript(d, t)
+    _sync_index_quietly(embed=False)
+    console.print(f"저장했습니다: {d / 'transcript.json'}")
+
+
+@speakers_app.command("rename")
+def speakers_rename(ctx: typer.Context, label: str = typer.Argument(..., help="S1 등"), name: str = typer.Argument(..., help='이름. ""이면 이름을 지운다')) -> None:
+    """화자에 이름을 붙인다."""
+    _edit_speakers(ctx.obj, "rename", label, name)
+
+
+@speakers_app.command("set")
+def speakers_set(ctx: typer.Context, segment_id: str = typer.Argument(..., help="s0012 등"), label: str = typer.Argument(..., help="S2 등, 또는 new (새 화자)")) -> None:
+    """세그먼트 하나의 화자를 바꾼다."""
+    _edit_speakers(ctx.obj, "set", segment_id, label)
+
+
+@speakers_app.command("merge")
+def speakers_merge(ctx: typer.Context, src: str = typer.Argument(..., help="없앨 화자"), dst: str = typer.Argument(..., help="합칠 대상 화자")) -> None:
+    """두 화자를 하나로 합친다 (SRC의 세그먼트를 모두 DST로)."""
+    _edit_speakers(ctx.obj, "merge", src, dst)
 
 
 @app.command()

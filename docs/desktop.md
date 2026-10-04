@@ -10,6 +10,7 @@ B안(Tauri 데스크톱 앱)을 먼저 만들어 완성도를 보고, 부족하�
 │                         ├─ spawn: tractus-rec record ...   ── stdout JSON 이벤트 / stdin 명령
 │                         ├─ spawn: tractus transcribe --recording <dir> --progress-json
 │                         ├─ spawn: tractus summarize <id> --progress-json
+│                         ├─ spawn: tractus speakers <id> rename | set | merge   (화자 목록은 transcript.json을 직접 읽는다)
 │                         └─ 상주: tractus mcp (stdio JSON-RPC) ── search_meetings, status
 └──────────────────────────────────────────┘
 ```
@@ -93,14 +94,41 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 | `memos.json` | 녹음 중 메모·북마크 `[{"t": 초, "kind": "memo"\|"bookmark", "text": str\|null}]`. `transcript.md`에도 시각 순으로 끼워 넣는다 |
 | `tractus transcribe --recording <dir>` | `recording.json`의 트랙들을 FFmpeg `amix`로 섞어 전사한다. `marks`는 `memos.json`으로 옮긴다. 성공하면 녹음 폴더를 지운다(`--keep-tracks`면 회의 폴더의 `tracks/`로 옮김). 회의 시각은 `started_at` |
 | `--progress-json` | `transcribe`·`summarize`가 stdout에 JSON Lines를 출력한다. 사람용 출력은 원래대로 stderr로 보낸다 |
+| 화자 분리 (2026-10-04) | `transcribe`가 VAD 다음에 화자 분리를 한다(기본 켜짐, `--no-diarize`로 끔, `--max-speakers N`으로 상한 1–8). `transcript.json` schema_version 2: `segments[].speaker`(`"S1"`… 또는 null), 최상위 `speakers: {"S1": {"name": null}}`, `diarization`(끄거나 모델이 없으면 null). 표시 이름 = `name`, 없으면 라벨, `speaker`가 null이면 md·vtt에 표시 안 함(앱은 화자 있는 회의에서 "화자 미상" 칩으로 보여 주고 화자를 고를 수 있게 한다). schema_version 1 회의는 `speakers`가 없다 (ARCHITECTURE.md §6) |
+| `tractus speakers` | 화자 편집. transcript.json을 고치고 md·vtt를 다시 쓴 뒤 검색 색인을 갱신한다. 오디오는 건드리지 않는다. 아래 §2.1 |
 
 진행 이벤트:
 
 ```jsonc
-{"event":"stage","stage":"decode"}            // decode | vad | encode | load_model | transcribe | index | summarize
+{"event":"stage","stage":"decode"}            // decode | vad | diarize | encode | load_model | transcribe | index | summarize
 {"event":"progress","done":37,"total":145}
+{"event":"warning","code":"diarizer_missing","message":"…"}   // 화자 분리 모델이 없음 → 화자 없이 계속 (diarizer_failed: 실패 → 화자 없이 계속)
 {"event":"done","meeting_id":"01K…","meeting_dir":"/…/meetings/2026-10-02_…"}
 {"event":"error","message":"…"}               // 종료 코드 1
+```
+
+- `diarize` 단계는 모델이 있을 때만 나온다(84분 회의 약 14초). 이어하기에서는 다시 하지 않는다.
+- `warning`은 종료가 아니다. 앱은 `message`를 알림으로 보여 주고 진행을 계속 표시한다.
+
+### 2.1 `tractus speakers <회의>` (화자 편집)
+
+`<회의>`는 meeting_id(일부) 또는 회의 폴더 경로다. 편집 명령은 성공하면 종료 코드 0, 잘못된 인자(없는 라벨·세그먼트, 같은 화자 병합)는 stderr에 이유를 쓰고 종료 코드 1이다. 편집 뒤 앱은 transcript.json을 다시 읽는다.
+
+| 명령 | 동작 |
+| --- | --- |
+| `tractus speakers <회의> list --json` | 아래 JSON 한 줄을 stdout에 출력 |
+| `tractus speakers <회의> rename S1 "김민수"` | 이름 지정. `""`이면 이름을 지운다. `` []<>*_`\ `` 문자는 빠지고, `S2`처럼 라벨 모양인 이름은 exit 1 |
+| `tractus speakers <회의> set s0012 S2` | 세그먼트 하나의 화자 변경. `S2` 대신 `new`면 다음 라벨(예: `S4`)을 만든다 |
+| `tractus speakers <회의> merge S3 S1` | S3의 세그먼트를 모두 S1으로 옮기고 S3을 없앤다. S1에 이름이 없으면 S3의 이름을 이어받는다 |
+
+세그먼트가 하나도 남지 않은 라벨은 `speakers`에서 지워진다.
+
+```jsonc
+// tractus speakers 01K6X3 list --json
+{"meeting_id":"01K6X3…","speakers":[
+  {"label":"S1","name":"김민수","display":"김민수","segments":31,"talk_sec":812.4},
+  {"label":"S2","name":null,"display":"S2","segments":18,"talk_sec":402.0}],
+ "diarization":{"model":"mlx-community/Nemotron-3-Diarization","revision":"59ed2dbf…","params":{…}}}   // 화자 분리 안 했으면 speakers [], diarization null
 ```
 
 ## 3. Tauri 앱 (app/)
@@ -122,14 +150,18 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 
 ### 제외 (v1)
 
-실시간 전사, 화자 분리 UI, 전사 텍스트 직접 편집(찾아 바꾸기는 다음 단계), 회의 자동 감지, 자동 업데이트, 공증.
+실시간 전사, 전사 텍스트 직접 편집(찾아 바꾸기는 다음 단계), 회의 자동 감지, 자동 업데이트, 공증.
 
 ## 4. B안 판정 기준 (D안으로 갈지 정할 때)
 
-| 기준 | 통과 조건 |
-| --- | --- |
-| 녹음 | 실제 화상회의 1시간을 마이크·시스템 2트랙으로 끊김 없이 녹음, 권한 문제를 사용자에게 알림 |
-| 리뷰 UI | 클릭 → 재생 위치 이동, 현재 세그먼트 강조, 요약 항목 → 원문 이동이 매끄러움 |
-| 성능 | 앱 시작 3초 이내, 1시간 회의 상세 화면이 끊김 없이 스크롤 |
-| 유지보수 | 1인이 Rust·TS·Swift·Python 네 언어를 감당할 수 있는지 (구현하면서 체감 기록) |
-| Obsidian | 같은 회의 폴더를 볼트에서 열었을 때 노트·오디오·자막이 그대로 쓰이는지 (D안과 공통) |
+| 기준 | 통과 조건 | 결과 (2026-10-03) |
+| --- | --- | --- |
+| 녹음 | 실제 회의 1시간을 끊김 없이 녹음, 권한 문제를 사용자에게 알림 | 🔶 앱 녹음 → 전사 경로 동작 확인(짧은 테스트). 실제 1시간 대면 회의는 미검증 |
+| 리뷰 UI | 클릭 → 재생 위치 이동, 현재 세그먼트 강조, 요약 항목 → 원문 이동이 매끄러움 | ✅ 실제 30분 회의로 사용자 확인 (클릭 이동, 강조·자동 스크롤, 스크롤 성능) |
+| 검색 | 회의에서 기억나는 단어로 해당 대목을 찾음 | ✅ 사용자 확인 |
+| 요약 | 요약 만들기 → 결정 사항·할 일 표시 | ✅ 사용자 확인 (Upstage) |
+| 성능 | 앱 시작 3초 이내, 1시간 회의 상세 화면이 끊김 없이 스크롤 | ✅ 30분 회의 기준 |
+| 유지보수 | 1인이 Rust·TS·Swift·Python 네 언어를 감당할 수 있는지 | 관찰 중 |
+| Obsidian | 같은 회의 폴더를 볼트에서 열었을 때 노트·오디오·자막이 그대로 쓰이는지 | 미검증 (D안과 공통) |
+
+**중간 판단 (2026-10-03):** 리뷰 UI·검색·요약은 B안으로 충분하다. 남은 판정 항목은 실제 1시간 녹음이다. 다음 기능은 화자 분리(대면 회의의 기본 기능)다.

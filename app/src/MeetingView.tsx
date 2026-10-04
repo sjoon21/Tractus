@@ -1,8 +1,9 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, errText, useJob, type MeetingDetail, type Summary } from "./api";
+import { api, errText, useJob, type MeetingDetail, type SpeakerEdit, type Summary } from "./api";
 import type { Seek } from "./App";
-import { evidenceStart, fmtTime, interleave, isTypingTarget, segmentIndexAt, STAGE_LABEL, type Memo, type Segment } from "./lib";
+import { evidenceStart, fmtTime, isTypingTarget, segmentIndexAt, speakerName, speakerStats, STAGE_LABEL, transcriptRows, type Memo, type Segment } from "./lib";
+import { SpeakerChip, SpeakerMenu, SpeakersBar, spkStyle, type MenuTarget, type MergeAsk } from "./Speakers";
 
 export function MeetingView({ id, seek, onChanged }: { id: string; seek?: Seek; onChanged: () => void }) {
   const [detail, setDetail] = useState<MeetingDetail | null>(null);
@@ -32,7 +33,44 @@ export function MeetingView({ id, seek, onChanged }: { id: string; seek?: Seek; 
   });
 
   const segments = detail?.segments ?? [];
-  const rows = useMemo(() => interleave(segments, detail?.memos ?? []), [detail]);
+  const speakers = detail?.speakers ?? {};
+  const stats = useMemo(() => speakerStats(segments, speakers), [detail]);
+  const diarized = stats.length > 0;
+  const slotOf = useMemo(() => new Map(stats.map((s) => [s.label, s.slot])), [stats]);
+  // 화자 필터. 합치기로 그 화자가 사라지면 전체로 돌아가고, 같은 라벨이 다시 생겨도 되살리지 않는다
+  const [only, setOnly] = useState<string | null>(null);
+  const filter = only && stats.some((s) => s.label === only) ? only : null;
+  useEffect(() => {
+    if (only && !filter) setOnly(null);
+  }, [only, filter]);
+  const rows = useMemo(() => transcriptRows(segments, detail?.memos ?? [], filter), [detail, filter]);
+
+  // 화자 편집: 코어가 파일과 색인을 고치고(약 3초) 고친 회의를 돌려준다
+  const [menu, setMenu] = useState<MenuTarget | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [merge, setMerge] = useState<MergeAsk | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  // 편집은 한 번에 하나만: 코어가 transcript.json을 잠금 없이 읽고-고쳐-쓴다
+  const inFlight = useRef(false);
+  const editSpeakers = useCallback(
+    async (edit: SpeakerEdit) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      setEditing(true);
+      setEditError(null);
+      try {
+        setDetail(await api.editSpeakers(id, edit));
+      } catch (e) {
+        setEditError(errText(e));
+      } finally {
+        inFlight.current = false;
+        setEditing(false);
+      }
+    },
+    [id],
+  );
+  const openChip = useCallback((seg: Segment, anchor: HTMLElement) => setMenu({ kind: "seg", seg, anchor }), []);
   const starts = useMemo(() => new Map(segments.map((s) => [s.id, s.start])), [detail]);
   const active = segmentIndexAt(segments, t);
 
@@ -55,9 +93,11 @@ export function MeetingView({ id, seek, onChanged }: { id: string; seek?: Seek; 
     seekTo(sec, false);
   }, [detail, seek, starts, seekTo]);
 
-  // 현재 세그먼트 자동 스크롤. 사용자가 직접 스크롤하면 멈추고 "현재 위치로" 버튼을 보인다
+  // 현재 세그먼트 자동 스크롤. 사용자가 직접 스크롤하면 멈추고 "현재 위치로" 버튼을 보인다.
+  // 화자를 고치는 동안(메뉴·이름 입력·합치기 확인)은 쉰다: 스크롤하면 메뉴가 닫히고 입력하던 이름이 사라진다
+  const holding = !!(menu || renaming || merge);
   useEffect(() => {
-    if (!follow || active < 0) return;
+    if (!follow || active < 0 || holding) return;
     const el = list.current?.querySelector<HTMLElement>(`[data-seg="${active}"]`);
     if (!el) return;
     const box = el.getBoundingClientRect();
@@ -65,7 +105,7 @@ export function MeetingView({ id, seek, onChanged }: { id: string; seek?: Seek; 
       const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       el.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
     }
-  }, [active, follow]);
+  }, [active, follow, holding]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -88,7 +128,7 @@ export function MeetingView({ id, seek, onChanged }: { id: string; seek?: Seek; 
 
   return (
     <div className="meeting">
-      <article className="transcript-col" onWheel={() => playing && setFollow(false)}>
+      <article className="transcript-col" onWheel={() => playing && setFollow(false)} onScroll={() => menu && setMenu(null)}>
         <header className="meeting-head">
           <p className="eyebrow tnum">
             {created?.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}
@@ -99,12 +139,52 @@ export function MeetingView({ id, seek, onChanged }: { id: string; seek?: Seek; 
           <p className="meeting-stats tnum">
             {fmtTime(info.duration_sec)} · 세그먼트 {info.segments}개{detail.memos.length > 0 && ` · 메모 ${detail.memos.length}개`}
           </p>
+          {diarized && (
+            <SpeakersBar
+              stats={stats}
+              only={filter}
+              onFilter={setOnly}
+              busy={editing}
+              renaming={renaming}
+              merge={merge}
+              onRename={(label, name) => {
+                setRenaming(null);
+                void editSpeakers({ op: "rename", label, name });
+              }}
+              onStartRename={setRenaming}
+              onCancelRename={() => setRenaming(null)}
+              onAskMerge={setMerge}
+              onMerge={() => {
+                if (merge) void editSpeakers({ op: "merge", ...merge });
+                setMerge(null);
+              }}
+              onCancelMerge={() => setMerge(null)}
+              onMenu={(label, anchor) => setMenu({ kind: "speaker", label, anchor })}
+            />
+          )}
         </header>
 
-        <ol className="transcript" ref={list}>
+        {segments.length === 0 && (
+          <div className="transcript-empty" role="status">
+            <p className="eyebrow">전사 없음</p>
+            <p>이 녹음에서 말소리를 찾지 못했습니다. 아래 플레이어로 녹음된 소리를 확인해 보세요. 마이크가 멀었거나 녹음이 너무 짧았을 수 있습니다.</p>
+          </div>
+        )}
+        <ol className={`transcript ${diarized ? "has-speakers" : ""}`} ref={list}>
           {rows.map((r, i) =>
             r.kind === "seg" ? (
-              <SegmentRow key={r.seg.id} seg={r.seg} index={r.index} isActive={r.index === active} order={i} onSeek={seekTo} />
+              <SegmentRow
+                key={r.seg.id}
+                seg={r.seg}
+                index={r.index}
+                isActive={r.index === active}
+                order={i}
+                onSeek={seekTo}
+                speaker={diarized ? speakerName(r.seg.speaker, speakers) : undefined}
+                slot={slotOf.get(r.seg.speaker ?? "")}
+                turnStart={!!r.turnStart}
+                onChip={openChip}
+              />
             ) : (
               <MemoRow key={`m${i}`} memo={r.memo} onSeek={seekTo} />
             ),
@@ -156,7 +236,22 @@ export function MeetingView({ id, seek, onChanged }: { id: string; seek?: Seek; 
             </button>
           )}
           {(audioError || !detail.audio_path) && <span className="player-note">{audioError ?? "오디오 파일이 없습니다"}</span>}
+          <span className={`player-note ${editError ? "inline-error" : ""}`} role="status">
+            {editing ? "화자 고치는 중…" : editError}
+          </span>
         </div>
+        {menu && (
+          <SpeakerMenu
+            target={menu}
+            stats={stats}
+            busy={editing}
+            onClose={() => setMenu(null)}
+            onSet={(segment, label) => void editSpeakers({ op: "set", segment, label })}
+            onRename={(label, name) => void editSpeakers({ op: "rename", label, name })}
+            onStartRename={setRenaming}
+            onAskMerge={setMerge}
+          />
+        )}
       </article>
 
       <aside className="summary-col" aria-label="요약">
@@ -183,15 +278,30 @@ const SegmentRow = memo(function SegmentRow({
   isActive,
   order,
   onSeek,
+  speaker,
+  slot,
+  turnStart,
+  onChip,
 }: {
   seg: Segment;
   index: number;
   isActive: boolean;
   order: number;
   onSeek: (t: number) => void;
+  /** 화자 있는 회의만: 표시 이름(화자 미상이면 null). 화자 없는 회의는 undefined → 칩을 그리지 않는다 */
+  speaker?: string | null;
+  slot?: number;
+  turnStart: boolean;
+  onChip: (seg: Segment, anchor: HTMLElement) => void;
 }) {
+  const diarized = speaker !== undefined;
   return (
-    <li className={`seg ${isActive ? "is-active" : ""}`} data-seg={index} style={{ "--i": Math.min(order, 16) } as React.CSSProperties}>
+    <li
+      className={`seg ${isActive ? "is-active" : ""} ${diarized && turnStart ? "is-turn" : ""}`}
+      data-seg={index}
+      style={{ "--i": Math.min(order, 16), ...(diarized ? spkStyle(slot) : {}) } as React.CSSProperties}
+    >
+      {diarized && <SpeakerChip seg={seg} display={speaker} turnStart={turnStart} onOpen={onChip} />}
       <button className="seg-button" onClick={() => onSeek(seg.start)} aria-current={isActive}>
         <time className="seg-time tnum">{fmtTime(seg.start)}</time>
         <span className="seg-text">{seg.corrected_text || seg.text}</span>

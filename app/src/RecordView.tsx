@@ -126,6 +126,12 @@ function JobProgress({ job, retry }: { job: JobState; retry: () => void }) {
           </span>
         )}
       </div>
+      {/* 화자 분리 모델이 없거나 실패해도 전사는 계속된다 (diarizer_missing·diarizer_failed) */}
+      {job.warnings.map((w) => (
+        <p key={w.code} className="record-warning" role="status">
+          {w.message}
+        </p>
+      ))}
       <div className="job-track">
         <div className={`job-fill ${pct === null && job.running ? "is-indeterminate" : ""}`} style={{ transform: `scaleX(${pct === null ? (job.running ? 1 : 0) : pct / 100})` }} />
       </div>

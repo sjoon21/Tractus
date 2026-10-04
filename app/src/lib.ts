@@ -6,6 +6,8 @@ export interface Segment {
   end: number;
   text: string;
   corrected_text?: string | null;
+  /** "S1"… schema_version 1이나 화자 분리를 끈 회의는 없거나 null */
+  speaker?: string | null;
 }
 
 export interface Memo {
@@ -47,7 +49,7 @@ export function segmentIndexAt(segments: Segment[], t: number): number {
   return found;
 }
 
-export type Row = { kind: "seg"; seg: Segment; index: number } | { kind: "memo"; memo: Memo };
+export type Row = { kind: "seg"; seg: Segment; index: number; turnStart?: boolean } | { kind: "memo"; memo: Memo };
 
 /** 전사 세그먼트와 메모·북마크를 시각 순으로 합친다. 같은 시각이면 세그먼트가 먼저다. */
 export function interleave(segments: Segment[], memos: Memo[]): Row[] {
@@ -60,6 +62,77 @@ export function interleave(segments: Segment[], memos: Memo[]): Row[] {
   });
   while (j < sorted.length) rows.push({ kind: "memo", memo: sorted[j++] });
   return rows;
+}
+
+// ── 화자 (transcript.json schema_version 2, docs/desktop.md §2.1). 라벨은 자동 추정이고 이름은 사용자가 붙인다 ──
+
+export type Speakers = Record<string, { name: string | null }>;
+
+/** 표시 이름: 이름, 없으면 라벨. 화자가 없는 세그먼트는 null. */
+export function speakerName(label: string | null | undefined, speakers: Speakers): string | null {
+  if (!label) return null;
+  return speakers[label]?.name?.trim() || label;
+}
+
+export const SPEAKER_SLOTS = 8;
+const labelNum = (label: string) => Number(/^S(\d+)$/.exec(label)?.[1] ?? NaN);
+
+/** 색 슬롯 0..7. 라벨 번호로 정하므로 이름을 바꾸거나 다른 화자를 합쳐도 남은 화자의 색은 그대로다. 라벨이 아니면 -1(무채색). */
+export function speakerSlot(label: string | null | undefined): number {
+  const n = labelNum(label ?? "");
+  return Number.isNaN(n) ? -1 : (((n - 1) % SPEAKER_SLOTS) + SPEAKER_SLOTS) % SPEAKER_SLOTS;
+}
+
+export interface SpeakerStat {
+  label: string;
+  display: string;
+  segments: number;
+  talkSec: number;
+  /** 화자가 붙은 발화 시간 전체에 대한 비율 0..1 */
+  share: number;
+  /** 색 슬롯. 라벨 번호대로(speakerSlot) 두되, 이미 쓰인 슬롯이면 빈 슬롯을 쓴다 (8명이 넘으면 겹친다) */
+  slot: number;
+}
+
+/** 화자 막대용 목록. 편집해도 순서가 흔들리지 않게 라벨 번호 순이다. */
+export function speakerStats(segments: Segment[], speakers: Speakers): SpeakerStat[] {
+  const talk = new Map<string, { segments: number; talkSec: number }>(Object.keys(speakers).map((l) => [l, { segments: 0, talkSec: 0 }]));
+  for (const s of segments) {
+    if (!s.speaker) continue;
+    const t = talk.get(s.speaker) ?? { segments: 0, talkSec: 0 };
+    talk.set(s.speaker, { segments: t.segments + 1, talkSec: t.talkSec + Math.max(0, s.end - s.start) });
+  }
+  const total = [...talk.values()].reduce((a, t) => a + t.talkSec, 0);
+  const sorted = [...talk.entries()].sort(([a], [b]) => (labelNum(a) || Infinity) - (labelNum(b) || Infinity) || a.localeCompare(b));
+  const used = new Set<number>();
+  const own = sorted.map(([label]) => {
+    const n = speakerSlot(label);
+    if (n < 0 || used.has(n)) return null;
+    used.add(n);
+    return n;
+  });
+  const free = [...Array(SPEAKER_SLOTS).keys()].filter((n) => !used.has(n));
+  return sorted.map(([label, t], i) => ({
+    label,
+    display: speakerName(label, speakers)!,
+    ...t,
+    share: total ? t.talkSec / total : 0,
+    slot: own[i] ?? (speakerSlot(label) < 0 ? -1 : (free.shift() ?? speakerSlot(label))),
+  }));
+}
+
+/**
+ * 화면에 그릴 행. only가 있으면 그 화자의 세그먼트만(메모는 숨김). index는 원래 위치 그대로다(재생 위치 강조용).
+ * turnStart: 바로 앞 행이 같은 화자의 바로 앞 세그먼트가 아니면 새 발언이다 — 이름은 발언마다 한 번만 보인다.
+ */
+export function transcriptRows(segments: Segment[], memos: Memo[], only: string | null): Row[] {
+  const rows: Row[] = only === null ? interleave(segments, memos) : segments.flatMap((seg, index) => (seg.speaker === only ? [{ kind: "seg" as const, seg, index }] : []));
+  return rows.map((r, i) => {
+    if (r.kind !== "seg") return r;
+    const prev = rows[i - 1];
+    const same = prev?.kind === "seg" && prev.index === r.index - 1 && (prev.seg.speaker ?? null) === (r.seg.speaker ?? null);
+    return { ...r, turnStart: !same };
+  });
 }
 
 /** 요약 항목의 근거 세그먼트 중 가장 이른 시각. 없으면 null. */
@@ -126,6 +199,7 @@ export function levelFraction(db: number | null | undefined): number {
 export const STAGE_LABEL: Record<string, string> = {
   decode: "오디오 읽는 중",
   vad: "발화 구간 찾는 중",
+  diarize: "화자 구분 중…",
   encode: "오디오 보관 중",
   load_model: "모델 불러오는 중",
   transcribe: "전사 중",
@@ -148,6 +222,7 @@ export type JobEvent =
   | { job: string; event: "stage"; stage: string }
   | { job: string; event: "progress"; done: number; total: number }
   | { job: string; event: "done"; meeting_id: string; meeting_dir: string }
+  | { job: string; event: "warning"; code: string; message: string }
   | { job: string; event: "error"; message: string }
   | { job: string; event: "exit"; code: number | null; stderr: string };
 
@@ -158,9 +233,11 @@ export interface JobState {
   total: number;
   meetingId: string | null;
   error: string | null;
+  /** 끝나지 않는 경고 (예: diarizer_missing → 화자 없이 계속) */
+  warnings: { code: string; message: string }[];
 }
 
-export const IDLE_JOB: JobState = { running: false, stage: null, done: 0, total: 0, meetingId: null, error: null };
+export const IDLE_JOB: JobState = { running: false, stage: null, done: 0, total: 0, meetingId: null, error: null, warnings: [] };
 
 /** 성공은 exit 0 + done 이벤트. 그 밖의 종료는 error 이벤트 메시지, 없으면 stderr 끝부분을 오류로 보인다. */
 export function jobReduce(s: JobState, ev: JobEvent): JobState {
@@ -171,6 +248,8 @@ export function jobReduce(s: JobState, ev: JobEvent): JobState {
       return { ...s, done: ev.done, total: ev.total };
     case "done":
       return { ...s, meetingId: ev.meeting_id };
+    case "warning":
+      return s.warnings.some((w) => w.code === ev.code) ? s : { ...s, warnings: [...s.warnings, { code: ev.code, message: ev.message }] };
     case "error":
       return { ...s, error: ev.message };
     case "exit": {

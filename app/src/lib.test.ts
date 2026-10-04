@@ -19,6 +19,10 @@ import {
   recMode,
   REC_MODES,
   segmentIndexAt,
+  speakerName,
+  speakerSlot,
+  speakerStats,
+  transcriptRows,
   warningText,
   withRecMode,
   type Segment,
@@ -239,4 +243,78 @@ describe("녹음 방식", () => {
     expect(s.mode).toBe("hybrid");
     expect(IDLE_REC.mode).toBe("in_person");
   });
+});
+
+// ── 화자 (transcript.json schema_version 2. v1에는 speakers·segment.speaker가 없다) ──
+
+describe("화자", () => {
+  const speakers = { S1: { name: "김민수" }, S2: { name: null }, S3: { name: "  " } };
+  const v2: Segment[] = [
+    { id: "s0001", start: 0, end: 10, text: "a", speaker: "S1" },
+    { id: "s0002", start: 10, end: 14, text: "b", speaker: "S1" },
+    { id: "s0003", start: 14, end: 20, text: "c", speaker: "S2" },
+    { id: "s0004", start: 20, end: 30, text: "d", speaker: "S1" },
+    { id: "s0005", start: 30, end: 32, text: "e", speaker: null },
+  ];
+
+  test("표시 이름: 이름 > 라벨, 화자 없음은 null", () => {
+    expect(speakerName("S1", speakers)).toBe("김민수");
+    expect(speakerName("S2", speakers)).toBe("S2");
+    expect(speakerName("S3", speakers)).toBe("S3"); // 공백 이름은 없는 것과 같다
+    expect(speakerName("S9", speakers)).toBe("S9"); // speakers에 없는 라벨도 라벨로
+    expect(speakerName(null, speakers)).toBeNull();
+    expect(speakerName(undefined, {})).toBeNull();
+  });
+
+  test("색은 라벨 번호로 정해져 이름·순서·병합과 무관하다", () => {
+    expect(["S1", "S2", "S8", "S9", "S16"].map(speakerSlot)).toEqual([0, 1, 7, 0, 7]);
+    expect(speakerSlot("S3")).toBe(speakerSlot("S3"));
+    expect(speakerSlot(null)).toBe(-1);
+    expect(speakerSlot("화자")).toBe(-1);
+  });
+
+  test("색 슬롯: 라벨 번호 우선, 겹치면 빈 슬롯 (S2를 합친 뒤 새 화자 S9가 S1과 같은 색이 되지 않게)", () => {
+    const slots = (labels: string[]) => speakerStats([], Object.fromEntries(labels.map((l) => [l, { name: null }]))).map((s) => s.slot);
+    expect(slots(["S1", "S2", "S3"])).toEqual([0, 1, 2]);
+    expect(slots(["S1", "S3", "S9"])).toEqual([0, 2, 1]);
+    // 9명이면 겹침은 피할 수 없다 → 라벨 번호대로
+    expect(slots(["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9"])).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 0]);
+  });
+
+  test("말한 시간 비율, 라벨 번호 순 (S10은 S2 뒤)", () => {
+    const st = speakerStats([...v2, { id: "s0006", start: 40, end: 42, text: "f", speaker: "S10" }], { ...speakers, S10: { name: null } });
+    expect(st.map((x) => x.label)).toEqual(["S1", "S2", "S3", "S10"]);
+    expect(st[0]).toMatchObject({ display: "김민수", segments: 3, talkSec: 24 });
+    expect(st[0].share).toBeCloseTo(24 / 32);
+    expect(st[2]).toMatchObject({ display: "S3", segments: 0, talkSec: 0, share: 0 });
+  });
+
+  test("schema v1(화자 필드 없음)은 화자가 없고 그대로 그린다", () => {
+    expect(speakerStats(segs, {})).toEqual([]);
+    expect(transcriptRows(segs, [], null).map((r) => r.kind === "seg" && r.turnStart)).toEqual([true, false, false]);
+  });
+
+  test("같은 화자가 이어지면 이름은 처음 한 번만, 메모가 끼면 다시", () => {
+    const rows = transcriptRows(v2, [{ t: 5, kind: "memo", text: "m" }], null);
+    expect(rows.map((r) => (r.kind === "seg" ? `${r.seg.id}${r.turnStart ? "*" : ""}` : "memo"))).toEqual(["s0001*", "memo", "s0002*", "s0003*", "s0004*", "s0005*"]);
+    expect(transcriptRows(v2, [], null).map((r) => r.kind === "seg" && r.turnStart)).toEqual([true, false, true, true, true]);
+  });
+
+  test("화자 필터: 그 화자 세그먼트만, 메모는 숨기고, 원래 index를 유지(플레이어 강조용)", () => {
+    const rows = transcriptRows(v2, [{ t: 12, kind: "memo", text: "m" }], "S1");
+    expect(rows.map((r) => (r.kind === "seg" ? [r.index, r.turnStart] : "memo"))).toEqual([
+      [0, true],
+      [1, false],
+      [3, true], // 사이에 다른 화자가 있었으니 새 발언
+    ]);
+    expect(transcriptRows(v2, [], "S7")).toEqual([]);
+  });
+});
+
+test("jobReduce: warning은 진행을 멈추지 않고 코드별로 한 번만 모은다", () => {
+  const w: JobEvent = { job: "j", event: "warning", code: "diarizer_missing", message: "화자 분리 모델이 없습니다" };
+  const s = [{ job: "j", event: "stage", stage: "vad" } as JobEvent, w, w, { job: "j", event: "stage", stage: "encode" } as JobEvent].reduce(jobReduce, { ...IDLE_JOB, running: true });
+  expect(s).toMatchObject({ running: true, stage: "encode", error: null });
+  expect(s.warnings).toEqual([{ code: "diarizer_missing", message: "화자 분리 모델이 없습니다" }]);
+  expect(IDLE_JOB.warnings).toEqual([]);
 });

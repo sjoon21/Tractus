@@ -1,6 +1,7 @@
 //! 회의 폴더 읽기. 파일이 원본이다(ARCHITECTURE.md §4.1, §6). 쓰기는 하지 않는다.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -13,6 +14,16 @@ pub struct Segment {
     pub text: String,
     #[serde(default)]
     pub corrected_text: Option<String>,
+    /// "S1"… schema_version 1이나 화자 분리를 끈 회의는 없거나 null
+    #[serde(default)]
+    pub speaker: Option<String>,
+}
+
+/// transcript.json `speakers` 값. 이름은 사용자가 붙인다 (`tractus speakers rename`)
+#[derive(Deserialize, Serialize, Clone, Debug, Default)]
+pub struct Speaker {
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
@@ -34,6 +45,18 @@ struct Transcript {
     audio: Audio,
     #[serde(default)]
     segments: Vec<Segment>,
+    /// schema_version 2. v1에는 없고, 화자 분리를 끄면 {} (null도 받는다)
+    #[serde(default, deserialize_with = "lenient_speakers")]
+    speakers: BTreeMap<String, Speaker>,
+}
+
+/// 코어(store.speaker_name)처럼 너그럽게 읽는다. 이상한 값 하나로 회의 전체를 못 읽으면 목록에서 빠진다.
+/// 객체가 아닌 speakers는 없는 것으로, 객체가 아닌 값은 이름 없는 화자로 본다.
+fn lenient_speakers<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<String, Speaker>, D::Error> {
+    Ok(match serde_json::Value::deserialize(d)? {
+        serde_json::Value::Object(m) => m.into_iter().map(|(k, v)| (k, serde_json::from_value(v).unwrap_or_default())).collect(),
+        _ => BTreeMap::new(),
+    })
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -101,6 +124,8 @@ pub struct MeetingInfo {
 pub struct MeetingDetail {
     pub info: MeetingInfo,
     pub segments: Vec<Segment>,
+    /// 라벨 → 이름. 화자 없는 회의는 빈 객체
+    pub speakers: BTreeMap<String, Speaker>,
     pub summary: Option<Summary>,
     pub memos: Vec<Memo>,
     /// 오디오 절대 경로. 프론트엔드가 convertFileSrc(path, "media")로 URL을 만든다 (media.rs).
@@ -216,7 +241,7 @@ pub fn load(home: &Path, id: &str) -> Result<MeetingDetail, String> {
         .map(|f| dir.join(f))
         .filter(|p| p.is_file())
         .map(|p| p.to_string_lossy().into_owned());
-    Ok(MeetingDetail { info: info(&dir, &t), segments: t.segments, summary, memos, audio_path })
+    Ok(MeetingDetail { info: info(&dir, &t), speakers: t.speakers, segments: t.segments, summary, memos, audio_path })
 }
 
 #[cfg(test)]
@@ -309,6 +334,41 @@ mod tests {
         assert!(!is_recording_dir(&home, &rec.join(".")));
         assert!(!is_recording_dir(&home, &rec.join("01OLD/..")));
         assert!(!is_recording_dir(&home, &home.join("meetings/01OLD")));
+    }
+
+    #[test]
+    fn reads_speakers_v2_and_v1_without() {
+        let home = temp_home("speakers");
+        let write = |id: &str, json: &str| {
+            let dir = home.join(format!("meetings/2026-10-04_t_{id}"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("transcript.json"), json).unwrap();
+        };
+        write(
+            "01V2",
+            r#"{"schema_version":2,"meeting_id":"01V2","speakers":{"S1":{"name":"김민수"},"S2":{"name":null}},
+               "diarization":{"model":"m","revision":"r","params":{}},
+               "segments":[{"id":"s0001","start":0,"end":1,"text":"a","speaker":"S1"},{"id":"s0002","start":1,"end":2,"text":"b","speaker":null}]}"#,
+        );
+        write("01V1", r#"{"schema_version":1,"meeting_id":"01V1","segments":[{"id":"s0001","start":0,"end":1,"text":"a"}]}"#);
+        write("01OFF", r#"{"schema_version":2,"meeting_id":"01OFF","speakers":null,"diarization":null,"segments":[]}"#);
+        // 코어처럼 너그럽게: 값이 객체가 아니면 이름 없는 화자, speakers가 객체가 아니면 없는 것으로
+        write("01ODD", r#"{"schema_version":2,"meeting_id":"01ODD","speakers":{"S1":null,"S2":"x","S3":{"name":"박"}},"segments":[]}"#);
+        write("01ARR", r#"{"schema_version":2,"meeting_id":"01ARR","speakers":[],"segments":[]}"#);
+
+        let v2 = load(&home, "01V2").unwrap();
+        assert_eq!(v2.speakers["S1"].name.as_deref(), Some("김민수"));
+        assert_eq!(v2.speakers["S2"].name, None);
+        assert_eq!(v2.segments.iter().map(|s| s.speaker.as_deref()).collect::<Vec<_>>(), vec![Some("S1"), None]);
+        let v1 = load(&home, "01V1").unwrap();
+        assert!(v1.speakers.is_empty() && v1.segments[0].speaker.is_none());
+        assert!(load(&home, "01OFF").unwrap().speakers.is_empty());
+        let odd = load(&home, "01ODD").unwrap();
+        assert_eq!(odd.speakers.iter().map(|(k, v)| (k.as_str(), v.name.as_deref())).collect::<Vec<_>>(), vec![("S1", None), ("S2", None), ("S3", Some("박"))]);
+        assert!(load(&home, "01ARR").unwrap().speakers.is_empty());
+        assert_eq!(list(&home).len(), 5); // 목록에서 빠지지 않는다
+        // 프론트엔드는 speakers를 항상 객체로 받는다
+        assert_eq!(serde_json::to_value(&v1).unwrap()["speakers"], serde_json::json!({}));
     }
 
     #[test]

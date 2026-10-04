@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -157,3 +158,43 @@ def test_stdio_server_keeps_stdout_clean(home, tmp_path):
 
     r = anyio.run(go)
     assert not r.is_error and r.structured_content["hits"] and not errors
+
+
+def _with_speakers(home):
+    """가상 회의 하나에 화자 정보를 붙인다 (schema_version 2)."""
+    (d,) = [p for p in (home / "meetings").iterdir() if RELEASE in p.name]
+    t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+    for i, s in enumerate(t["segments"]):
+        s["speaker"] = ["S1", "S2", None][i % 3]
+    t.update(schema_version=2, speakers={"S1": {"name": "김민수"}, "S2": {"name": None}}, diarization={"model": "m", "revision": "r", "params": {}})
+    (d / "transcript.json").write_text(json.dumps(t, ensure_ascii=False), encoding="utf-8")
+    return t
+
+
+def test_get_transcript_shows_speaker_names_or_labels(home):
+    _with_speakers(home)
+    page = text(call(build_server(home, None), "get_transcript", {"meeting_id": RELEASE, "max_segments": 3}))
+    assert "[s0001 00:00:00 김민수] " in page and "[s0002 " in page and " S2] " in page
+    assert re.search(r"\[s0003 \d\d:\d\d:\d\d\] ", page)  # 화자를 모르면 생략
+
+
+def test_search_hits_include_speaker(home):
+    t = _with_speakers(home)
+    word = t["segments"][0]["text"].split()[0]
+    r = structured(call(build_server(home, None), "search_meetings", {"query": word, "meeting_id": RELEASE}))
+    segs = [s for h in r["hits"] for s in h["segments"]]
+    assert {s["speaker"] for s in segs} <= {"김민수", "S2", None} and any(s["speaker"] == "김민수" for s in segs)
+
+
+def test_instructions_mention_estimated_speakers():
+    from tractus.mcp_server import INSTRUCTIONS
+
+    assert "자동 추정" in INSTRUCTIONS
+
+
+def test_save_summary_drops_speaker_label_owners(home):
+    (d,) = [p for p in (home / "meetings").iterdir() if RELEASE in p.name]
+    s = {"title": "릴리스", "summary": "요약", "topics": [], "decisions": [],
+         "action_items": [{"task": "QA", "owner": "S2", "due": None, "segment_ids": ["s0004"]}]}
+    assert not call(build_server(home, None), "save_summary", {"meeting_id": RELEASE, "summary": s, "author": "claude-code"}).is_error
+    assert json.loads((d / "summary.json").read_text(encoding="utf-8"))["action_items"][0]["owner"] is None

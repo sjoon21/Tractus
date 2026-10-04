@@ -15,9 +15,11 @@ from pathlib import Path
 
 import numpy as np
 
+from tractus.store import speaker_name
+
 log = logging.getLogger("tractus.index")
 
-SCHEMA_VERSION = "2"  # 2: chunks.segments(세그먼트별 텍스트) 추가 — 세그먼트 단위 인용용
+SCHEMA_VERSION = "3"  # 2: chunks.segments(세그먼트별 텍스트) 추가 — 세그먼트 단위 인용용. 3: segments에 speaker(표시 이름)
 TOKENIZER_VERSION = "bigram-v2"  # v2: 영문 접두와 숫자 분리 (v2.4 → v + 2.4)
 CHUNK_MIN, CHUNK_MAX = 300, 500  # 자. 30초 세그먼트(200–250자)를 2개 안팎으로 묶는다
 POOL = 50  # RRF에 넣을 키워드·벡터 후보 수
@@ -118,8 +120,9 @@ def fuse(keyword: list[int], strict: set[int], vector: dict[int, float] | None, 
     return first + sorted(rest, key=lambda c: (-rest[c], c)), score
 
 
-def make_chunks(segments: list[dict]) -> list[dict]:
-    """연속 세그먼트를 300자 이상이 될 때까지 묶되 500자를 넘기지 않는다. 교정본이 있으면 교정본을 쓴다."""
+def make_chunks(segments: list[dict], speakers: dict | None = None) -> list[dict]:
+    """연속 세그먼트를 300자 이상이 될 때까지 묶되 500자를 넘기지 않는다. 교정본이 있으면 교정본을 쓴다.
+    세그먼트마다 화자 표시 이름(이름 > 라벨 > None)을 함께 저장한다. 이름을 바꾸면 transcript.json이 바뀌어 다시 색인된다."""
     groups, cur, size = [], [], 0
     for s in segments:
         text = (s.get("corrected_text") or s.get("text") or "").strip()
@@ -139,7 +142,10 @@ def make_chunks(segments: list[dict]) -> list[dict]:
         {
             "start": float(g[0][0]["start"]),
             "end": float(g[-1][0]["end"]),
-            "segments": [{"id": s["id"], "start": float(s["start"]), "end": float(s["end"]), "text": t} for s, t in g],
+            "segments": [
+                {"id": s["id"], "start": float(s["start"]), "end": float(s["end"]), "text": t, "speaker": speaker_name({"speakers": speakers}, s.get("speaker"))}
+                for s, t in g
+            ],
             "text": " ".join(t for _, t in g),
         }
         for g in groups
@@ -165,7 +171,7 @@ class Hit:
     meeting_id: str
     title: str
     date: str
-    segments: list[dict]  # [{id, start, end, text}] — 근거 인용은 세그먼트 단위로
+    segments: list[dict]  # [{id, start, end, text, speaker}] — 근거 인용은 세그먼트 단위로
     start: float
     end: float
     score: float  # 표시용 순위 점수 (strict 키워드 결과는 1 이상)
@@ -377,11 +383,16 @@ class Index:
         self.db.execute("DELETE FROM meetings WHERE meeting_id=?", (mid,))
 
     def _replace_meeting(self, d: Path, t: dict, sig: str, sha: str) -> None:
-        """벡터는 여기서 만들지 않는다. sync() 끝의 _ensure_vectors가 빠진 벡터를 한 번에 채운다."""
-        chunks = make_chunks(t["segments"])
+        """새 벡터는 여기서 만들지 않는다. sync() 끝의 _ensure_vectors가 빠진 벡터를 한 번에 채운다.
+        본문이 그대로인 청크는 기존 벡터를 옮겨 쓴다 (화자 편집은 본문을 바꾸지 않아 다시 임베딩할 것이 없다)."""
+        chunks = make_chunks(t["segments"], t.get("speakers"))
         date = str(t.get("created_at") or "")[:10]
+        has_vec = self._table("chunks_vec")
         self.db.execute("BEGIN IMMEDIATE")
         try:
+            old_vec = dict(self.db.execute(
+                "SELECT c.text, v.embedding FROM chunks c JOIN chunks_vec v ON v.chunk_id = c.chunk_id WHERE c.meeting_id=?", (t["meeting_id"],)
+            ).fetchall()) if has_vec else {}
             self._delete_meeting(t["meeting_id"])
             self.db.execute(
                 "INSERT INTO meetings(meeting_id, dir, title, date, sig, sha) VALUES(?, ?, ?, ?, ?, ?)",
@@ -393,6 +404,9 @@ class Index:
                     (t["meeting_id"], ord_, c["start"], c["end"], json.dumps(c["segments"], ensure_ascii=False), c["text"]),
                 )
                 self.db.execute("INSERT INTO chunks_fts(rowid, body) VALUES(?, ?)", (cur.lastrowid, to_index_text(c["text"])))
+                if c["text"] in old_vec:
+                    self.db.execute("INSERT INTO chunks_vec(chunk_id, embedding, meeting_id, meeting_date) VALUES(?, ?, ?, ?)",
+                                    (cur.lastrowid, old_vec[c["text"]], t["meeting_id"], date))
             self.db.execute("COMMIT")
         except Exception:
             self.db.execute("ROLLBACK")

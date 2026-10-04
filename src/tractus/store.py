@@ -1,5 +1,6 @@
-"""회의 폴더(§4.1 레이아웃), 진행 상태(이어하기), transcript.json/md 저장."""
+"""회의 폴더(§4.1 레이아웃), 진행 상태(이어하기), transcript.json/md/vtt 저장, 화자 편집."""
 
+import copy
 import json
 import os
 import re
@@ -11,12 +12,15 @@ from pathlib import Path
 from tractus.asr import Segment
 
 SR = 16000
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: segment.speaker("S1"…), 최상위 speakers·diarization. 1도 그대로 읽는다
 JOB_FILE = ".job.json"
 CHUNKS_FILE = ".chunks.jsonl"
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
-__all__ = ["Job", "Segment", "find_job", "find_meeting_dir", "load_glossary", "meeting_dir_name", "new_ulid", "render_markdown", "write_transcript"]
+__all__ = [
+    "Job", "Segment", "apply_speaker_edit", "find_job", "find_meeting_dir", "load_glossary", "meeting_dir_name", "new_ulid",
+    "render_markdown", "save_transcript", "speaker_name", "write_transcript",
+]
 
 
 def new_ulid(ms: int | None = None) -> str:
@@ -44,7 +48,7 @@ def load_glossary(path: Path) -> list[str]:
 
 @dataclass
 class Job:
-    """진행 중인 전사 작업. 청크 경계를 저장해 두므로 이어하기 때 VAD를 다시 돌리지 않는다."""
+    """진행 중인 전사 작업. 청크 경계와 화자를 저장해 두므로 이어하기 때 VAD·화자 분리를 다시 돌리지 않는다."""
 
     dir: Path
     meeting_id: str
@@ -57,8 +61,12 @@ class Job:
     track: str
     language: str  # "auto" | "ko" | "en"
     hotwords: list[str] = field(default_factory=list)
-    chunks: list[tuple[int, int]] = field(default_factory=list)
+    chunks: list[tuple[int, int, str | None]] = field(default_factory=list)  # (시작 표본, 끝 표본, 화자 라벨 또는 None)
     audio_file: str = "audio.opus"  # 새 작업은 audio.ogg. 값이 없는 예전 .job.json은 audio.opus
+    diarizer: dict | None = None  # transcript.json의 diarization. None이면 화자 분리 안 함
+
+    def __post_init__(self) -> None:
+        self.chunks = [(c[0], c[1], c[2] if len(c) > 2 else None) for c in self.chunks]  # 예전 작업의 [s, e]도 받는다
 
     def save(self) -> None:
         data = {k: v for k, v in asdict(self).items() if k != "dir"}
@@ -91,7 +99,6 @@ class Job:
     @classmethod
     def load(cls, d: Path) -> "Job":
         data = json.loads((d / JOB_FILE).read_text(encoding="utf-8"))
-        data["chunks"] = [tuple(c) for c in data["chunks"]]
         return cls(dir=d, **data)
 
 
@@ -138,7 +145,7 @@ def write_transcript(job: Job) -> dict:
     if missing:
         raise RuntimeError(f"전사되지 않은 청크가 있습니다: {missing[:10]} — 같은 명령으로 다시 실행하세요")
     segments = []
-    for i, (s, e) in enumerate(job.chunks):
+    for i, (s, e, speaker) in enumerate(job.chunks):
         seg = done[i]
         if not seg.text:
             continue
@@ -148,7 +155,7 @@ def write_transcript(job: Job) -> dict:
             "end": round(e / SR, 2),
             "text": seg.text,
             "lang": seg.lang,
-            "speaker": None,
+            "speaker": speaker,
             "corrected_text": None,
             "words": None,
         })
@@ -159,15 +166,96 @@ def write_transcript(job: Job) -> dict:
         "created_at": job.created_at,
         "audio": {"file": job.audio_file, "duration_sec": job.duration_sec, "source": job.source, "sha256": job.sha256},
         "asr": {"model": job.model, "track": job.track, "runtime": "mlx-audio", "language": job.language, "hotwords": job.hotwords},
+        "speakers": _speakers_map({}, segments),
+        "diarization": job.diarizer,
         "segments": segments,
     }
-    # transcript.json이 완료 표시다. md·vtt를 먼저 쓰고 json을 마지막에 써야 중간 종료 시 md 없는 "완료"가 생기지 않는다.
-    _write_atomic(job.dir / "transcript.md", render_markdown(transcript, load_memos(job.dir)))
-    _write_atomic(job.dir / "transcript.vtt", render_vtt(transcript))
-    _write_atomic(job.dir / "transcript.json", json.dumps(transcript, ensure_ascii=False, indent=1))
+    save_transcript(job.dir, transcript)
     (job.dir / JOB_FILE).unlink()
     (job.dir / CHUNKS_FILE).unlink(missing_ok=True)
     return transcript
+
+
+def save_transcript(d: Path, t: dict) -> None:
+    """transcript.md·vtt를 먼저, transcript.json을 마지막에 원자적으로 쓴다.
+    transcript.json이 완료 표시라 중간에 끊겨도 md 없는 "완료"가 생기지 않는다."""
+    _write_atomic(d / "transcript.md", render_markdown(t, load_memos(d)))
+    _write_atomic(d / "transcript.vtt", render_vtt(t))
+    _write_atomic(d / "transcript.json", json.dumps(t, ensure_ascii=False, indent=1))
+
+
+# ── 화자 ──────────────────────────────────────────────────────────────
+
+
+def _label_key(label: str) -> tuple[int, str]:
+    return (int(label[1:]), label) if label[1:].isdigit() else (1 << 30, label)
+
+
+def _speakers_map(old: dict, segments: list[dict]) -> dict:
+    """세그먼트에 쓰인 라벨만 S1, S2 … 순서로 남긴다. 이름은 old에서 이어받는다."""
+    used = {s.get("speaker") for s in segments} - {None}
+    return {k: {"name": (old.get(k) or {}).get("name")} for k in sorted(used, key=_label_key)}
+
+
+def speaker_name(t: dict, label: str | None) -> str | None:
+    """표시 이름: 사용자가 정한 이름, 없으면 라벨(S1), 화자를 모르면 None. schema_version 1 전사도 받는다."""
+    if not label:
+        return None
+    return ((t.get("speakers") or {}).get(label) or {}).get("name") or label
+
+
+def _clean_name(raw: str) -> str | None:
+    """화자 이름 정리. md 굵게·VTT <v>·MCP/요약 줄 `[s0012 00:05:31 이름]` 형식을 깨는 문자는 빼고,
+    자동 라벨(S2)처럼 보이는 이름은 거부한다 (라벨과 헷갈리고 요약의 owner 정리에서 지워진다). 빈 문자열은 이름 지움."""
+    name = " ".join(re.sub(r"[\[\]<>*_`\\]", "", raw).split())
+    if raw.strip() and not name:
+        raise ValueError(f"이름에 쓸 수 있는 글자가 없습니다: {raw!r}")
+    if re.fullmatch(r"S\d+", name, re.IGNORECASE):
+        raise ValueError(f"자동 라벨과 같은 형태(S1, S2…)는 이름으로 쓸 수 없습니다: {name}")
+    return name or None
+
+
+def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
+    """화자 편집. 원본은 건드리지 않고 새 전사를 돌려준다. 잘못된 인자는 ValueError.
+
+    rename LABEL NAME   이름 지정 (빈 문자열이면 이름 지움)
+    set SEGMENT LABEL   세그먼트 화자 변경. LABEL이 new면 다음 라벨(S4 등)을 만든다
+    merge SRC DST       SRC 화자의 세그먼트를 모두 DST로 옮기고 SRC를 없앤다"""
+    t = copy.deepcopy(t)
+    speakers = t.get("speakers") or {}
+    t.update(schema_version=SCHEMA_VERSION, diarization=t.get("diarization"))
+
+    def known(label: str) -> str:
+        if label not in speakers:
+            raise ValueError(f"없는 화자입니다: {label} (있는 화자: {', '.join(speakers) or '없음'})")
+        return label
+
+    if op == "rename" and len(args) == 2:
+        speakers[known(args[0])] = {"name": _clean_name(args[1])}
+    elif op == "set" and len(args) == 2:
+        seg = next((s for s in t["segments"] if s["id"] == args[0]), None)
+        if seg is None:
+            raise ValueError(f"없는 세그먼트입니다: {args[0]}")
+        if args[1] == "new":
+            used = [_label_key(k)[0] for k in [*speakers, *(s.get("speaker") or "" for s in t["segments"])] if k[1:].isdigit()]
+            label = f"S{max(used, default=0) + 1}"
+            speakers[label] = {"name": None}
+        else:
+            label = known(args[1])
+        seg["speaker"] = label
+    elif op == "merge" and len(args) == 2:
+        src, dst = known(args[0]), known(args[1])
+        if src == dst:
+            raise ValueError("같은 화자끼리는 합칠 수 없습니다")
+        for seg in t["segments"]:
+            if seg.get("speaker") == src:
+                seg["speaker"] = dst
+        if not (speakers[dst] or {}).get("name"):
+            speakers[dst] = {"name": (speakers[src] or {}).get("name")}
+    else:
+        raise ValueError(f"알 수 없는 화자 편집: {op} {' '.join(args)}")
+    t["speakers"] = _speakers_map(speakers, t["segments"])
+    return t
 
 
 def _hms(sec: float) -> str:
@@ -194,16 +282,21 @@ def _vtt_time(sec: float) -> str:
 
 
 def render_vtt(t: dict) -> str:
-    """WebVTT 자막. 큐 ID는 세그먼트 ID (브라우저 <track>, Obsidian Media Extended가 그대로 읽음)."""
+    """WebVTT 자막. 큐 ID는 세그먼트 ID, 화자는 <v 이름> (브라우저 <track>, Obsidian Media Extended가 그대로 읽음)."""
+    def voice(s: dict) -> str:  # 화자는 <v 이름> 태그. 이름 안의 마크업 문자는 뺀다
+        name = speaker_name(t, s.get("speaker"))
+        return f"<v {' '.join(re.sub(r'[<>&]', '', name).split())}>" if name else ""
+
     cues = [
-        f"{s['id']}\n{_vtt_time(s['start'])} --> {_vtt_time(s['end'])}\n{s['text'].replace('-->', '→')}"
+        f"{s['id']}\n{_vtt_time(s['start'])} --> {_vtt_time(s['end'])}\n{voice(s)}{s['text'].replace('-->', '→')}"
         for s in t["segments"] if s["text"]
     ]
     return "WEBVTT\n\n" + "\n\n".join(cues) + "\n"
 
 
 def render_markdown(t: dict, memos: list[dict] | None = None) -> str:
-    """사람·에이전트용 전사. frontmatter는 Obsidian 등에서 그대로 읽힌다. 메모·북마크는 시각 순으로 끼워 넣는다."""
+    """사람·에이전트용 전사. 줄마다 `[HH:MM:SS] **화자**: 텍스트` (화자를 모르면 생략).
+    frontmatter는 Obsidian 등에서 그대로 읽힌다. 메모·북마크는 시각 순으로 끼워 넣는다."""
     head = [
         "---",
         f"meeting_id: {t['meeting_id']}",
@@ -216,7 +309,11 @@ def render_markdown(t: dict, memos: list[dict] | None = None) -> str:
         f"# {t['title']}",
         "",
     ]
-    rows = [(s["start"], 0, f"[{_hms(s['start'])}] {s['text']}") for s in t["segments"] if s["text"]]
+    def who(s: dict) -> str:
+        name = speaker_name(t, s.get("speaker"))
+        return f"**{name}**: " if name else ""
+
+    rows = [(s["start"], 0, f"[{_hms(s['start'])}] {who(s)}{s['text']}") for s in t["segments"] if s["text"]]
     for m in memos or []:
         label = _MARK_LABEL.get(m.get("kind"), "메모")
         text = f" {m['text']}" if m.get("text") else ""

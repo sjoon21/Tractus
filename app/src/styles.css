@@ -1,5 +1,6 @@
 /* Tractus — 스위스 타이포그래피 + 종이 원고. 색은 의미로만 쓴다:
-   인주(accent) = 지금·녹음·재생 위치, 황토(memo) = 사람이 남긴 메모·북마크, 파랑(focus) = 키보드 초점. */
+   인주(accent) = 지금·녹음·재생 위치, 황토(memo) = 사람이 남긴 메모·북마크, 파랑(focus) = 키보드 초점,
+   화자 잉크(spk-0…7) = 누가 말했는지. 화자 색은 인주·황토와 겹치지 않는 탁한 잉크이고, 두 테마 모두 종이 위 대비 3.9:1 이상. */
 
 :root {
   --paper: #f3f0e8;
@@ -16,6 +17,14 @@
   --memo-wash: rgba(156, 98, 16, 0.08);
   --focus: #1f5bd8;
   --on-ink: #f3f0e8;
+  --spk-0: #1f7a74;
+  --spk-1: #6e4fa8;
+  --spk-2: #3f7d2c;
+  --spk-3: #2b62a8;
+  --spk-4: #a83c7e;
+  --spk-5: #4d6475;
+  --spk-6: #75731f;
+  --spk-7: #8a4b5c;
   --grain-opacity: 0.35;
 
   --font: "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", sans-serif;
@@ -54,6 +63,14 @@
     --memo-wash: rgba(224, 164, 69, 0.09);
     --focus: #7fa6ff;
     --on-ink: #141412;
+    --spk-0: #5cc2b8;
+    --spk-1: #a98be0;
+    --spk-2: #8cc46f;
+    --spk-3: #74a7e8;
+    --spk-4: #e283bd;
+    --spk-5: #9db3c4;
+    --spk-6: #c4c063;
+    --spk-7: #d491a3;
     --grain-opacity: 0.18;
     color-scheme: dark;
   }
@@ -567,9 +584,15 @@ mark {
 
 .transcript-col {
   position: relative;
+  display: flex; /* 전사가 짧아도(화자 필터) 플레이어는 열 바닥에 */
+  flex-direction: column;
   overflow-y: auto;
   min-height: 0;
   padding: var(--gutter) var(--gutter) 0;
+}
+
+.transcript-col > .player {
+  margin-top: auto;
 }
 
 .meeting-head {
@@ -685,6 +708,358 @@ mark {
   color: var(--memo);
 }
 
+/* ── 화자 ── 대본처럼: 발언이 바뀔 때만 이름, 같은 사람의 발언은 왼쪽 잉크 줄로 묶는다 */
+
+.spk-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--spk);
+}
+
+.is-label {
+  color: var(--ink-2);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.transcript.has-speakers .seg {
+  position: relative;
+}
+
+.transcript.has-speakers .seg.is-turn {
+  margin-top: 16px;
+}
+
+.transcript.has-speakers .seg-text {
+  padding-left: 18px;
+}
+
+.transcript.has-speakers .seg-button::after {
+  content: "";
+  position: absolute;
+  left: var(--time-col);
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: color-mix(in srgb, var(--spk) 55%, transparent);
+}
+
+.spk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  transition: background var(--fast);
+}
+
+.spk-chip.is-turn {
+  margin-left: calc(var(--time-col) - 8px);
+  padding: 2px 11px 2px 5px;
+  border-radius: 999px;
+  font-size: var(--fs-sm);
+  font-weight: 680;
+  letter-spacing: -0.01em;
+}
+
+.spk-chip.is-turn .spk-dot {
+  box-shadow: 0 0 0 3px var(--paper);
+}
+
+.spk-chip.is-turn:hover {
+  background: color-mix(in srgb, var(--spk) 13%, transparent);
+}
+
+.spk-chip.is-unknown .spk-name {
+  color: var(--ink-3);
+  font-weight: 560;
+}
+
+/* 이어지는 세그먼트: 줄 위의 작은 구슬. 눌러서 이 세그먼트만 다른 화자로 */
+.spk-chip.is-cont {
+  position: absolute;
+  z-index: 1;
+  left: calc(var(--time-col) - 8px);
+  top: 17px;
+  width: 18px;
+  height: 18px;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.spk-chip.is-cont .spk-dot {
+  width: 6px;
+  height: 6px;
+  box-shadow: 0 0 0 2px var(--paper);
+  transition: transform var(--fast) var(--ease);
+}
+
+.spk-chip.is-cont:hover .spk-dot,
+.spk-chip.is-cont:focus-visible .spk-dot {
+  transform: scale(1.7);
+}
+
+/* 회의 머리의 화자 막대: 말한 시간 비율 + 필터·편집 */
+.speakers {
+  margin-top: 24px;
+}
+
+.speakers-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.speakers-head .eyebrow {
+  margin: 0 0 10px;
+  letter-spacing: 0.04em;
+}
+
+.speakers-head .eyebrow span {
+  font-weight: 500;
+}
+
+.speakers-share {
+  display: flex;
+  gap: 2px;
+  height: 5px;
+  margin-bottom: 12px;
+}
+
+.speakers-share span {
+  flex: 1 1 0;
+  min-width: 3px;
+  border-radius: 2px;
+  background: var(--spk);
+  transition: opacity var(--normal) var(--ease);
+}
+
+.speakers-share .is-dim {
+  opacity: 0.2;
+}
+
+.speakers-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.speakers-list li {
+  display: flex;
+  align-items: center;
+  border-radius: 999px;
+  transition: background var(--fast), box-shadow var(--fast), opacity var(--fast);
+}
+
+.speakers-list li.is-dim {
+  opacity: 0.55;
+}
+
+.speakers-list li.is-drop {
+  background: color-mix(in srgb, var(--spk) 12%, transparent);
+  box-shadow: 0 0 0 1.5px var(--spk);
+}
+
+.speaker-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font-size: var(--fs-sm);
+  font-weight: 650;
+  transition: background var(--fast), box-shadow var(--fast);
+}
+
+.speaker-filter:hover {
+  background: color-mix(in srgb, var(--spk) 10%, transparent);
+}
+
+.speaker-filter[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--spk) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--spk) 60%, transparent);
+}
+
+.speaker-share {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.speaker-filter.is-editing .spk-rename {
+  width: 9.5rem;
+  padding: 1px 8px;
+}
+
+.speaker-more {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 2px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-3);
+  transition: color var(--fast), background var(--fast);
+}
+
+.speaker-more:hover:not(:disabled) {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.speakers-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 14px;
+  padding: 12px 16px;
+  border-left: 3px solid var(--ink);
+  background: var(--paper-2);
+  font-size: var(--fs-sm);
+  animation: rise 280ms var(--ease) both;
+}
+
+.speakers-confirm p {
+  flex: 1 1 20rem;
+  margin: 0;
+}
+
+.speakers-confirm b {
+  text-decoration: underline 2px var(--spk);
+  text-underline-offset: 4px;
+}
+
+.speakers-confirm .primary-button {
+  padding: 7px 14px;
+}
+
+.spk-rename {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+/* 편집 메뉴 (네이티브 popover, 맨 위 층). 위치는 Speakers.tsx가 칩 옆으로 잡는다 */
+.spk-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  min-width: 210px;
+  max-width: 290px;
+  padding: 6px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  background: var(--paper-3);
+  color: var(--ink);
+  box-shadow: 0 22px 44px -20px rgba(0, 0, 0, 0.45), 0 2px 6px -2px rgba(0, 0, 0, 0.12);
+}
+
+.spk-menu:popover-open {
+  animation: pop 160ms var(--ease) both;
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+.spk-menu-title,
+.spk-menu-sub {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 4px 8px 6px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
+.spk-menu-title .spk-dot + * {
+  color: var(--ink);
+}
+
+.spk-menu-sub {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+}
+
+.spk-menu-group {
+  display: grid;
+}
+
+.spk-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  font-size: var(--fs-sm);
+  font-weight: 560;
+}
+
+.spk-menu button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.spk-menu button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--spk) 14%, transparent);
+}
+
+.spk-menu button[aria-pressed="true"]::after {
+  content: "✓";
+  margin-left: auto;
+  color: var(--ink-2);
+}
+
+.spk-menu .spk-menu-group + * {
+  margin-top: 4px;
+  padding-top: 9px;
+  border-top: 1px solid var(--rule);
+  border-radius: 0;
+}
+
+.spk-plus {
+  width: 8px;
+  text-align: center;
+  font-weight: 700;
+  color: var(--ink-3);
+}
+
+.spk-menu-rename {
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.spk-menu-hint {
+  display: block;
+  margin: 6px 2px 2px;
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
 /* 플레이어: 전사 열 아래에 붙는다 */
 .player {
   position: sticky;
@@ -774,6 +1149,10 @@ mark {
 .player-note {
   font-size: var(--fs-sm);
   color: var(--ink-3);
+}
+
+.player-note:empty {
+  display: none;
 }
 
 .follow-button {
@@ -904,6 +1283,12 @@ mark {
   letter-spacing: 0.04em;
 }
 
+.transcript-empty {
+  padding: 8px 0 24px;
+  max-width: 46ch;
+}
+
+.transcript-empty p:not(.eyebrow),
 .summary-empty p:not(.eyebrow) {
   margin: 0 0 18px;
   color: var(--ink-2);

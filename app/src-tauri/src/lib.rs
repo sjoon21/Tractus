@@ -7,6 +7,7 @@ mod procs;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::ffi::OsStr;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{ChildStdin, Command};
@@ -64,6 +65,8 @@ impl Settings {
             ("PATH".into(), "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".into()),
             ("PYTHONUNBUFFERED".into(), "1".into()), // 진행 이벤트가 버퍼에 묶이지 않게
             ("PYTHONIOENCODING".into(), "utf-8".into()),
+            // 오류를 rich 상자 대신 평문 한 줄로 (stderr 마지막 줄을 그대로 보여 준다)
+            ("TYPER_USE_RICH".into(), "0".into()),
         ];
         if !self.models_dir.is_empty() {
             env.push(("TRACTUS_MODELS_DIR".into(), expand(&self.models_dir).to_string_lossy().into_owned()));
@@ -80,7 +83,7 @@ impl Settings {
         }
     }
 
-    fn tractus(&self, args: &[&str]) -> Command {
+    fn tractus<S: AsRef<OsStr>>(&self, args: &[S]) -> Command {
         let mut cmd = Command::new(expand(&self.tractus_bin));
         cmd.args(args).envs(self.child_env()).current_dir(self.tractus_cwd());
         cmd
@@ -239,7 +242,7 @@ fn job_start(app: AppHandle, state: State<'_, AppState>, kind: String, target: S
             }
             s.tractus(&["transcribe", "--recording", &target, "--progress-json"])
         }
-        "summarize" if !target.is_empty() && target.chars().all(|c| c.is_ascii_alphanumeric()) => {
+        "summarize" if is_meeting_id(&target) => {
             s.tractus(&["summarize", &target, "--progress-json"])
         }
         _ => return Err(format!("잘못된 작업: {kind} {target}")),
@@ -250,6 +253,56 @@ fn job_start(app: AppHandle, state: State<'_, AppState>, kind: String, target: S
         let _ = app.emit("job", ev);
     })?);
     Ok(())
+}
+
+fn is_meeting_id(id: &str) -> bool {
+    !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
+/// "S1", "s0012" 꼴: 접두 글자 + 숫자
+fn is_tagged(s: &str, prefix: char) -> bool {
+    s.strip_prefix(prefix).is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// 화자 편집 (docs/desktop.md §2.1). 프론트엔드가 {"op":"rename","label":"S1","name":"김민수"} 꼴로 보낸다
+#[derive(Deserialize, Debug)]
+#[serde(tag = "op", rename_all = "lowercase")]
+enum SpeakerEdit {
+    Rename { label: String, name: String },
+    Set { segment: String, label: String },
+    Merge { from: String, into: String },
+}
+
+/// `tractus speakers <회의> <명령> -- <인자…>`. 인자는 `--` 뒤에 둔다("-박" 같은 이름을 옵션으로 읽지 않게)
+fn speakers_args(id: &str, edit: &SpeakerEdit) -> Result<Vec<String>, String> {
+    let bad = || format!("잘못된 화자 편집: {edit:?}");
+    if !is_meeting_id(id) {
+        return Err(format!("잘못된 회의 ID: {id}"));
+    }
+    let (op, a, b) = match edit {
+        SpeakerEdit::Rename { label, name } if is_tagged(label, 'S') && !name.contains(['\n', '\r']) => ("rename", label, name.trim()),
+        SpeakerEdit::Set { segment, label } if is_tagged(segment, 's') && (is_tagged(label, 'S') || label == "new") => ("set", segment, label.as_str()),
+        SpeakerEdit::Merge { from, into } if is_tagged(from, 'S') && is_tagged(into, 'S') && from != into => ("merge", from, into.as_str()),
+        _ => return Err(bad()),
+    };
+    Ok(["speakers", id, op, "--", a, b].map(String::from).to_vec())
+}
+
+/// 화자 편집을 코어에 맡기고(transcript.json·md·vtt·검색 색인을 코어가 고친다) 고친 회의를 다시 읽어 돌려준다.
+#[tauri::command]
+async fn edit_speakers(state: State<'_, AppState>, id: String, edit: SpeakerEdit) -> Result<meetings::MeetingDetail, String> {
+    let s = state.settings();
+    let args = speakers_args(&id, &edit)?;
+    blocking(move || {
+        let out = s.tractus(&args).output().map_err(|e| format!("실행할 수 없습니다 ({}): {e}", s.tractus_bin))?;
+        if !out.status.success() {
+            // 코어는 이유를 stderr 마지막 줄에 쓴다 (없는 라벨 등)
+            let err = String::from_utf8_lossy(&out.stderr);
+            return Err(err.trim().lines().last().unwrap_or("화자를 고치지 못했습니다").to_string());
+        }
+        meetings::load(&s.home(), &id)
+    })
+    .await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -287,6 +340,7 @@ pub fn run() {
             list_meetings,
             list_recordings,
             load_meeting,
+            edit_speakers,
             mcp_call,
             rec_start,
             rec_send,
@@ -315,12 +369,42 @@ mod tests {
         let env = s.child_env();
         assert!(env.iter().any(|(k, v)| k == "TRACTUS_HOME" && !v.starts_with('~')));
         assert!(!env.iter().any(|(k, _)| k == "TRACTUS_MODELS_DIR"));
+        // typer의 rich 오류 상자 대신 평문 "Error: …" 한 줄 (앱은 stderr 마지막 줄을 보여 준다)
+        assert!(env.iter().any(|(k, v)| k == "TYPER_USE_RICH" && v == "0"));
         // 저장소 .venv 실행 파일이면 저장소 루트에서 실행 (.env.local을 읽도록)
         assert!(s.tractus_cwd().join("pyproject.toml").exists());
         let partial: Settings = serde_json::from_str(r#"{"home":"/x"}"#).unwrap();
         assert_eq!(partial.home, "/x");
         assert!(!partial.rec_bin.is_empty());
         assert_eq!(partial.rec_mode, "in_person"); // 예전 설정 파일에는 녹음 방식이 없다
+    }
+
+    #[test]
+    fn speakers_command_args() {
+        let edit = |v: Value| serde_json::from_value::<SpeakerEdit>(v).unwrap();
+        let args = |v: Value| speakers_args("01ABC", &edit(v));
+        // 인자는 `--` 뒤에 둔다: "-박" 같은 이름을 옵션으로 읽지 않게
+        assert_eq!(
+            args(json!({"op":"rename","label":"S1","name":" 김민수 "})).unwrap(),
+            ["speakers", "01ABC", "rename", "--", "S1", "김민수"]
+        );
+        assert_eq!(args(json!({"op":"rename","label":"S2","name":""})).unwrap()[5], ""); // 이름 지우기
+        assert_eq!(args(json!({"op":"set","segment":"s0012","label":"new"})).unwrap(), ["speakers", "01ABC", "set", "--", "s0012", "new"]);
+        assert_eq!(args(json!({"op":"set","segment":"s0012","label":"S2"})).unwrap()[5], "S2");
+        assert_eq!(args(json!({"op":"merge","from":"S3","into":"S1"})).unwrap(), ["speakers", "01ABC", "merge", "--", "S3", "S1"]);
+
+        for bad in [
+            json!({"op":"rename","label":"S1; rm","name":"x"}),
+            json!({"op":"rename","label":"S1","name":"a\nb"}),
+            json!({"op":"set","segment":"../x","label":"S1"}),
+            json!({"op":"set","segment":"s0001","label":"S"}),
+            json!({"op":"merge","from":"S1","into":"S1"}),
+            json!({"op":"merge","from":"new","into":"S1"}),
+        ] {
+            assert!(args(bad.clone()).is_err(), "{bad}");
+        }
+        assert!(speakers_args("../01ABC", &edit(json!({"op":"merge","from":"S2","into":"S1"}))).is_err());
+        assert!(serde_json::from_value::<SpeakerEdit>(json!({"op":"list"})).is_err()); // 편집만 받는다
     }
 
     #[test]

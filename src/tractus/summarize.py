@@ -1,20 +1,23 @@
 """회의 요약·결정 사항·할 일 추출 (ARCHITECTURE.md §3.3). 모든 추출 항목은 근거 segment_ids를 가진다."""
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from tractus.llm import Provider, complete_json
-from tractus.store import _hms, _write_atomic
+from tractus.store import _hms, _write_atomic, speaker_name
 
 SCHEMA_VERSION = 1
 
 SYSTEM_PROMPT = """너는 회의록 작성자다. 전사문만 근거로 회의를 정리한다.
 - 회의에서 쓰인 언어로 작성한다 (한국어 회의면 한국어). 영어 기술 용어는 원문 표기를 살린다.
 - 전사에 없는 내용을 지어내지 않는다. 담당자(owner)와 기한(due)은 전사에 명시된 경우에만 채우고, 아니면 null로 둔다.
-- 전사에는 화자 정보가 없어 누가 말했는지 알 수 없다. "제가 하겠습니다"처럼 말한 사람만 가리키면 owner는 null로 둔다. "화자", "발언자" 같은 값을 만들지 않는다.
+- 담당자(owner)는 전사 본문에 이름이 나온 사람만 쓴다. "제가 하겠습니다"처럼 말한 사람만 가리키면 owner는 null로 둔다.
+- 줄 앞의 화자 표시(예: `[s0012 00:05:31 김민수]`)는 목소리로 자동 추정한 값이라 틀릴 수 있다. 화자 표시가 사람 이름이면 사용자가 확인한 이름이므로, 그 사람이 "제가 하겠습니다"라고 했다면 owner로 쓸 수 있다.
+- S1, S2 같은 자동 라벨은 사람 이름이 아니다. owner에 절대 넣지 않는다. "화자", "발언자", 세그먼트 ID 같은 값도 넣지 않는다.
 - 모든 주제·결정 사항·할 일에는 근거가 되는 세그먼트 ID(예: s0012)를 segment_ids에 하나 이상 넣는다. 전사에 있는 ID만 쓴다.
 - 전사는 음성 인식 결과라 오인식이 있을 수 있다. 문맥상 명백한 오인식은 바로잡아 쓴다.
 - 결정 사항은 회의에서 합의·확정된 것만, 할 일은 누군가 하기로 한 구체적 행동만 넣는다. 없으면 빈 배열로 둔다."""
@@ -50,7 +53,11 @@ class MeetingSummary(_Strict):
 
 
 def build_prompt(transcript: dict) -> str:
-    lines = [f"[{s['id']} {_hms(s['start'])}] {s['text']}" for s in transcript["segments"]]
+    def who(s: dict) -> str:
+        name = speaker_name(transcript, s.get("speaker"))
+        return f" {name}" if name else ""
+
+    lines = [f"[{s['id']} {_hms(s['start'])}{who(s)}] {s['text']}" for s in transcript["segments"]]
     return f"회의 제목(파일 기준): {transcript['title']}\n\n전사:\n" + "\n".join(lines)
 
 
@@ -66,11 +73,21 @@ def check_segment_ids(summary: MeetingSummary, transcript: dict) -> None:
         raise ValueError(f"근거 segment_ids가 빈 항목: {empty[:10]}")
 
 
+_NOT_OWNER = re.compile(r"^\s*(S\d+|speaker[\s_]*\d*|화자\s*\d*|발언자\s*\d*)\s*$|\bs\d{4}\b", re.IGNORECASE)  # "이화자" 같은 이름은 남긴다
+
+
+def clean_owners(s: MeetingSummary) -> MeetingSummary:
+    """자동 화자 라벨(S2)·"발언자" 같은 owner는 null로 바꾼 새 요약. 프롬프트로 막아도 모델이 넣는 경우가 있다
+    (2026-10-04 solar-pro4: 라벨이 붙은 가상 회의에서 3회 중 3회)."""
+    items = [a.model_copy(update={"owner": None}) if a.owner and _NOT_OWNER.search(a.owner) else a for a in s.action_items]
+    return s.model_copy(update={"action_items": items})
+
+
 def summarize(client, provider: Provider, model: str, transcript: dict) -> MeetingSummary:
-    return complete_json(
+    return clean_owners(complete_json(
         client, provider, model, SYSTEM_PROMPT, build_prompt(transcript), MeetingSummary,
         validate=lambda s: check_segment_ids(s, transcript),
-    )
+    ))
 
 
 def _span(ids: list[str], transcript: dict) -> str:
@@ -111,6 +128,8 @@ def render_summary_md(s: MeetingSummary, transcript: dict, provider: str, model:
 
 
 def write_summary(meeting_dir: Path, s: MeetingSummary, transcript: dict, provider: str, model: str) -> None:
+    """저장 경로는 이것 하나라 MCP save_summary(에이전트 작성)도 여기서 owner 정리를 거친다."""
+    s = clean_owners(s)
     generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
     data = {"schema_version": SCHEMA_VERSION, "meeting_id": transcript["meeting_id"], "provider": provider,
             "model": model, "generated_at": generated_at, **s.model_dump()}

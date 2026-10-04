@@ -225,3 +225,130 @@ def test_transcribe_requires_exactly_one_source(env, fake_asr, tmp_path):
     assert CliRunner().invoke(cli.app, ["transcribe"]).exit_code != 0
     rec = make_recording(tmp_path)
     assert CliRunner().invoke(cli.app, ["transcribe", str(wav), "--recording", str(rec)]).exit_code != 0
+
+
+# ── 화자 분리 ─────────────────────────────────────────────────────────
+
+
+class FakeDiarizer:
+    """CHUNKS(0–2, 3–5, 6–8초) 중 가운데 청크만 다른 화자."""
+
+    calls: list = []
+    info = {"model": "fake", "revision": "r", "params": {}}
+
+    def diarize(self, pcm, max_speakers=None):
+        FakeDiarizer.calls.append(max_speakers)
+        return [(0.0, 2.5, "S1"), (2.5, 5.5, "S2"), (5.5, 8.0, "S1")]
+
+
+@pytest.fixture
+def fake_diar(monkeypatch):
+    FakeDiarizer.calls = []
+    monkeypatch.setattr(cli, "load_diarizer", lambda models: FakeDiarizer())
+    return FakeDiarizer
+
+
+def test_transcribe_diarizes_before_asr(env, fake_asr, fake_diar):
+    home, wav = env
+    result = CliRunner().invoke(cli.app, ["transcribe", str(wav), "--progress-json", "--max-speakers", "3"])
+    assert result.exit_code == 0, result.output
+    stages = [e["stage"] for e in events(result.stdout) if e["event"] == "stage"]
+    assert stages[:5] == ["decode", "vad", "diarize", "encode", "load_model"]
+    assert fake_diar.calls == [3]
+    (d,) = (home / "meetings").iterdir()
+    t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+    assert [s["speaker"] for s in t["segments"]] == ["S1", "S2", "S1"]
+    assert t["speakers"] == {"S1": {"name": None}, "S2": {"name": None}} and t["diarization"]["model"] == "fake"
+    assert "**S2**: 청크1" in (d / "transcript.md").read_text(encoding="utf-8")
+
+
+def test_resume_does_not_rerun_diarization(env, fake_asr, fake_diar):
+    home, wav = env
+    fake_asr.fail_at = 1
+    assert run(wav).exit_code == 130
+    fake_asr.fail_at = None
+    result = CliRunner().invoke(cli.app, ["transcribe", str(wav), "--progress-json"])
+    assert result.exit_code == 0, result.output
+    assert fake_diar.calls == [None]  # 첫 실행 한 번뿐
+    assert "diarize" not in [e.get("stage") for e in events(result.stdout)]
+    (d,) = (home / "meetings").iterdir()
+    assert [s["speaker"] for s in json.loads((d / "transcript.json").read_text(encoding="utf-8"))["segments"]] == ["S1", "S2", "S1"]
+
+
+def test_no_diarize_flag_skips_diarization(env, fake_asr, fake_diar):
+    home, wav = env
+    assert run(wav, "--no-diarize").exit_code == 0
+    assert fake_diar.calls == []
+    (d,) = (home / "meetings").iterdir()
+    t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+    assert t["diarization"] is None and t["speakers"] == {} and {s["speaker"] for s in t["segments"]} == {None}
+
+
+def test_missing_diarization_model_warns_and_continues(env, fake_asr):
+    home, wav = env
+    result = CliRunner().invoke(cli.app, ["transcribe", str(wav), "--progress-json"])
+    assert result.exit_code == 0, result.output
+    warn = [e for e in events(result.stdout) if e["event"] == "warning"]
+    assert warn and warn[0]["code"] == "diarizer_missing" and "nemotron-3-diarization" in warn[0]["message"]
+    assert "화자 분리 없이" in result.stderr
+    (d,) = (home / "meetings").iterdir()
+    assert json.loads((d / "transcript.json").read_text(encoding="utf-8"))["diarization"] is None
+
+
+def test_diarization_failure_warns_and_continues(env, fake_asr, monkeypatch):
+    _, wav = env
+
+    class Broken:
+        info = {}
+
+        def diarize(self, pcm, max_speakers=None):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(cli, "load_diarizer", lambda models: Broken())
+    result = CliRunner().invoke(cli.app, ["transcribe", str(wav), "--progress-json"])
+    assert result.exit_code == 0, result.output
+    assert [e["code"] for e in events(result.stdout) if e["event"] == "warning"] == ["diarizer_failed"]
+
+
+def test_max_speakers_is_validated(env, fake_asr, fake_diar):
+    _, wav = env
+    assert run(wav, "--max-speakers", "9").exit_code != 0
+    assert run(wav, "--max-speakers", "0").exit_code != 0
+
+
+def speakers(*args):
+    return CliRunner().invoke(cli.app, ["speakers", *map(str, args)])
+
+
+def test_speakers_commands_rewrite_transcript_and_renders(env, fake_asr, fake_diar, monkeypatch):
+    home, wav = env
+    assert run(wav).exit_code == 0
+    (d,) = (home / "meetings").iterdir()
+    ref = d.name.rsplit("_", 1)[1][-6:]
+    synced = []
+    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: synced.append(embed))
+    audio_before = (d / "audio.ogg").read_bytes()
+
+    r = speakers(ref, "list", "--json")
+    assert r.exit_code == 0, r.output
+    listed = json.loads(r.stdout)
+    assert listed["meeting_id"].endswith(ref) and listed["diarization"]["model"] == "fake"
+    assert listed["speakers"] == [
+        {"label": "S1", "name": None, "display": "S1", "segments": 2, "talk_sec": 4.0},
+        {"label": "S2", "name": None, "display": "S2", "segments": 1, "talk_sec": 2.0},
+    ]
+
+    assert speakers(ref, "rename", "S1", "김민수").exit_code == 0
+    assert speakers(ref, "set", "s0003", "new").exit_code == 0
+    assert speakers(ref, "merge", "S3", "S2").exit_code == 0
+    t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+    assert [s["speaker"] for s in t["segments"]] == ["S1", "S2", "S2"] and t["speakers"]["S1"]["name"] == "김민수"
+    assert "**김민수**: 청크0" in (d / "transcript.md").read_text(encoding="utf-8")
+    assert "<v 김민수>청크0" in (d / "transcript.vtt").read_text(encoding="utf-8")
+    assert synced == [False, False, False] and (d / "audio.ogg").read_bytes() == audio_before
+    assert not list(d.glob("*.tmp"))
+
+    bad = speakers(ref, "merge", "S9", "S1")
+    assert bad.exit_code == 1 and "S9" in bad.output
+    human = speakers(ref, "list")
+    assert human.exit_code == 0 and "김민수" in human.output

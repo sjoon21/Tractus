@@ -55,7 +55,7 @@ UPSTAGE_API_KEY=up_...
 
 ### 모델 받기
 
-ASR 모델 하나(트랙에 맞게)와 VAD 모델을 받습니다. `hf`는 `huggingface_hub` CLI입니다(`uv tool install "huggingface_hub[cli]"`).
+ASR 모델 하나(트랙에 맞게), VAD 모델, 화자 분리 모델을 받습니다. `hf`는 `huggingface_hub` CLI입니다(`uv tool install "huggingface_hub[cli]"`).
 
 ```bash
 export TRACTUS_MODELS_DIR=$PWD/models   # 모델 위치. 생략하면 ~/Tractus/models
@@ -66,6 +66,8 @@ hf download mlx-community/Qwen3-ASR-1.7B-8bit --local-dir $TRACTUS_MODELS_DIR/qw
 hf download mlx-community/Qwen3-ASR-0.6B-8bit --local-dir $TRACTUS_MODELS_DIR/qwen3-asr-0.6b-8bit
 # VAD (1.3 MB, 두 트랙 공용)
 hf download mlx-community/silero-vad-v6 --local-dir $TRACTUS_MODELS_DIR/silero-vad-v6
+# 화자 분리 (199 MB, 선택 — 없으면 화자 없이 전사함). revision을 고정해서 받습니다
+hf download mlx-community/Nemotron-3-Diarization --revision 59ed2dbfc1346dcea9d423c71306a3a2499c568f --local-dir $TRACTUS_MODELS_DIR/nemotron-3-diarization
 # 검색용 임베딩 (1.1 GB, 선택 — 없으면 키워드 검색만 함). revision을 고정해서 받습니다
 hf download Qwen/Qwen3-Embedding-0.6B --revision 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3 --local-dir $TRACTUS_MODELS_DIR/qwen3-embedding-0.6b
 ```
@@ -73,7 +75,10 @@ hf download Qwen/Qwen3-Embedding-0.6B --revision 97b0c614be4d77ee51c0cef4e5f07c0
 | 모델 | 용도 | 라이선스 |
 | --- | --- | --- |
 | [mlx-community/silero-vad-v6](https://huggingface.co/mlx-community/silero-vad-v6) | 무음 기준 청크 분할 (Silero VAD v6의 MLX 포팅) | MIT |
+| [mlx-community/Nemotron-3-Diarization](https://huggingface.co/mlx-community/Nemotron-3-Diarization) | 화자 분리 (최대 8명, mlx-audio로 실행) | [OpenMDW-1.1](https://openmdw.ai/license/1-1/) |
 | [Qwen/Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) | 의미 검색 (공식 가중치를 mlx-lm으로 실행) | Apache-2.0 |
+
+모델 라이선스 고지는 [NOTICE](NOTICE)에 있습니다.
 
 ## 사용법
 
@@ -81,6 +86,7 @@ hf download Qwen/Qwen3-Embedding-0.6B --revision 97b0c614be4d77ee51c0cef4e5f07c0
 uv run tractus transcribe 주간회의.m4a
 uv run tractus transcribe 주간회의.m4a --title "3분기 예산 회의" -t 김철수 -t "Project Atlas"
 uv run tractus transcribe 주간회의.m4a --track lite      # 0.6B 모델
+uv run tractus transcribe 주간회의.m4a --max-speakers 4  # 참석자가 4명이면 상한을 준다
 ```
 
 전사가 끝나면 `~/Tractus/meetings/` 아래에 회의 폴더가 생깁니다. 위치는 `TRACTUS_HOME` 환경변수로 바꿀 수 있습니다.
@@ -89,8 +95,8 @@ uv run tractus transcribe 주간회의.m4a --track lite      # 0.6B 모델
 ~/Tractus/meetings/2026-10-02_3분기_예산_회의_01K6.../
 ├── audio.ogg         원본을 mono Ogg Opus 32kbps로 보관 (1시간 약 14MB, Obsidian에서 재생 가능)
 ├── transcript.json   기계용 원본 (스키마: ARCHITECTURE.md §6)
-├── transcript.md     사람·에이전트용, [HH:MM:SS] 타임스탬프 (녹음 중 메모·북마크 포함)
-├── transcript.vtt    WebVTT 자막 (플레이어 동기화용)
+├── transcript.md     사람·에이전트용, `[HH:MM:SS] **화자**: 텍스트` (녹음 중 메모·북마크 포함)
+├── transcript.vtt    WebVTT 자막 (플레이어 동기화용, 화자는 <v 이름>)
 └── memos.json        녹음 중 메모·북마크 (데스크톱 앱으로 녹음했을 때)
 ```
 
@@ -101,11 +107,25 @@ uv run tractus transcribe 주간회의.m4a --track lite      # 0.6B 모델
 | `-t`, `--term` | 이 회의의 용어(참석자 이름, 제품명). 여러 번 지정할 수 있습니다 |
 | `--title` | 회의 제목. 생략하면 파일 이름 |
 | `--recording <폴더>` | 데스크톱 녹음기(`tractus-rec`)가 만든 녹음 폴더를 전사 (마이크·시스템 트랙을 섞음). 끝나면 녹음 폴더를 정리하고, `--keep-tracks`면 원본 트랙을 `tracks/`에 보관 |
+| `--no-diarize` | 화자 분리를 하지 않습니다 (모델이 없으면 자동으로 이렇게 됩니다) |
+| `--max-speakers N` | 화자 수 상한(1–8). 말한 시간이 많은 N명만 남기고 나머지는 가까운 화자에 붙입니다 |
 | `--progress-json` | 진행 상황을 stdout에 JSON Lines로 출력 (데스크톱 앱용, `docs/desktop.md`) |
 
 - **용어집:** `~/Tractus/glossary.md`에 `- 용어` 형식으로 적어 두면 모든 회의에 적용됩니다. `-t`로 준 용어와 합쳐서 전달됩니다.
 - **이어하기:** 중간에 Ctrl+C로 멈추거나 종료돼도 같은 명령을 다시 실행하면 끝난 청크 다음부터 이어서 진행합니다.
 - **중복 방지:** 이미 전사한 파일(같은 SHA-256)은 다시 전사하지 않습니다. 다시 하려면 회의 폴더를 지우세요.
+- **화자 분리:** 전사 전에 회의 전체에서 목소리로 화자를 나눠 `S1`, `S2` …로 붙입니다(최대 8명). 자동 추정이라 틀릴 수 있으니 아래 명령으로 이름을 붙이고 고칩니다.
+
+### 화자 이름 붙이기·고치기
+
+```bash
+uv run tractus speakers 01K6X3 list                 # 화자별 세그먼트 수·발화 시간 (--json: 앱용 JSON)
+uv run tractus speakers 01K6X3 rename S1 "김민수"   # 이름 붙이기 ("" 이면 지움)
+uv run tractus speakers 01K6X3 set s0012 S2         # 세그먼트 하나의 화자 바꾸기 (S2 대신 new: 새 화자)
+uv run tractus speakers 01K6X3 merge S3 S1          # S3을 S1에 합치기
+```
+
+`transcript.json`을 고친 뒤 `transcript.md`·`transcript.vtt`를 다시 쓰고 검색 색인을 갱신합니다. 오디오는 건드리지 않습니다. 이름을 붙인 화자는 요약에서 담당자(owner)로 쓰일 수 있고, `S1` 같은 라벨은 쓰이지 않습니다.
 
 ### 요약·결정 사항·할 일
 
@@ -186,7 +206,7 @@ agy mcp add --env TRACTUS_HOME=$HOME/Tractus --env TRACTUS_MODELS_DIR=/path/to/T
 
 ```bash
 uv run pytest            # 단위·CLI 테스트 (모델·API 키 불필요)
-uv run pytest -m slow    # 실제 모델로 짧은 음성 전사 (models/ 필요)
+uv run pytest -m slow    # 실제 모델로 짧은 음성 전사·가상 2화자 분리 (models/ 필요)
 uv run pytest -m llm     # 실제 LLM API 스모크 테스트 (키가 있는 공급자만, 가상 회의 전사 사용)
 uv run python bench/search_eval.py   # 검색 평가 (가상 회의 5건, 질의 30개)
 ```
@@ -195,7 +215,7 @@ uv run python bench/search_eval.py   # 검색 평가 (가상 회의 5건, 질의
 
 ```text
 ARCHITECTURE.md   설계 백본 (결정 사항, 로드맵, Phase 0 결과)
-src/tractus/      CLI, 전사, LLM 요약, 검색, MCP (audio · vad · asr · store · llm · summarize · embed · index · mcp_server · cli)
+src/tractus/      CLI, 전사, 화자 분리, LLM 요약, 검색, MCP (audio · vad · diarize · asr · store · llm · summarize · embed · index · mcp_server · cli)
 tests/            pytest
 bench/            Phase 0 ASR 벤치마크 (코드, 지표 요약, 리포트)
 models/           모델 가중치 (git 제외, 직접 받음)

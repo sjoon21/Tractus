@@ -2,7 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { IDLE_JOB, IDLE_REC, jobReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type Memo, type RecEvent, type RecState, type Segment } from "./lib";
+import { IDLE_JOB, IDLE_REC, jobReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type Memo, type RecEvent, type RecState, type Segment, type Speakers } from "./lib";
 
 export type { JobState, RecState } from "./lib";
 
@@ -28,10 +28,18 @@ export interface Summary {
 export interface MeetingDetail {
   info: MeetingInfo;
   segments: Segment[];
+  /** 라벨 → 이름. 화자 없는 회의(schema_version 1, 화자 분리 끔)는 {} */
+  speakers: Speakers;
   summary: Summary | null;
   memos: Memo[];
   audio_path: string | null;
 }
+
+/** `tractus speakers <회의> rename | set | merge` (docs/desktop.md §2.1). set의 label은 "new"면 새 화자 */
+export type SpeakerEdit =
+  | { op: "rename"; label: string; name: string }
+  | { op: "set"; segment: string; label: string }
+  | { op: "merge"; from: string; into: string };
 
 export interface PendingRecording {
   dir: string;
@@ -76,6 +84,8 @@ export const api = {
   listMeetings: () => invoke<MeetingInfo[]>("list_meetings"),
   listRecordings: () => invoke<PendingRecording[]>("list_recordings"),
   loadMeeting: (id: string) => invoke<MeetingDetail>("load_meeting", { id }),
+  /** 코어가 transcript.json·md·vtt·검색 색인을 고친 뒤 다시 읽은 회의 */
+  editSpeakers: (id: string, edit: SpeakerEdit) => invoke<MeetingDetail>("edit_speakers", { id, edit }),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setRecMode: (mode: string) => invoke<void>("set_rec_mode", { mode }),

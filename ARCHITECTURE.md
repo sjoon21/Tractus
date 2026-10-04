@@ -9,6 +9,7 @@
 
 | 날짜 | 버전 | 변경 |
 | --- | --- | --- |
+| 2026-10-04 | v3.9 | **화자 분리 도입 (D3 변경).** Nemotron 3 Diarization(mlx-audio, 가중치 OpenMDW-1.1, revision 고정)을 ASR 전에 회의 전체로 1회 실행하고, 화자가 바뀌는 지점에서 VAD 청크를 나눈다. AI Hub 84분·7명 세션: 7/7명, confusion 2.9%, DER 7.6%, 14초. 백업은 FluidAudio community-1. `transcript.json` schema_version 2(`segment.speaker`, `speakers`, `diarization`), `tractus speakers` 편집 명령, `--no-diarize`·`--max-speakers`, MCP·요약 프롬프트에 화자 표시, 색인 스키마 3. `NOTICE`에 모델 라이선스 |
 | 2026-10-02 | v3.8 | **Phase 4 시작: B안(Tauri) 우선, D안(메뉴바 + Obsidian) 백업.** 공용 녹음 헬퍼 `tractus-rec`(Swift, 마이크 + Core Audio process tap 2트랙), Tauri 앱 `app/` 초안, 코어 변경(audio.ogg, transcript.vtt, memos.json, `--recording`, `--keep-tracks`, `--progress-json`, `$TRACTUS_HOME/.env.local`). 구성 요소 계약: `docs/desktop.md` |
 | 2026-10-02 | v3.7 | **Phase 3 완료.** 검색 색인(FTS5 음절 bigram + sqlite-vec, strict 우선 + 벡터 가중 0.3 결합), 로컬 임베딩(Qwen3-Embedding-0.6B bf16, mlx-lm), MCP 서버 7개 도구(세그먼트 단위 인용, `save_summary`). Gemini CLI → Antigravity CLI. 실제 ASR 평가에서 동일 가중 RRF가 키워드보다 나빠(hit@1 0.50 vs 0.85) 결합 방식 변경 |
 | 2026-10-02 | v3.6 | **Phase 2 (Upstage) 완료.** `tractus summarize` — 요약·주제·결정·할 일 추출, strict JSON + Pydantic 검증 + segment_ids 검증 + 1회 재요청. `.env`/`.env.local` 개발 환경. 구독형 CLI 조사 결과 API 키 방식만 채택(agy 사용 금지). 나머지 공급자는 키 대기, 대안은 MCP |
@@ -28,7 +29,7 @@
 | --- | --- | --- |
 | D1 | LLM·임베딩 접근은 **OpenAI 호환 API**(`chat/completions`, `embeddings`)로 통일. **ASR은 mlx-audio를 프로세스 안에서 호출**한다(2026-10-02 변경) | 로컬·상용 교체가 설정 변경만으로 가능. ASR은 `mlx_audio.server`의 `/v1/audio/transcriptions`가 `hotwords`를 모델까지 전달하지 않아 용어집을 못 쓰므로 직접 호출한다. 클라우드 ASR이 필요해지면 같은 `Transcriber` 인터페이스 뒤에 HTTP 구현을 추가한다 |
 | D2 | **ASR은 로컬 필수 실행, macOS(Apple Silicon) 우선.** 투트랙: **기본 = Qwen3-ASR-1.7B MLX 8bit**, **저사양 = Qwen3-ASR-0.6B MLX 8bit**. Windows/Linux는 후순위(GGUF 경로 예약) | Apache-2.0, Fleurs-ko CER 2.57% / 3.72%, 두 트랙이 같은 모델 계열이라 파이프라인·프롬프트가 동일 (§2) |
-| D3 | **화자 분리 제외** (스키마에 `speaker: null` 슬롯만 유지) | 경량화. 추후 LLM 또는 경량 모델로 추가 |
+| D3 | **화자 분리: 로컬 Nemotron 3 Diarization**, ASR 전에 회의 전체로 1회 (2026-10-04 변경, 이전: 제외) | 주 사용 사례인 대면 회의(마이크 1개)에서 "누가 말했나"는 음성 기반 화자 분리로만 얻는다. 새 의존성·torch 없이 ASR과 같은 mlx-audio에서 돈다. AI Hub 실측 confusion 2.9% (§2.4) |
 | D4 | LLM 공급자: **로컬 Gemma 4 31B, OpenAI(Codex 포함), Claude, Gemini, Upstage Solar** | 전부 OpenAI 호환 엔드포인트 보유 (차이점은 §3.3) |
 | D5 | **데이터는 로컬 파일이 원본**, SQLite는 재생성 가능한 인덱스 | 메모·전사가 기기를 떠나지 않음. 사용자가 다른 도구(Obsidian, 에이전트 CLI)로 직접 열람 가능 |
 | D6 | 임베딩 기본값 **로컬 Qwen3-Embedding-0.6B** (공식 가중치 bf16, mlx-lm으로 실행), 상용 API는 선택 | 메모를 로컬에 두려는 원칙과 일치. M3에서 약 11문단/초, 질의 1건 약 50ms (§4.2) |
@@ -146,13 +147,16 @@
 입력(m4a/mp3/wav/webm)
   → FFmpeg: 16kHz mono PCM (+ 보관용 audio.ogg: Ogg Opus 32kbps. 녹음 폴더면 마이크·시스템 트랙을 amix로 섞음)
   → Silero VAD (MLX 포팅): 무음 기준 분할, 청크 ≤ 30초 (경계는 무음 지점)
+  → 화자 분리 (Nemotron 3 Diarization, 회의 전체 1회): 프레임별 화자 확률 → 단일 화자 평활 → turn [(시작, 끝, "S1"), …]
+  → 청크를 화자가 바뀌는 지점에서 분할 (1초 미만 조각은 이웃 조각에 병합, 청크마다 화자 하나)
+  → 화자 분리 모델 해제 (del + mx.clear_cache) 후 ASR 모델 로드
   → 청크별 Qwen3-ASR generate (language: 자동, hotwords: 용어집, max_tokens: 청크 길이 비례)
-  → 세그먼트 = 청크 텍스트 + 청크 시작/끝 시각
-  → 청크마다 .chunks.jsonl에 기록 (중단 후 같은 명령으로 이어하기)
-  → 끝나면 transcript.json + transcript.md 저장
+  → 세그먼트 = 청크 텍스트 + 청크 시작/끝 시각 + 청크 화자
+  → 청크마다 .chunks.jsonl에 기록 (중단 후 같은 명령으로 이어하기. 청크 경계·화자는 .job.json에 있어 VAD·화자 분리를 다시 돌리지 않음)
+  → 끝나면 transcript.json + transcript.md + transcript.vtt 저장
 ```
 
-- **타임스탬프:** 화자 분리가 없으므로 단어 단위 타임스탬프는 1차 범위에서 제외한다. VAD 청크 경계가 곧 세그먼트 타임스탬프이며, "문장 클릭 → 해당 위치 재생" UX에는 이것으로 충분하다. 단어 단위가 필요해지면 **Qwen3-ForcedAligner-0.6B**(Apache-2.0, 한국어 포함 11개 언어, 5분 단위)를 후처리로 추가한다.
+- **타임스탬프:** 화자 경계는 청크 분할로 처리하므로 단어 단위 타임스탬프는 1차 범위에서 제외한다. VAD 청크 경계가 곧 세그먼트 타임스탬프이며, "문장 클릭 → 해당 위치 재생" UX에는 이것으로 충분하다. 단어 단위가 필요해지면 **Qwen3-ForcedAligner-0.6B**(Apache-2.0, 한국어 포함 11개 언어, 5분 단위)를 후처리로 추가한다.
 - **용어집 주입:** 참석자 이름·제품명·약어를 프롬프트로 전달해 ASR 단계에서 고유명사 오류를 줄인다. 모델별 지원 방식이 달라 어댑터에서 처리한다. Qwen3-ASR은 `hotwords`로 넣는다(Phase 0: 용어 재현율 72% → 84%).
 - **언어:** 청크별 자동 감지가 기본이다. `ko`로 고정하면 영어 위주 발화를 번역하거나 반복 루프에 빠진다(Phase 0). 고정은 사용자 설정으로만 연다.
 - **청크 크기:** 최대 30초. Phase 0에서 15·30·60초의 CER 차이는 0.3%p 안이었다.
@@ -160,19 +164,27 @@
 - **VAD:** `mlx-community/silero-vad-v6`(MLX 포팅, 1.3MB). Phase 0의 torch 버전과 발화 구간이 100% 같아 torch 의존성 없이 쓴다.
 - **반복 루프 방지:** `max_tokens = 16 × 청크 초 + 32`(정상 발화 p99 6.4토큰/초의 약 2.5배). 4글자 이상이 연속 3회 반복되거나 상한에 닿으면 루프로 보고, 언어 고정이면 자동 감지로 한 번 재시도, 그래도 반복이면 반복 구간을 한 번만 남긴다. Phase 0 출력 기준 오탐은 HiKE 1/1121, AI Hub 5시간 0건.
 
-### 2.4 화자 분리 — 추후 경로
+### 2.4 화자 분리 — Nemotron 3 Diarization (2026-10-04 결정)
 
-1차에서는 제외하고, 스키마의 `speaker` 필드만 남겨둔다. 추가 경로는 세 가지다.
+**결정: `mlx-community/Nemotron-3-Diarization`(revision `59ed2dbf…` 고정, 가중치 OpenMDW-1.1, 코드 mlx-audio MIT)을 프로세스 안에서 실행한다.** 이미 설치된 mlx-audio 0.5.7이 지원하므로 새 의존성·torch가 없다. 출력 채널이 8개라 **화자는 최대 8명**이다(9번째부터는 기존 라벨에 합쳐짐).
 
-| 경로 | 방식 | 한계 |
-| --- | --- | --- |
-| A. 텍스트 LLM | 전사 텍스트만으로 발화 전환·역할(질문자/발표자) 추정 | 목소리 정보가 없어 정확도에 한계. "누가 말했나"보다는 "발화 전환점 추정" 수준 |
-| B. 오디오 입력 LLM (Gemini 등) | 오디오를 클라우드로 보내 화자 라벨링 | **오디오 외부 전송** → `local_only`와 충돌, 옵션으로만 |
-| C. 로컬 경량 모델 | pyannote community-1 (코드 MIT, 가중치 CC-BY-4.0) | GPU 없이 CPU로도 동작할 만큼 가벼워, 병목은 연산량이 아니라 통합 복잡도 |
+| 측정 (M3·16GB) | 결과 |
+| --- | --- |
+| AI Hub 한국어 회의 84분·화자 7명 (세션 1개, 로컬 전용) | **7/7명 검출, confusion 2.9%, DER 7.6%, 14초** |
+| 같은 세션, 화자 경계로 나눈 청크의 화자 순도 | **99.6%** (기존 30초 VAD 청크 85.7%) |
+| AI Hub 화자 7–9명 세션 3개 confusion | 2.9 / 10.9 / 4.7% (10.9%는 끝부분 라벨이 한 번 바뀐 탓). 17명 세션은 8명 상한 때문에 26.5% |
+| AMI 원거리 마이크 17.5분·영어 4명 | confusion 1.0% (비교 후보 중 최저). DER 26.1%는 대부분 놓친 발화이고, 발화 구간은 VAD·ASR이 정하므로 confusion이 중요하다 |
+| 속도·메모리 | RTF 0.003–0.0045, 90분 18.6초, 피크 1.2–2.2GB. 긴 녹음에서도 라벨이 유지됨 |
+| 가상 2화자 (macOS `say` Yuna + Grandpa) | 2/2명, 청크 화자 전부 일치 (`pytest -m slow`) |
 
-> 실제로 화자 분리가 필요해지면 **C가 가장 현실적**이다. A는 보조 수단으로 둔다.
-
-> **우선순위 상향 (2026-10-02):** 주 사용 사례가 **여러 명이 한 방에 모이는 대면 회의**(마이크 1개)로 확인됐다. 화상회의처럼 "나/상대" 트랙으로 나눌 수 없으므로, "누가 말했나"는 음성 기반 화자 분리(C)로만 얻을 수 있다. Phase 4 녹음이 안정되면 다음 후보로 둔다. 후보는 pyannote community-1, FluidAudio·speech-swift의 Sortformer(Apache-2.0, Swift)다. 대면 회의 실녹음으로 DER을 측정해 고른다.
+- **평활 (`diarize.smooth`):** 프레임(10ms)마다 확률이 가장 높은 화자 하나(최대 확률 > 0.5) → 화자별 11프레임 다수결(이진 median) → 같은 화자 사이 1초 이하 무음 메움 → 1초 미만 turn 제거 → 다시 메움. 라벨은 처음 말한 순서대로 S1, S2, …
+- **청크 분할 (`diarize.split_chunks`):** 화자가 바뀌면 앞 turn 끝과 다음 turn 시작의 중간에서 자른다. 1초 미만 조각은 같은 청크의 이웃 조각에 붙인다. 청크 안에서만 자르므로 30초를 넘지 않는다. 어느 turn과도 겹치지 않는 청크는 화자 `null`.
+- **`--max-speakers N`:** 말한 시간이 많은 N명만 남기고, 나머지 프레임은 남은 화자 중 확률이 가장 높은 쪽에 붙인다.
+- **모델이 없거나 실패하면** 화자 없이 전사하고 알린다(`warning` 이벤트 + stderr). 임베딩 모델이 없을 때와 같은 방식이다.
+- **엔진 교체 비용:** `Diarizer.diarize(pcm) → [(시작 초, 끝 초, "S1"), …]` 하나만 맞추면 된다. **백업은 FluidAudio community-1**(Swift, Apache-2.0 / CC-BY-4.0). AI Hub confusion 4.5%로 숫자는 더 좋지만 Swift 헬퍼·subprocess가 필요하다. 실제 대면 회의 녹음에서 Nemotron이 부족할 때만 바꾼다.
+- **탈락:** Sortformer v1(CC-BY-NC), v2.1(4명 상한), pyannote 원본(게이트, torch), sherpa-onnx CAM++(AI Hub confusion 7.4%, 17명 세션에서 화자 수 폭주).
+- **미검증:** ① 실제 대면 회의(마이크 1개) 녹음. ② 청크가 짧아질 때 ASR CER 변화. ③ 같은 TTS 엔진 음성끼리는 한 화자로 합쳐진다(macOS Grandpa·Grandma). 가상 음성은 순위 근거로 쓰지 않는다.
+- 엔진·파라미터를 바꾸면 AI Hub(로컬, 지표만)와 가상 음성 **둘 다**에서 DER·confusion을 다시 잰다.
 
 ---
 
@@ -254,7 +266,8 @@ Anthropic은 OpenAI 호환 레이어를 "테스트·비교용이며 장기 운�
 | Q&A | 질문 + 로컬 검색 결과(§4) | `{answer, citations[{meeting_id, segment_id}]}` |
 
 - 모든 추출 항목에 **근거 `segment_ids`를 필수**로 둔다. UI에서 클릭하면 해당 오디오 위치로 이동하고, 환각 여부를 검증하는 데도 쓴다. 전사에 없는 ID나 빈 근거는 검증 실패로 보고 1회 재요청한다.
-- 화자 분리가 없으므로 "제가 하겠습니다"처럼 말한 사람만 가리키는 할 일은 owner를 null로 둔다(모델이 "화자" 같은 값을 지어내는 것을 막는 규칙).
+- 전사 줄에는 화자 표시 이름이 붙는다(`[s0012 00:05:31 김민수] …`, 이름이 없으면 `S1`). 화자는 자동 추정이라 owner는 사용자가 이름을 붙인 화자만 쓸 수 있고, `S1` 같은 라벨은 쓰지 않는다. 그 밖에 "제가 하겠습니다"처럼 말한 사람만 가리키면 owner는 null로 둔다.
+- 프롬프트만으로는 라벨이 새어 나온다(2026-10-04 solar-pro4: 라벨이 붙은 가상 회의 3회 중 3회 owner `S2`). 그래서 `S1`·`Speaker 1`·"화자 1"·"발언자"·세그먼트 ID 형태의 owner는 저장 전에 null로 바꾼다(`summarize.clean_owners`, 대소문자 무시). `summarize`와 MCP `save_summary` 모두 `write_summary`를 거치므로 에이전트가 저장한 요약도 같다.
 - AI Hub처럼 외부 반출이 제한된 데이터의 전사는 원격 공급자로 보내지 않는다. 스모크 테스트는 가상 회의 전사(`tests/fixtures/sample_meeting.json`)만 쓴다.
 - Gemma 4 31B 컨텍스트 안에 1시간 회의가 충분히 들어가므로 map-reduce 요약은 기본 경로에서 제외한다(입력 길이가 컨텍스트를 넘을 때만 사용).
 
@@ -344,9 +357,9 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 | 도구 | 기능 | 주석 |
 | --- | --- | --- |
 | `status()` | 데이터 위치, 회의·청크·벡터 수, 색인 오류, 안내 | 읽기 전용 |
-| `search_meetings(query, limit, date_from?, date_to?, meeting_id?)` | 하이브리드 검색. 결과마다 세그먼트 2–3개와 **세그먼트별 `cite`** | 읽기 전용 |
+| `search_meetings(query, limit, date_from?, date_to?, meeting_id?)` | 하이브리드 검색. 결과마다 세그먼트 2–3개와 **세그먼트별 `cite`·`speaker`** | 읽기 전용 |
 | `list_meetings(date_from?, date_to?)` | 회의 목록 (날짜순, 요약 유무) | 읽기 전용 |
-| `get_transcript(meeting_id, offset, max_segments)` | `[s0012 00:05:31] 텍스트` 줄 형식, `next_offset`로 페이지 이동 | 읽기 전용 |
+| `get_transcript(meeting_id, offset, max_segments)` | `[s0012 00:05:31 김민수] 텍스트` 줄 형식(화자 이름, 없으면 라벨, 모르면 생략), `next_offset`로 페이지 이동 | 읽기 전용 |
 | `get_summary(meeting_id)` | summary.md | 읽기 전용 |
 | `list_action_items(meeting_id?, date_from?, date_to?)` | 요약이 있는 회의들의 할 일 + 요약이 없는 회의 목록 | 읽기 전용 |
 | `save_summary(meeting_id, summary, author)` | 에이전트가 쓴 요약을 스키마·segment_ids 검증 후 저장 (`provider: mcp`, `model: author`) | **쓰기** |
@@ -377,12 +390,21 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 
 ```jsonc
 {
-  "schema_version": 1,
+  "schema_version": 2,          // 2: 화자 (2026-10-04). 1(화자 없음)도 그대로 읽는다
   "meeting_id": "01J9X...",
   "created_at": "2026-10-01T14:00:00+09:00",
   "title": "주간회의",
   "audio": { "file": "audio.ogg", "duration_sec": 3612.4, "source": "주간회의.m4a", "sha256": "…" },  // sha256: 같은 파일 재전사 방지·이어하기 식별
   "asr": { "model": "mlx-community/Qwen3-ASR-1.7B-8bit", "track": "standard", "runtime": "mlx-audio", "language": "auto", "hotwords": ["WTO"] },
+  "speakers": {                 // 세그먼트에 쓰인 라벨만. 화자 분리를 안 했으면 {}
+    "S1": { "name": "김민수" },   // tractus speakers <회의> rename S1 김민수
+    "S2": { "name": null }
+  },
+  "diarization": {              // 화자 분리를 안 했거나 모델이 없었으면 null
+    "model": "mlx-community/Nemotron-3-Diarization",
+    "revision": "59ed2dbfc1346dcea9d423c71306a3a2499c568f",
+    "params": { "threshold": 0.5, "median_frames": 11, "min_turn_s": 1.0, "fill_gap_s": 1.0, "min_piece_s": 1.0, "max_speakers": null }
+  },
   "segments": [
     {
       "id": "s0001",
@@ -390,13 +412,19 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
       "end": 18.90,
       "text": "다음 분기 budget 부터 보겠습니다",
       "lang": "ko",
-      "speaker": null,          // 화자 분리 도입 전까지 항상 null
+      "speaker": "S1",          // speakers의 라벨. 모르면 null
       "corrected_text": null,   // LLM 교정 결과 (원문 보존)
       "words": null             // ForcedAligner 도입 시 채움
     }
   ]
 }
 ```
+
+- **표시 이름**은 `speakers[라벨].name`, 없으면 라벨(`S1`), `speaker`가 null이면 표시하지 않는다. `transcript.md`는 `[00:00:12] **김민수**: …`, `transcript.vtt`는 `<v 김민수>…`.
+- **화자 편집** (`tractus speakers <회의> rename|set|merge`)은 transcript.json을 고친 뒤 md·vtt를 다시 쓰고 검색 색인을 갱신한다. 오디오는 건드리지 않는다. 편집하면 schema_version 1 전사도 2가 된다.
+  - 이름에서 `` []<>*_`\ `` 문자는 뺀다(md 굵게·VTT `<v>`·MCP 줄 `[s0012 00:05:31 이름]`이 깨지지 않게). `S2`처럼 라벨 모양인 이름은 거부한다.
+  - 화자 편집은 청크 본문을 바꾸지 않으므로 색인은 기존 벡터를 그대로 옮겨 쓰고 임베딩 모델을 올리지 않는다(`sync(embed=False)`). 본문이 바뀐 청크만 다음 임베딩 동기화에서 다시 임베딩한다.
+- **이어하기 파일** `.job.json`의 `chunks`는 `[시작 표본, 끝 표본, 화자]`이고, `diarizer`에 위 `diarization` 값을 둔다. 예전 `[시작, 끝]`도 읽는다(화자 null).
 
 ---
 
@@ -409,6 +437,7 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 | 검증 | Pydantic v2 | MIT | |
 | ASR 런타임 (macOS) | mlx-audio (라이브러리로 직접 호출) | MIT | `hotwords` 때문에 서버 대신 프로세스 안에서 호출 (D1). Windows 대비용은 llama.cpp `llama-server` |
 | VAD | Silero VAD v6 (mlx-audio MLX 포팅) | MIT | torch 불필요 |
+| 화자 분리 | Nemotron 3 Diarization (mlx-audio `mlx_audio.vad`) | 코드 MIT / 가중치 OpenMDW-1.1 | 최대 8명, revision 고정 (§2.4) |
 | 오디오 변환 | FFmpeg (**외부 바이너리로 호출**) | LGPL/GPL | 번들하지 않음 → Apache-2.0 배포물과 분리 |
 | 저장·검색 | SQLite FTS5 + sqlite-vec 0.1.9 (고정) | Public Domain / MIT·Apache | pre-1.0이라 업그레이드 시 테스트 재실행 |
 | 임베딩 런타임 | mlx-lm (Qwen3Model) | MIT | mlx-embeddings는 GPL-3이라 제외 |
@@ -416,7 +445,7 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 | UI (Phase 4) | Tauri 2 + React + TypeScript (B안). 백업은 SwiftUI 메뉴바 녹음기 + Obsidian 플러그인 (D안) | MIT·Apache | 2026-10-02 결정, `docs/desktop.md` |
 | 녹음 (Phase 4) | `tractus-rec` (Swift): AVAudioEngine 마이크 + Core Audio process tap 시스템 오디오, 2트랙 WAV | — | B·D 공용 |
 
-모델 가중치는 저장소에 포함하지 않고 사용자가 `hf download`로 받는다. 다운로드 링크와 명령은 `README.md`에 있다. 라이선스: Qwen3-ASR · Qwen3-ForcedAligner · Qwen3-Embedding · Gemma 4는 Apache-2.0, Silero VAD는 MIT.
+모델 가중치는 저장소에 포함하지 않고 사용자가 `hf download`로 받는다. 다운로드 링크와 명령은 `README.md`에 있다. 라이선스: Qwen3-ASR · Qwen3-ForcedAligner · Qwen3-Embedding · Gemma 4는 Apache-2.0, Silero VAD는 MIT, Nemotron 3 Diarization은 OpenMDW-1.1. 기본으로 받는 모델의 라이선스는 저장소 루트 `NOTICE`에 모았다.
 
 ---
 
@@ -429,7 +458,7 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 | **2. LLM 연동** 🔶 2026-10-02 | 공급자 설정, 요약·Action Item, 검증·재시도, 5개 공급자 스모크 테스트 | 같은 전사로 5개 공급자 모두 스키마 통과 → **Upstage(solar-pro4) 통과**(재요청 없이 3/3, 1회 7초). OpenAI·Claude·Gemini는 API 키를 받는 대로 `pytest -m llm`으로 확인. 키가 끝내 없으면 Phase 3 MCP로 각 CLI에서 품질을 본다 |
 | **3. 검색 + MCP** ✅ 2026-10-02 | 임베딩, FTS5 bigram, RRF, MCP 서버, 3개 CLI 등록 가이드 | Claude Code·Codex·Gemini CLI에서 과거 회의 질의 성공 → Gemini CLI 대신 agy. **세 CLI 모두 질의(정답 세그먼트 인용)와 요약 저장 성공** (§5) |
 | **4. UI + 녹음** 🔶 진행 중 | B안(Tauri 앱) 우선, D안(메뉴바 녹음기 + Obsidian 플러그인) 백업. 공용: 녹음 헬퍼 `tractus-rec`, 코어 변경(audio.ogg, transcript.vtt, memos.json, `--recording`, `--progress-json`). 계약: `docs/desktop.md` | `docs/desktop.md` §4 판정 기준으로 B안을 평가해 확정 |
-| 이후 | 화자 분리(§2.4 C), 단어 타임스탬프, 실시간 전사(Nemotron 3.5 재평가), **Windows 지원(llama.cpp GGUF 경로)** | 필요가 확인될 때 |
+| 이후 | 단어 타임스탬프, 실시간 전사(Nemotron 3.5 재평가), **Windows 지원(llama.cpp GGUF 경로)** | 필요가 확인될 때 |
 
 ### Phase 0 실행 계획
 
@@ -571,4 +600,5 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 - 임베딩: [Qwen3 Embedding](https://arxiv.org/pdf/2506.05176) · [EmbeddingGemma](https://ai.google.dev/gemma/docs/embeddinggemma)
 - 검색: [sqlite-vec 하이브리드 검색](https://alexgarcia.xyz/blog/2024/sqlite-vec-hybrid-search/index.html) · [sqlite-vec releases](https://github.com/asg017/sqlite-vec/releases) · [한국어 trigram 이슈](https://github.com/chroma-core/chroma/issues/1073)
 - pyannote community-1: [블로그](https://www.pyannote.ai/blog/community-1)
+- 화자 분리: [Nemotron-3-Diarization (MLX)](https://huggingface.co/mlx-community/Nemotron-3-Diarization) · [OpenMDW-1.1](https://openmdw.ai/license/1-1/) · [FluidAudio](https://github.com/FluidInference/FluidAudio)
 - 데이터: [AI Hub 회의 음성](https://aihub.or.kr/aidata/30709) · [주요 영역별 회의 음성인식 데이터](https://aihub.or.kr/aihubdata/data/view.do?dataSetSn=464)

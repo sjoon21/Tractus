@@ -1,0 +1,48 @@
+Tractus
+Copyright 2026 Tractus contributors
+
+Tractus is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party models
+------------------
+
+Tractus does not include model weights in this repository or in its
+packages. The user downloads them from Hugging Face (see README.md,
+"모델 받기"). The models that Tractus uses by default are listed below.
+Each one is covered by its own license.
+
+1. Qwen3-ASR 1.7B / 0.6B (speech recognition)
+   Original: https://huggingface.co/Qwen/Qwen3-ASR-1.7B
+             https://huggingface.co/Qwen/Qwen3-ASR-0.6B
+   MLX 8-bit conversions used by Tractus:
+             https://huggingface.co/mlx-community/Qwen3-ASR-1.7B-8bit
+             https://huggingface.co/mlx-community/Qwen3-ASR-0.6B-8bit
+   License: Apache License 2.0
+
+2. Qwen3-Embedding-0.6B (semantic search; optional)
+   https://huggingface.co/Qwen/Qwen3-Embedding-0.6B
+   (revision 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3)
+   License: Apache License 2.0
+
+3. Silero VAD v6 (voice activity detection)
+   Original: https://github.com/snakers4/silero-vad
+   MLX conversion used by Tractus:
+             https://huggingface.co/mlx-community/silero-vad-v6
+   License: MIT License
+
+4. Nemotron 3 Diarization (speaker diarization; optional)
+   Original: https://huggingface.co/nvidia/Nemotron-3-Diarization
+   MLX conversion used by Tractus:
+             https://huggingface.co/mlx-community/Nemotron-3-Diarization
+             (revision 59ed2dbfc1346dcea9d423c71306a3a2499c568f)
+   License: OpenMDW License Agreement, version 1.1 (OpenMDW-1.1)
+            https://openmdw.ai/license/1-1/
+   If you redistribute these weights, keep the OpenMDW-1.1 license text
+   and the notices that come with the model.
+
+Bundled in the desktop app (app/)
+---------------------------------
+
+5. Pretendard (UI font, variable subset)
+   https://github.com/orioncactus/pretendard
+   License: SIL Open Font License 1.1 (OFL-1.1)
