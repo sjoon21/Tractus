@@ -1,5 +1,6 @@
 //! Tractus 데스크톱 앱 (docs/desktop.md §3). 파일은 직접 읽고, 검색만 상주 `tractus mcp`로 한다.
 
+mod ask;
 mod mcp;
 mod media;
 mod meetings;
@@ -7,10 +8,11 @@ mod procs;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -104,6 +106,8 @@ struct AppState {
     config_path: PathBuf,
     mcp: Arc<mcp::McpClient>,
     rec: Arc<Mutex<Option<ChildStdin>>>,
+    /// 진행 중인 질문 (작업 ID → 프로세스). 멈추기(ask_cancel)가 kill한다
+    asks: Arc<Mutex<HashMap<String, Arc<Mutex<Child>>>>>,
 }
 
 impl AppState {
@@ -212,7 +216,7 @@ fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>) -> 
         cmd.arg("--fake");
     }
     let slot = state.rec.clone();
-    let stdin = procs::spawn_streaming(cmd, serde_json::Map::new(), move |ev| {
+    let (stdin, _) = procs::spawn_streaming(cmd, serde_json::Map::new(), move |ev| {
         if ev["event"] == "exit" {
             slot.lock().unwrap().take();
         }
@@ -255,6 +259,65 @@ fn job_start(app: AppHandle, state: State<'_, AppState>, kind: String, target: S
         let _ = app.emit("job", ev);
     })?);
     Ok(())
+}
+
+/// 회의 질의 (Phase 6.3). 이벤트는 "ask"로 보내고 {job}을 덧붙인다. meeting이 있으면 그 회의만 보고 chat.json에 남긴다
+#[tauri::command]
+#[allow(clippy::too_many_arguments)] // 프론트엔드 invoke 인수 그대로
+fn ask_start(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    job: String,
+    meeting: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
+    question: String,
+    history: Vec<ask::ChatMessage>,
+) -> Result<(), String> {
+    let args = ask::ask_args(meeting.as_deref(), from.as_deref(), to.as_deref())?;
+    let input = ask::ask_input(&question, &history)?;
+    let cmd = state.settings().tractus(&args);
+    let tag = json!({ "job": job }).as_object().unwrap().clone();
+    let (asks, key) = (state.asks.clone(), job.clone());
+    // 넣기 전에 잠가 둔다: 바로 끝나는 프로세스의 exit가 넣기보다 먼저 지우지 않게
+    let mut running = state.asks.lock().unwrap();
+    let (mut stdin, child) = procs::spawn_streaming(cmd, tag, move |ev| {
+        if ev["event"] == "exit" {
+            asks.lock().unwrap().remove(&key);
+        }
+        let _ = app.emit("ask", ev);
+    })?;
+    running.insert(job, child);
+    // 코어는 stdin을 끝까지 읽고 시작한다. 파이썬이 뜨는 동안 UI 스레드가 파이프에 막히지 않게 따로 쓰고 닫는다
+    std::thread::spawn(move || {
+        if let Err(e) = stdin.write_all(input.as_bytes()) {
+            eprintln!("질문을 넘기지 못했습니다: {e}"); // 코어가 입력 오류로 끝나고 exit가 간다
+        }
+    });
+    Ok(())
+}
+
+/// 질문 멈추기. 이미 끝났으면 아무것도 하지 않는다 (exit 이벤트는 프로세스가 끝나며 간다)
+#[tauri::command]
+fn ask_cancel(state: State<'_, AppState>, job: String) {
+    let child = state.asks.lock().unwrap().get(&job).cloned();
+    if let Some(c) = child {
+        let _ = c.lock().unwrap().kill();
+    }
+}
+
+/// 회의의 질문 기록 (chat.json)
+#[tauri::command]
+async fn load_chat(state: State<'_, AppState>, id: String) -> Result<Vec<meetings::ChatEntry>, String> {
+    let home = state.settings().home();
+    blocking(move || meetings::load_chat(&home, &id)).await
+}
+
+/// 질문을 보내기 전 '어디로 전송되는지' 안내에 쓸 공급자·모델 (API 키는 읽지 않는다)
+#[tauri::command]
+async fn llm_config(state: State<'_, AppState>) -> Result<ask::LlmConfig, String> {
+    let s = state.settings();
+    blocking(move || Ok(ask::llm_config(&[&s.tractus_cwd(), &s.home()], |k| std::env::var(k).ok()))).await
 }
 
 fn is_meeting_id(id: &str) -> bool {
@@ -449,7 +512,7 @@ pub fn run() {
                     eprintln!("MCP 예열 실패: {e}");
                 }
             });
-            app.manage(AppState { settings: Mutex::new(settings), config_path, mcp, rec: Arc::default() });
+            app.manage(AppState { settings: Mutex::new(settings), config_path, mcp, rec: Arc::default(), asks: Arc::default() });
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -467,7 +530,11 @@ pub fn run() {
             mcp_call,
             rec_start,
             rec_send,
-            job_start
+            job_start,
+            ask_start,
+            ask_cancel,
+            load_chat,
+            llm_config
         ])
         .build(tauri::generate_context!())
         .expect("Tauri 앱을 만들 수 없습니다")

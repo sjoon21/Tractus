@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
+from typing import NoReturn
 
 os.environ.setdefault("TQDM_DISABLE", "1")
 warnings.filterwarnings("ignore")
@@ -374,6 +375,89 @@ def summarize(
         f"완료: 주제 {len(result.topics)}개, 결정 {len(result.decisions)}개, 할 일 {len(result.action_items)}개 "
         f"({time.perf_counter() - t0:.0f}초)\n{d / 'summary.md'}"
     )
+
+
+def _save_chat(d: Path, question: str, done: dict) -> None:
+    from tractus.ask import save_chat
+
+    try:
+        save_chat(d, _read_transcript(d)["meeting_id"], {"question": question, **{k: done[k] for k in ("answer", "citations", "provider", "model")}})
+    except (OSError, ValueError) as e:  # ValueError: 깨졌거나 다른 형식의 chat.json (덮어쓰지 않음)
+        _warn("chat_save_failed", f"대화를 저장하지 못했습니다: {e}")
+
+
+@app.command()
+def ask(
+    meeting: str = typer.Option(None, "--meeting", help="이 회의 전사 전체로 답한다 (meeting_id 일부 또는 폴더). 생략하면 모든 회의에서 검색"),
+    date_from: str = typer.Option(None, "--from", help="YYYY-MM-DD (전체 범위 검색에만)", callback=lambda v: _iso_date(v, "--from")),
+    date_to: str = typer.Option(None, "--to", help="YYYY-MM-DD (전체 범위 검색에만)", callback=lambda v: _iso_date(v, "--to")),
+    provider: str = typer.Option(None, "--provider", help="upstage | openai | claude | gemini | gemma-local. 생략하면 TRACTUS_LLM_PROVIDER"),
+    model: str = typer.Option(None, "--model", help="모델 ID. 생략하면 TRACTUS_LLM_MODEL 또는 공급자 기본값"),
+    save: bool = typer.Option(False, "--save", help="질문·답을 회의 폴더 chat.json에 덧붙인다 (--meeting과 함께)"),
+    progress_json: bool = typer.Option(False, "--progress-json", help="이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
+) -> None:
+    """회의 기록에 질문한다. stdin: {"question": "…", "history": [{"role", "content"}]} 또는 질문 평문.
+    공급자에는 질문, 최근 대화, 근거 세그먼트만 보낸다. 답의 문장마다 [s0012] 인용이 붙는다."""
+    from openai import APIError
+
+    from tractus import ask as qa
+
+    Events.enabled = progress_json
+
+    def fail(message: str) -> NoReturn:
+        Events.emit("error", message=message)
+        console.print(f"[red]{escape(message)}[/red]")
+        raise typer.Exit(1)
+
+    try:
+        question, history = qa.parse_request(sys.stdin.read())
+    except ValueError as e:
+        fail(str(e))
+    if save and not meeting:
+        fail("--save는 --meeting과 함께만 쓸 수 있습니다 (회의 폴더의 chat.json에 저장)")
+    try:
+        d = resolve_meeting(meeting) if meeting else None
+    except typer.BadParameter as e:
+        fail(e.message)
+
+    def search(**kw) -> list[dict]:
+        from tractus.embed import load_embedder
+        from tractus.index import Index
+
+        idx = Index(home_dir(), embedder=load_embedder(models_dir()))  # 질의 임베딩 때만 모델을 올린다 (LazyEmbedder)
+        try:
+            idx.sync(embed=False)  # 새 벡터는 만들지 않는다: 회의가 많으면 몇 분 걸린다. 벡터 없는 청크는 키워드로 찾힌다
+            return qa.search_sources(idx, question, **kw)
+        finally:
+            idx.close()
+
+    def get_sources() -> list[dict]:
+        if d is None:
+            return search(date_from=date_from, date_to=date_to)
+        t = _read_transcript(d)
+        src = qa.transcript_sources(t)
+        return search(meeting_id=t["meeting_id"]) if qa.too_long(src) else src
+
+    try:
+        p, m = resolve_provider(provider, model)
+        done = None
+        for ev in qa.ask(make_client(p), p.name, m, question, history, "global" if d is None else "meeting", get_sources):
+            if ev["event"] == "done":
+                done = ev
+                if save:  # done보다 먼저 저장한다: 앱이 done을 받은 직후 프로세스를 끝내도 기록이 남는다
+                    _save_chat(d, question, ev)
+            Events.emit(ev["event"], **{k: v for k, v in ev.items() if k != "event"})
+    except LLMError as e:
+        fail(str(e))
+    except APIError as e:
+        fail(f"API 오류: {e}")
+    if not progress_json and done:
+        print(done["answer"])
+        if done["citations"]:
+            print("\n근거:")
+        for c in done["citations"]:
+            sid = c["segment_id"] if d else f"{c['meeting_id']}#{c['segment_id']}"
+            print(f"  [{sid} {_hms(c['start'])}]")
 
 
 @app.command()

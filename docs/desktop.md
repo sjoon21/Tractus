@@ -11,6 +11,7 @@ B안(Tauri 데스크톱 앱)을 먼저 만들어 완성도를 보고, 부족하�
 │                         ├─ spawn: tractus transcribe --recording <dir> --progress-json
 │                         ├─ spawn: tractus summarize <id> --progress-json
 │                         ├─ spawn: tractus speakers <id> rename | set | merge   (화자 목록은 transcript.json을 직접 읽는다)
+│                         ├─ spawn: tractus ask [--meeting <id>] --progress-json   (stdin JSON, 대화 기록은 chat.json을 직접 읽는다)
 │                         └─ 상주: tractus mcp (stdio JSON-RPC) ── search_meetings, status
 └──────────────────────────────────────────┘
 ```
@@ -100,6 +101,7 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 | `tractus segments` | 텍스트 편집. 아래 §2.2 |
 | `tractus glossary add` | 용어집 추가. 아래 §2.3 |
 | `tractus export` | 내보내기. 아래 §2.4 |
+| `tractus ask` (Phase 6) | 회의 질의. 아래 §2.5 |
 | 가져오기 (Phase 5) | 앱 job kind `import` = `tractus transcribe <파일> --progress-json` (다른 작업과 같은 환경변수). ffmpeg가 읽는 모든 형식을 받는다(m4a, mp3, wav, webm, mp4, mov …). 동영상은 소리만 쓴다(`-vn`) |
 
 진행 이벤트:
@@ -174,6 +176,54 @@ stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없
 | `csv` | UTF-8 BOM(utf-8-sig), 열 `시작,끝,화자,문장`, 시각은 `HH:MM:SS` |
 | `docx` | 제목, 일시·길이, 화자 목록, summary.json이 있으면 요약·결정 사항·할 일, 그다음 전사(시각 + **화자** + 문장). 한글 글꼴 `w:eastAsia = Apple SD Gothic Neo` |
 | `bundle` | 회의 폴더의 audio.ogg(또는 audio.opus), transcript.json/md/vtt, summary.md/json, memos.json 중 있는 것을 `<회의 폴더 이름>/…`로 묶은 zip. `tracks/`는 넣지 않는다 |
+
+### 2.5 `tractus ask` (회의 질의, Phase 6)
+
+```text
+tractus ask [--meeting <회의>] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--provider P] [--model M] [--save] --progress-json
+```
+
+stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없이) `TYPER_USE_RICH=0`을 준다. 사람이 터미널에서 쓸 때는 질문 평문도 받는다(`{`로 시작하지 않으면 평문).
+
+```jsonc
+{"question": "오늘 결정된 예산이 얼마야?",                       // 비어 있으면 안 됨, 최대 2,000자
+ "history": [{"role": "user", "content": "…"}, {"role": "assistant", "content": "…"}]}   // 생략 가능. 최근 6개 메시지, 합쳐서 12k자까지만 쓴다
+```
+
+| 범위 | 근거 | 인용 표기 |
+| --- | --- | --- |
+| `--meeting` 있음 | 그 회의 전사 전체(`seg_text`, 화자 표시 이름, `[s0012 00:05:31 김민수] 텍스트` 줄). 10만 자가 넘으면 그 회의 안에서 검색한 결과로 바꾼다 | `[s0012]` |
+| `--meeting` 없음 | 로컬 색인 하이브리드 검색 상위 8개 청크 + 청크마다 앞뒤 세그먼트 1개. `--from`·`--to`로 회의 날짜를 거른다. 임베딩 모델이 없거나 벡터가 없는 청크는 키워드로만 찾는다(색인은 `sync(embed=False)`) | `[<meeting_id>#s0012]` |
+
+`--from`·`--to`는 전체 범위에서만 쓴다. `--save`는 `--meeting`과 함께만 쓸 수 있다(아니면 `error`, 종료 코드 1).
+
+이벤트 (stdout JSON Lines):
+
+```jsonc
+{"event":"stage","stage":"retrieve"}
+{"event":"sources","sources":[{"meeting_id":"01K…","title":"3분기 예산 계획 회의","date":"2026-07-08","segment_id":"s0012","speaker":"김민수","start":176.6,"text":"…"}]}   // speaker는 표시 이름 또는 null
+{"event":"stage","stage":"answer"}
+{"event":"delta","text":"3분기 총 예산은 "}             // 0개 이상. 스트리밍 원문 조각 (인용 정리 전)
+{"event":"done","answer":"3분기 총 예산은 … [s0012]","citations":[{"meeting_id":"01K…","segment_id":"s0012","start":176.6}],"provider":"upstage","model":"solar-pro4"}
+{"event":"error","message":"…"}                          // 종료 코드 1
+{"event":"warning","code":"chat_save_failed","message":"…"}   // --save 저장 실패 (done 바로 앞). 답(done)은 그대로 나온다
+```
+
+- **앱은 `done`의 `answer`로 스트리밍 텍스트를 바꿔 표시한다.** `done`에서 인용을 정리한다: 근거(`sources`)에 있는 ID만 `[s0012]` / `[<meeting_id>#s0012]` 하나씩으로 다시 쓰고(`[s0012, s0013]` → `[s0012][s0013]`), 근거에 없는 ID는 답에서 지운다. `citations`는 답에 남은 인용을 처음 나온 순서로 중복 없이 모은 것이다.
+- 근거에 답이 없으면 답은 `회의 기록에서 근거를 찾지 못했습니다.`(질문이 한국어가 아니면 같은 뜻의 질문 언어)이고 `citations`는 비어 있다. 전체 범위에서 검색 결과가 하나도 없으면 LLM을 부르지 않고 `sources: []` 다음에 바로 이 답으로 `done`을 낸다(`stage answer`·`delta` 없음).
+- 공급자 해석은 `summarize`와 같다(`--provider` > `TRACTUS_LLM_PROVIDER`, `TRACTUS_LOCAL_ONLY`, 키 없음 오류 메시지 동일). 이런 오류는 첫 이벤트로 `error`가 나온다. 앱은 보내기 전에 설정된 `TRACTUS_LLM_PROVIDER`로 "질문과 관련 전사 일부가 Upstage(solar-pro4)로 전송됩니다"를 표시한다. 실제로 답한 곳(`done`의 `provider`·`model`)은 각 답 아래에 적는다. 근거가 없어 LLM을 부르지 않은 `done`은 `provider`·`model`이 `null`이다(아무것도 보내지 않았으므로 전송 안내에 쓰지 않는다).
+- **원격 공급자로는 질문, history, `sources`의 텍스트만 보낸다.** 오디오, 요약, 다른 회의 전사는 보내지 않는다.
+- 취소: 앱은 자식 프로세스를 종료한다. `chat.json`은 `done`을 내보내기 직전에 원자적으로 쓰므로, 답 도중에 끊으면 기록이 바뀌지 않고 `done`을 받았다면 이미 저장돼 있다.
+
+`--save` (회의 범위): `done`을 내보내기 직전에 `<회의 폴더>/chat.json`에 한 쌍을 덧붙이고 최근 50개만 남겨 원자적으로 쓴다. 앱은 회의를 열 때 이 파일을 Rust에서 직접 읽어 대화 기록을 보여 준다. 파일이 없으면 새로 만든다. 깨졌거나 형식이 다르면(`schema_version` ≠ 1) 기록을 잃지 않게 덮어쓰지 않고 `warning chat_save_failed`를 낸다(답은 그대로 나온다). 색인·내보내기에는 들어가지 않는다.
+
+```jsonc
+{"schema_version":1,"meeting_id":"01K…","turns":[
+  {"question":"…","answer":"… [s0012]","citations":[{"meeting_id":"01K…","segment_id":"s0012","start":176.6}],
+   "provider":"upstage","model":"solar-pro4","created_at":"2026-10-06T15:10:30+09:00"}]}
+```
+
+`--progress-json` 없이 실행하면 정리된 답을 stdout에 출력하고, 인용이 있으면 빈 줄 뒤에 `근거:`와 `[s0012 00:02:56]` 줄을 붙인다.
 
 ## 3. Tauri 앱 (app/)
 

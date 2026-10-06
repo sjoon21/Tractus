@@ -184,6 +184,18 @@ uv run tractus search "GPU 서버 구매" --from 2026-07-01 --to 2026-09-30
 
 키워드(한국어 음절 bigram)와 의미(로컬 임베딩)를 함께 씁니다. 색인은 `~/Tractus/.tractus/index.sqlite`에 있고, 지워도 회의 폴더에서 다시 만들어집니다.
 
+### 회의에 질문하기
+
+```bash
+echo "GPU 서버 구매는 어떻게 하기로 했어?" | uv run tractus ask --meeting 01K6X3          # 이 회의 전사 전체로 답
+echo "검색 latency 목표는?" | uv run tractus ask --from 2026-07-01 --to 2026-09-30      # 모든 회의에서 검색해 답
+echo '{"question":"담당자는?","history":[{"role":"user","content":"Redis 캐시 얘기야"}]}' | uv run tractus ask --meeting 01K6X3 --save
+```
+
+답의 문장마다 근거 세그먼트가 `[s0012]`(회의 범위) 또는 `[meeting_id#s0012]`(전체 범위)로 붙고, 끝에 근거 시각을 모아 보여 줍니다. 근거에 없는 ID는 지웁니다. 기록에 답이 없으면 "회의 기록에서 근거를 찾지 못했습니다."라고 답합니다. `--save`는 질문과 답을 회의 폴더의 `chat.json`에 남깁니다(최근 50개).
+
+**공급자에는 질문, 최근 대화(6개 메시지), 근거 세그먼트만 전송됩니다.** 회의 범위는 그 회의 전사 전체(10만 자가 넘으면 회의 안에서 검색한 부분), 전체 범위는 검색 상위 8개 결과와 앞뒤 세그먼트입니다. 전체 범위에서 검색 결과가 없으면 LLM을 부르지 않습니다. 공급자 선택과 `TRACTUS_LOCAL_ONLY`는 요약과 같습니다. 앱 연동 계약은 `docs/desktop.md` §2.5에 있습니다.
+
 ## MCP 연동 (Claude Code · Codex · Antigravity)
 
 에이전트 CLI가 Tractus를 도구로 써서 과거 회의를 검색합니다. 근거를 `[meeting_id#s0012 00:05:31]` 형식으로 인용하고, 요약을 직접 써서 저장할 수도 있습니다. **MCP 서버는 LLM을 호출하지 않습니다.** 추론은 각 CLI가 자기 구독·키로 합니다.
@@ -237,13 +249,14 @@ uv run pytest            # 단위·CLI 테스트 (모델·API 키 불필요)
 uv run pytest -m slow    # 실제 모델로 짧은 음성 전사·가상 2화자 분리 (models/ 필요)
 uv run pytest -m llm     # 실제 LLM API 스모크 테스트 (키가 있는 공급자만, 가상 회의 전사 사용)
 uv run python bench/search_eval.py   # 검색 평가 (가상 회의 5건, 질의 30개)
+uv run python bench/ask_eval.py      # 회의 질의 평가 (가상 회의 5건, 질문 28개, 설정된 LLM 공급자 호출)
 ```
 
 ## 저장소 구조
 
 ```text
 ARCHITECTURE.md   설계 백본 (결정 사항, 로드맵, Phase 0 결과)
-src/tractus/      CLI, 전사, 화자 분리, LLM 요약, 검색, MCP (audio · vad · diarize · asr · store · llm · summarize · embed · index · export · mcp_server · cli)
+src/tractus/      CLI, 전사, 화자 분리, LLM 요약, 검색, MCP (audio · vad · diarize · asr · store · llm · summarize · ask · embed · index · export · mcp_server · cli)
 tests/            pytest
 bench/            Phase 0 ASR 벤치마크 (코드, 지표 요약, 리포트)
 models/           모델 가중치 (git 제외, 직접 받음)

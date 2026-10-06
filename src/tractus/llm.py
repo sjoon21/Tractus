@@ -8,7 +8,7 @@ import copy
 import json
 import os
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import TypeVar
 
@@ -137,3 +137,10 @@ def complete_json(
                 {"role": "user", "content": f"응답이 검증에 실패했습니다:\n{error}\n스키마와 조건에 맞는 JSON만 다시 출력하세요."},
             ]
     raise LLMError(f"{provider.name}/{model} 응답이 2회 연속 검증에 실패했습니다: {error}")
+
+
+def stream_chat(client, model: str, messages: list[dict]) -> Iterator[str]:
+    """평문 응답을 토큰 조각 단위로 흘려 준다 (`stream=True`). 빈 choices·None 조각은 건너뛴다."""
+    for chunk in client.chat.completions.create(model=model, messages=messages, temperature=TEMPERATURE, stream=True):
+        if chunk.choices and (text := chunk.choices[0].delta.content):
+            yield text

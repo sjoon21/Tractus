@@ -9,6 +9,7 @@
 
 | 날짜 | 버전 | 변경 |
 | --- | --- | --- |
+| 2026-10-06 | v3.11 | **Phase 6.3 회의 질의 core.** `tractus ask [--meeting] [--from/--to] [--save] --progress-json`: stdin JSON(질문 + history), 이벤트 `stage(retrieve)` → `sources` → `stage(answer)` → `delta`* → `done{answer, citations, provider, model}`. 회의 범위는 전사 전체, 전체 범위는 색인 검색 8개 + 앞뒤 세그먼트. 인용은 근거와 대조해 없는 ID를 지운다. 근거가 없으면 LLM을 부르지 않는다. `--save`는 회의 폴더 `chat.json`(최근 50개). `llm.stream_chat`, `Index.meeting_dir`. 평가 세트 `tests/fixtures/eval/ask_questions.jsonl`(28개)·`bench/ask_eval.py`. 계약: `docs/desktop.md` §2.5 |
 | 2026-10-06 | v3.10 | **Phase 5 core.** 표시 텍스트 `seg_text`(= `corrected_text` 우선)를 md·vtt·요약 프롬프트·MCP·색인·CLI 검색·내보내기에 적용. `tractus segments <회의> edit`(stdin JSON 묶음, 원문과 같으면 교정 해제, 색인은 `embed=False`), `tractus glossary add`, `tractus export --format txt\|md\|srt\|vtt\|csv\|docx\|bundle`(python-docx MIT 추가). 가져오기: 해시 전에 `decode` 단계, 중복이면 `duplicate` 경고 후 `done`, 동영상(mp4·mov)은 `-vn`, 오디오 없는 동영상은 오류. 계약: `docs/desktop.md` §2.2–2.4 |
 | 2026-10-04 | v3.9 | **화자 분리 도입 (D3 변경).** Nemotron 3 Diarization(mlx-audio, 가중치 OpenMDW-1.1, revision 고정)을 ASR 전에 회의 전체로 1회 실행하고, 화자가 바뀌는 지점에서 VAD 청크를 나눈다. AI Hub 84분·7명 세션: 7/7명, confusion 2.9%, DER 7.6%, 14초. 백업은 FluidAudio community-1. `transcript.json` schema_version 2(`segment.speaker`, `speakers`, `diarization`), `tractus speakers` 편집 명령, `--no-diarize`·`--max-speakers`, MCP·요약 프롬프트에 화자 표시, 색인 스키마 3. `NOTICE`에 모델 라이선스 |
 | 2026-10-02 | v3.8 | **Phase 4 시작: B안(Tauri) 우선, D안(메뉴바 + Obsidian) 백업.** 공용 녹음 헬퍼 `tractus-rec`(Swift, 마이크 + Core Audio process tap 2트랙), Tauri 앱 `app/` 초안, 코어 변경(audio.ogg, transcript.vtt, memos.json, `--recording`, `--keep-tracks`, `--progress-json`, `$TRACTUS_HOME/.env.local`). 구성 요소 계약: `docs/desktop.md` |
@@ -264,12 +265,13 @@ Anthropic은 OpenAI 호환 레이어를 "테스트·비교용이며 장기 운�
 | --- | --- | --- |
 | 전사 교정 (선택) | 세그먼트 배열 `[{id, text}]` + 용어집 | `[{id, corrected_text}]` — 원문은 보존하고 diff로 표시 |
 | 요약 | 전사 전체 (1시간 ≈ 2–3만 토큰, 한 번에 입력) | `{title, summary, topics[{title, segment_ids[]}], decisions[{text, segment_ids[]}], action_items[{task, owner\|null, due\|null, segment_ids[]}]}`. 주제 시간 범위는 segment_ids에서 계산한다 |
-| Q&A | 질문 + 로컬 검색 결과(§4) | `{answer, citations[{meeting_id, segment_id}]}` |
+| Q&A (`tractus ask`, v3.11) | 질문 + 최근 대화(6개 메시지·12k자) + 근거: 회의 범위는 전사 전체(10만 자 초과 시 회의 안 검색), 전체 범위는 하이브리드 검색 상위 8개 청크 + 앞뒤 세그먼트 1개(§4.3, 날짜 필터) | 구조화 출력 대신 **평문 스트리밍**(`stream=True`) + 인라인 인용 `[s0012]` / `[meeting_id#s0012]`. 코어가 근거와 대조해 `{answer, citations[{meeting_id, segment_id, start}]}`를 만든다(없는 ID는 답에서 삭제). 근거가 없으면 "회의 기록에서 근거를 찾지 못했습니다." |
 
 - 모든 추출 항목에 **근거 `segment_ids`를 필수**로 둔다. UI에서 클릭하면 해당 오디오 위치로 이동하고, 환각 여부를 검증하는 데도 쓴다. 전사에 없는 ID나 빈 근거는 검증 실패로 보고 1회 재요청한다.
 - 전사 줄에는 화자 표시 이름이 붙는다(`[s0012 00:05:31 김민수] …`, 이름이 없으면 `S1`). 화자는 자동 추정이라 owner는 사용자가 이름을 붙인 화자만 쓸 수 있고, `S1` 같은 라벨은 쓰지 않는다. 그 밖에 "제가 하겠습니다"처럼 말한 사람만 가리키면 owner는 null로 둔다.
 - 프롬프트만으로는 라벨이 새어 나온다(2026-10-04 solar-pro4: 라벨이 붙은 가상 회의 3회 중 3회 owner `S2`). 그래서 `S1`·`Speaker 1`·"화자 1"·"발언자"·세그먼트 ID 형태의 owner는 저장 전에 null로 바꾼다(`summarize.clean_owners`, 대소문자 무시). `summarize`와 MCP `save_summary` 모두 `write_summary`를 거치므로 에이전트가 저장한 요약도 같다.
 - AI Hub처럼 외부 반출이 제한된 데이터의 전사는 원격 공급자로 보내지 않는다. 스모크 테스트는 가상 회의 전사(`tests/fixtures/sample_meeting.json`)만 쓴다.
+- Q&A는 답을 글자 단위로 보여 줘야 해서 JSON 스키마를 쓰지 않는다. 인용 검증은 재요청 없이 후처리로 한다(`ask.finalize`). 가상 회의 5건 × 질문 28개(`bench/ask_eval.py`, solar-pro4, 2026-10-06, 하이브리드·키워드 검색 각각): 인용 정밀도 0.97–1.00, 재현율 0.85–0.96, 정답 인용 질문 0.95–1.00, 답 없는 질문 5–6/6 '근거 없음', 첫 토큰 p50 0.4초. **검색 재현율은 아직 재지 않았다**: 말뭉치가 세그먼트 62개뿐이라 전체 범위 질문도 말뭉치의 35–58%(p50, 최대 71%)를 근거로 보내 정답이 빠질 수 없다. 검색 수치는 가상 방해 회의(50건 이상)를 섞은 뒤에 적는다. 모델이 예시의 `<meeting_id>` 꺾쇠를 그대로 베끼는 경우가 있어 파서가 받아 준다.
 - Gemma 4 31B 컨텍스트 안에 1시간 회의가 충분히 들어가므로 map-reduce 요약은 기본 경로에서 제외한다(입력 길이가 컨텍스트를 넘을 때만 사용).
 
 ---

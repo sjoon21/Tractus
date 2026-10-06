@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errText, useJob, useRecorder, type MeetingInfo, type PendingRecording } from "./api";
+import { AskPanel } from "./AskPanel";
 import { baseName, dayParts, IDLE_JOB, fmtTime, groupByDay, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, STAGE_LABEL, type RecMode } from "./lib";
 import { MeetingView } from "./MeetingView";
 import { RecordView } from "./RecordView";
@@ -17,6 +18,8 @@ export type View =
   | { kind: "record" }
   | { kind: "settings" };
 
+const GLOBAL = { kind: "global" } as const;
+
 /** 화면 아래 알림. 오류는 닫을 때까지 남고, 새 알림이 와도 밀려나지 않는다(쌓인다) */
 export type Toast = { text: string; error?: boolean; action?: { label: string; run: () => void } };
 export type Notify = (t: Toast) => void;
@@ -29,6 +32,17 @@ export function App() {
   const [listError, setListError] = useState<string | null>(null);
   const [view, setView] = useState<View>({ kind: "home" });
   const searchRef = useRef<HTMLInputElement>(null);
+  // 전체 회의에 질문 (6.3): 오른쪽 서랍. 닫아도 대화는 남는다(앱을 끄기 전까지)
+  const [askOpen, setAskOpen] = useState(false);
+  const askInput = useRef<HTMLTextAreaElement>(null);
+  const askButton = useRef<HTMLButtonElement>(null);
+  const closeAsk = useCallback(() => {
+    setAskOpen(false);
+    askButton.current?.focus();
+  }, []);
+  useEffect(() => {
+    if (askOpen) askInput.current?.focus();
+  }, [askOpen]);
   const [toasts, setToasts] = useState<(Toast & { id: number })[]>([]);
   const toastId = useRef(0);
   const notify = useCallback<Notify>((t) => {
@@ -155,7 +169,10 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && e.code === "KeyK") {
+      if (e.metaKey && e.code === "KeyJ") {
+        e.preventDefault();
+        setAskOpen((o) => !o);
+      } else if (e.metaKey && e.code === "KeyK") {
         e.preventDefault();
         searchRef.current?.focus();
         searchRef.current?.select();
@@ -252,6 +269,10 @@ export function App() {
           <input ref={searchRef} type="search" placeholder="회의 검색" aria-label="회의 검색" />
           <kbd aria-hidden>⌘K</kbd>
         </form>
+        <button ref={askButton} className="ask-entry" aria-expanded={askOpen} aria-controls="ask-drawer" aria-keyshortcuts="Meta+J" onClick={() => setAskOpen((o) => !o)}>
+          <span>전체 회의에 질문</span>
+          <kbd aria-hidden>⌘J</kbd>
+        </button>
 
         <nav className="meeting-nav" aria-label="회의 목록">
           {listError && <p className="nav-note is-error">{listError}</p>}
@@ -329,6 +350,30 @@ export function App() {
         {view.kind === "settings" && <SettingsView onSaved={refresh} />}
       </main>
 
+      <aside
+        id="ask-drawer"
+        className="ask-drawer"
+        role="dialog"
+        aria-labelledby="ask-drawer-title"
+        hidden={!askOpen}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            closeAsk();
+          }
+        }}
+      >
+        <header className="ask-drawer-head">
+          <h2 id="ask-drawer-title" className="eyebrow">
+            전체 회의에 질문
+          </h2>
+          <button className="toast-close" aria-label="닫기 (Esc)" onClick={closeAsk}>
+            ×
+          </button>
+        </header>
+        <AskPanel scope={GLOBAL} inputRef={askInput} onCite={(meetingId, segId, t) => openMeeting(meetingId, { segId, t })} />
+      </aside>
+
       {dropping && (
         <div className="drop-overlay" aria-hidden>
           <p>파일을 놓으면 전사합니다</p>
@@ -405,6 +450,10 @@ function Welcome({ count }: { count: number }) {
         <div>
           <dt><kbd>⌘F</kbd></dt>
           <dd>찾아 바꾸기</dd>
+        </div>
+        <div>
+          <dt><kbd>⌘J</kbd></dt>
+          <dd>전체 회의에 질문</dd>
         </div>
       </dl>
     </section>

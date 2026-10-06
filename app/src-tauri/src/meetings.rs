@@ -244,6 +244,43 @@ pub fn load(home: &Path, id: &str) -> Result<MeetingDetail, String> {
     Ok(MeetingDetail { info: info(&dir, &t), speakers: t.speakers, segments: t.segments, summary, memos, audio_path })
 }
 
+/// chat.json 항목 (`tractus ask --save`가 덧붙인다, 최근 50개). 없는 필드는 기본값으로 읽는다
+#[derive(Deserialize, Serialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct ChatEntry {
+    pub question: String,
+    pub answer: String,
+    pub citations: Vec<ChatCitation>,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct ChatCitation {
+    pub meeting_id: String,
+    pub segment_id: String,
+    pub start: f64,
+}
+
+/// 회의의 질문 기록. 파일이 없으면 빈 목록. 목록 또는 {"turns": [...]}을 받고, 읽지 못하는 항목은 건너뛴다
+pub fn load_chat(home: &Path, id: &str) -> Result<Vec<ChatEntry>, String> {
+    let path = find_dir(home, id)?.join("chat.json");
+    if !path.is_file() {
+        return Ok(vec![]);
+    }
+    let items = match read_json::<serde_json::Value>(&path)? {
+        serde_json::Value::Array(a) => a,
+        serde_json::Value::Object(mut o) => match o.remove("turns") {
+            Some(serde_json::Value::Array(a)) => a,
+            _ => vec![],
+        },
+        _ => vec![],
+    };
+    Ok(items.into_iter().filter_map(|v| serde_json::from_value::<ChatEntry>(v).ok()).filter(|e| !e.question.is_empty()).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,5 +415,34 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("transcript.json"), r#"{"meeting_id":"01EVIL","audio":{"file":"../../secret"},"segments":[]}"#).unwrap();
         assert!(load(&home, "01EVIL").unwrap().audio_path.is_none());
+    }
+
+    #[test]
+    fn reads_chat_history_leniently() {
+        let home = temp_home("chat");
+        let dir = home.join("meetings/2026-10-05_q_01CHAT");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("transcript.json"), r#"{"meeting_id":"01CHAT","segments":[]}"#).unwrap();
+        assert!(load_chat(&home, "01CHAT").unwrap().is_empty()); // 아직 질문 없음
+
+        fs::write(
+            dir.join("chat.json"),
+            r#"[{"question":"예산?","answer":"3억 [s0012]","citations":[{"meeting_id":"01CHAT","segment_id":"s0012","start":331.5}],
+                 "provider":"upstage","model":"solar-pro4","created_at":"2026-10-05T10:00:00+09:00"},
+                {"question":"일정?","answer":"회의 기록에서 근거를 찾지 못했습니다","citations":[],"provider":null,"extra":1},
+                {"answer":"질문 없음"}, 3, null]"#,
+        )
+        .unwrap();
+        let got = load_chat(&home, "01CHAT").unwrap();
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].citations[0].start, 331.5);
+        assert_eq!(got[0].model.as_deref(), Some("solar-pro4"));
+        assert!(got[1].citations.is_empty() && got[1].provider.is_none() && got[1].created_at.is_empty());
+
+        fs::write(dir.join("chat.json"), r#"{"schema_version":1,"turns":[{"question":"a","answer":"b"}]}"#).unwrap();
+        assert_eq!(load_chat(&home, "01CHAT").unwrap()[0].answer, "b");
+        fs::write(dir.join("chat.json"), "{깨짐").unwrap();
+        assert!(load_chat(&home, "01CHAT").is_err());
+        assert!(load_chat(&home, "../01CHAT").is_err());
     }
 }

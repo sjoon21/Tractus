@@ -148,10 +148,15 @@ export function FindBar({
   );
 }
 
-/** 머리말의 '내보내기' 메뉴. 네이티브 popover라 Esc·바깥 클릭으로 닫힌다 */
-export function ExportMenu({ onPick }: { onPick: (f: (typeof EXPORT_FORMATS)[number]) => void }) {
+/** 머리말의 '내보내기' 메뉴. 네이티브 popover라 Esc·바깥 클릭으로 닫힌다. PDF는 코어가 아니라 인쇄 대화상자로 만든다 */
+export function ExportMenu({ onPick, onPrint }: { onPick: (f: (typeof EXPORT_FORMATS)[number]) => void; onPrint: () => void }) {
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const pick = (run: () => void) => {
+    menu.current?.hidePopover();
+    button.current?.focus();
+    run();
+  };
   return (
     <>
       <button ref={button} className="ghost-button head-button" popoverTarget="export-menu" aria-haspopup="menu">
@@ -177,11 +182,7 @@ export function ExportMenu({ onPick }: { onPick: (f: (typeof EXPORT_FORMATS)[num
           <button
             key={f.format}
             role="menuitem"
-            onClick={() => {
-              menu.current?.hidePopover();
-              button.current?.focus();
-              onPick(f);
-            }}
+            onClick={() => pick(() => onPick(f))}
           >
             <span>{f.label}</span>
             <small className="tnum">
@@ -189,6 +190,10 @@ export function ExportMenu({ onPick }: { onPick: (f: (typeof EXPORT_FORMATS)[num
             </small>
           </button>
         ))}
+        <button role="menuitem" onClick={() => pick(onPrint)}>
+          <span>PDF</span>
+          <small className="tnum">.pdf · 인쇄 → PDF로 저장</small>
+        </button>
       </div>
     </>
   );

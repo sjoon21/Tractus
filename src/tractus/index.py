@@ -474,6 +474,10 @@ class Index:
             hits.append(Hit(row[0], row[1], row[2], json.loads(row[3]), row[4], row[5], round(score[cid], 5), matched, dist))
         return SearchResult(query=query, hits=hits, vector_used=vec is not None)
 
+    def meeting_dir(self, meeting_id: str) -> Path | None:
+        row = self.db.execute("SELECT dir FROM meetings WHERE meeting_id=?", (meeting_id,)).fetchone()
+        return Path(row[0]) if row else None
+
     def stats(self) -> dict:
         one = lambda sql: self.db.execute(sql).fetchone()[0]  # noqa: E731
         return {

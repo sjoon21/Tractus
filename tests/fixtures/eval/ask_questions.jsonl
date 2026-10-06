@@ -1,0 +1,28 @@
+{"qid": "a01", "type": "meeting", "meeting": "01KWZKT9M0T5YFCND21XGZFT8G", "question": "2분기 AWS 비용은 월 평균 얼마였나요?", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0002"]}}
+{"qid": "a02", "type": "meeting", "meeting": "01KWZKT9M0T5YFCND21XGZFT8G", "question": "GPU 서버 구매는 어떻게 하기로 했어?", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0008"]}, "ok": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0006", "s0007"]}}
+{"qid": "a03", "type": "meeting", "meeting": "01KWZKT9M0T5YFCND21XGZFT8G", "question": "개발 클러스터 야간 scale down은 누가 언제까지 적용하나요?", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0004", "s0005"]}, "ok": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0003"]}}
+{"qid": "a04", "type": "meeting", "meeting": "01M0C67Y40RMV2S860E7CD9PGX", "question": "검색 p95 latency가 얼마까지 올라갔어?", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0002"]}}
+{"qid": "a05", "type": "meeting", "meeting": "01M0C67Y40RMV2S860E7CD9PGX", "question": "Redis 캐시는 누가 맡았고 기한은 언제야?", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0007"]}, "ok": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0005", "s0006"]}}
+{"qid": "a06", "type": "meeting", "meeting": "01M0C67Y40RMV2S860E7CD9PGX", "question": "latency 기준을 넘으면 바로 배포를 막기로 했나요?", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0012"]}, "ok": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0011", "s0009"]}}
+{"qid": "a07", "type": "meeting", "meeting": "01M1JFX480KZE86SXAN94C6Y0E", "question": "v2.4 출시일은 언제로 확정됐어?", "gold": {"01M1JFX480KZE86SXAN94C6Y0E": ["s0005"]}, "ok": {"01M1JFX480KZE86SXAN94C6Y0E": ["s0003", "s0004"]}}
+{"qid": "a08", "type": "meeting", "meeting": "01M1JFX480KZE86SXAN94C6Y0E", "question": "이번 릴리스의 crash-free 목표 비율은?", "gold": {"01M1JFX480KZE86SXAN94C6Y0E": ["s0012"]}, "ok": {"01M1JFX480KZE86SXAN94C6Y0E": ["s0011"]}}
+{"qid": "a09", "type": "meeting", "meeting": "01M3QYXKE0WC2SE1CW214JX464", "question": "응답시간 SLA 조건은 어떻게 제안하기로 했나요?", "gold": {"01M3QYXKE0WC2SE1CW214JX464": ["s0004"]}, "ok": {"01M3QYXKE0WC2SE1CW214JX464": ["s0002", "s0003"]}}
+{"qid": "a10", "type": "meeting", "meeting": "01M3QYXKE0WC2SE1CW214JX464", "question": "계약서 초안은 누가 언제까지 보내나요?", "gold": {"01M3QYXKE0WC2SE1CW214JX464": ["s0010"]}, "ok": {"01M3QYXKE0WC2SE1CW214JX464": ["s0011"]}}
+{"qid": "a11", "type": "meeting", "meeting": "01M2PZ6MR0KZ0R3C1T2RHWN1E4", "question": "4분기 LLM API 예산 상한은 얼마야?", "gold": {"01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0005"]}, "ok": {"01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0003", "s0004"]}}
+{"qid": "a12", "type": "cross", "question": "GPU 서버 구매 결정은 회의마다 어떻게 바뀌었어?", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0008"], "01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0009"]}, "ok": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0006", "s0007"], "01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0008"]}}
+{"qid": "a13", "type": "cross", "question": "3분기 인프라 예산 계획과 실제 집행액을 비교해 줘", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0012"], "01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0002"]}}
+{"qid": "a14", "type": "cross", "question": "다온로지스 장애 대응은 어떤 범위로 계약하기로 했어?", "gold": {"01M3QYXKE0WC2SE1CW214JX464": ["s0009"]}, "ok": {"01M3QYXKE0WC2SE1CW214JX464": ["s0008", "s0011"]}}
+{"qid": "a15", "type": "cross", "question": "모바일 regression test 담당자는 누구야?", "gold": {"01M1JFX480KZE86SXAN94C6Y0E": ["s0007"]}, "ok": {"01M1JFX480KZE86SXAN94C6Y0E": ["s0008"]}}
+{"qid": "a16", "type": "cross", "question": "ML 엔지니어 채용은 어떻게 됐어?", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0010"], "01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0012"]}, "ok": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0009"]}}
+{"qid": "a17", "type": "cross", "question": "검색 p95 latency 목표는 얼마로 잡았어?", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0006"], "01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0010"]}}
+{"qid": "a18", "type": "date", "from": "2026-09-01", "to": "2026-09-30", "question": "9월 회의에서 정한 OKR은 뭐야?", "gold": {"01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0010"]}, "ok": {"01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0013"]}}
+{"qid": "a19", "type": "date", "from": "2026-07-01", "to": "2026-07-31", "question": "7월 회의에서 채용 공고는 누가 올리기로 했어?", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0011"]}}
+{"qid": "a20", "type": "date", "from": "2026-08-01", "to": "2026-08-31", "question": "8월 회의에서 자동완성 성능 문제는 어떻게 해결하기로 했어?", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0006"]}, "ok": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0003", "s0004"]}}
+{"qid": "a21", "type": "date", "from": "2026-09-15", "to": "2026-09-30", "question": "마케팅 예산은 어떻게 조정됐어?", "gold": {"01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0006"]}, "ok": {"01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0007"]}}
+{"qid": "a22", "type": "date", "from": "2026-09-25", "question": "온보딩 킥오프 날짜는 언제야?", "gold": {"01M3QYXKE0WC2SE1CW214JX464": ["s0007"]}}
+{"qid": "a23", "type": "none", "meeting": "01KWZKT9M0T5YFCND21XGZFT8G", "question": "사무실 이전 일정은 언제로 정했나요?", "gold": "none"}
+{"qid": "a24", "type": "none", "meeting": "01M1JFX480KZE86SXAN94C6Y0E", "question": "Android 최소 지원 버전은 몇으로 정했어?", "gold": "none"}
+{"qid": "a25", "type": "none", "question": "보안 감사 결과는 어떻게 나왔어?", "gold": "none"}
+{"qid": "a26", "type": "none", "question": "다온로지스의 월 이용료는 정확히 얼마야?", "gold": "none"}
+{"qid": "a27", "type": "none", "from": "2026-07-01", "to": "2026-07-31", "question": "7월 회의에서 모바일 앱 출시일은 언제로 정했어?", "gold": "none"}
+{"qid": "a28", "type": "none", "question": "회사 워크숍 장소는 어디로 정했어?", "gold": "none"}

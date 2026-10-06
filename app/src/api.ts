@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Citation, ChatMessage, LlmConfig } from "./ask";
 import { IDLE_JOB, IDLE_REC, jobReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type Memo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
 
 export type { JobState, RecState } from "./lib";
@@ -71,6 +72,26 @@ export interface SearchResponse {
   hits: SearchHit[];
 }
 
+/** chat.json 항목 (`tractus ask --save`, Rust meetings::ChatEntry) */
+export interface ChatEntry {
+  question: string;
+  answer: string;
+  citations: Citation[];
+  provider: string | null;
+  model: string | null;
+  created_at: string;
+}
+
+/** 회의 질의 시작 인수. meeting이 있으면 그 회의만 보고 chat.json에 남긴다. job은 프론트엔드가 만든 ID(이벤트 "ask"의 job) */
+export interface AskArgs {
+  job: string;
+  meeting: string | null;
+  from: string | null;
+  to: string | null;
+  question: string;
+  history: ChatMessage[];
+}
+
 export interface McpStatus {
   home: string;
   meetings: number;
@@ -92,6 +113,13 @@ export const api = {
   glossaryAdd: (terms: string[]) => invoke<number>("glossary_add", { terms }),
   /** `tractus export` 후 Finder에서 보여 준다. 저장한 절대 경로 */
   exportMeeting: (id: string, format: string, out: string) => invoke<string>("export_meeting", { id, format, out }),
+  /** `tractus ask --progress-json` (Phase 6.3). 이벤트는 "ask" */
+  askStart: (args: AskArgs) => invoke<void>("ask_start", { ...args }),
+  /** 질문 멈추기 (프로세스 kill) */
+  askCancel: (job: string) => invoke<void>("ask_cancel", { job }),
+  loadChat: (id: string) => invoke<ChatEntry[]>("load_chat", { id }),
+  /** 보내기 전 안내용 공급자·모델 (셸 > .env.local > .env, 코어와 같은 순서) */
+  llmConfig: () => invoke<LlmConfig>("llm_config"),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setRecMode: (mode: string) => invoke<void>("set_rec_mode", { mode }),

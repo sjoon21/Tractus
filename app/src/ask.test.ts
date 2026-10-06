@@ -1,0 +1,147 @@
+import { describe, expect, test } from "vitest";
+import {
+  answerParts,
+  askReduce,
+  citeTarget,
+  historyFromEntries,
+  isAsking,
+  answeredBy,
+  sendNotice,
+  START_ASK,
+  trimHistory,
+  turnsHistory,
+  type AskEvent,
+  type AskSource,
+  type AskState,
+} from "./ask";
+
+const ID = "01K6X3ABCDEFGHJKMNPQRSTVWX";
+const src = (segment_id: string, start: number, meeting_id = ID): AskSource => ({ meeting_id, title: "주간회의", date: "2026-10-02", segment_id, speaker: "김민수", start, text: "예산은 3억" });
+
+describe("인용 파싱", () => {
+  test("회의 범위 [s0012]와 전체 범위 [<id>#s0012]를 칩으로 나눈다", () => {
+    expect(answerParts(`예산은 3억입니다 [s0012]. 일정은 [${ID}#s0040] 다음 주.`)).toEqual([
+      { kind: "text", text: "예산은 3억입니다 " },
+      { kind: "cite", meetingId: null, segId: "s0012" },
+      { kind: "text", text: ". 일정은 " },
+      { kind: "cite", meetingId: ID, segId: "s0040" },
+      { kind: "text", text: " 다음 주." },
+    ]);
+  });
+  test("한 괄호에 여러 개 [s0001, s0002]도 칩 여러 개", () => {
+    expect(answerParts("결정 [s0001, s0002]").filter((p) => p.kind === "cite")).toEqual([
+      { kind: "cite", meetingId: null, segId: "s0001" },
+      { kind: "cite", meetingId: null, segId: "s0002" },
+    ]);
+  });
+  test("인용이 아닌 대괄호와 스트리밍 중 덜 온 인용은 글자 그대로", () => {
+    expect(answerParts("[참고] 값 [s12] 그리고 [s00")).toEqual([{ kind: "text", text: "[참고] 값 [s12] 그리고 [s00" }]);
+    expect(answerParts("")).toEqual([]);
+  });
+});
+
+describe("인용 → 이동할 시각", () => {
+  const starts = new Map([["s0012", 331]]);
+  test("done의 citations → sources → 회의 세그먼트 순으로 찾는다", () => {
+    const ctx = { meetingId: ID, citations: [{ meeting_id: ID, segment_id: "s0012", start: 330 }], sources: [], starts };
+    expect(citeTarget({ meetingId: null, segId: "s0012" }, ctx)).toEqual({ meetingId: ID, segId: "s0012", t: 330 });
+    expect(citeTarget({ meetingId: null, segId: "s0012" }, { meetingId: ID, citations: [], sources: [], starts })).toEqual({ meetingId: ID, segId: "s0012", t: 331 });
+    expect(citeTarget({ meetingId: ID, segId: "s0040" }, { citations: [], sources: [src("s0040", 1200)] })).toEqual({ meetingId: ID, segId: "s0040", t: 1200 });
+  });
+  test("다른 회의의 같은 세그먼트 id와 섞이지 않고, 모르는 인용은 null", () => {
+    const other = "01K6X3ZZZZZZZZZZZZZZZZZZZZ";
+    expect(citeTarget({ meetingId: other, segId: "s0040" }, { citations: [], sources: [src("s0040", 1200)] })).toBeNull();
+    expect(citeTarget({ meetingId: null, segId: "s9999" }, { meetingId: ID, citations: [], sources: [], starts })).toBeNull();
+    expect(citeTarget({ meetingId: null, segId: "s0012" }, { citations: [], sources: [] })).toBeNull(); // 전체 범위에 회의 없는 인용
+  });
+});
+
+type NoJob<T> = T extends unknown ? Omit<T, "job"> : never;
+type Ev = NoJob<AskEvent>;
+const ev = (e: Ev) => ({ job: "J", ...e }) as AskEvent;
+const run = (events: Ev[], from: AskState = START_ASK) => events.map(ev).reduce(askReduce, from);
+
+describe("askReduce", () => {
+  test("stage → sources → delta 누적 → done (후처리된 답으로 바꾼다)", () => {
+    const s = run([
+      { event: "stage", stage: "retrieve" },
+      { event: "sources", sources: [src("s0012", 331)] },
+      { event: "stage", stage: "answer" },
+      { event: "delta", text: "예산은 " },
+      { event: "delta", text: "3억 [s0012][s9999]" },
+    ]);
+    expect(s.phase).toBe("answer");
+    expect(s.answer).toBe("예산은 3억 [s0012][s9999]");
+    expect(isAsking(s)).toBe(true);
+    const d = run([{ event: "done", answer: "예산은 3억 [s0012]", citations: [{ meeting_id: ID, segment_id: "s0012", start: 331 }], provider: "upstage", model: "solar-pro4" }, { event: "exit", code: 0, stderr: "" }], s);
+    expect(d).toMatchObject({ phase: "done", answer: "예산은 3억 [s0012]", provider: "upstage", model: "solar-pro4", error: null });
+    expect(d.sources).toHaveLength(1);
+    expect(isAsking(d)).toBe(false);
+  });
+  test("저장 실패 경고는 답을 막지 않고, 모르는 이벤트는 무시한다", () => {
+    const s = run([
+      { event: "warning", code: "chat_save_failed", message: "기록을 저장하지 못했습니다" },
+      { event: "done", answer: "3억", citations: [], provider: "upstage", model: "solar-pro4" },
+    ]);
+    expect(s).toMatchObject({ phase: "done", answer: "3억", warning: "기록을 저장하지 못했습니다" }); // 코어는 저장(경고) 뒤에 done을 보낸다
+    const w = run([{ event: "warning", code: "x", message: "경고" }, { event: "mystery" } as never, { event: "delta", text: "a" }]);
+    expect(w).toMatchObject({ phase: "answer", answer: "a", warning: "경고" });
+  });
+  test("error 이벤트 메시지, 없으면 stderr 끝, 취소는 그대로", () => {
+    expect(run([{ event: "error", message: "UPSTAGE_API_KEY가 없습니다" }, { event: "exit", code: 1, stderr: "Traceback" }])).toMatchObject({ phase: "error", error: "UPSTAGE_API_KEY가 없습니다" });
+    expect(run([{ event: "stage", stage: "answer" }, { event: "exit", code: 1, stderr: "a\nb\nError: 죽음" }])).toMatchObject({ phase: "error", error: "a\nb\nError: 죽음" });
+    expect(run([{ event: "exit", code: null, stderr: "" }]).error).toBe("질문을 처리하지 못했습니다 (종료 코드 null)");
+    const cancelled = { ...START_ASK, phase: "cancelled" as const, answer: "예산은" };
+    expect(run([{ event: "delta", text: " 3억" }, { event: "exit", code: null, stderr: "" }], cancelled)).toEqual(cancelled);
+  });
+  test("멈춘 뒤에 done이 오면 답을 받는다 (코어가 이미 chat.json에 저장했다)", () => {
+    const cancelled = { ...START_ASK, phase: "cancelled" as const, answer: "예산은" };
+    const d = run([{ event: "done", answer: "예산은 3억 [s0012]", citations: [{ meeting_id: ID, segment_id: "s0012", start: 331 }], provider: "upstage", model: "solar-pro4" }, { event: "exit", code: null, stderr: "" }], cancelled);
+    expect(d).toMatchObject({ phase: "done", answer: "예산은 3억 [s0012]", provider: "upstage" });
+  });
+  test("answeredBy: LLM이 실제로 답한 턴만 공급자를 보인다", () => {
+    const done = { ...START_ASK, phase: "done" as const, provider: "upstage", model: "solar-pro4" };
+    const cite = [{ meeting_id: ID, segment_id: "s0012", start: 331 }];
+    expect(answeredBy({ ...done, citations: cite })).toBe("Upstage(solar-pro4)");
+    expect(answeredBy({ ...done, provider: "gemma-local", model: "gemma4:31b", citations: cite })).toBe("로컬 모델(gemma4:31b)");
+    expect(answeredBy(done)).toBeNull(); // 근거가 없어 LLM을 부르지 않은 답
+    expect(answeredBy({ ...done, phase: "answer", citations: cite })).toBeNull();
+  });
+});
+
+describe("대화 기록", () => {
+  const m = (role: "user" | "assistant", n: number) => ({ role, content: "가".repeat(n) });
+  test("마지막 6턴만, 12k자를 넘으면 오래된 것부터 버린다. 맨 앞은 질문", () => {
+    const msgs = [m("user", 1), m("assistant", 1), m("user", 2), m("assistant", 2), m("user", 3), m("assistant", 3), m("user", 4), m("assistant", 4)];
+    expect(trimHistory(msgs).map((x) => x.content.length)).toEqual([2, 2, 3, 3, 4, 4]);
+    expect(trimHistory([m("user", 5000), m("assistant", 5000), m("user", 3000), m("assistant", 3000)]).map((x) => x.content.length)).toEqual([3000, 3000]);
+    expect(trimHistory([m("assistant", 10), m("user", 1), m("assistant", 1)]).map((x) => x.role)).toEqual(["user", "assistant"]);
+    expect(trimHistory([m("user", 13000), m("assistant", 1)])).toEqual([]);
+  });
+  test("chat.json 항목과 화면의 턴을 질문·답 쌍으로. 끝나지 않은 턴은 빼다", () => {
+    expect(historyFromEntries([{ question: "예산?", answer: "3억 [s0012]" }])).toEqual([
+      { role: "user", content: "예산?" },
+      { role: "assistant", content: "3억 [s0012]" },
+    ]);
+    const done = { ...START_ASK, phase: "done" as const, answer: "3억" };
+    const failed = { ...START_ASK, phase: "error" as const, error: "x" };
+    expect(turnsHistory([{ question: "a", state: done }, { question: "b", state: failed }, { question: "c", state: START_ASK }])).toEqual([
+      { role: "user", content: "a" },
+      { role: "assistant", content: "3억" },
+    ]);
+  });
+});
+
+describe("전송 안내", () => {
+  test("공급자·모델 이름으로 어디로 보내는지 알린다", () => {
+    expect(sendNotice({ provider: "upstage", model: null, local_only: false })).toEqual({ text: "질문과 관련 전사 일부가 Upstage(solar-pro4)로 전송됩니다", warn: false });
+    expect(sendNotice({ provider: "openai", model: "gpt-x", local_only: false }).text).toBe("질문과 관련 전사 일부가 OpenAI(gpt-x)로 전송됩니다");
+    expect(sendNotice({ provider: "gemma-local", model: null, local_only: true })).toEqual({ text: "질문과 관련 전사 일부가 이 Mac의 로컬 모델(gemma4:31b)로 처리됩니다", warn: false });
+  });
+  test("공급자 없음·로컬 전용 모드는 경고", () => {
+    expect(sendNotice({ provider: null, model: null, local_only: false })).toEqual({ text: "LLM 공급자가 설정되지 않았습니다 (TRACTUS_LLM_PROVIDER)", warn: true });
+    expect(sendNotice({ provider: "upstage", model: null, local_only: true })).toEqual({ text: "로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 원격 공급자(Upstage)로 보내지 않습니다", warn: true });
+    expect(sendNotice({ provider: "mystery", model: null, local_only: false })).toEqual({ text: "알 수 없는 LLM 공급자입니다: mystery", warn: true });
+    expect(sendNotice({ provider: "openai", model: null, local_only: false })).toEqual({ text: "OpenAI 모델을 지정하세요 (TRACTUS_LLM_MODEL)", warn: true });
+  });
+});

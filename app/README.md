@@ -11,13 +11,13 @@ Tauri 2 + React + TypeScript + Vite로 만든 앱이다. 구성 요소 사이의
 ```bash
 cd app
 pnpm install
-pnpm test                                   # vitest: 시각 → 세그먼트 찾기, 시간 형식, 메모 끼워 넣기, MCP 응답 해석, 속도·무음 건너뛰기·찾아 바꾸기·되돌리기·가져오기·내보내기 이름
+pnpm test                                   # vitest: 시각 → 세그먼트 찾기, 시간 형식, 메모 끼워 넣기, MCP 응답 해석, 속도·무음 건너뛰기·찾아 바꾸기·되돌리기·가져오기·내보내기 이름, 질의 이벤트·인용 파싱·대화 기록 자르기·전송 안내(ask.test.ts), PDF 인쇄 문서(print.test.ts)
 pnpm build                                  # tsc + vite → dist/
 pnpm tauri dev                              # 개발 실행 (Vite 1420 포트)
 pnpm tauri build --debug --bundles app      # → src-tauri/target/debug/bundle/macos/Tractus.app
 
 cd src-tauri
-cargo test      # transcript/summary/memos 읽기, media 스킴 Range 응답, MCP 줄 단위 송수신(가짜 서버), 하위 프로세스 이벤트 전달
+cargo test      # transcript/summary/memos 읽기, media 스킴 Range 응답, MCP 줄 단위 송수신(가짜 서버), 하위 프로세스 이벤트 전달·kill, ask 인수·stdin, chat.json, LLM 설정 읽기
 TRACTUS_TEST_HOME=<합성 홈> cargo test meetings   # 다른 회의 폴더로 읽기 테스트 (기본: ../../tests/fixtures/eval)
 ```
 
@@ -54,6 +54,21 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 
 문장 편집·화자 편집·내보내기는 한 줄로 세워 차례로 실행한다(코어가 transcript.json을 잠금 없이 고친다).
 
+## 질문·목소리 강조·PDF (Phase 6)
+
+| 기능 | 앱 | 코어 |
+| --- | --- | --- |
+| 회의에 질문 | 오른쪽 레일 '질문' 탭. 답이 스트리밍되고 `[s0012]`는 시각 칩(누르면 그 위치로 이동). 근거 목록은 '근거 N'을 펼친다. 근거가 없으면 '출처 없음'. 지난 질문은 `chat.json`을 Rust에서 읽어 보여 준다 | `tractus ask --meeting <id> --save --progress-json` (stdin `{"question", "history"}`, docs/desktop.md §2.5) |
+| 전체 회의에 질문 | 사이드바 버튼 또는 ⌘J → 오른쪽 서랍(Esc로 닫기, 대화는 앱을 끌 때까지 남는다). 기간을 고를 수 있다. `[<회의 ID>#s0012]` 칩은 그 회의를 그 시각으로 연다 | `tractus ask [--from D] [--to D] --progress-json` |
+| 전송 안내 | 입력란 아래 "질문과 관련 전사 일부가 Upstage(solar-pro4)로 전송됩니다". 보내기 전에는 셸 > 실행 폴더 `.env.local` > `.env` > `$TRACTUS_HOME` 순서로 읽은 `TRACTUS_LLM_PROVIDER`·`TRACTUS_LLM_MODEL`·`TRACTUS_LOCAL_ONLY`(키는 읽지 않는다)를 늘 보여 준다. 실제로 답한 공급자·모델(`done`)은 각 답 아래에 따로 적는다(근거가 없어 LLM을 부르지 않은 답은 빼고) | — |
+| 멈추기 | 질문 중 '멈추기' 또는 회의 화면을 떠나면 프로세스를 kill한다. 코어는 `done` 직전에 chat.json을 쓰므로, 멈춘 뒤에 `done`이 도착하면 그 답을 받아 화면과 기록을 맞춘다 | — |
+| 목소리 강조 | 플레이어 토글. highpass 100 Hz → peaking 3 kHz +4 dB → 압축 → gain(`voice.ts`). 처음 켤 때 요소마다 한 번 Web Audio 체인을 만든다. 속도·피치 유지는 그대로 | — |
+| PDF | '내보내기' → PDF → macOS 인쇄 대화상자의 'PDF로 저장'. 인쇄용 문서(제목, 날짜, 길이, 화자, 요약, 시각·화자 붙은 전사)를 body 아래에 두고 `@media print`로 앱을 숨긴다 | — |
+
+**`media://` + Web Audio:** WKWebView에서 커스텀 스킴 오디오도 `crossOrigin` 없이 `MediaElementAudioSourceNode`로 소리가 난다(macOS 26.6, 페이지 오리진 `tauri://localhost`·`http://localhost:1420` 둘 다 실측, Ogg Opus 1.5배속). `crossOrigin="anonymous"`를 붙이면 CORS 헤더가 없는 지금 응답은 재생이 막힌다(`NotSupportedError`). 그래서 붙이지 않는다.
+
+**인쇄:** Tauri 2는 macOS에서 `window.print()`를 `plugin:webview|print`(WKWebView `printOperation`)로 바꿔 둔다. 그래서 권한 `core:webview:allow-print`가 필요하다. 여백은 `@page`로 준다(wry가 여백 0으로 인쇄한다). 화면의 `ss06`·`tnum` 대체 글리프는 PDF에서 글자로 복사되지 않아(2026 → 202!) 인쇄 문서는 기본 글리프를 쓴다.
+
 ## 녹음 방식
 
 주로 쓰는 경우는 한 방에서 여러 사람이 Mac 주위에 둘러앉은 대면 회의다. 화상·하이브리드 회의는 그다음이다. 어느 쪽이든 헤드폰 없이 스피커로 들어도 되게 한다.
@@ -77,7 +92,7 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 
 | 파일 | 역할 |
 | --- | --- |
-| `src-tauri/src/lib.rs` | 설정, Tauri 명령(`list_meetings`, `list_recordings`, `load_meeting`, `edit_speakers`, `edit_segments`, `glossary_add`, `export_meeting`, `mcp_call`, `rec_start`, `rec_send`, `job_start`), 앱 종료 시 녹음 정지 |
+| `src-tauri/src/lib.rs` | 설정, Tauri 명령(`list_meetings`, `list_recordings`, `load_meeting`, `edit_speakers`, `edit_segments`, `glossary_add`, `export_meeting`, `mcp_call`, `rec_start`, `rec_send`, `job_start`, `ask_start`, `ask_cancel`, `load_chat`, `llm_config`), 앱 종료 시 녹음 정지 |
 | `src-tauri/src/meetings.rs` | transcript.json, summary.json, memos.json 읽기. 손상된 회의는 건너뛴다. 전사 안 된 녹음(`recordings/<ULID>/recording.json`) 목록과 녹음 폴더 검사 |
 | `src-tauri/src/mcp.rs` | 상주 MCP 클라이언트. initialize(`2025-11-25`) → initialized 순서로 연결하고, 하위 프로세스가 죽으면 다시 띄운다 |
 | `src-tauri/src/procs.rs` | 하위 프로세스 stdout JSON Lines를 이벤트로 전달하고, 종료할 때 `exit` 이벤트(stderr 끝부분 포함)를 보낸다 |
@@ -86,6 +101,10 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 | `src-tauri/Entitlements.plist` | 마이크 entitlement (서명하면 hardened runtime이 켜져서 필요하다) |
 | `src/api.ts` | 명령·이벤트 연결, `useJob`, `useRecorder` |
 | `src/TranscriptTools.tsx` | 문장 편집기, 찾기·바꾸기 막대, 내보내기 메뉴 (Phase 5) |
+| `src-tauri/src/ask.rs` | `tractus ask` 인수·stdin JSON, 전송 안내용 LLM 설정 읽기 (Phase 6) |
+| `src/ask.ts`, `src/AskPanel.tsx` | 질의 이벤트 → 화면 상태, 인용 파싱, 대화 기록 자르기 / 질문 탭·전체 회의 서랍 |
+| `src/voice.ts` | 목소리 강조 Web Audio 체인 |
+| `src/print.ts`, `src/PrintSheet.tsx` | PDF 인쇄 문서 다듬기 / 인쇄 레이아웃 |
 | `src/*View.tsx`, `App.tsx` | 화면. `App.tsx`는 파일 가져오기 큐·끌어 놓기 덮개·알림도 맡는다 |
 
 **오디오를 asset protocol 대신 `media://`로 여는 이유:** Tauri asset protocol은 파일 내용으로 MIME을 추정한다. 그래서 Ogg Opus를 `audio/opus`로 보내는데, WKWebView는 `audio/opus`를 재생하지 못한다(`MEDIA_ERR_SRC_NOT_SUPPORTED`). 같은 파일을 `audio/ogg`로 보내면 재생된다(macOS 26.6에서 확인). 그래서 `media.rs`가 MIME을 `audio/ogg`로 고정하고, 탐색에 필요한 Range 요청을 직접 처리한다. 회의 폴더 밖의 파일이나 `.ogg`/`.opus`가 아닌 파일은 403으로 거부한다. 프론트엔드는 계약대로 `convertFileSrc(path, "media")`를 쓴다.
@@ -105,6 +124,7 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 | 키 | 동작 |
 | --- | --- |
 | `⌘K` | 검색 입력으로 이동 |
+| `⌘J` | 전체 회의에 질문 (서랍 열기·닫기) |
 | `Space` | 재생 / 일시정지 (회의 상세, 입력 중이 아닐 때) |
 | `B` | 북마크 (녹음 중, 입력 중이 아닐 때). 물리 키(`e.code`)로 보므로 한글 입력 상태에서도 동작한다 |
 
@@ -135,3 +155,7 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 - [ ] 설정에서 경로를 바꾸고 저장한다. 목록이 다시 읽히고, 검색 서버 상태에 새 홈의 회의 수가 나와야 한다.
 - [ ] 1시간 회의 상세를 끊김 없이 스크롤할 수 있어야 한다. 앱은 3초 안에 떠야 한다(B안 판정 기준).
 - [ ] 라이트·다크 테마를 전환하고, Tab으로 이동할 때 초점 표시가 보이는지 확인한다.
+- [ ] **목소리 강조 (귀로):** 실제 회의 오디오에서 토글을 켜고 끄며 듣는다. 말소리가 또렷해지고 웅웅거림이 줄어야 한다. 소리가 끊기거나 무음이 되면 안 된다. 1.5배속에서도 피치가 그대로여야 한다. 켠 채로 잠자기 뒤 재생해도 소리가 나야 한다.
+- [ ] **PDF:** '내보내기' → PDF → 인쇄 대화상자 왼쪽 아래 'PDF' → 'PDF로 저장'. 사이드바·플레이어가 없고, 한글을 선택·복사할 수 있고, 세그먼트가 페이지 경계에서 잘리지 않아야 한다. 다크 테마에서도 흰 종이여야 한다.
+- [ ] **질문 (회의):** '질문' 탭에서 한글로 묻고, 조합 중 Enter는 보내지 않는지, Shift+Enter는 줄바꿈인지 본다. 답이 흘러나오고 시각 칩을 누르면 이동한다. 회의를 다시 열면 지난 질문이 보인다. '멈추기'로 멈춘다.
+- [ ] **질문 (전체):** ⌘J로 열고 묻는다. 칩을 누르면 그 회의가 그 시각으로 열린다. Esc로 닫고 ⌘J로 다시 열면 대화가 남아 있다. 전송 안내 문구가 설정한 공급자와 맞는지 본다.

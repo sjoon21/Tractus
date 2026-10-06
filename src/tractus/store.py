@@ -378,7 +378,7 @@ def render_markdown(t: dict, memos: list[dict] | None = None) -> str:
 
 
 def _write_atomic(path: Path, text: str) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")  # 프로세스마다 다른 임시 파일: 동시에 쓰는 두 프로세스가 서로의 임시 파일을 덮지 않게
     with tmp.open("w", encoding="utf-8") as f:
         f.write(text)
         f.flush()

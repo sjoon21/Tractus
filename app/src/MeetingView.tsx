@@ -34,8 +34,12 @@ import {
   type Segment,
   type TextEdit,
 } from "./lib";
+import { AskPanel } from "./AskPanel";
+import { printDoc } from "./print";
+import { PrintSheet } from "./PrintSheet";
 import { SpeakerChip, SpeakerMenu, SpeakersBar, spkStyle, type MenuTarget, type MergeAsk } from "./Speakers";
 import { ExportMenu, FindBar, SegmentEditor, type FindState } from "./TranscriptTools";
+import { releaseVoiceBoost, resumeVoiceBoost, setVoiceBoost, voiceBoostSupported } from "./voice";
 
 const RATE_KEY = "tractus.playbackRate";
 const readRate = () => {
@@ -231,6 +235,46 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
   const [skip, setSkip] = useState(false);
   const [saved, setSaved] = useState(0);
 
+  // 목소리 강조 (6.4). 켤 때 Web Audio 체인을 만든다(사용자 클릭 안에서). 못 만들면 토글을 막고 이유를 보인다
+  const [voice, setVoice] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(voiceBoostSupported() ? null : "이 환경에서는 목소리 강조를 쓸 수 없습니다 (Web Audio 없음)");
+  const toggleVoice = () => {
+    const a = audio.current;
+    if (!a || voiceError) return;
+    try {
+      setVoiceBoost(a, !voice);
+      setVoice(!voice);
+    } catch (e) {
+      setVoiceError(`목소리 강조를 켜지 못했습니다: ${errText(e)}`);
+    }
+  };
+  useEffect(() => {
+    const a = audio.current;
+    return () => void (a && releaseVoiceBoost(a));
+  }, [detail?.audio_path]);
+
+  // PDF (6.5): 인쇄용 문서를 body 아래에 두고 macOS 인쇄 대화상자를 연다. 대화상자의 미리보기가 나중에 그리므로
+  // 한 번 만든 인쇄 문서는 회의 화면을 닫을 때까지 둔다 (화면에는 보이지 않는다)
+  const [printNonce, setPrintNonce] = useState(0);
+  useEffect(() => {
+    if (!printNonce) return;
+    const id = requestAnimationFrame(() =>
+      // Tauri는 macOS에서 window.print()를 webview print 명령(Promise)으로 바꿔 둔다
+      Promise.resolve(window.print() as unknown).catch((e) => notify({ text: `인쇄 창을 열지 못했습니다: ${errText(e)}`, error: true })),
+    );
+    return () => cancelAnimationFrame(id);
+  }, [printNonce, notify]);
+  const printable = useMemo(() => (printNonce && detail ? printDoc(detail) : null), [printNonce > 0, detail]);
+
+  // 오른쪽 레일: 요약 | 질문 (6.3). 질문 탭은 처음 열 때 만들고, 그 뒤에는 숨겨도 둔다(스트리밍이 이어지게)
+  const [tab, setTab] = useState<"summary" | "ask">("summary");
+  const [askSeen, setAskSeen] = useState(false);
+  const showTab = (k: "summary" | "ask") => {
+    setTab(k);
+    if (k === "ask") setAskSeen(true);
+  };
+  const onCite = useCallback((_m: string, _seg: string, sec: number) => seekTo(sec), [seekTo]);
+
   // 검색 결과·시각 칩에서 들어온 시각으로 한 번만 이동 (재생은 사용자가 시작).
   // 요약을 만든 뒤 다시 읽어도(detail이 바뀌어도) 재생 위치를 되돌리지 않게 nonce로 거른다
   const appliedSeek = useRef<number | null>(null);
@@ -324,7 +368,8 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
         else setFind({ q: "", r: "", glossary: false });
         return;
       }
-      if (isTypingTarget(e.target)) return;
+      // 탭 목록처럼 키를 이미 쓴 위젯이 있으면 재생 단축키로 다시 쓰지 않는다
+      if (e.defaultPrevented || isTypingTarget(e.target)) return;
       if (e.metaKey && !e.shiftKey && e.code === "KeyZ") {
         e.preventDefault();
         undo();
@@ -404,7 +449,7 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
               <button className="ghost-button head-button" onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
                 찾아 바꾸기
               </button>
-              <ExportMenu onPick={(f) => void exportAs(f)} />
+              <ExportMenu onPick={(f) => void exportAs(f)} onPrint={() => setPrintNonce((n) => n + 1)} />
             </div>
           </div>
           <h1>{info.title || "제목 없음"}</h1>
@@ -484,7 +529,10 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
                 }
               }}
               onLoadedMetadata={(e) => Number.isFinite(e.currentTarget.duration) && setDuration(e.currentTarget.duration)}
-              onPlay={() => setPlaying(true)}
+              onPlay={(e) => {
+                setPlaying(true);
+                resumeVoiceBoost(e.currentTarget);
+              }}
               onPause={() => setPlaying(false)}
               onError={() => setAudioError("오디오를 재생할 수 없습니다")}
             />
@@ -526,6 +574,15 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
                 {filter ? "이 화자만" : "무음 건너뛰기"}
                 {skip && saved >= 1 && <span className="tnum toggle-meta">−{fmtTime(saved)}</span>}
               </button>
+              <button
+                className="toggle-button"
+                aria-pressed={voice}
+                aria-disabled={!!voiceError}
+                onClick={toggleVoice}
+                title={voiceError ?? "말소리 대역(3 kHz)을 살짝 올리고 100 Hz 아래 웅웅거림을 줄입니다. 큰 소리와 작은 소리의 차이도 줄입니다"}
+              >
+                목소리 강조
+              </button>
               <select className="rate-select tnum" value={rate} onChange={(e) => setRate(Number(e.target.value))} aria-label="재생 속도 (Shift+, 느리게 · Shift+. 빠르게)" title="재생 속도 (Shift+, / Shift+.)">
                 {RATES.map((r) => (
                   <option key={r} value={r}>
@@ -559,41 +616,66 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
         )}
       </article>
 
-      <aside className="summary-col" aria-label="요약">
-        {summary ? (
-          <SummaryPanel
-            summary={summary}
-            starts={starts}
-            onSeek={seekTo}
-            onCopy={() =>
-              navigator.clipboard.writeText(summaryMarkdown(summary, starts)).then(
-                () => notify({ text: "요약을 마크다운으로 복사했습니다" }),
-                (e) => notify({ text: `복사하지 못했습니다: ${errText(e)}`, error: true }),
-              )
-            }
-            stale={
-              edited && (
-                <div className="summary-stale" role="status">
-                  <p>전사를 고쳤습니다. 요약에는 아직 반영되지 않았습니다.</p>
-                  <button className="text-button" disabled={summarize.job.running || editing} onClick={startSummarize}>
-                    {summarize.job.running ? (STAGE_LABEL[summarize.job.stage ?? ""] ?? "시작하는 중…") : "요약 다시 만들기"}
-                  </button>
-                  {summarize.job.error && <p className="inline-error">{summarize.job.error}</p>}
-                </div>
-              )
-            }
-          />
-        ) : (
-          <div className="summary-empty">
-            <p className="eyebrow">요약</p>
-            <p>아직 요약이 없습니다. 결정 사항과 할 일을 근거 세그먼트와 함께 뽑습니다.</p>
-            <button className="primary-button" disabled={summarize.job.running || editing} onClick={startSummarize}>
-              {summarize.job.running ? (STAGE_LABEL[summarize.job.stage ?? ""] ?? "시작하는 중…") : "요약 만들기"}
+      <aside className="summary-col" aria-label="요약과 질문">
+        <div
+          className="rail-tabs"
+          role="tablist"
+          aria-label="오른쪽 패널"
+          onKeyDown={(e) => {
+            if (e.code !== "ArrowLeft" && e.code !== "ArrowRight") return;
+            e.preventDefault();
+            const next = tab === "summary" ? "ask" : "summary";
+            showTab(next);
+            document.getElementById(`tab-${next}`)?.focus();
+          }}
+        >
+          {(["summary", "ask"] as const).map((k) => (
+            <button key={k} id={`tab-${k}`} role="tab" aria-selected={tab === k} aria-controls={`panel-${k}`} tabIndex={tab === k ? 0 : -1} onClick={() => showTab(k)}>
+              {k === "summary" ? "요약" : "질문"}
             </button>
-            {summarize.job.error && <p className="inline-error">{summarize.job.error}</p>}
+          ))}
+        </div>
+        <div id="panel-summary" role="tabpanel" aria-labelledby="tab-summary" hidden={tab !== "summary"}>
+          {summary ? (
+            <SummaryPanel
+              summary={summary}
+              starts={starts}
+              onSeek={seekTo}
+              onCopy={() =>
+                navigator.clipboard.writeText(summaryMarkdown(summary, starts)).then(
+                  () => notify({ text: "요약을 마크다운으로 복사했습니다" }),
+                  (e) => notify({ text: `복사하지 못했습니다: ${errText(e)}`, error: true }),
+                )
+              }
+              stale={
+                edited && (
+                  <div className="summary-stale" role="status">
+                    <p>전사를 고쳤습니다. 요약에는 아직 반영되지 않았습니다.</p>
+                    <button className="text-button" disabled={summarize.job.running || editing} onClick={startSummarize}>
+                      {summarize.job.running ? (STAGE_LABEL[summarize.job.stage ?? ""] ?? "시작하는 중…") : "요약 다시 만들기"}
+                    </button>
+                    {summarize.job.error && <p className="inline-error">{summarize.job.error}</p>}
+                  </div>
+                )
+              }
+            />
+          ) : (
+            <div className="summary-empty">
+              <p>아직 요약이 없습니다. 결정 사항과 할 일을 근거 세그먼트와 함께 뽑습니다.</p>
+              <button className="primary-button" disabled={summarize.job.running || editing} onClick={startSummarize}>
+                {summarize.job.running ? (STAGE_LABEL[summarize.job.stage ?? ""] ?? "시작하는 중…") : "요약 만들기"}
+              </button>
+              {summarize.job.error && <p className="inline-error">{summarize.job.error}</p>}
+            </div>
+          )}
+        </div>
+        {askSeen && (
+          <div id="panel-ask" role="tabpanel" aria-labelledby="tab-ask" className="rail-ask" hidden={tab !== "ask"}>
+            <AskPanel scope={{ kind: "meeting", id, starts }} onCite={onCite} />
           </div>
         )}
       </aside>
+      {printable && <PrintSheet doc={printable} />}
     </div>
   );
 }
@@ -731,7 +813,6 @@ function SummaryPanel({
   return (
     <div className="summary">
       <div className="summary-head">
-        <p className="eyebrow">요약</p>
         <button className="text-button" onClick={onCopy}>
           요약 복사
         </button>
