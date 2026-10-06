@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tractus.store import speaker_name
+from tractus.store import seg_text, speaker_name
 
 log = logging.getLogger("tractus.index")
 
@@ -125,7 +125,7 @@ def make_chunks(segments: list[dict], speakers: dict | None = None) -> list[dict
     세그먼트마다 화자 표시 이름(이름 > 라벨 > None)을 함께 저장한다. 이름을 바꾸면 transcript.json이 바뀌어 다시 색인된다."""
     groups, cur, size = [], [], 0
     for s in segments:
-        text = (s.get("corrected_text") or s.get("text") or "").strip()
+        text = seg_text(s).strip()
         if not text:
             continue
         if cur and size + len(text) > CHUNK_MAX:

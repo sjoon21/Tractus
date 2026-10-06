@@ -48,7 +48,8 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 | `vad.py` | VAD 발화 구간 → 30초 이하 청크 |
 | `diarize.py` | 화자 분리(Nemotron 3), 단일 화자 평활(`smooth`), 화자 경계로 청크 나누기(`split_chunks`) |
 | `asr.py` | `Transcriber`: 청크 전사, 토큰 상한, 반복 루프 재시도·보정 |
-| `store.py` | 회의 폴더, `.job.json`·`.chunks.jsonl`(이어하기), transcript.json/md/vtt (schema_version 2: 화자), `apply_speaker_edit` |
+| `store.py` | 회의 폴더, `.job.json`·`.chunks.jsonl`(이어하기), transcript.json/md/vtt (schema_version 2: 화자), `apply_speaker_edit`, `apply_text_edits`, `seg_text`(표시 텍스트 = `corrected_text` 우선), `add_glossary_terms` |
+| `export.py` | 내보내기 txt·md·srt·vtt·csv(utf-8-sig)·docx(python-docx, `w:eastAsia`)·bundle(zip) |
 | `llm.py` | 공급자 표(`PROVIDERS`), `complete_json`: strict JSON + Pydantic 검증 + 1회 재요청 |
 | `summarize.py` | 요약 스키마, segment_ids 검증, summary.md/json |
 | `env.py` | `.env` / `.env.local` 로더 |
@@ -56,11 +57,13 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 | `embed.py` | Qwen3-Embedding-0.6B (공식 가중치 bf16, mlx-lm), `LazyEmbedder` |
 | `index.py` | SQLite FTS5 음절 bigram + sqlite-vec, 증분 동기화, strict 우선 + 가중 RRF |
 | `mcp_server.py` | MCP 서버 7개 도구 (`build_server(home, embedder)`) |
-| `cli.py` | `tractus transcribe`, `summarize`, `index`, `search`, `speakers`, `mcp` |
+| `cli.py` | `tractus transcribe`, `summarize`, `index`, `search`, `speakers`, `segments`, `glossary`, `export`, `mcp` |
 
 환경변수는 `.env.example`에 모두 있다. 개발 중에는 저장소 루트의 `.env`(기본값)와 `.env.local`(API 키)을 CLI가 읽는다. 우선순위는 셸 > `.env.local` > `.env`.
 
 ## 검색·MCP 규칙
+
+- **표시 텍스트는 언제나 `store.seg_text(s)`(`corrected_text`가 있으면 그것, 없으면 `text`)다.** 출력·프롬프트·색인·내보내기에서 `s['text']`를 직접 읽지 않는다. 원문 `text`는 바꾸지 않는다.
 
 - 검색 결합 방식이나 토크나이저를 바꾸면 `bench/search_eval.py`(가상)와 `bench/aihub_search_eval.py`(AI Hub, 로컬 전용)를 **둘 다** 돌려 비교한다. 가상 평가셋만 보면 동일 가중 RRF가 좋아 보이지만, 실제 ASR 전사에서는 키워드 단독보다 나빴다.
 - 임베딩 모델·revision·지시문을 바꾸면 `embed.MODEL_ID`가 바뀌어 벡터가 전부 다시 만들어진다.
@@ -86,6 +89,9 @@ uv run pytest -m llm                                # 실제 LLM API 스모크 (
 uv run tractus summarize <meeting_id>               # 요약
 uv run tractus index / search "<질의>"              # 색인, 검색
 uv run tractus speakers <meeting_id> list --json    # 화자 (rename S1 이름 / set s0012 S2|new / merge S3 S1)
+echo '{"edits":[{"id":"s0012","text":"새 문장"}]}' | uv run tractus segments <meeting_id> edit   # 텍스트 교정 → {"changed": N}
+uv run tractus glossary add 쿠버네티스 "Project Atlas"  # 용어집 추가 → {"added": N}
+uv run tractus export <meeting_id> --format docx --out 회의.docx [--force]   # txt|md|srt|vtt|csv|docx|bundle → {"path": …}
 uv run python bench/search_eval.py                  # 검색 평가 (가상)
 uv run tractus transcribe <파일>                    # 전사
 

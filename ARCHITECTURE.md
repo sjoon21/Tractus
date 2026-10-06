@@ -9,6 +9,7 @@
 
 | 날짜 | 버전 | 변경 |
 | --- | --- | --- |
+| 2026-10-06 | v3.10 | **Phase 5 core.** 표시 텍스트 `seg_text`(= `corrected_text` 우선)를 md·vtt·요약 프롬프트·MCP·색인·CLI 검색·내보내기에 적용. `tractus segments <회의> edit`(stdin JSON 묶음, 원문과 같으면 교정 해제, 색인은 `embed=False`), `tractus glossary add`, `tractus export --format txt\|md\|srt\|vtt\|csv\|docx\|bundle`(python-docx MIT 추가). 가져오기: 해시 전에 `decode` 단계, 중복이면 `duplicate` 경고 후 `done`, 동영상(mp4·mov)은 `-vn`, 오디오 없는 동영상은 오류. 계약: `docs/desktop.md` §2.2–2.4 |
 | 2026-10-04 | v3.9 | **화자 분리 도입 (D3 변경).** Nemotron 3 Diarization(mlx-audio, 가중치 OpenMDW-1.1, revision 고정)을 ASR 전에 회의 전체로 1회 실행하고, 화자가 바뀌는 지점에서 VAD 청크를 나눈다. AI Hub 84분·7명 세션: 7/7명, confusion 2.9%, DER 7.6%, 14초. 백업은 FluidAudio community-1. `transcript.json` schema_version 2(`segment.speaker`, `speakers`, `diarization`), `tractus speakers` 편집 명령, `--no-diarize`·`--max-speakers`, MCP·요약 프롬프트에 화자 표시, 색인 스키마 3. `NOTICE`에 모델 라이선스 |
 | 2026-10-02 | v3.8 | **Phase 4 시작: B안(Tauri) 우선, D안(메뉴바 + Obsidian) 백업.** 공용 녹음 헬퍼 `tractus-rec`(Swift, 마이크 + Core Audio process tap 2트랙), Tauri 앱 `app/` 초안, 코어 변경(audio.ogg, transcript.vtt, memos.json, `--recording`, `--keep-tracks`, `--progress-json`, `$TRACTUS_HOME/.env.local`). 구성 요소 계약: `docs/desktop.md` |
 | 2026-10-02 | v3.7 | **Phase 3 완료.** 검색 색인(FTS5 음절 bigram + sqlite-vec, strict 우선 + 벡터 가중 0.3 결합), 로컬 임베딩(Qwen3-Embedding-0.6B bf16, mlx-lm), MCP 서버 7개 도구(세그먼트 단위 인용, `save_summary`). Gemini CLI → Antigravity CLI. 실제 ASR 평가에서 동일 가중 RRF가 키워드보다 나빠(hit@1 0.50 vs 0.85) 결합 방식 변경 |
@@ -413,7 +414,7 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
       "text": "다음 분기 budget 부터 보겠습니다",
       "lang": "ko",
       "speaker": "S1",          // speakers의 라벨. 모르면 null
-      "corrected_text": null,   // LLM 교정 결과 (원문 보존)
+      "corrected_text": null,   // 사용자 교정 (tractus segments edit). 표시 텍스트 = corrected_text ?? text. 원문 text는 보존
       "words": null             // ForcedAligner 도입 시 채움
     }
   ]
@@ -424,6 +425,7 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 - **화자 편집** (`tractus speakers <회의> rename|set|merge`)은 transcript.json을 고친 뒤 md·vtt를 다시 쓰고 검색 색인을 갱신한다. 오디오는 건드리지 않는다. 편집하면 schema_version 1 전사도 2가 된다.
   - 이름에서 `` []<>*_`\ `` 문자는 뺀다(md 굵게·VTT `<v>`·MCP 줄 `[s0012 00:05:31 이름]`이 깨지지 않게). `S2`처럼 라벨 모양인 이름은 거부한다.
   - 화자 편집은 청크 본문을 바꾸지 않으므로 색인은 기존 벡터를 그대로 옮겨 쓰고 임베딩 모델을 올리지 않는다(`sync(embed=False)`). 본문이 바뀐 청크만 다음 임베딩 동기화에서 다시 임베딩한다.
+- **텍스트 편집** (`tractus segments <회의> edit`)은 `corrected_text`만 바꾸고 원문 `text`는 그대로 둔다. 원문과 같게 고치면 null로 돌린다. md·vtt·요약·검색·MCP·내보내기는 모두 `corrected_text ?? text`를 쓴다. 화자 편집처럼 md·vtt를 다시 쓰고 `sync(embed=False)`로 색인한다(본문이 바뀐 청크는 다음 임베딩 동기화까지 키워드로만 찾힌다).
 - **이어하기 파일** `.job.json`의 `chunks`는 `[시작 표본, 끝 표본, 화자]`이고, `diarizer`에 위 `diarization` 값을 둔다. 예전 `[시작, 끝]`도 읽는다(화자 null).
 
 ---
@@ -458,7 +460,10 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 | **2. LLM 연동** 🔶 2026-10-02 | 공급자 설정, 요약·Action Item, 검증·재시도, 5개 공급자 스모크 테스트 | 같은 전사로 5개 공급자 모두 스키마 통과 → **Upstage(solar-pro4) 통과**(재요청 없이 3/3, 1회 7초). OpenAI·Claude·Gemini는 API 키를 받는 대로 `pytest -m llm`으로 확인. 키가 끝내 없으면 Phase 3 MCP로 각 CLI에서 품질을 본다 |
 | **3. 검색 + MCP** ✅ 2026-10-02 | 임베딩, FTS5 bigram, RRF, MCP 서버, 3개 CLI 등록 가이드 | Claude Code·Codex·Gemini CLI에서 과거 회의 질의 성공 → Gemini CLI 대신 agy. **세 CLI 모두 질의(정답 세그먼트 인용)와 요약 저장 성공** (§5) |
 | **4. UI + 녹음** 🔶 진행 중 | B안(Tauri 앱) 우선, D안(메뉴바 녹음기 + Obsidian 플러그인) 백업. 공용: 녹음 헬퍼 `tractus-rec`, 코어 변경(audio.ogg, transcript.vtt, memos.json, `--recording`, `--progress-json`). 계약: `docs/desktop.md` | `docs/desktop.md` §4 판정 기준으로 B안을 평가해 확정 |
-| 이후 | 단어 타임스탬프, 실시간 전사(Nemotron 3.5 재평가), **Windows 지원(llama.cpp GGUF 경로)** | 필요가 확인될 때 |
+| **5. 품질 격차 해소** 🔶 진행 중 | 클로바노트 대비 실제 격차: 재생 컨트롤(배속·점프·무음 건너뛰기), 전사 텍스트 편집·찾아 바꾸기, 파일 가져오기(동영상 포함), 내보내기(txt·md·srt·csv·docx·묶음). 상세: `docs/roadmap.md` | 각 항목의 완료 기준 (`docs/roadmap.md` §2) |
+| 6. 차별화 | 단어 타임스탬프(Qwen3-ForcedAligner) + 가라오케·단어 탐색, 회의 질의(Ask, 인용 포함), 음성 강조 필터, PDF | `docs/roadmap.md` §3 |
+| 7. 사람과 실시간 | 목소리 프로필(로컬 화자 임베딩), 실시간 전사(옵트인), 9명 이상 화자 엔진 | `docs/roadmap.md` §4 |
+| 이후 | **Windows 지원(llama.cpp GGUF 경로)** | 필요가 확인될 때 |
 
 ### Phase 0 실행 계획
 

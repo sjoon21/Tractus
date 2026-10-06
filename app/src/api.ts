@@ -2,7 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { IDLE_JOB, IDLE_REC, jobReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type Memo, type RecEvent, type RecState, type Segment, type Speakers } from "./lib";
+import { IDLE_JOB, IDLE_REC, jobReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type Memo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
 
 export type { JobState, RecState } from "./lib";
 
@@ -86,6 +86,12 @@ export const api = {
   loadMeeting: (id: string) => invoke<MeetingDetail>("load_meeting", { id }),
   /** 코어가 transcript.json·md·vtt·검색 색인을 고친 뒤 다시 읽은 회의 */
   editSpeakers: (id: string, edit: SpeakerEdit) => invoke<MeetingDetail>("edit_speakers", { id, edit }),
+  /** `tractus segments <회의> edit` 묶음 한 번. 원문과 같은 문장은 해제된다. 코어가 바꾼 세그먼트 수와 고친 회의 */
+  editSegments: (id: string, edits: TextEdit[]) => invoke<{ changed: number; meeting: MeetingDetail }>("edit_segments", { id, edits }),
+  /** `tractus glossary add`. 새로 더한 개수 */
+  glossaryAdd: (terms: string[]) => invoke<number>("glossary_add", { terms }),
+  /** `tractus export` 후 Finder에서 보여 준다. 저장한 절대 경로 */
+  exportMeeting: (id: string, format: string, out: string) => invoke<string>("export_meeting", { id, format, out }),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setRecMode: (mode: string) => invoke<void>("set_rec_mode", { mode }),
@@ -96,13 +102,16 @@ export const api = {
 
 export const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-// ── 작업 (transcribe / summarize) ──
+// ── 작업 (transcribe / summarize / import) ──
 
-/** 작업 하나를 실행하고 진행 이벤트를 상태로 모은다. 성공(exit 0 + done)하면 onDone(meeting_id). */
-export function useJob(onDone: (meetingId: string) => void) {
+type Warning = JobState["warnings"][number];
+
+/** 작업 하나를 실행하고 진행 이벤트를 상태로 모은다. 성공(exit 0 + done)하면 onDone(meeting_id, 경고들). */
+export function useJob(onDone: (meetingId: string, warnings: Warning[]) => void) {
   const [state, setState] = useState<JobState>(IDLE_JOB);
   const jobId = useRef<string | null>(null);
   const doneId = useRef<string | null>(null);
+  const warnings = useRef<Warning[]>([]);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
@@ -111,15 +120,17 @@ export function useJob(onDone: (meetingId: string) => void) {
       if (ev.job !== jobId.current) return;
       // 부수 효과는 상태 갱신 함수 밖에서 (StrictMode는 갱신 함수를 두 번 부른다)
       if (ev.event === "done") doneId.current = ev.meeting_id;
-      if (ev.event === "exit" && ev.code === 0 && doneId.current) onDoneRef.current(doneId.current);
+      if (ev.event === "warning") warnings.current = [...warnings.current, { code: ev.code, message: ev.message }];
+      if (ev.event === "exit" && ev.code === 0 && doneId.current) onDoneRef.current(doneId.current, warnings.current);
       setState((s) => jobReduce(s, ev));
     });
     return () => void un.then((f) => f());
   }, []);
 
-  const start = useCallback(async (kind: "transcribe" | "summarize", target: string) => {
+  const start = useCallback(async (kind: "transcribe" | "summarize" | "import", target: string) => {
     setState({ ...IDLE_JOB, running: true });
     doneId.current = null;
+    warnings.current = [];
     // 작업 ID는 여기서 만든다: 빨리 끝나는 작업의 이벤트가 invoke 응답보다 먼저 와도 놓치지 않게
     const job = crypto.randomUUID();
     jobId.current = job;

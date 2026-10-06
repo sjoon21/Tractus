@@ -27,13 +27,14 @@ from tractus.paths import home_dir, models_dir  # noqa: E402
 from tractus.asr import SR, Transcriber  # noqa: E402
 from tractus.diarize import MAX_SPEAKERS, MODEL_DIR as DIARIZER_DIR, MODEL_REPO as DIARIZER_REPO, MODEL_REVISION as DIARIZER_REVISION  # noqa: E402
 from tractus.diarize import load_diarizer, split_chunks  # noqa: E402
-from tractus.store import MEMOS_FILE, Job, apply_speaker_edit, find_job, find_meeting_dir, find_transcribed, load_glossary, meeting_dir_name  # noqa: E402
-from tractus.store import new_ulid, save_transcript, speaker_name, write_transcript  # noqa: E402
+from tractus.export import FORMATS as EXPORT_FORMATS, render_export, write_bytes_atomic  # noqa: E402
+from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
+from tractus.store import load_glossary, meeting_dir_name, new_ulid, save_transcript, seg_text, speaker_name, write_transcript  # noqa: E402
 from tractus.store import _hms  # noqa: E402
 from tractus.vad import find_chunks  # noqa: E402
 
 app = typer.Typer(add_completion=False, help="Local-first 회의 전사·회의록 도구")
-console = Console(stderr=True)
+console = Console(stderr=True, soft_wrap=True)  # 파이프(앱)에서 80칸 줄바꿈 금지: 앱은 stderr 마지막 줄만 보여 준다
 
 
 class Track(str, Enum):
@@ -120,7 +121,7 @@ def _source_from_file(file: Path) -> Source:
 
 @app.command()
 def transcribe(
-    file: Path = typer.Argument(None, exists=True, dir_okay=False, help="회의 녹음 파일 (m4a, mp3, wav, webm …)"),
+    file: Path = typer.Argument(None, exists=True, dir_okay=False, help="회의 녹음·동영상 파일 (m4a, mp3, wav, webm, mp4, mov … ffmpeg가 읽는 형식)"),
     recording: Path = typer.Option(None, "--recording", exists=True, file_okay=False, help="tractus-rec 녹음 폴더 (마이크·시스템 트랙을 섞어 전사)"),
     title: str = typer.Option(None, "--title", help="회의 제목. 생략하면 파일 이름 (녹음이면 '회의 HH:MM')"),
     track: Track = typer.Option(None, "--track", help="standard(1.7B) | lite(0.6B). 생략하면 메모리 16GB 이상이면 standard"),
@@ -154,9 +155,10 @@ def _transcribe(
     meetings = home_dir() / "meetings"
     meetings.mkdir(parents=True, exist_ok=True)
 
+    Events.emit("stage", stage="decode")  # 큰 파일은 해시 계산에도 몇 초 걸린다. 앱이 바로 진행 표시를 하도록 먼저 알린다
     digest = audio.sha256(source.paths)
     if done_dir := find_transcribed(meetings, digest):
-        console.print(f"이미 전사된 파일입니다: {done_dir}\n다시 전사하려면 이 폴더를 지우고 실행하세요.")
+        _warn("duplicate", f"이미 전사된 파일입니다: {done_dir}\n다시 전사하려면 이 폴더를 지우고 실행하세요.")
         Events.emit("done", meeting_id=json.loads((done_dir / "transcript.json").read_text(encoding="utf-8"))["meeting_id"], meeting_dir=str(done_dir))
         raise typer.Exit(0)
 
@@ -165,7 +167,6 @@ def _transcribe(
         if track and track.value != job.track:
             console.print(f"[yellow]진행 중인 작업의 트랙({job.track})으로 이어서 합니다.[/yellow]")
         console.print(f"이어서 진행합니다: {job.dir.name} ({len(job.done())}/{len(job.chunks)} 청크 완료)")
-        Events.emit("stage", stage="decode")
         pcm = audio.decode(source.paths)
     else:
         job, pcm = _new_job(source, meetings, digest, title, track or recommended_track(), language, term, diarize, max_speakers)
@@ -208,7 +209,6 @@ def _new_job(
 ):
     vad_dir, _ = local_model(VAD_MODEL), local_model(MODELS[track])  # 오래 걸리는 작업 전에 모델부터 확인
     with console.status("오디오 디코딩·VAD·화자 분리 중…"):
-        Events.emit("stage", stage="decode")
         pcm = audio.decode(source.paths)
         Events.emit("stage", stage="vad")
         chunks = find_chunks(pcm, vad_dir)
@@ -420,7 +420,7 @@ def search(
         print(f"{h.date} {h.title} ({'+'.join(h.matched)})")
         for s in h.segments:
             who = f" {s['speaker']}" if s.get("speaker") else ""
-            print(f"  [{h.meeting_id[-6:]}#{s['id']} {_hms(s['start'])}{who}] {s['text'][:120]}")
+            print(f"  [{h.meeting_id[-6:]}#{s['id']} {_hms(s['start'])}{who}] {seg_text(s)[:120]}")
 
 
 def _iso_date(value: str | None, name: str) -> str | None:
@@ -491,6 +491,77 @@ def speakers_set(ctx: typer.Context, segment_id: str = typer.Argument(..., help=
 def speakers_merge(ctx: typer.Context, src: str = typer.Argument(..., help="없앨 화자"), dst: str = typer.Argument(..., help="합칠 대상 화자")) -> None:
     """두 화자를 하나로 합친다 (SRC의 세그먼트를 모두 DST로)."""
     _edit_speakers(ctx.obj, "merge", src, dst)
+
+
+segments_app = typer.Typer(help="회의 전사 텍스트 고치기. 원문(text)은 두고 corrected_text에 쓴 뒤 md·vtt를 다시 쓰고 검색 색인을 갱신한다")
+app.add_typer(segments_app, name="segments")
+
+
+@segments_app.callback()
+def segments_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="회의 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
+    ctx.obj = resolve_meeting(meeting)
+
+
+@segments_app.command("edit")
+def segments_edit(ctx: typer.Context) -> None:
+    """stdin의 JSON 한 개 {"edits": [{"id": "s0012", "text": "새 문장"}]}로 세그먼트 텍스트를 고친다.
+    원문과 같으면 교정을 지운다. 없는 id·빈 텍스트가 하나라도 있으면 아무것도 쓰지 않고 종료 코드 1. stdout: {"changed": N}"""
+    d = ctx.obj
+    try:
+        req = json.loads(sys.stdin.read())
+        edits = req.get("edits") if isinstance(req, dict) else None
+        if not isinstance(edits, list):
+            raise ValueError('입력은 {"edits": [{"id": "s0012", "text": "…"}]} 형식이어야 합니다')
+        t, changed = apply_text_edits(_read_transcript(d), edits)
+    except ValueError as e:  # json.JSONDecodeError 포함
+        console.print(f"[red]{escape(str(e))}[/red]")
+        raise typer.Exit(1)
+    if changed:
+        save_transcript(d, t)
+        _sync_index_quietly(embed=False)  # 바뀐 청크는 벡터 없이 키워드로만 찾힌다. 다음 `tractus index`나 전사·요약 때 임베딩
+    print(json.dumps({"changed": changed}))
+
+
+glossary_app = typer.Typer(help="용어집($TRACTUS_HOME/glossary.md). 다음 전사부터 Qwen3-ASR hotwords로 들어간다")
+app.add_typer(glossary_app, name="glossary")
+
+
+@glossary_app.callback()
+def glossary_main() -> None:
+    """용어집 관리."""
+
+
+@glossary_app.command("add")
+def glossary_add(terms: list[str] = typer.Argument(..., help="추가할 용어 (여러 개). '-'로 시작하면 앞에 -- 를 둔다")) -> None:
+    """용어를 `- 용어` 줄로 덧붙인다. 중복·빈 값은 건너뛴다. stdout: {"added": N}"""
+    home_dir().mkdir(parents=True, exist_ok=True)
+    print(json.dumps({"added": add_glossary_terms(home_dir() / "glossary.md", terms)}))
+
+
+ExportFormat = Enum("ExportFormat", {f: f for f in EXPORT_FORMATS}, type=str)
+
+
+@app.command("export")
+def export_cmd(
+    meeting: str = typer.Argument(..., help="회의 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
+    fmt: ExportFormat = typer.Option(..., "--format", help="txt | md | srt | vtt | csv | docx | bundle(회의 폴더 zip)"),
+    out: Path = typer.Option(..., "--out", help="저장할 파일 경로"),
+    force: bool = typer.Option(False, "--force", help="--out 파일이 있으면 덮어쓴다"),
+) -> None:
+    """회의를 파일로 내보낸다. 화자는 표시 이름, 본문은 교정본(corrected_text) 우선. stdout: {"path": "<절대 경로>"}"""
+    d = resolve_meeting(meeting)
+    if out.exists() and not force:
+        console.print(f"[red]이미 있는 파일입니다 (덮어쓰려면 --force):[/red] {escape(str(out))}")
+        raise typer.Exit(1)
+    try:
+        write_bytes_atomic(out, render_export(d, fmt.value))
+    except OSError as e:  # 임시 파일(.tmp) 경로 대신 사용자가 고른 경로를 알린다
+        console.print(f"[red]내보내기 실패:[/red] {escape(str(out))}: {escape(e.strerror or str(e))}")
+        raise typer.Exit(1)
+    except ValueError as e:  # 제목 등에 남은 제어 문자를 docx(lxml)가 거부하는 경우
+        console.print(f"[red]내보내기 실패:[/red] {escape(str(e))}")
+        raise typer.Exit(1)
+    print(json.dumps({"path": str(out.resolve())}, ensure_ascii=False))
 
 
 @app.command()

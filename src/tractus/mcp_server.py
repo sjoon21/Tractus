@@ -19,7 +19,7 @@ from mcp_types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from tractus.index import Index
-from tractus.store import _hms, find_meeting_dir, speaker_name
+from tractus.store import _hms, find_meeting_dir, seg_text, speaker_name
 from tractus.summarize import MeetingSummary, check_segment_ids, write_summary
 
 log = logging.getLogger("tractus.mcp")
@@ -191,7 +191,7 @@ def build_server(home: Path, embedder) -> MCPServer:
             hits=[
                 SearchHit(
                     meeting_id=h.meeting_id, title=h.title, date=h.date, matched=h.matched, vector_distance=h.distance,
-                    segments=[HitSegment(id=s["id"], time=_hms(s["start"]), text=s["text"], speaker=s.get("speaker"), cite=_cite(h.meeting_id, [s["id"]], s["start"])) for s in h.segments],
+                    segments=[HitSegment(id=s["id"], time=_hms(s["start"]), text=seg_text(s), speaker=s.get("speaker"), cite=_cite(h.meeting_id, [s["id"]], s["start"])) for s in h.segments],
                 )
                 for h in res.hits
             ],
@@ -225,7 +225,7 @@ def build_server(home: Path, embedder) -> MCPServer:
         segs = t["segments"]
         page = segs[offset : offset + max_segments]
         head = f"# {t.get('title', '')} ({(t.get('created_at') or '')[:10]}, meeting_id {t['meeting_id']}, 세그먼트 {offset + 1}–{offset + len(page)} / {len(segs)})"
-        lines = [f"[{s['id']} {_hms(s['start'])}{_who(t, s)}] {s.get('corrected_text') or s['text']}" for s in page]
+        lines = [f"[{s['id']} {_hms(s['start'])}{_who(t, s)}] {seg_text(s)}" for s in page]
         tail = [f"next_offset: {offset + len(page)}"] if offset + len(page) < len(segs) else ["(끝)"]
         return "\n".join([head, *lines, *tail])
 

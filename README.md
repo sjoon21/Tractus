@@ -87,7 +87,10 @@ uv run tractus transcribe 주간회의.m4a
 uv run tractus transcribe 주간회의.m4a --title "3분기 예산 회의" -t 김철수 -t "Project Atlas"
 uv run tractus transcribe 주간회의.m4a --track lite      # 0.6B 모델
 uv run tractus transcribe 주간회의.m4a --max-speakers 4  # 참석자가 4명이면 상한을 준다
+uv run tractus transcribe 화면녹화.mp4                   # 동영상은 소리만 전사
 ```
+
+FFmpeg가 읽는 형식은 모두 받습니다: 오디오(m4a, mp3, wav, aac, flac, ogg, webm …)와 동영상(mp4, mov, mkv …). 오디오 트랙이 없는 동영상은 오류로 끝납니다.
 
 전사가 끝나면 `~/Tractus/meetings/` 아래에 회의 폴더가 생깁니다. 위치는 `TRACTUS_HOME` 환경변수로 바꿀 수 있습니다.
 
@@ -126,6 +129,31 @@ uv run tractus speakers 01K6X3 merge S3 S1          # S3을 S1에 합치기
 ```
 
 `transcript.json`을 고친 뒤 `transcript.md`·`transcript.vtt`를 다시 쓰고 검색 색인을 갱신합니다. 오디오는 건드리지 않습니다. 이름을 붙인 화자는 요약에서 담당자(owner)로 쓰일 수 있고, `S1` 같은 라벨은 쓰이지 않습니다.
+
+### 전사 텍스트 고치기·용어집
+
+```bash
+echo '{"edits":[{"id":"s0012","text":"쿠버네티스 클러스터를 늘립니다"}]}' | uv run tractus segments 01K6X3 edit
+uv run tractus glossary add 쿠버네티스 "Project Atlas"
+```
+
+`segments edit`는 stdin의 JSON으로 여러 세그먼트를 한 번에 고칩니다. 고친 문장은 `corrected_text`에 들어가고 ASR 원문(`text`)은 그대로 남습니다. 원문과 같게 고치면 교정이 지워집니다. md·vtt·요약·검색·MCP·내보내기는 모두 고친 문장을 씁니다. 없는 세그먼트 ID나 빈 문장이 하나라도 있으면 아무것도 바꾸지 않습니다. `glossary add`는 `~/Tractus/glossary.md`에 중복 없이 용어를 더하고, 다음 전사부터 적용됩니다.
+
+### 내보내기
+
+```bash
+uv run tractus export 01K6X3 --format docx --out 주간회의.docx
+uv run tractus export 01K6X3 --format bundle --out 주간회의.zip --force   # 있으면 덮어쓰기
+```
+
+| 형식 | 내용 |
+| --- | --- |
+| `txt` | `[HH:MM:SS] 화자: 문장` |
+| `md` | transcript.md + summary.md |
+| `srt`, `vtt` | 자막 |
+| `csv` | `시작,끝,화자,문장` (UTF-8 BOM, 한국어 Excel에서 바로 열림) |
+| `docx` | 제목·일시·화자·요약(있으면)·전사. Word·Pages 한글 글꼴 지정 |
+| `bundle` | 오디오·전사·요약·메모를 묶은 zip |
 
 ### 요약·결정 사항·할 일
 
@@ -215,7 +243,7 @@ uv run python bench/search_eval.py   # 검색 평가 (가상 회의 5건, 질의
 
 ```text
 ARCHITECTURE.md   설계 백본 (결정 사항, 로드맵, Phase 0 결과)
-src/tractus/      CLI, 전사, 화자 분리, LLM 요약, 검색, MCP (audio · vad · diarize · asr · store · llm · summarize · embed · index · mcp_server · cli)
+src/tractus/      CLI, 전사, 화자 분리, LLM 요약, 검색, MCP (audio · vad · diarize · asr · store · llm · summarize · embed · index · export · mcp_server · cli)
 tests/            pytest
 bench/            Phase 0 ASR 벤치마크 (코드, 지표 요약, 리포트)
 models/           모델 가중치 (git 제외, 직접 받음)

@@ -235,3 +235,59 @@ def test_merge_tolerates_speaker_entries_without_name():
     t = {**_t(), "speakers": {"S1": {}, "S2": None, "S3": {}}}
     m = apply_speaker_edit(t, "merge", "S2", "S1")
     assert m["speakers"]["S1"] == {"name": None} and "S2" not in m["speakers"]
+
+
+# ── 텍스트 편집 (Phase 5) ─────────────────────────────────────────────
+
+
+def test_seg_text_prefers_corrected_text_in_every_render():
+    from tractus.index import make_chunks
+    from tractus.store import render_vtt, seg_text
+    from tractus.summarize import build_prompt
+
+    t = _t()
+    t["segments"][0]["corrected_text"] = "고친 문장"
+    assert seg_text(t["segments"][0]) == "고친 문장" and seg_text(t["segments"][1]) == "나"
+    assert seg_text({"text": "원문", "corrected_text": None}) == "원문"
+    assert "[00:00:00] **S1**: 고친 문장" in render_markdown(t)
+    assert "<v S1>고친 문장" in render_vtt(t)
+    assert "[s0001 00:00:00 S1] 고친 문장" in build_prompt({**t, "title": "x"})
+    assert make_chunks(t["segments"])[0]["segments"][0]["text"] == "고친 문장"
+
+
+def test_apply_text_edits_sets_reverts_and_counts():
+    from tractus.store import apply_text_edits
+
+    t = _t()
+    r, n = apply_text_edits(t, [{"id": "s0001", "text": "  새 문장 "}, {"id": "s0002", "text": "나"}])
+    assert n == 1 and r["segments"][0]["corrected_text"] == "새 문장" and r["segments"][1].get("corrected_text") is None
+    assert r["segments"][0]["text"] == "가" and "corrected_text" not in t["segments"][0]  # 원문 보존, 입력은 그대로
+    back, n = apply_text_edits(r, [{"id": "s0001", "text": " 가 "}])  # 원문과 같으면 교정 해제
+    assert n == 1 and back["segments"][0]["corrected_text"] is None
+    same, n = apply_text_edits(r, [{"id": "s0001", "text": "새 문장"}])
+    assert n == 0 and same == r
+    multi, _ = apply_text_edits(t, [{"id": "s0003", "text": "줄\n\n바꿈"}])  # 빈 줄은 VTT 큐를 끊는다
+    assert multi["segments"][2]["corrected_text"] == "줄 바꿈"
+
+
+def test_apply_text_edits_rejects_unknown_id_and_empty_text():
+    import pytest
+
+    from tractus.store import apply_text_edits
+
+    for edits in ([{"id": "s0001", "text": "ok"}, {"id": "s9999", "text": "x"}], [{"id": "s0001", "text": "  "}],
+                  [{"id": "s0001"}], [{"id": 1, "text": "x"}], ["s0001"]):
+        with pytest.raises(ValueError):
+            apply_text_edits(_t(), edits)
+
+
+def test_add_glossary_terms_creates_dedupes_and_appends(tmp_path):
+    from tractus.store import add_glossary_terms
+
+    path = tmp_path / "glossary.md"
+    assert add_glossary_terms(path, [" 쿠버네티스 ", "", "WTO", "쿠버네티스"]) == 2
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("# ") and load_glossary(path) == ["쿠버네티스", "WTO"]
+    path.write_text(text.rstrip("\n"), encoding="utf-8")  # 줄바꿈 없이 끝난 파일에도 새 줄로 붙인다
+    assert add_glossary_terms(path, ["WTO", "Project Atlas"]) == 1
+    assert load_glossary(path) == ["쿠버네티스", "WTO", "Project Atlas"]

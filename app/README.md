@@ -11,7 +11,7 @@ Tauri 2 + React + TypeScript + Vite로 만든 앱이다. 구성 요소 사이의
 ```bash
 cd app
 pnpm install
-pnpm test                                   # vitest: 시각 → 세그먼트 찾기, 시간 형식, 메모 끼워 넣기, MCP 응답 해석
+pnpm test                                   # vitest: 시각 → 세그먼트 찾기, 시간 형식, 메모 끼워 넣기, MCP 응답 해석, 속도·무음 건너뛰기·찾아 바꾸기·되돌리기·가져오기·내보내기 이름
 pnpm build                                  # tsc + vite → dist/
 pnpm tauri dev                              # 개발 실행 (Vite 1420 포트)
 pnpm tauri build --debug --bundles app      # → src-tauri/target/debug/bundle/macos/Tractus.app
@@ -40,6 +40,20 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 | `fake_recorder` | `false` | 개발용. `record --fake`로 띄워 권한 없이 녹음 흐름을 시험한다 |
 | `rec_mode` | `in_person` | 마지막으로 고른 녹음 방식. 사이드바 녹음 버튼 아래 스위치로 바꾸고, 바꿀 때마다 이 값만 저장한다(다른 값은 설정 화면에서 저장할 때만 파일에 쓴다) |
 
+## 편집·가져오기·내보내기 (Phase 5)
+
+코어 CLI를 인수 배열로 실행한다(셸을 거치지 않는다). 계약은 `docs/roadmap.md` §2다.
+
+| 기능 | 앱 | 코어 |
+| --- | --- | --- |
+| 문장 고치기 | 세그먼트를 두 번 누르거나 Enter. Enter·포커스 이탈은 저장, Esc는 취소, ⌘Z는 묶음 단위 되돌리기. 한글 조합 중 Enter는 무시한다 | `tractus segments <회의> edit` (stdin `{"edits":[…]}`) |
+| 찾아 바꾸기 | ⌘F. 모두 바꾸기는 편집 1회·되돌리기 1그룹. '용어집에 추가'를 켜면 바꾼 말을 넣는다 | `tractus glossary add -- <용어>` |
+| 파일 가져오기 | 사이드바 버튼(대화상자) 또는 창에 끌어 놓기. 큐에 넣고 하나씩 전사한다(녹음 전사와 겹치지 않고, 녹음 전사가 먼저다). 이미 전사한 파일이면 알림의 **열기**로 기존 회의를 연다. 전사 중에 창을 닫으면 묻는다 | `tractus transcribe <파일> --progress-json` (`job_start` kind `import`) |
+| 내보내기 | 회의 머리말 '내보내기' → 저장 대화상자 → Finder에서 보여 주기. 요약 레일의 '요약 복사'는 마크다운으로 복사 | `tractus export <회의> --format … --out … --force` |
+| 재생 | ←/→ 5초(Shift 10초), Shift+, / Shift+. 속도(localStorage에 기억), 무음 건너뛰기(화자를 고르면 그 화자만 듣기) | — |
+
+문장 편집·화자 편집·내보내기는 한 줄로 세워 차례로 실행한다(코어가 transcript.json을 잠금 없이 고친다).
+
 ## 녹음 방식
 
 주로 쓰는 경우는 한 방에서 여러 사람이 Mac 주위에 둘러앉은 대면 회의다. 화상·하이브리드 회의는 그다음이다. 어느 쪽이든 헤드폰 없이 스피커로 들어도 되게 한다.
@@ -63,7 +77,7 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 
 | 파일 | 역할 |
 | --- | --- |
-| `src-tauri/src/lib.rs` | 설정, Tauri 명령(`list_meetings`, `list_recordings`, `load_meeting`, `mcp_call`, `rec_start`, `rec_send`, `job_start`), 앱 종료 시 녹음 정지 |
+| `src-tauri/src/lib.rs` | 설정, Tauri 명령(`list_meetings`, `list_recordings`, `load_meeting`, `edit_speakers`, `edit_segments`, `glossary_add`, `export_meeting`, `mcp_call`, `rec_start`, `rec_send`, `job_start`), 앱 종료 시 녹음 정지 |
 | `src-tauri/src/meetings.rs` | transcript.json, summary.json, memos.json 읽기. 손상된 회의는 건너뛴다. 전사 안 된 녹음(`recordings/<ULID>/recording.json`) 목록과 녹음 폴더 검사 |
 | `src-tauri/src/mcp.rs` | 상주 MCP 클라이언트. initialize(`2025-11-25`) → initialized 순서로 연결하고, 하위 프로세스가 죽으면 다시 띄운다 |
 | `src-tauri/src/procs.rs` | 하위 프로세스 stdout JSON Lines를 이벤트로 전달하고, 종료할 때 `exit` 이벤트(stderr 끝부분 포함)를 보낸다 |
@@ -71,7 +85,8 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 | `src/lib.ts` | 순수 로직: 시간·세그먼트 계산, 녹음·작업 이벤트 → 화면 상태(`recReduce`, `jobReduce`) (`lib.test.ts`) |
 | `src-tauri/Entitlements.plist` | 마이크 entitlement (서명하면 hardened runtime이 켜져서 필요하다) |
 | `src/api.ts` | 명령·이벤트 연결, `useJob`, `useRecorder` |
-| `src/*View.tsx`, `App.tsx` | 화면 |
+| `src/TranscriptTools.tsx` | 문장 편집기, 찾기·바꾸기 막대, 내보내기 메뉴 (Phase 5) |
+| `src/*View.tsx`, `App.tsx` | 화면. `App.tsx`는 파일 가져오기 큐·끌어 놓기 덮개·알림도 맡는다 |
 
 **오디오를 asset protocol 대신 `media://`로 여는 이유:** Tauri asset protocol은 파일 내용으로 MIME을 추정한다. 그래서 Ogg Opus를 `audio/opus`로 보내는데, WKWebView는 `audio/opus`를 재생하지 못한다(`MEDIA_ERR_SRC_NOT_SUPPORTED`). 같은 파일을 `audio/ogg`로 보내면 재생된다(macOS 26.6에서 확인). 그래서 `media.rs`가 MIME을 `audio/ogg`로 고정하고, 탐색에 필요한 Range 요청을 직접 처리한다. 회의 폴더 밖의 파일이나 `.ogg`/`.opus`가 아닌 파일은 403으로 거부한다. 프론트엔드는 계약대로 `convertFileSrc(path, "media")`를 쓴다.
 

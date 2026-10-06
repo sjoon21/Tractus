@@ -318,3 +318,198 @@ test("jobReduce: warning은 진행을 멈추지 않고 코드별로 한 번만 �
   expect(s.warnings).toEqual([{ code: "diarizer_missing", message: "화자 분리 모델이 없습니다" }]);
   expect(IDLE_JOB.warnings).toEqual([]);
 });
+
+// ── Phase 5 (docs/roadmap.md §2) ──
+
+import {
+  applyEdits,
+  baseName,
+  EXPORT_FORMATS,
+  exportFilename,
+  findMatches,
+  inverseEdits,
+  isImeKey,
+  isImportable,
+  oneLine,
+  parseRate,
+  RATES,
+  replaceEdits,
+  segText,
+  silenceSkip,
+  stepRate,
+  summaryMarkdown,
+} from "./lib";
+
+describe("재생 속도 (5.1)", () => {
+  test("목록 안에서 한 칸씩, 끝에서는 멈춘다", () => {
+    expect(RATES).toEqual([0.8, 1, 1.2, 1.5, 1.8, 2]);
+    expect(stepRate(1, 1)).toBe(1.2);
+    expect(stepRate(1, -1)).toBe(0.8);
+    expect(stepRate(2, 1)).toBe(2);
+    expect(stepRate(0.8, -1)).toBe(0.8);
+  });
+  test("목록에 없는 값은 그 방향의 가장 가까운 값으로", () => {
+    expect(stepRate(1.1, 1)).toBe(1.2);
+    expect(stepRate(1.1, -1)).toBe(1);
+    expect(stepRate(3, -1)).toBe(2);
+  });
+  test("localStorage 값은 목록에 있을 때만 쓴다", () => {
+    expect(parseRate("1.5")).toBe(1.5);
+    expect(parseRate(null)).toBe(1);
+    expect(parseRate("7")).toBe(1);
+    expect(parseRate("abc")).toBe(1);
+  });
+});
+
+describe("무음 건너뛰기 (5.2)", () => {
+  // 0–26.1, 26.3–53.5, 60–85.8: 두 번째 공백(6.5초)만 1초를 넘는다
+  test("1초 넘는 공백에 들어서면 다음 발화 0.2초 전으로", () => {
+    expect(silenceSkip(segs, 54)).toBeCloseTo(59.8);
+    expect(silenceSkip(segs, 53.5)).toBeCloseTo(59.8);
+  });
+  test("발화 중, 짧은 공백, 남은 공백이 1초 이하, 마지막 뒤에는 그대로", () => {
+    expect(silenceSkip(segs, 10)).toBeNull();
+    expect(silenceSkip(segs, 26.2)).toBeNull();
+    expect(silenceSkip(segs, 59.1)).toBeNull();
+    expect(silenceSkip(segs, 59.8)).toBeNull(); // 건너뛴 자리에서 다시 건너뛰지 않는다
+    expect(silenceSkip(segs, 90)).toBeNull();
+  });
+  test("첫 발화 전 무음", () => {
+    expect(silenceSkip([{ id: "s1", start: 5, end: 6, text: "" }], 0)).toBeCloseTo(4.8);
+  });
+  test("화자 필터: 그 화자의 세그먼트만 넘기면 다른 화자의 발화도 건너뛴다", () => {
+    const mixed: Segment[] = [
+      { id: "s1", start: 0, end: 3, text: "", speaker: "S1" },
+      { id: "s2", start: 3.1, end: 9, text: "", speaker: "S2" },
+      { id: "s3", start: 9.1, end: 12, text: "", speaker: "S1" },
+    ];
+    expect(silenceSkip(mixed, 3.5)).toBeNull();
+    expect(silenceSkip(mixed.filter((s) => s.speaker === "S1"), 3.5)).toBeCloseTo(8.9);
+  });
+});
+
+const ed = (over: Partial<Segment>[]): Segment[] => over.map((o, i) => ({ id: `s000${i + 1}`, start: i * 10, end: i * 10 + 5, text: "", corrected_text: null, ...o }));
+
+describe("텍스트 편집 (5.3)", () => {
+  test("표시 텍스트는 corrected_text 우선", () => {
+    expect(segText({ id: "s", start: 0, end: 1, text: "원문", corrected_text: "고침" })).toBe("고침");
+    expect(segText({ id: "s", start: 0, end: 1, text: "원문", corrected_text: null })).toBe("원문");
+    expect(segText({ id: "s", start: 0, end: 1, text: "원문" })).toBe("원문");
+  });
+  test("편집 반영은 코어와 같다: 공백을 한 칸으로, 원문과 같으면 해제", () => {
+    const s = ed([{ text: "버짓 보겠습니다" }, { text: "네", corrected_text: "예" }, { text: "원문  두 칸" }]);
+    const out = applyEdits(s, [
+      { id: "s0001", text: " budget   보겠습니다 " },
+      { id: "s0002", text: "네" },
+      { id: "s0003", text: "원문 두 칸" }, // 코어도 원문을 한 줄로 줄여 비교한다
+    ]);
+    expect(out[0].corrected_text).toBe("budget 보겠습니다");
+    expect(out[1].corrected_text).toBeNull();
+    expect(out[2].corrected_text).toBeNull();
+    expect(s[0].corrected_text).toBeNull(); // 원본은 그대로
+  });
+  test("되돌리기 묶음은 편집 직전의 표시 텍스트이고, 적용하면 원래대로", () => {
+    const s = ed([{ text: "a" }, { text: "b", corrected_text: "B" }, { text: "c" }]);
+    const edits = [
+      { id: "s0001", text: "A" },
+      { id: "s0002", text: "BB" },
+    ];
+    const inv = inverseEdits(s, edits);
+    expect(inv).toEqual([
+      { id: "s0001", text: "a" },
+      { id: "s0002", text: "B" },
+    ]);
+    expect(applyEdits(applyEdits(s, edits), inv)).toEqual(s);
+  });
+  test("한 줄로: 코어 store.one_line과 같다 (공백·줄바꿈은 한 칸, 제어 문자 제거)", () => {
+    expect(oneLine(" 첫 줄\n둘째  줄 \r\n")).toBe("첫 줄 둘째 줄");
+    expect(oneLine("a\tb\u3000c\u0007d")).toBe("a b cd");
+    expect(oneLine(" \u0001 ")).toBe("");
+  });
+  test("한글 조합 중 키는 무시한다 (WebKit은 compositionend 뒤 keyCode 229 keydown이 온다)", () => {
+    expect(isImeKey({ isComposing: true, keyCode: 13 })).toBe(true);
+    expect(isImeKey({ isComposing: false, keyCode: 229 })).toBe(true);
+    expect(isImeKey({ isComposing: false, keyCode: 13 }, true)).toBe(true);
+    expect(isImeKey({ isComposing: false, keyCode: 13 })).toBe(false);
+  });
+});
+
+describe("찾기·바꾸기 (5.4)", () => {
+  const s = ed([
+    { text: "Budget 예산 budget", speaker: "S1" },
+    { text: "없음", corrected_text: "예산 확정", speaker: "S2" },
+    { text: "예산" },
+  ]);
+  test("표시 텍스트에서 대소문자 없이 찾는다 (화자 이름은 찾지 않는다)", () => {
+    expect(findMatches(s, "budget")).toEqual([
+      { id: "s0001", start: 0, length: 6 },
+      { id: "s0001", start: 10, length: 6 },
+    ]);
+    expect(findMatches(s, "예산").map((m) => m.id)).toEqual(["s0001", "s0002", "s0003"]);
+    expect(findMatches(s, "없음")).toEqual([]); // 원문이 아니라 고친 문장에서 찾는다
+    expect(findMatches(s, "S1")).toEqual([]);
+    expect(findMatches(s, "")).toEqual([]);
+    expect(findMatches(ed([{ text: "a.b axb" }]), ".")).toEqual([{ id: "s0001", start: 1, length: 1 }]); // 정규식이 아니다
+  });
+  test("모두 바꾸기는 편집 묶음 하나, 되돌리기도 묶음 하나", () => {
+    const edits = replaceEdits(s, "예산", "$&비용");
+    expect(edits).toEqual([
+      { id: "s0001", text: "Budget $&비용 budget" },
+      { id: "s0002", text: "$&비용 확정" },
+      { id: "s0003", text: "$&비용" },
+    ]);
+    const inv = inverseEdits(s, edits);
+    expect(inv).toHaveLength(3);
+    expect(applyEdits(applyEdits(s, edits), inv)).toEqual(s);
+  });
+  test("200개 세그먼트도 편집 1회", () => {
+    const many = ed(Array.from({ length: 200 }, () => ({ text: "버짓 회의" })));
+    expect(replaceEdits(many, "버짓", "budget")).toHaveLength(200);
+  });
+  test("하나만 바꾸기는 그 위치만", () => {
+    const [, second] = findMatches(s, "budget");
+    expect(replaceEdits(s, "budget", "예산", second)).toEqual([{ id: "s0001", text: "Budget 예산 예산" }]);
+  });
+  test("바꿔도 같거나 빈 문장이 되는 세그먼트는 뺀다", () => {
+    expect(replaceEdits(s, "예산", "예산")).toEqual([]);
+    expect(replaceEdits(ed([{ text: "음" }, { text: "음 네" }]), "음", "")).toEqual([{ id: "s0002", text: " 네" }]);
+    expect(replaceEdits(ed([{ text: "a  b" }]), "  ", " ")).toEqual([]); // 코어 기준으로 같은 문장
+    expect(replaceEdits(ed([{ text: "a" }]), "a", "\u0001")).toEqual([]); // 코어가 빈 문장으로 거부한다
+  });
+});
+
+describe("파일 가져오기 (5.5)", () => {
+  test("확장자 allowlist는 대소문자를 가리지 않는다", () => {
+    for (const p of ["/a/회의.M4A", "/a/b.mp3", "/a/c.WAV", "/x/y.mov", "/x/y.Mp4", "/x/z.webm", "/x/z.opus"]) expect(isImportable(p)).toBe(true);
+    for (const p of ["/a/b.txt", "/a/mp3", "/a/b.mp3.exe", "/a/.m4a", ""]) expect(isImportable(p)).toBe(false);
+  });
+  test("파일 이름", () => {
+    expect(baseName("/Users/me/회의 녹음.m4a")).toBe("회의 녹음.m4a");
+  });
+});
+
+describe("내보내기 (5.6)", () => {
+  test("기본 파일 이름은 <날짜>_<제목>.<확장자>", () => {
+    expect(exportFilename("2026-10-02T14:00:00+09:00", "주간회의", "docx")).toBe("2026-10-02_주간회의.docx");
+    expect(exportFilename("2026-10-02T14:00:00+09:00", " a/b: c? ", "txt")).toBe("2026-10-02_a b c.txt");
+    expect(exportFilename("", "", "srt")).toBe("회의_제목 없음.srt");
+  });
+  test("형식 목록: bundle은 zip", () => {
+    expect(EXPORT_FORMATS.map((f) => f.format)).toEqual(["txt", "md", "srt", "vtt", "csv", "docx", "bundle"]);
+    expect(EXPORT_FORMATS.find((f) => f.format === "bundle")?.ext).toBe("zip");
+  });
+  test("요약 복사는 마크다운", () => {
+    const md = summaryMarkdown(
+      {
+        summary: "예산을 정했다.",
+        topics: [{ title: "예산", segment_ids: ["s0001"] }],
+        decisions: [{ text: "10% 증액", segment_ids: ["s0002"] }],
+        action_items: [{ task: "표 정리", owner: "김민수", due: "금요일", segment_ids: [] }],
+      },
+      new Map([["s0002", 65]]),
+    );
+    expect(md).toBe(
+      ["## 요약", "", "예산을 정했다.", "", "## 결정 사항", "", "- 10% 증액 (1:05)", "", "## 할 일", "", "- [ ] 표 정리 — 김민수, 금요일", "", "## 주제", "", "- 예산", ""].join("\n"),
+    );
+  });
+});

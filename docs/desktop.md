@@ -96,6 +96,11 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 | `--progress-json` | `transcribe`·`summarize`가 stdout에 JSON Lines를 출력한다. 사람용 출력은 원래대로 stderr로 보낸다 |
 | 화자 분리 (2026-10-04) | `transcribe`가 VAD 다음에 화자 분리를 한다(기본 켜짐, `--no-diarize`로 끔, `--max-speakers N`으로 상한 1–8). `transcript.json` schema_version 2: `segments[].speaker`(`"S1"`… 또는 null), 최상위 `speakers: {"S1": {"name": null}}`, `diarization`(끄거나 모델이 없으면 null). 표시 이름 = `name`, 없으면 라벨, `speaker`가 null이면 md·vtt에 표시 안 함(앱은 화자 있는 회의에서 "화자 미상" 칩으로 보여 주고 화자를 고를 수 있게 한다). schema_version 1 회의는 `speakers`가 없다 (ARCHITECTURE.md §6) |
 | `tractus speakers` | 화자 편집. transcript.json을 고치고 md·vtt를 다시 쓴 뒤 검색 색인을 갱신한다. 오디오는 건드리지 않는다. 아래 §2.1 |
+| 표시 텍스트 (Phase 5) | 어디서나 `corrected_text`가 null이 아니면 그것, 아니면 `text`(코어 `store.seg_text`). md·vtt·요약 프롬프트·MCP·색인·CLI 검색·내보내기가 모두 따른다. 앱도 같은 규칙으로 표시한다 |
+| `tractus segments` | 텍스트 편집. 아래 §2.2 |
+| `tractus glossary add` | 용어집 추가. 아래 §2.3 |
+| `tractus export` | 내보내기. 아래 §2.4 |
+| 가져오기 (Phase 5) | 앱 job kind `import` = `tractus transcribe <파일> --progress-json` (다른 작업과 같은 환경변수). ffmpeg가 읽는 모든 형식을 받는다(m4a, mp3, wav, webm, mp4, mov …). 동영상은 소리만 쓴다(`-vn`) |
 
 진행 이벤트:
 
@@ -103,12 +108,16 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 {"event":"stage","stage":"decode"}            // decode | vad | diarize | encode | load_model | transcribe | index | summarize
 {"event":"progress","done":37,"total":145}
 {"event":"warning","code":"diarizer_missing","message":"…"}   // 화자 분리 모델이 없음 → 화자 없이 계속 (diarizer_failed: 실패 → 화자 없이 계속)
+{"event":"warning","code":"duplicate","message":"…"}           // 이미 전사된 파일 → 바로 기존 회의의 done이 이어진다 (종료 코드 0)
 {"event":"done","meeting_id":"01K…","meeting_dir":"/…/meetings/2026-10-02_…"}
 {"event":"error","message":"…"}               // 종료 코드 1
 ```
 
 - `diarize` 단계는 모델이 있을 때만 나온다(84분 회의 약 14초). 이어하기에서는 다시 하지 않는다.
 - `warning`은 종료가 아니다. 앱은 `message`를 알림으로 보여 주고 진행을 계속 표시한다.
+- `transcribe`는 첫 이벤트로 `{"event":"stage","stage":"decode"}`를 낸다. 큰 파일의 SHA-256 계산(중복 확인)보다 먼저 나온다.
+- 이미 전사된 파일이면 `stage(decode)` → `warning(duplicate)` → `done`(기존 회의의 `meeting_id`·`meeting_dir`) 순서다. 앱은 화면을 바꾸지 않고 "이미 전사한 파일입니다" 알림에 **열기**를 붙인다(고치던 문장을 잃지 않게).
+- 오디오 트랙이 없는 동영상은 `{"event":"error","message":"오디오 트랙이 없습니다 (소리 없는 동영상인지 확인하세요): …"}`, 종료 코드 1.
 
 ### 2.1 `tractus speakers <회의>` (화자 편집)
 
@@ -130,6 +139,41 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
   {"label":"S2","name":null,"display":"S2","segments":18,"talk_sec":402.0}],
  "diarization":{"model":"mlx-community/Nemotron-3-Diarization","revision":"59ed2dbf…","params":{…}}}   // 화자 분리 안 했으면 speakers [], diarization null
 ```
+
+### 2.2 `tractus segments <회의> edit` (텍스트 편집)
+
+stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없이) `TYPER_USE_RICH=0`을 준다.
+
+```jsonc
+// stdin
+{"edits":[{"id":"s0012","text":"새 문장"},{"id":"s0013","text":"원문 그대로"}]}
+// stdout (한 줄)
+{"changed":2}
+```
+
+- 각 편집의 `text`는 앞뒤 공백을 지우고 연속 공백·줄바꿈을 한 칸으로 줄인다. 그 값이 원문 `text`와 같으면 `corrected_text = null`(교정 해제), 다르면 `corrected_text = 그 값`이다. 원문 `text`와 `words`는 그대로 둔다.
+- `changed`는 `corrected_text`가 실제로 바뀐 세그먼트 수다. 0이면 파일을 쓰지 않는다.
+- 없는 id, 빈 텍스트, 형식 오류(JSON 아님, `edits`가 목록이 아님, `id`·`text`가 문자열이 아님)가 하나라도 있으면 아무것도 쓰지 않고 stderr에 이유를 쓴 뒤 종료 코드 1이다.
+- 저장은 화자 편집과 같다. transcript.md·vtt를 먼저, transcript.json을 마지막에 원자적으로 쓴다. 색인은 `sync(embed=False)`로 갱신한다. 본문이 바뀐 청크는 다음 임베딩 동기화(`tractus index`, 전사·요약 뒤)까지 키워드로만 찾힌다.
+- 편집 뒤 앱은 transcript.json을 다시 읽는다. 요약(summary.*)은 다시 만들지 않는다.
+
+### 2.3 `tractus glossary add <용어> [<용어>…]`
+
+`$TRACTUS_HOME/glossary.md`에 `- 용어` 줄로 덧붙인다(없으면 짧은 머리말과 함께 만든다). 앞뒤 공백을 지우고, 빈 값과 이미 있는 용어(대소문자 구분)는 건너뛴다. stdout: `{"added":N}`. 용어가 `-`로 시작할 수 있으므로 앱은 `tractus glossary add -- <용어>…`처럼 `--`를 앞에 둔다. 다음 전사부터 hotwords로 들어간다.
+
+### 2.4 `tractus export <회의> --format <형식> --out <경로> [--force]`
+
+파일을 쓰고 stdout에 `{"path":"<절대 경로>"}`를 출력한다. `--out`이 이미 있으면 `--force`일 때만 덮어쓰고, 아니면 종료 코드 1이다. 모든 형식이 화자는 표시 이름, 본문은 `corrected_text ?? text`를 쓴다.
+
+| 형식 | 내용 |
+| --- | --- |
+| `txt` | 제목, `날짜 시각 · 길이` 줄, 빈 줄, 그다음 `[HH:MM:SS] 화자: 문장` (화자를 모르면 `[HH:MM:SS] 문장`) |
+| `md` | transcript.md와 같은 내용(메모·북마크 포함) + summary.md가 있으면 `---` 뒤에 붙인다 |
+| `srt` | 번호 큐, `HH:MM:SS,mmm --> HH:MM:SS,mmm`, 본문 `화자: 문장` |
+| `vtt` | transcript.vtt와 같다 |
+| `csv` | UTF-8 BOM(utf-8-sig), 열 `시작,끝,화자,문장`, 시각은 `HH:MM:SS` |
+| `docx` | 제목, 일시·길이, 화자 목록, summary.json이 있으면 요약·결정 사항·할 일, 그다음 전사(시각 + **화자** + 문장). 한글 글꼴 `w:eastAsia = Apple SD Gothic Neo` |
+| `bundle` | 회의 폴더의 audio.ogg(또는 audio.opus), transcript.json/md/vtt, summary.md/json, memos.json 중 있는 것을 `<회의 폴더 이름>/…`로 묶은 zip. `tracks/`는 넣지 않는다 |
 
 ## 3. Tauri 앱 (app/)
 

@@ -205,12 +205,14 @@ export const STAGE_LABEL: Record<string, string> = {
   transcribe: "전사 중",
   index: "검색 색인 중",
   summarize: "요약 중",
+  // 앱 안 상태: 녹음 전사가 파일 가져오기가 끝나길 기다린다 (App.tsx waitDir)
+  wait_import: "가져오는 파일이 끝나면 전사합니다",
 };
 
-/** 입력 중일 때는 단축키를 먹지 않는다. */
+/** 입력 중일 때는 단축키를 먹지 않는다: 글 입력, 세그먼트 편집(contentEditable), 재생 위치 막대(range, 방향키를 직접 쓴다). */
 export function isTypingTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
-  return el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
+  return el.isContentEditable || el.closest("[contenteditable]:not([contenteditable=false])") !== null || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
 }
 
 // ── 하위 프로세스 이벤트 → 화면 상태 (docs/desktop.md §1·§2). 이벤트 끝에는 Rust가 붙인 exit가 온다 ──
@@ -329,4 +331,152 @@ export function recReduce(s: RecState, ev: RecEvent): RecState {
       if (s.phase === "stopped" || s.phase === "error") return s;
       return { ...s, phase: "error", error: stderrTail(ev.stderr, `녹음 헬퍼가 종료되었습니다 (코드 ${ev.code})`) };
   }
+}
+
+// ── Phase 5: 재생 컨트롤·편집·찾기·가져오기·내보내기 (docs/roadmap.md §2) ──
+
+/** 표시 텍스트: 사용자가 고친 문장(corrected_text)이 있으면 그것, 없으면 원문. 코어 store.seg_text와 같다. */
+export const segText = (s: Segment): string => s.corrected_text ?? s.text;
+
+/** 재생 속도. 단축키 Shift+, / Shift+. 로 한 칸씩 (bbc/react-transcript-editor defaultHotKeys.js, MIT 참고) */
+export const RATES = [0.8, 1, 1.2, 1.5, 1.8, 2];
+export const SEEK_STEP = 5;
+export const SEEK_STEP_BIG = 10;
+
+/** 다음 속도. 목록에 없는 값이면 그 방향으로 가장 가까운 값, 끝이면 그대로. */
+export function stepRate(rate: number, dir: 1 | -1): number {
+  const next = dir > 0 ? RATES.find((r) => r > rate + 1e-9) : [...RATES].reverse().find((r) => r < rate - 1e-9);
+  return next ?? (dir > 0 ? Math.max(rate, RATES[RATES.length - 1]) : Math.min(rate, RATES[0]));
+}
+
+/** localStorage에 남긴 속도. 목록에 있는 값만 받는다. */
+export const parseRate = (raw: string | null): number => RATES.find((r) => String(r) === raw?.trim()) ?? 1;
+
+export const SILENCE_GAP = 1.0;
+export const SILENCE_LEAD = 0.2;
+
+/**
+ * 무음 건너뛰기: t가 발화 사이에 있고 다음 발화까지 1초 넘게 남았으면 다음 발화 0.2초 전 시각, 아니면 null.
+ * segments에 한 화자의 세그먼트만 넘기면 '이 화자만 듣기'가 된다(다른 화자의 발화도 공백으로 본다).
+ * ponytail: 세그먼트가 겹치지 않는다고 본다(코어가 시각 순으로 자른다). 겹치면 앞 세그먼트 중간에서 건너뛸 수 있다.
+ */
+export function silenceSkip(segments: Segment[], t: number): number | null {
+  const i = segmentIndexAt(segments, t);
+  if (i >= 0 && t < segments[i].end) return null;
+  const next = segments[i + 1];
+  return next && next.start - t > SILENCE_GAP ? next.start - SILENCE_LEAD : null;
+}
+
+/** `tractus segments <회의> edit` 한 건. text가 원문과 같으면 코어가 corrected_text를 해제한다. */
+export type TextEdit = { id: string; text: string };
+
+/**
+ * 한 줄로: 코어 store.one_line과 같다. 공백·줄바꿈(파이썬 str.split 기준)은 한 칸으로, 앞뒤는 자르고, 제어 문자(C0·C1)는 뺀다.
+ * 편집기 입력·낙관적 반영·원문 비교가 모두 이것을 써야 코어 결과와 어긋나지 않는다.
+ */
+export const oneLine = (s: string): string =>
+  s
+    .replace(/[\s\x1c-\x1f\x85]+/g, " ")
+    .trim()
+    .replace(/[\x00-\x1f\x7f-\x9f]/g, "");
+
+/** 편집을 낙관적으로 반영한 새 목록 (코어와 같은 규칙: 한 줄로 줄이고, 한 줄로 줄인 원문과 같으면 null). */
+export function applyEdits(segments: Segment[], edits: TextEdit[]): Segment[] {
+  const by = new Map(edits.map((e) => [e.id, oneLine(e.text)]));
+  return segments.map((s) => {
+    const text = by.get(s.id);
+    return text === undefined ? s : { ...s, corrected_text: text === oneLine(s.text) ? null : text };
+  });
+}
+
+/** 되돌리기 묶음: 편집 직전의 표시 텍스트. 원문이었으면 코어가 해제하므로 그대로 원래 상태가 된다. */
+export function inverseEdits(segments: Segment[], edits: TextEdit[]): TextEdit[] {
+  const by = new Map(segments.map((s) => [s.id, s]));
+  return edits.flatMap((e) => {
+    const s = by.get(e.id);
+    return s ? [{ id: e.id, text: segText(s) }] : [];
+  });
+}
+
+/**
+ * 한글 조합 중인 키. 조합 중 Enter는 조합을 끝낼 뿐 저장하지 않는다. WebKit은 compositionend가 keydown보다
+ * 먼저 와서 isComposing이 false인 keyCode 229 keydown이 온다 → 세 가지를 다 본다.
+ */
+export const isImeKey = (e: { isComposing?: boolean; keyCode?: number }, composing = false): boolean => composing || !!e.isComposing || e.keyCode === 229;
+
+export interface Match {
+  id: string;
+  start: number;
+  length: number;
+}
+
+const literal = (q: string) => new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+
+/** 표시 텍스트에서 부분 문자열 찾기(대소문자 무시, 정규식 아님). 화자 이름은 찾지 않는다. */
+export function findMatches(segments: Segment[], query: string): Match[] {
+  if (!query) return [];
+  const re = literal(query);
+  return segments.flatMap((s) => [...segText(s).matchAll(re)].map((m) => ({ id: s.id, start: m.index, length: m[0].length })));
+}
+
+/**
+ * 바꾸기 → 편집 묶음 하나 (anarlog session-correction.ts, MIT 참고). only가 있으면 그 위치 하나만.
+ * 바꿔도 같거나 빈 문장이 되는 세그먼트는 뺀다(코어는 빈 문장을 거부하고, 그러면 묶음 전체가 실패한다).
+ */
+export function replaceEdits(segments: Segment[], query: string, replacement: string, only?: Match): TextEdit[] {
+  if (!query) return [];
+  return segments.flatMap((s) => {
+    if (only && s.id !== only.id) return [];
+    const before = segText(s);
+    const text = before.replace(literal(query), (m, offset: number) => (!only || offset === only.start ? replacement : m));
+    return oneLine(text) !== oneLine(before) && oneLine(text) ? [{ id: s.id, text }] : [];
+  });
+}
+
+/** 가져올 수 있는 파일 (오디오·동영상). 대소문자 무시. 코어가 ffmpeg로 읽는다 */
+export const IMPORT_EXTS = ["m4a", "mp3", "wav", "aac", "flac", "ogg", "opus", "webm", "mp4", "mov", "m4v"];
+export const baseName = (path: string): string => path.split("/").pop() ?? path;
+export function isImportable(path: string): boolean {
+  const m = /^[^.].*\.([^.]+)$/.exec(baseName(path));
+  return !!m && IMPORT_EXTS.includes(m[1].toLowerCase());
+}
+
+/** `tractus export --format`. bundle은 회의 폴더 묶음(zip) */
+export const EXPORT_FORMATS: { format: string; ext: string; label: string; note: string }[] = [
+  { format: "txt", ext: "txt", label: "텍스트", note: "[시각] 화자: 문장" },
+  { format: "md", ext: "md", label: "Markdown", note: "전사 + 요약" },
+  { format: "srt", ext: "srt", label: "SRT 자막", note: "영상 편집기" },
+  { format: "vtt", ext: "vtt", label: "WebVTT 자막", note: "브라우저·Obsidian" },
+  { format: "csv", ext: "csv", label: "CSV", note: "Excel" },
+  { format: "docx", ext: "docx", label: "Word", note: "Word·Pages" },
+  { format: "bundle", ext: "zip", label: "묶음", note: "오디오·전사·요약 zip" },
+];
+
+/** 저장 대화상자 기본 이름: <날짜>_<제목>.<확장자>. 파일 이름에 못 쓰는 문자는 공백으로. */
+export function exportFilename(createdAt: string, title: string, ext: string): string {
+  const day = /^\d{4}-\d{2}-\d{2}/.exec(createdAt)?.[0] ?? "회의";
+  const clean = title.replace(/[/\\:*?"<>|\x00-\x1f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+  return `${day}_${clean || "제목 없음"}.${ext}`;
+}
+
+export interface SummaryLike {
+  summary: string;
+  topics: { title: string; segment_ids: string[] }[];
+  decisions: { text: string; segment_ids: string[] }[];
+  action_items: { task: string; owner: string | null; due: string | null; segment_ids: string[] }[];
+}
+
+/** '요약 복사' 마크다운. 결정 사항에는 근거 시각을 붙인다. */
+export function summaryMarkdown(s: SummaryLike, starts: Map<string, number>): string {
+  const at = (ids: string[]) => {
+    const t = evidenceStart(ids, starts);
+    return t === null ? "" : ` (${fmtTime(t)})`;
+  };
+  const section = (title: string, lines: string[]) => (lines.length ? [`## ${title}`, "", ...lines, ""] : []);
+  return [
+    ...section("요약", [s.summary]),
+    ...section("결정 사항", s.decisions.map((d) => `- ${d.text}${at(d.segment_ids)}`)),
+    ...section("할 일", s.action_items.map((a) => `- [ ] ${a.task}${a.owner || a.due ? ` — ${[a.owner, a.due].filter(Boolean).join(", ")}` : ""}${at(a.segment_ids)}`)),
+    ...section("주제", s.topics.map((t) => `- ${t.title}${at(t.segment_ids)}`)),
+  ].join("\n");
 }

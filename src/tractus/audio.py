@@ -35,9 +35,14 @@ def _inputs(paths: list[Path]) -> list[str]:
 
 
 def decode(paths: Path | list[Path]) -> np.ndarray:
-    """임의 형식(m4a/mp3/wav/webm…)을 16kHz mono float32로 디코딩한다. 여러 파일이면 섞는다."""
+    """임의 형식(m4a/mp3/wav/webm/mp4/mov…)을 16kHz mono float32로 디코딩한다. 여러 파일이면 섞는다."""
     paths = [paths] if isinstance(paths, Path) else paths
-    raw = _run([*_inputs(paths), "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"], capture=True)
+    try:
+        raw = _run([*_inputs(paths), "-vn", "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"], capture=True)  # -vn: 동영상(mp4·mov)은 소리만
+    except FFmpegError as e:
+        if "does not contain any stream" in str(e):
+            raise FFmpegError(f"오디오 트랙이 없습니다 (소리 없는 동영상인지 확인하세요): {', '.join(p.name for p in paths)}") from e
+        raise
     audio = np.frombuffer(raw, dtype=np.float32)
     if audio.size == 0:
         raise FFmpegError(f"오디오 트랙이 비어 있습니다: {', '.join(map(str, paths))}")

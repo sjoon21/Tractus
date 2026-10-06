@@ -352,3 +352,41 @@ def test_speakers_commands_rewrite_transcript_and_renders(env, fake_asr, fake_di
     assert bad.exit_code == 1 and "S9" in bad.output
     human = speakers(ref, "list")
     assert human.exit_code == 0 and "김민수" in human.output
+
+
+# ── 파일 가져오기 (Phase 5) ───────────────────────────────────────────
+
+
+def test_duplicate_import_emits_decode_then_warning_then_done(env, fake_asr):
+    _, wav = env
+    first = CliRunner().invoke(cli.app, ["transcribe", str(wav), "--progress-json"])
+    assert first.exit_code == 0, first.output
+    assert events(first.stdout)[0] == {"event": "stage", "stage": "decode"}  # 해시 계산 전에 바로 알린다
+    assert [e.get("stage") for e in events(first.stdout)].count("decode") == 1
+    again = CliRunner().invoke(cli.app, ["transcribe", str(wav), "--progress-json"])
+    assert again.exit_code == 0, again.output
+    ev = events(again.stdout)
+    assert [e["event"] for e in ev] == ["stage", "warning", "done"] and ev[1]["code"] == "duplicate" and ev[1]["message"]
+    assert ev[2]["meeting_id"] == events(first.stdout)[-1]["meeting_id"] and ev[2]["meeting_dir"] == events(first.stdout)[-1]["meeting_dir"]
+    assert len(fake_asr.calls) == 3
+
+
+def test_video_file_is_transcribed_from_its_audio_track(env, fake_asr, tmp_path):
+    home, _ = env
+    mp4 = tmp_path / "화면녹화.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=duration=8:size=64x48:rate=5", "-f", "lavfi", "-i", "sine=duration=8",
+                    "-shortest", "-c:v", "mpeg4", "-c:a", "aac", str(mp4)], check=True)
+    result = run(mp4)
+    assert result.exit_code == 0, result.output
+    (d,) = (home / "meetings").iterdir()
+    assert "화면녹화" in d.name and (d / "audio.ogg").stat().st_size > 0
+    assert fake_asr.calls[0]["samples"] == 2 * SR
+
+
+def test_video_without_audio_reports_korean_error(env, fake_asr, tmp_path):
+    mp4 = tmp_path / "무음.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=duration=2:size=64x48:rate=5", "-c:v", "mpeg4", str(mp4)], check=True)
+    result = CliRunner().invoke(cli.app, ["transcribe", str(mp4), "--progress-json"])
+    assert result.exit_code == 1
+    err = events(result.stdout)[-1]
+    assert err["event"] == "error" and "오디오 트랙이 없습니다" in err["message"]

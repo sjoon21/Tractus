@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from tractus.llm import Provider, complete_json
-from tractus.store import _hms, _write_atomic, speaker_name
+from tractus.store import _hms, _write_atomic, seg_text, speaker_name
 
 SCHEMA_VERSION = 1
 
@@ -57,7 +57,7 @@ def build_prompt(transcript: dict) -> str:
         name = speaker_name(transcript, s.get("speaker"))
         return f" {name}" if name else ""
 
-    lines = [f"[{s['id']} {_hms(s['start'])}{who(s)}] {s['text']}" for s in transcript["segments"]]
+    lines = [f"[{s['id']} {_hms(s['start'])}{who(s)}] {seg_text(s)}" for s in transcript["segments"]]
     return f"회의 제목(파일 기준): {transcript['title']}\n\n전사:\n" + "\n".join(lines)
 
 

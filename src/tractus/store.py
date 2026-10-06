@@ -1,4 +1,4 @@
-"""회의 폴더(§4.1 레이아웃), 진행 상태(이어하기), transcript.json/md/vtt 저장, 화자 편집."""
+"""회의 폴더(§4.1 레이아웃), 진행 상태(이어하기), transcript.json/md/vtt 저장, 화자·텍스트 편집, 용어집."""
 
 import copy
 import json
@@ -18,8 +18,8 @@ CHUNKS_FILE = ".chunks.jsonl"
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 __all__ = [
-    "Job", "Segment", "apply_speaker_edit", "find_job", "find_meeting_dir", "load_glossary", "meeting_dir_name", "new_ulid",
-    "render_markdown", "save_transcript", "speaker_name", "write_transcript",
+    "Job", "Segment", "add_glossary_terms", "apply_speaker_edit", "apply_text_edits", "find_job", "find_meeting_dir", "load_glossary",
+    "meeting_dir_name", "new_ulid", "render_markdown", "save_transcript", "seg_text", "speaker_name", "write_transcript",
 ]
 
 
@@ -44,6 +44,22 @@ def load_glossary(path: Path) -> list[str]:
         if m and m.group(1).strip():
             terms.append(m.group(1).strip())
     return terms
+
+
+GLOSSARY_HEADER = "# 용어집\n\n전사할 때 Qwen3-ASR hotwords로 넣는다. 한 줄에 하나씩 `- 용어`.\n\n"
+
+
+def add_glossary_terms(path: Path, terms: list[str]) -> int:
+    """용어를 `- 용어` 줄로 덧붙인다. 앞뒤 공백을 지우고, 빈 값과 이미 있는 용어는 건너뛴다. 파일이 없으면 머리말과 함께 만든다.
+    추가한 개수를 돌려준다."""
+    have = set(load_glossary(path))
+    new = [t for t in dict.fromkeys(" ".join(t.split()) for t in terms) if t and t not in have]
+    if new:
+        text = path.read_text(encoding="utf-8") if path.exists() else GLOSSARY_HEADER
+        if text and not text.endswith("\n"):
+            text += "\n"
+        _write_atomic(path, text + "".join(f"- {t}\n" for t in new))
+    return len(new)
 
 
 @dataclass
@@ -204,10 +220,15 @@ def speaker_name(t: dict, label: str | None) -> str | None:
     return ((t.get("speakers") or {}).get(label) or {}).get("name") or label
 
 
+def one_line(s: str) -> str:
+    """공백·줄바꿈을 한 칸으로 줄이고 제어 문자(C0·C1)를 뺀다. 제어 문자는 docx(lxml)가 거부하고 md·VTT 줄을 깬다."""
+    return re.sub(r"[\x00-\x1f\x7f-\x9f]", "", " ".join(s.split()))
+
+
 def _clean_name(raw: str) -> str | None:
     """화자 이름 정리. md 굵게·VTT <v>·MCP/요약 줄 `[s0012 00:05:31 이름]` 형식을 깨는 문자는 빼고,
     자동 라벨(S2)처럼 보이는 이름은 거부한다 (라벨과 헷갈리고 요약의 owner 정리에서 지워진다). 빈 문자열은 이름 지움."""
-    name = " ".join(re.sub(r"[\[\]<>*_`\\]", "", raw).split())
+    name = one_line(re.sub(r"[\[\]<>*_`\\]", "", raw))
     if raw.strip() and not name:
         raise ValueError(f"이름에 쓸 수 있는 글자가 없습니다: {raw!r}")
     if re.fullmatch(r"S\d+", name, re.IGNORECASE):
@@ -258,6 +279,40 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
     return t
 
 
+# ── 텍스트 편집 ──────────────────────────────────────────────────────
+
+
+def seg_text(s: dict) -> str:
+    """표시 텍스트: 사용자가 고친 corrected_text, 없으면 ASR 원문 text. md·vtt·요약·검색·MCP·내보내기가 모두 이것을 쓴다."""
+    c = s.get("corrected_text")
+    return c if c is not None else s.get("text") or ""
+
+
+def apply_text_edits(t: dict, edits: list) -> tuple[dict, int]:
+    """세그먼트 텍스트 교정 [{id, text}]. 원문 text는 그대로 두고 corrected_text만 바꾼 새 전사와 바뀐 세그먼트 수를 돌려준다.
+    원문과 같아지면 교정을 지운다(null). 공백·줄바꿈은 한 칸으로 줄이고 제어 문자는 뺀다(one_line).
+    없는 id·빈 텍스트·잘못된 형식이 하나라도 있으면 아무것도 바꾸지 않고 ValueError."""
+    t = copy.deepcopy(t)
+    by_id = {s["id"]: s for s in t["segments"]}
+    plan = []
+    for e in edits:
+        if not isinstance(e, dict) or not isinstance(e.get("id"), str) or not isinstance(e.get("text"), str):
+            raise ValueError(f"편집 형식은 {{\"id\": \"s0012\", \"text\": \"…\"}}입니다: {str(e)[:80]}")
+        if e["id"] not in by_id:
+            raise ValueError(f"없는 세그먼트입니다: {e['id']}")
+        text = one_line(e["text"])
+        if not text:
+            raise ValueError(f"빈 텍스트로 바꿀 수 없습니다: {e['id']}")
+        plan.append((by_id[e["id"]], text))
+    changed = set()
+    for seg, text in plan:
+        new = None if text == one_line(seg["text"]) else text
+        if seg.get("corrected_text") != new:
+            seg["corrected_text"] = new
+            changed.add(seg["id"])
+    return t, len(changed)
+
+
 def _hms(sec: float) -> str:
     sec = int(sec)
     return f"{sec // 3600:02d}:{sec % 3600 // 60:02d}:{sec % 60:02d}"
@@ -288,8 +343,8 @@ def render_vtt(t: dict) -> str:
         return f"<v {' '.join(re.sub(r'[<>&]', '', name).split())}>" if name else ""
 
     cues = [
-        f"{s['id']}\n{_vtt_time(s['start'])} --> {_vtt_time(s['end'])}\n{voice(s)}{s['text'].replace('-->', '→')}"
-        for s in t["segments"] if s["text"]
+        f"{s['id']}\n{_vtt_time(s['start'])} --> {_vtt_time(s['end'])}\n{voice(s)}{seg_text(s).replace('-->', '→')}"
+        for s in t["segments"] if seg_text(s)
     ]
     return "WEBVTT\n\n" + "\n\n".join(cues) + "\n"
 
@@ -313,7 +368,7 @@ def render_markdown(t: dict, memos: list[dict] | None = None) -> str:
         name = speaker_name(t, s.get("speaker"))
         return f"**{name}**: " if name else ""
 
-    rows = [(s["start"], 0, f"[{_hms(s['start'])}] {who(s)}{s['text']}") for s in t["segments"] if s["text"]]
+    rows = [(s["start"], 0, f"[{_hms(s['start'])}] {who(s)}{seg_text(s)}") for s in t["segments"] if seg_text(s)]
     for m in memos or []:
         label = _MARK_LABEL.get(m.get("kind"), "메모")
         text = f" {m['text']}" if m.get("text") else ""

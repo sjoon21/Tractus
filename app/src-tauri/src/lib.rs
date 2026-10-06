@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use std::ffi::OsStr;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{ChildStdin, Command};
+use std::process::{ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -245,6 +245,8 @@ fn job_start(app: AppHandle, state: State<'_, AppState>, kind: String, target: S
         "summarize" if is_meeting_id(&target) => {
             s.tractus(&["summarize", &target, "--progress-json"])
         }
+        // 파일 가져오기 (Phase 5.5). 원본 파일은 건드리지 않는다. 이미 전사한 파일이면 코어가 duplicate 경고 + done
+        "import" => s.tractus(&import_args(Path::new(&target))?),
         _ => return Err(format!("잘못된 작업: {kind} {target}")),
     };
     let tag = json!({"job": job, "kind": kind}).as_object().unwrap().clone();
@@ -288,21 +290,138 @@ fn speakers_args(id: &str, edit: &SpeakerEdit) -> Result<Vec<String>, String> {
     Ok(["speakers", id, op, "--", a, b].map(String::from).to_vec())
 }
 
+/// tractus 명령을 끝까지 실행하고 stdout을 돌려준다. input이 있으면 stdin으로 넘기고 닫는다.
+/// 실패하면 코어가 stderr 마지막 줄에 쓴 이유(없는 세그먼트 등)를 오류로 돌려준다.
+fn run_tractus(s: &Settings, args: &[String], input: Option<&str>, what: &str) -> Result<String, String> {
+    let mut cmd = s.tractus(args);
+    cmd.stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("실행할 수 없습니다 ({}): {e}", s.tractus_bin))?;
+    if let (Some(text), Some(mut stdin)) = (input, child.stdin.take()) {
+        // 코어는 stdin을 다 읽은 뒤에 출력하므로 먼저 쓰고 닫아도 막히지 않는다
+        stdin.write_all(text.as_bytes()).map_err(|e| format!("{what}: 입력을 넘기지 못했습니다: {e}"))?;
+    }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        return Err(err.trim().lines().last().map(str::to_string).unwrap_or_else(|| format!("{what}: 실패 (종료 코드 {:?})", out.status.code())));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// stdout 마지막 줄의 JSON 객체 ({"changed": N}, {"added": N}, {"path": …}).
+fn stdout_json(out: &str) -> Result<Value, String> {
+    out.lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .and_then(|l| serde_json::from_str::<Value>(l).ok())
+        .filter(Value::is_object)
+        .ok_or_else(|| "tractus 출력을 읽을 수 없습니다".to_string())
+}
+
 /// 화자 편집을 코어에 맡기고(transcript.json·md·vtt·검색 색인을 코어가 고친다) 고친 회의를 다시 읽어 돌려준다.
 #[tauri::command]
 async fn edit_speakers(state: State<'_, AppState>, id: String, edit: SpeakerEdit) -> Result<meetings::MeetingDetail, String> {
     let s = state.settings();
     let args = speakers_args(&id, &edit)?;
     blocking(move || {
-        let out = s.tractus(&args).output().map_err(|e| format!("실행할 수 없습니다 ({}): {e}", s.tractus_bin))?;
-        if !out.status.success() {
-            // 코어는 이유를 stderr 마지막 줄에 쓴다 (없는 라벨 등)
-            let err = String::from_utf8_lossy(&out.stderr);
-            return Err(err.trim().lines().last().unwrap_or("화자를 고치지 못했습니다").to_string());
-        }
+        run_tractus(&s, &args, None, "화자를 고치지 못했습니다")?;
         meetings::load(&s.home(), &id)
     })
     .await
+}
+
+/// 문장 편집 한 건 (Phase 5.3). text가 원문과 같으면 코어가 corrected_text를 해제한다
+#[derive(Deserialize, Serialize, Debug)]
+struct TextEdit {
+    id: String,
+    text: String,
+}
+
+/// `tractus segments <회의> edit` 인수와 stdin JSON. 문장은 인수가 아니라 stdin으로 넘긴다(길이·특수 문자 걱정 없이)
+fn segments_edit(id: &str, edits: &[TextEdit]) -> Result<(Vec<String>, String), String> {
+    if !is_meeting_id(id) {
+        return Err(format!("잘못된 회의 ID: {id}"));
+    }
+    if edits.is_empty() || edits.iter().any(|e| !is_tagged(&e.id, 's') || e.text.trim().is_empty()) {
+        return Err("잘못된 문장 편집입니다 (빈 문장은 저장할 수 없습니다)".into());
+    }
+    Ok((["segments", id, "edit"].map(String::from).to_vec(), json!({ "edits": edits }).to_string()))
+}
+
+/// 문장 편집 결과: 코어가 실제로 바꾼 세그먼트 수({"changed": N})와 고친 회의
+#[derive(Serialize)]
+struct EditResult {
+    changed: u64,
+    meeting: meetings::MeetingDetail,
+}
+
+/// 문장 편집 묶음을 한 번에 저장하고 고친 회의를 돌려준다. 바꾸기 200건도 호출 1회다
+#[tauri::command]
+async fn edit_segments(state: State<'_, AppState>, id: String, edits: Vec<TextEdit>) -> Result<EditResult, String> {
+    let s = state.settings();
+    let (args, input) = segments_edit(&id, &edits)?;
+    blocking(move || {
+        let changed = stdout_json(&run_tractus(&s, &args, Some(&input), "문장을 고치지 못했습니다")?)?["changed"].as_u64().unwrap_or(0);
+        Ok(EditResult { changed, meeting: meetings::load(&s.home(), &id)? })
+    })
+    .await
+}
+
+/// `tractus glossary add -- <용어…>`. 다음 전사의 hotwords가 된다. 중복 제거는 코어가 한다
+fn glossary_args(terms: &[String]) -> Result<Vec<String>, String> {
+    let terms: Vec<&str> = terms.iter().map(|t| t.trim()).filter(|t| !t.is_empty()).collect();
+    if terms.is_empty() || terms.iter().any(|t| t.contains(['\n', '\r'])) {
+        return Err("용어집에 넣을 용어가 없습니다".into());
+    }
+    Ok(["glossary", "add", "--"].into_iter().chain(terms).map(String::from).collect())
+}
+
+/// 용어집에 더한 개수
+#[tauri::command]
+async fn glossary_add(state: State<'_, AppState>, terms: Vec<String>) -> Result<u64, String> {
+    let s = state.settings();
+    let args = glossary_args(&terms)?;
+    blocking(move || Ok(stdout_json(&run_tractus(&s, &args, None, "용어집에 넣지 못했습니다")?)?["added"].as_u64().unwrap_or(0))).await
+}
+
+const EXPORT_FORMATS: &[&str] = &["txt", "md", "srt", "vtt", "csv", "docx", "bundle"];
+
+/// `tractus export`. 경로는 저장 대화상자가 고른 절대 경로이고, 덮어쓰기는 대화상자가 이미 물었으므로 --force
+fn export_args(id: &str, format: &str, out: &Path) -> Result<Vec<String>, String> {
+    if !is_meeting_id(id) || !EXPORT_FORMATS.contains(&format) || !out.is_absolute() || out.file_name().is_none() {
+        return Err(format!("잘못된 내보내기: {id} {format} {}", out.display()));
+    }
+    let out = out.to_string_lossy();
+    Ok(["export", id, "--format", format, "--out", &out, "--force"].map(String::from).to_vec())
+}
+
+/// 내보내고 Finder에서 그 파일을 보여 준다. 반환값은 코어가 쓴 절대 경로
+#[tauri::command]
+async fn export_meeting(state: State<'_, AppState>, id: String, format: String, out: String) -> Result<String, String> {
+    let s = state.settings();
+    let args = export_args(&id, &format, Path::new(&out))?;
+    blocking(move || {
+        let v = stdout_json(&run_tractus(&s, &args, None, "내보내지 못했습니다")?)?;
+        let path = v["path"].as_str().ok_or("내보내기 결과에 경로가 없습니다")?.to_string();
+        // Finder 보여 주기가 실패해도 파일은 이미 저장됐다
+        if let Err(e) = tauri_plugin_opener::reveal_item_in_dir(&path) {
+            eprintln!("Finder에서 보여 주지 못했습니다: {e}");
+        }
+        Ok(path)
+    })
+    .await
+}
+
+/// 가져올 수 있는 파일 (lib.ts IMPORT_EXTS와 같다). 대소문자 무시
+const IMPORT_EXTS: &[&str] = &["m4a", "mp3", "wav", "aac", "flac", "ogg", "opus", "webm", "mp4", "mov", "m4v"];
+
+/// `tractus transcribe <파일> --progress-json`. 절대 경로의 기존 파일이고 확장자가 allowlist에 있을 때만
+fn import_args(path: &Path) -> Result<Vec<String>, String> {
+    let ext_ok = path.extension().and_then(OsStr::to_str).is_some_and(|e| IMPORT_EXTS.contains(&e.to_ascii_lowercase().as_str()));
+    if !(path.is_absolute() && ext_ok && path.is_file()) {
+        return Err(format!("가져올 수 없는 파일입니다: {}", path.display()));
+    }
+    Ok(vec!["transcribe".into(), path.to_string_lossy().into_owned(), "--progress-json".into()])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -333,6 +452,7 @@ pub fn run() {
             app.manage(AppState { settings: Mutex::new(settings), config_path, mcp, rec: Arc::default() });
             Ok(())
         })
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             get_settings,
             save_settings,
@@ -341,6 +461,9 @@ pub fn run() {
             list_recordings,
             load_meeting,
             edit_speakers,
+            edit_segments,
+            glossary_add,
+            export_meeting,
             mcp_call,
             rec_start,
             rec_send,
@@ -405,6 +528,65 @@ mod tests {
         }
         assert!(speakers_args("../01ABC", &edit(json!({"op":"merge","from":"S2","into":"S1"}))).is_err());
         assert!(serde_json::from_value::<SpeakerEdit>(json!({"op":"list"})).is_err()); // 편집만 받는다
+    }
+
+    #[test]
+    fn import_command_args() {
+        let dir = std::env::temp_dir().join(format!("tractus-import-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("회의 녹음.MOV"); // 대소문자 무시
+        std::fs::write(&file, b"x").unwrap();
+        let args = import_args(&file).unwrap();
+        assert_eq!(args, ["transcribe", file.to_str().unwrap(), "--progress-json"]);
+        for bad in [dir.join("없음.m4a"), dir.clone(), PathBuf::from("rel/a.m4a")] {
+            assert!(import_args(&bad).is_err(), "{bad:?}");
+        }
+        std::fs::write(dir.join("a.txt"), b"x").unwrap();
+        assert!(import_args(&dir.join("a.txt")).is_err());
+        std::fs::write(dir.join(".m4a"), b"x").unwrap();
+        assert!(import_args(&dir.join(".m4a")).is_err()); // 확장자가 아니라 숨김 파일 이름
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn segments_edit_args_and_stdin() {
+        let e = |id: &str, text: &str| TextEdit { id: id.into(), text: text.into() };
+        let (args, input) = segments_edit("01ABC", &[e("s0012", "새 문장"), e("s0013", "-- $(rm) \"따옴표\"")]).unwrap();
+        assert_eq!(args, ["segments", "01ABC", "edit"]); // 문장은 인수가 아니라 stdin JSON으로
+        let v: Value = serde_json::from_str(&input).unwrap();
+        assert_eq!(v, json!({"edits": [{"id": "s0012", "text": "새 문장"}, {"id": "s0013", "text": "-- $(rm) \"따옴표\""}]}));
+        assert!(segments_edit("../x", &[e("s0001", "a")]).is_err());
+        assert!(segments_edit("01ABC", &[]).is_err());
+        assert!(segments_edit("01ABC", &[e("S1", "a")]).is_err());
+        assert!(segments_edit("01ABC", &[e("s0001", "  ")]).is_err()); // 빈 문장은 코어도 거부한다
+    }
+
+    #[test]
+    fn glossary_command_args() {
+        let t = |v: &[&str]| glossary_args(&v.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(t(&[" budget ", "", "-WTO"]).unwrap(), ["glossary", "add", "--", "budget", "-WTO"]);
+        assert!(t(&["  "]).is_err());
+        assert!(t(&["a\nb"]).is_err());
+    }
+
+    #[test]
+    fn export_command_args() {
+        let out = Path::new("/Users/me/Desktop/2026-10-02_주간회의.docx");
+        assert_eq!(
+            export_args("01ABC", "docx", out).unwrap(),
+            ["export", "01ABC", "--format", "docx", "--out", out.to_str().unwrap(), "--force"] // 덮어쓰기는 저장 대화상자가 이미 물었다
+        );
+        assert!(export_args("01ABC", "pdf", out).is_err());
+        assert!(export_args("01ABC", "--force", out).is_err());
+        assert!(export_args("01ABC", "txt", Path::new("rel.txt")).is_err());
+        assert!(export_args("../x", "txt", out).is_err());
+    }
+
+    #[test]
+    fn last_json_line() {
+        assert_eq!(stdout_json("log\n{\"path\": \"/a b.txt\"}\n\n").unwrap()["path"], "/a b.txt");
+        assert!(stdout_json("").is_err());
+        assert!(stdout_json("done").is_err());
     }
 
     #[test]

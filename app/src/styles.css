@@ -140,6 +140,7 @@ button:disabled {
 }
 
 kbd {
+  white-space: nowrap;
   font: 500 var(--fs-xs) / 1 var(--font);
   padding: 3px 5px 2px;
   border: 1px solid var(--rule-strong);
@@ -543,7 +544,8 @@ mark {
 
 .shortcuts {
   display: flex;
-  gap: 36px;
+  flex-wrap: wrap;
+  gap: 14px 36px;
   margin: 56px 0 0;
   padding-top: 18px;
   border-top: 1px solid var(--rule-strong);
@@ -560,6 +562,7 @@ mark {
 .shortcuts dt,
 .shortcuts dd {
   margin: 0;
+  white-space: nowrap;
 }
 
 .shortcuts dd {
@@ -732,7 +735,8 @@ mark {
   margin-top: 16px;
 }
 
-.transcript.has-speakers .seg-text {
+.transcript.has-speakers .seg-body,
+.transcript.has-speakers .seg-editor {
   padding-left: 18px;
 }
 
@@ -1662,6 +1666,343 @@ pre.inline-error {
 
 .status-box p {
   margin: 0;
+}
+
+/* ── Phase 5: 편집·찾기·재생 컨트롤·가져오기·내보내기 ── */
+
+.meeting-head-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.head-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.ghost-button.head-button {
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-size: var(--fs-sm);
+}
+
+.edit-hint {
+  color: var(--ink-3);
+}
+
+.seg-body {
+  display: block;
+}
+
+/* 사람이 고친 문장: 황토(사람이 남긴 것) 작은 표지. 원문은 title로 */
+.seg-edited {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--memo-wash);
+  color: var(--memo);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  vertical-align: 0.15em;
+  white-space: nowrap;
+}
+
+.seg-button.is-editing {
+  cursor: text;
+  background: var(--paper-3);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.seg-editor {
+  display: block;
+  outline: none;
+  white-space: pre-wrap;
+  caret-color: var(--accent);
+}
+
+/* 찾기 강조. Highlight API가 없으면 행 테두리(is-find)만 */
+::highlight(find) {
+  background-color: color-mix(in srgb, var(--memo) 26%, transparent);
+}
+
+::highlight(find-current) {
+  background-color: var(--memo);
+  color: var(--paper);
+}
+
+@supports not selector(::highlight(find)) {
+  .seg.is-find .seg-button {
+    box-shadow: inset 0 0 0 1px var(--memo);
+  }
+}
+
+.find-bar {
+  position: sticky;
+  top: calc(var(--gutter) * -1); /* 열의 위쪽 여백까지 덮는다 */
+  z-index: 3;
+  display: grid;
+  gap: 8px;
+  max-width: calc(46rem + var(--time-col));
+  margin: calc(var(--gutter) * -1) 0 18px;
+  padding: 14px 0 14px var(--time-col);
+  border-bottom: 1px solid var(--rule-strong);
+  background: var(--paper);
+}
+
+.find-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.find-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 7px;
+  background: var(--paper-3);
+  transition: border-color var(--fast);
+}
+
+.find-input:focus {
+  border-color: var(--ink);
+  outline: none;
+}
+
+.find-count {
+  min-width: 4.5em;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+  text-align: right;
+}
+
+.find-step,
+.find-close,
+.toast-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-2);
+  font-size: var(--fs-base);
+}
+
+.find-step:hover:not(:disabled),
+.find-close:hover,
+.toast-close:hover {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink);
+}
+
+.ghost-button.find-action {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: 7px;
+  font-size: var(--fs-sm);
+}
+
+.find-glossary {
+  color: var(--ink-2);
+}
+
+.find-glossary small {
+  color: var(--ink-3);
+}
+
+/* 무음 건너뛰기·속도: 플레이어 오른쪽의 작은 조절기 */
+.toggle-button,
+.rate-select {
+  flex: none;
+  padding: 5px 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 7px;
+  background: transparent;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  transition: border-color var(--fast), background var(--fast), color var(--fast);
+}
+
+.toggle-button:hover,
+.rate-select:hover {
+  border-color: var(--ink);
+}
+
+.toggle-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+
+.toggle-meta {
+  margin-left: 6px;
+  font-weight: 500;
+}
+
+.rate-select {
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  text-align: center;
+}
+
+.summary-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.summary-stale {
+  margin: 0 0 26px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--memo);
+  background: var(--memo-wash);
+  font-size: var(--fs-sm);
+}
+
+.summary-stale p {
+  margin: 0 0 4px;
+}
+
+.export-menu button {
+  justify-content: space-between;
+}
+
+.export-menu small {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+/* 가져오기: 녹음 버튼 아래 보조 버튼 + 진행 */
+.import-button {
+  margin: 8px 16px 0;
+  padding: 7px 12px;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 9px;
+  background: none;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  transition: border-color var(--fast), color var(--fast);
+}
+
+.import-button:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.import-status {
+  margin: 10px 16px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: var(--paper-3);
+  font-size: var(--fs-sm);
+}
+
+.import-status p {
+  margin: 0;
+}
+
+.import-file {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.import-line {
+  display: flex;
+  justify-content: space-between;
+  margin: 2px 0 8px !important;
+  color: var(--ink-3);
+}
+
+.import-warning {
+  margin-top: 8px !important;
+  color: var(--memo);
+}
+
+/* 창 전체 끌어 놓기 덮개 */
+.drop-overlay {
+  position: fixed;
+  inset: 14px;
+  z-index: 50;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  border: 2px dashed var(--accent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(3px);
+  text-align: center;
+  pointer-events: none;
+  animation: pop 160ms var(--ease) both;
+}
+
+.drop-overlay p {
+  margin: 0;
+  font-size: var(--fs-h1);
+  font-weight: 740;
+  letter-spacing: -0.04em;
+}
+
+.drop-overlay small {
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
+}
+
+/* 알림: 화면 아래 가운데 한 줄 */
+.toast-region {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  z-index: 40;
+  transform: translateX(-50%);
+  max-width: min(640px, calc(100vw - 32px));
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 8px 8px 16px;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--on-ink);
+  font-size: var(--fs-sm);
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.5);
+  animation: rise 280ms var(--ease) both;
+}
+
+.toast.is-error {
+  background: var(--accent);
+  color: #fff;
+}
+
+.toast .text-button {
+  flex: none;
+  text-decoration-color: currentColor;
+}
+
+.toast .toast-close {
+  color: inherit;
+  opacity: 0.7;
 }
 
 /* 좁은 창: 요약 레일을 전사 아래로 */
