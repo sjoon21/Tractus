@@ -147,9 +147,9 @@ def test_write_transcript_v2_has_speakers_and_named_renders(tmp_path):
     assert [s["speaker"] for s in t["segments"]] == ["S2", "S1", None]
     assert t["speakers"] == {"S1": {"name": None}, "S2": {"name": None}}
     md = (job.dir / "transcript.md").read_text(encoding="utf-8")
-    assert "[00:00:00] **S2**: 첫 번째" in md and "[00:01:20] 세 번째" in md
+    assert "[00:00:00] **참석자 2**: 첫 번째" in md and "[00:01:20] 세 번째" in md
     vtt = (job.dir / "transcript.vtt").read_text(encoding="utf-8")
-    assert "<v S2>첫 번째" in vtt and "\n세 번째" in vtt
+    assert "<v 참석자 2>첫 번째" in vtt and "\n세 번째" in vtt
 
 
 def test_write_transcript_without_diarization_has_null_block(tmp_path):
@@ -224,7 +224,7 @@ def test_rename_strips_markup_and_rejects_label_like_names():
     assert r["speakers"]["S1"]["name"] == "ab s0001 xy"
     assert "**ab s0001 xy**: 가" in render_markdown(r) and "<v ab s0001 xy>가" in render_vtt(r)
     assert "[s0001 00:00:00 ab s0001 xy] 가" in build_prompt({**r, "title": "x"})
-    for bad in ("**", "<>", "S2", "s12", " S1 "):  # 마크업만 있는 이름, 자동 라벨처럼 보이는 이름은 거부
+    for bad in ("**", "<>", "S2", "s12", " S1 ", "참석자 2", "참석자3"):  # 마크업만 있는 이름, 자동 이름처럼 보이는 이름은 거부
         with pytest.raises(ValueError):
             apply_speaker_edit(t, "rename", "S1", bad)
 
@@ -249,9 +249,9 @@ def test_seg_text_prefers_corrected_text_in_every_render():
     t["segments"][0]["corrected_text"] = "고친 문장"
     assert seg_text(t["segments"][0]) == "고친 문장" and seg_text(t["segments"][1]) == "나"
     assert seg_text({"text": "원문", "corrected_text": None}) == "원문"
-    assert "[00:00:00] **S1**: 고친 문장" in render_markdown(t)
-    assert "<v S1>고친 문장" in render_vtt(t)
-    assert "[s0001 00:00:00 S1] 고친 문장" in build_prompt({**t, "title": "x"})
+    assert "[00:00:00] **참석자 1**: 고친 문장" in render_markdown(t)
+    assert "<v 참석자 1>고친 문장" in render_vtt(t)
+    assert "[s0001 00:00:00 참석자 1] 고친 문장" in build_prompt({**t, "title": "x"})
     assert make_chunks(t["segments"])[0]["segments"][0]["text"] == "고친 문장"
 
 
@@ -291,3 +291,20 @@ def test_add_glossary_terms_creates_dedupes_and_appends(tmp_path):
     path.write_text(text.rstrip("\n"), encoding="utf-8")  # 줄바꿈 없이 끝난 파일에도 새 줄로 붙인다
     assert add_glossary_terms(path, ["WTO", "Project Atlas"]) == 1
     assert load_glossary(path) == ["쿠버네티스", "WTO", "Project Atlas"]
+
+
+def test_speaker_display_shows_unnamed_labels_as_participant_numbers():
+    from tractus.store import speaker_display, speaker_name
+
+    t = {"speakers": {"S1": {"name": "김민수"}, "S3": {"name": None}}}
+    assert [speaker_display(t, x) for x in ("S1", "S3", None, "S7")] == ["김민수", "참석자 3", None, "참석자 7"]
+    assert speaker_name(t, "S3") == "S3"  # MCP·CLI는 라벨 그대로
+
+
+def test_find_meeting_dir_errors_read_as_sentences(tmp_path):
+    import pytest
+
+    from tractus.store import find_meeting_dir
+
+    with pytest.raises(LookupError, match="^‘없는회의’에 해당하는 회의가 없습니다"):
+        find_meeting_dir(tmp_path, "없는회의")

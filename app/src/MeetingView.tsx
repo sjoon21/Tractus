@@ -7,6 +7,7 @@ import {
   applyEdits,
   baseName,
   clickSeekTime,
+  errorView,
   evidenceStart,
   exportFilename,
   findMatches,
@@ -14,6 +15,7 @@ import {
   inverseEdits,
   isImeKey,
   isTypingTarget,
+  JOB_ERROR,
   oneLine,
   parseRate,
   RATES,
@@ -39,7 +41,9 @@ import {
   type Segment,
   type TextEdit,
 } from "./lib";
+import { providerLabel } from "./ask";
 import { AskPanel } from "./AskPanel";
+import { ErrorDetail } from "./ErrorDetail";
 import { printDoc } from "./print";
 import { PrintSheet } from "./PrintSheet";
 import { SpeakerChip, SpeakerMenu, SpeakersBar, spkStyle, type MenuTarget, type MergeAsk } from "./Speakers";
@@ -107,11 +111,11 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
   const hasWords = segments.some((s) => !!s.words?.length);
   const align = useJob(() => {
     void load();
-    notify({ text: "단어 타이밍을 만들었습니다. 문장의 단어를 누르면 그 단어부터 재생합니다" });
+    notify({ text: "단어 싱크를 맞췄습니다. 단어를 누르면 그 단어부터 재생합니다" });
   });
   useEffect(() => {
-    if (!align.job.running && align.job.error) notify({ text: `단어 타이밍을 만들지 못했습니다: ${align.job.error}`, error: true });
-  }, [align.job.running, align.job.error, notify]);
+    if (!align.job.running && align.job.error) notify({ ...errorView(align.job.error, align.job.errorCode, JOB_ERROR.align), error: true });
+  }, [align.job.running, align.job.error, align.job.errorCode, notify]);
   const speakers = detail?.speakers ?? {};
   const stats = useMemo(() => speakerStats(segments, speakers), [detail]);
   const diarized = stats.length > 0;
@@ -166,9 +170,9 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
           () => api.editSpeakers(id, { op: "rename", label, name }),
         );
         if ("meeting" in r) commit(r.meeting);
-        if ("samples" in r) notify({ text: `‘${name}’의 목소리를 기억합니다 (표본 ${r.samples}개). 다음 전사부터 자동으로 제안합니다` });
+        if ("samples" in r) notify({ text: `‘${name}’ 님의 목소리를 등록했습니다 (표본 ${r.samples}개). 다음 회의부터 자동으로 알아봅니다` });
         else if ("renameError" in r) setEditError(`이름을 바꾸지 못했습니다: ${errText(r.renameError)} (목소리: ${errText(r.voiceError)})`);
-        else setEditError(`이름은 ‘${name}’(으)로 바꿨지만 목소리는 기억하지 못했습니다: ${errText(r.voiceError)}`);
+        else setEditError(`이름은 ‘${name}’(으)로 바꿨지만 목소리는 등록하지 못했습니다: ${errText(r.voiceError)}`);
       });
     },
     [id, serial, commit, editSpeakers, notify],
@@ -190,7 +194,7 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
         }
       } catch (e) {
         // 아무것도 쓰이지 않았다(코어 계약). 화면은 원래 문장으로 돌아가므로 고친 문장을 메시지에 남긴다
-        const what = edits.length === 1 ? `“${oneLine(edits[0].text)}”` : `문장 ${edits.length}개`;
+        const what = edits.length === 1 ? `“${oneLine(edits[0].text)}”` : `대화 ${edits.length}개`;
         setEditError(`저장하지 못했습니다 (${what}): ${errText(e)}`);
         if (isUndo) undoStack.current.push(edits);
       } finally {
@@ -226,7 +230,7 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
       setEditingId(null);
       if (raw === null) return;
       const text = oneLine(raw);
-      if (!text) return setEditError("빈 문장은 저장할 수 없습니다. 원래 문장을 그대로 둡니다");
+      if (!text) return setEditError("빈 내용은 저장할 수 없습니다. 원래 내용을 그대로 둡니다");
       if (text !== oneLine(segText(seg))) saveText([{ id: seg.id, text }]);
     },
     [saveText],
@@ -269,7 +273,7 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
 
   // 목소리 강조 (6.4). 켤 때 Web Audio 체인을 만든다(사용자 클릭 안에서). 못 만들면 토글을 막고 이유를 보인다
   const [voice, setVoice] = useState(false);
-  const [voiceError, setVoiceError] = useState<string | null>(voiceBoostSupported() ? null : "이 환경에서는 목소리 강조를 쓸 수 없습니다 (Web Audio 없음)");
+  const [voiceError, setVoiceError] = useState<string | null>(voiceBoostSupported() ? null : "이 환경에서는 ‘목소리 선명하게’를 쓸 수 없습니다");
   const toggleVoice = () => {
     const a = audio.current;
     if (!a || voiceError) return;
@@ -277,7 +281,7 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
       setVoiceBoost(a, !voice);
       setVoice(!voice);
     } catch (e) {
-      setVoiceError(`목소리 강조를 켜지 못했습니다: ${errText(e)}`);
+      setVoiceError(`‘목소리 선명하게’를 켜지 못했습니다: ${errText(e)}`);
     }
   };
   useEffect(() => {
@@ -328,13 +332,13 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
   const replace = (all: boolean) => {
     if (!find || !curMatch) return;
     const edits = replaceEdits(visible, find.q, find.r, all ? undefined : curMatch);
-    if (!edits.length) return setEditError("바꿔도 같거나 빈 문장이 되어 바꾸지 않았습니다");
+    if (!edits.length) return setEditError("바꿔도 내용이 같거나 비게 되어 바꾸지 않았습니다");
     saveText(edits);
     const term = find.r.trim();
     if (find.glossary && term) {
       api.glossaryAdd([term]).then(
-        (n) => notify({ text: n ? `용어집에 넣었습니다 — ${term} (다음 전사부터 씁니다)` : `이미 용어집에 있습니다 — ${term}` }),
-        (e) => notify({ text: `용어집에 넣지 못했습니다: ${errText(e)}`, error: true }),
+        (n) => notify({ text: n ? `자주 쓰는 단어에 추가했습니다 — ${term} (다음 녹음부터 더 정확하게 인식합니다)` : `이미 자주 쓰는 단어에 있습니다 — ${term}` }),
+        (e) => notify({ text: `자주 쓰는 단어에 추가하지 못했습니다: ${errText(e)}`, error: true }),
       );
     }
   };
@@ -482,7 +486,7 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
     void serial(async () => {
       try {
         const path = await api.exportMeeting(id, f.format, target);
-        notify({ text: `${f.label}로 내보냈습니다 — ${baseName(path)}` });
+        notify({ text: `내보냈습니다 — ${baseName(path)}` });
       } catch (e) {
         notify({ text: `내보내지 못했습니다: ${errText(e)}`, error: true });
       }
@@ -524,11 +528,11 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
                   className="ghost-button head-button"
                   disabled={align.job.running}
                   onClick={() => void align.startJob("align", id)}
-                  title="오디오와 문장을 단어 단위로 맞춥니다. 재생 중인 단어가 강조되고, 단어를 누르면 그 단어부터 재생합니다"
+                  title="음성과 대화 내용을 단어 단위로 맞춥니다. 재생 중인 단어가 강조되고, 단어를 누르면 그 단어부터 재생합니다"
                 >
                   {align.job.running
                     ? `${STAGE_LABEL[align.job.stage ?? ""] ?? "시작하는 중…"}${align.job.total ? ` ${Math.round((align.job.done / align.job.total) * 100)}%` : ""}`
-                    : "단어 타이밍 만들기"}
+                    : "단어 싱크 맞추기"}
                 </button>
               )}
               <button className="ghost-button head-button" onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
@@ -539,8 +543,8 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
           </div>
           <h1>{info.title || "제목 없음"}</h1>
           <p className="meeting-stats tnum">
-            {fmtTime(info.duration_sec)} · 세그먼트 {info.segments}개{detail.memos.length > 0 && ` · 메모 ${detail.memos.length}개`}
-            <span className="edit-hint"> · 문장을 두 번 누르거나 Enter로 고칩니다</span>
+            {fmtTime(info.duration_sec)} · 대화 {info.segments}개{detail.memos.length > 0 && ` · 메모 ${detail.memos.length}개`}
+            <span className="edit-hint"> · 대화를 두 번 누르거나 Enter를 눌러 내용을 수정합니다</span>
           </p>
           {diarized && (
             <SpeakersBar
@@ -571,7 +575,7 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
 
         {segments.length === 0 && (
           <div className="transcript-empty" role="status">
-            <p className="eyebrow">전사 없음</p>
+            <p className="eyebrow">인식된 대화가 없습니다</p>
             <p>이 녹음에서 말소리를 찾지 못했습니다. 아래 플레이어로 녹음된 소리를 확인해 보세요. 마이크가 멀었거나 녹음이 너무 짧았을 수 있습니다.</p>
           </div>
         )}
@@ -656,9 +660,10 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
                 className="toggle-button"
                 aria-pressed={skip}
                 onClick={() => setSkip((v) => !v)}
-                title={filter ? "이 화자의 발화만 듣습니다 (다른 화자와 1초 넘는 무음을 건너뜀)" : "발화 사이 1초 넘는 무음을 건너뜁니다. 화자를 고르면 그 화자만 듣습니다"}
+                title={filter ? "이 참석자의 말만 듣습니다 (다른 참석자의 말과 1초 넘는 침묵을 건너뜀)" : "침묵 구간 건너뛰기: 말 사이 1초 넘는 침묵을 건너뜁니다. 참석자를 고르면 그 참석자만 듣습니다"}
+                aria-label={filter ? "이 참석자만 듣기" : "침묵 구간 건너뛰기"}
               >
-                {filter ? "이 화자만" : "무음 건너뛰기"}
+                {filter ? "이 참석자만 듣기" : "침묵 건너뛰기"}
                 {skip && saved >= 1 && <span className="tnum toggle-meta">−{fmtTime(saved)}</span>}
               </button>
               <button
@@ -666,9 +671,9 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
                 aria-pressed={voice}
                 aria-disabled={!!voiceError}
                 onClick={toggleVoice}
-                title={voiceError ?? "말소리 대역(3 kHz)을 살짝 올리고 100 Hz 아래 웅웅거림을 줄입니다. 큰 소리와 작은 소리의 차이도 줄입니다"}
+                title={voiceError ?? "말소리를 또렷하게 하고 낮은 웅웅거림을 줄입니다. 큰 소리와 작은 소리의 차이도 줄입니다"}
               >
-                목소리 강조
+                목소리 선명하게
               </button>
               <select className="rate-select tnum" value={rate} onChange={(e) => setRate(Number(e.target.value))} aria-label="재생 속도 (Shift+, 느리게 · Shift+. 빠르게)" title="재생 속도 (Shift+, / Shift+.)">
                 {RATES.map((r) => (
@@ -703,7 +708,7 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
         )}
       </article>
 
-      <aside className="summary-col" aria-label="요약과 질문">
+      <aside className="summary-col" aria-label="요약과 AI 질문">
         <div
           className="rail-tabs"
           role="tablist"
@@ -718,7 +723,7 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
         >
           {(["summary", "ask"] as const).map((k) => (
             <button key={k} id={`tab-${k}`} role="tab" aria-selected={tab === k} aria-controls={`panel-${k}`} tabIndex={tab === k ? 0 : -1} onClick={() => showTab(k)}>
-              {k === "summary" ? "요약" : "질문"}
+              {k === "summary" ? "요약" : "AI 질문"}
             </button>
           ))}
         </div>
@@ -737,22 +742,22 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
               stale={
                 edited && (
                   <div className="summary-stale" role="status">
-                    <p>전사를 고쳤습니다. 요약에는 아직 반영되지 않았습니다.</p>
+                    <p>대화 내용을 수정했습니다. 요약에는 아직 반영되지 않았습니다.</p>
                     <button className="text-button" disabled={summarize.job.running || editing} onClick={startSummarize}>
                       {summarize.job.running ? (STAGE_LABEL[summarize.job.stage ?? ""] ?? "시작하는 중…") : "요약 다시 만들기"}
                     </button>
-                    {summarize.job.error && <p className="inline-error">{summarize.job.error}</p>}
+                    <SummaryError job={summarize.job} />
                   </div>
                 )
               }
             />
           ) : (
             <div className="summary-empty">
-              <p>아직 요약이 없습니다. 결정 사항과 할 일을 근거 세그먼트와 함께 뽑습니다.</p>
+              <p>아직 요약이 없습니다. 결정 사항과 할 일을 근거 대화와 함께 정리합니다.</p>
               <button className="primary-button" disabled={summarize.job.running || editing} onClick={startSummarize}>
                 {summarize.job.running ? (STAGE_LABEL[summarize.job.stage ?? ""] ?? "시작하는 중…") : "요약 만들기"}
               </button>
-              {summarize.job.error && <p className="inline-error">{summarize.job.error}</p>}
+              <SummaryError job={summarize.job} />
             </div>
           )}
         </div>
@@ -846,13 +851,13 @@ const SegmentRow = memo(function SegmentRow({
           }}
           aria-current={isActive}
           aria-keyshortcuts="Enter"
-          aria-description="Enter로 문장 고치기"
+          aria-description="Enter로 대화 내용 수정"
         >
           <time className="seg-time tnum">{fmtTime(seg.start)}</time>
           <span className="seg-body">
             <span className="seg-text">{segText(seg)}</span>
             {edited && (
-              <span className="seg-edited" title={`원문: ${seg.text}`}>
+              <span className="seg-edited" title={`수정 전: ${seg.text}`}>
                 수정됨
               </span>
             )}
@@ -889,7 +894,7 @@ function TimeChip({ ids, starts, onSeek }: { ids: string[]; starts: Map<string, 
   const t = evidenceStart(ids, starts);
   if (t === null) return null;
   return (
-    <button className="time-chip tnum" onClick={() => onSeek(t)} title={`근거: ${ids.join(", ")}`}>
+    <button className="time-chip tnum" onClick={() => onSeek(t)} title={`근거 대화로 이동 (${fmtTime(t)})`}>
       {fmtTime(t)}
     </button>
   );
@@ -973,7 +978,19 @@ function SummaryPanel({
         </section>
       )}
 
-      {summary.model && <p className="summary-source">{[summary.provider, summary.model].filter(Boolean).join(" · ")}</p>}
+      {summary.model && <p className="summary-source">{summary.provider ? `요약: ${providerLabel(summary.provider)}(${summary.model})` : `요약: ${summary.model}`}</p>}
+    </div>
+  );
+}
+
+/** 요약 실패: 코드 문장 또는 "요약하지 못했습니다" + 원래 문구(자세히) */
+function SummaryError({ job }: { job: { error: string | null; errorCode: string | null } }) {
+  if (!job.error) return null;
+  const e = errorView(job.error, job.errorCode, JOB_ERROR.summarize);
+  return (
+    <div className="inline-error" role="alert">
+      {e.text}
+      <ErrorDetail detail={e.detail} />
     </div>
   );
 }

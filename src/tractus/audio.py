@@ -14,9 +14,13 @@ class FFmpegError(RuntimeError):
     pass
 
 
+class FFmpegMissing(FFmpegError):
+    """ffmpeg가 설치되지 않음. 앱은 code=ffmpeg_missing으로 설치 안내를 보인다."""
+
+
 def require_ffmpeg() -> None:
     if shutil.which("ffmpeg") is None:
-        raise FFmpegError("ffmpeg를 찾을 수 없습니다. `brew install ffmpeg`로 설치하세요.")
+        raise FFmpegMissing("음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요.")
 
 
 def _run(args: list[str], capture: bool = False) -> bytes:
@@ -41,11 +45,11 @@ def decode(paths: Path | list[Path]) -> np.ndarray:
         raw = _run([*_inputs(paths), "-vn", "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"], capture=True)  # -vn: 동영상(mp4·mov)은 소리만
     except FFmpegError as e:
         if "does not contain any stream" in str(e):
-            raise FFmpegError(f"오디오 트랙이 없습니다 (소리 없는 동영상인지 확인하세요): {', '.join(p.name for p in paths)}") from e
+            raise FFmpegError(f"소리가 없는 파일입니다. 소리 없는 동영상인지 확인하세요: {', '.join(p.name for p in paths)}") from e
         raise
     audio = np.frombuffer(raw, dtype=np.float32)
     if audio.size == 0:
-        raise FFmpegError(f"오디오 트랙이 비어 있습니다: {', '.join(map(str, paths))}")
+        raise FFmpegError(f"녹음된 소리가 없습니다: {', '.join(p.name for p in paths)}")
     return audio
 
 

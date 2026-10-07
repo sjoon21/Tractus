@@ -22,7 +22,7 @@ _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 __all__ = [
     "Job", "Segment", "add_glossary_terms", "apply_speaker_edit", "apply_suggestions", "apply_text_edits", "find_job", "find_meeting_dir", "load_glossary",
-    "meeting_dir_name", "new_ulid", "render_markdown", "save_transcript", "seg_text", "speaker_name", "write_transcript",
+    "meeting_dir_name", "new_ulid", "render_markdown", "save_transcript", "seg_text", "speaker_display", "speaker_name", "write_transcript",
 ]
 
 
@@ -49,7 +49,7 @@ def load_glossary(path: Path) -> list[str]:
     return terms
 
 
-GLOSSARY_HEADER = "# 용어집\n\n전사할 때 Qwen3-ASR hotwords로 넣는다. 한 줄에 하나씩 `- 용어`.\n\n"
+GLOSSARY_HEADER = "# 자주 쓰는 단어\n\n녹음을 텍스트로 변환할 때 이 단어들을 더 정확하게 인식합니다. 한 줄에 하나씩 `- 단어` 형식으로 적습니다.\n\n"
 
 
 def add_glossary_terms(path: Path, terms: list[str]) -> int:
@@ -153,17 +153,22 @@ def find_meeting_dir(meetings: Path, ref: str) -> Path:
         return path
     ref = ref.strip()
     hits = [d for d in sorted(meetings.glob("*")) if ref and ref in d.name and (d / "transcript.json").is_file()] if ref else []
-    if len(hits) != 1:
-        found = "없습니다" if not hits else f"{len(hits)}개입니다: " + ", ".join(d.name for d in hits[:5])
-        raise LookupError(f"{ref!r}에 맞는 전사된 회의가 {found}")
+    if not hits:
+        raise LookupError(f"‘{ref}’에 해당하는 회의가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.")
+    if len(hits) > 1:
+        raise LookupError(f"‘{ref}’에 해당하는 회의가 {len(hits)}개입니다: " + ", ".join(d.name for d in hits[:5]))
     return hits[0]
+
+
+class IncompleteError(RuntimeError):
+    """전사되지 않은 청크가 남아 transcript.json을 쓸 수 없다 (CLI가 code="incomplete"로 알린다)."""
 
 
 def write_transcript(job: Job) -> dict:
     done = job.done()
     missing = [i for i in range(len(job.chunks)) if i not in done]
     if missing:
-        raise RuntimeError(f"전사되지 않은 청크가 있습니다: {missing[:10]} — 같은 명령으로 다시 실행하세요")
+        raise IncompleteError(f"변환이 끝나지 않은 구간이 있습니다 ({missing[:10]}). 같은 명령으로 다시 실행하세요")
     segments = []
     for i, (s, e, speaker) in enumerate(job.chunks):
         seg = done[i]
@@ -233,10 +238,17 @@ def apply_suggestions(t: dict, suggestions: dict) -> dict:
 
 
 def speaker_name(t: dict, label: str | None) -> str | None:
-    """표시 이름: 사용자가 정한 이름, 없으면 라벨(S1), 화자를 모르면 None. schema_version 1 전사도 받는다."""
+    """MCP·CLI용 이름: 사용자가 정한 이름, 없으면 라벨(S1), 화자를 모르면 None. schema_version 1 전사도 받는다."""
     if not label:
         return None
     return ((t.get("speakers") or {}).get(label) or {}).get("name") or label
+
+
+def speaker_display(t: dict, label: str | None) -> str | None:
+    """사람이 읽는 문서·프롬프트용 이름 (WORDS.md §2): 정한 이름, 없으면 S3 → '참석자 3', 화자를 모르면 None."""
+    name = speaker_name(t, label)
+    m = re.fullmatch(r"S(\d+)", name or "")
+    return f"참석자 {m.group(1)}" if m and name == label else name
 
 
 def one_line(s: str) -> str:
@@ -249,9 +261,9 @@ def _clean_name(raw: str) -> str | None:
     자동 라벨(S2)처럼 보이는 이름은 거부한다 (라벨과 헷갈리고 요약의 owner 정리에서 지워진다). 빈 문자열은 이름 지움."""
     name = one_line(re.sub(r"[\[\]<>*_`\\]", "", raw))
     if raw.strip() and not name:
-        raise ValueError(f"이름에 쓸 수 있는 글자가 없습니다: {raw!r}")
-    if re.fullmatch(r"S\d+", name, re.IGNORECASE):
-        raise ValueError(f"자동 라벨과 같은 형태(S1, S2…)는 이름으로 쓸 수 없습니다: {name}")
+        raise ValueError("이름에 쓸 수 있는 글자가 없습니다 ([ ] < > * _ ` \\ 는 쓸 수 없습니다).")
+    if re.fullmatch(r"(S|참석자\s*)\d+", name, re.IGNORECASE):
+        raise ValueError(f"‘참석자 1’, ‘S1’처럼 자동으로 붙는 이름은 쓸 수 없습니다: {name}")
     return name or None
 
 
@@ -268,7 +280,7 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
 
     def known(label: str) -> str:
         if label not in speakers:
-            raise ValueError(f"없는 화자입니다: {label} (있는 화자: {', '.join(speakers) or '없음'})")
+            raise ValueError("참석자를 찾지 못했습니다. 회의를 다시 열어 주세요.")
         return label
 
     if op == "rename" and len(args) == 2:
@@ -279,7 +291,7 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
     elif op == "set" and len(args) == 2:
         seg = next((s for s in t["segments"] if s["id"] == args[0]), None)
         if seg is None:
-            raise ValueError(f"없는 세그먼트입니다: {args[0]}")
+            raise ValueError("해당 대화를 찾지 못했습니다. 회의를 다시 열어 주세요.")
         if args[1] == "new":
             used = [_label_key(k)[0] for k in [*speakers, *(s.get("speaker") or "" for s in t["segments"])] if k[1:].isdigit()]
             label = f"S{max(used, default=0) + 1}"
@@ -290,14 +302,14 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
     elif op == "merge" and len(args) == 2:
         src, dst = known(args[0]), known(args[1])
         if src == dst:
-            raise ValueError("같은 화자끼리는 합칠 수 없습니다")
+            raise ValueError("같은 참석자끼리는 합칠 수 없습니다.")
         for seg in t["segments"]:
             if seg.get("speaker") == src:
                 seg["speaker"] = dst
         if not (speakers[dst] or {}).get("name") and (speakers[src] or {}).get("name"):
             speakers[dst] = {"name": speakers[src]["name"]}  # SRC의 목소리 제안은 SRC와 함께 사라진다
     else:
-        raise ValueError(f"알 수 없는 화자 편집: {op} {' '.join(args)}")
+        raise ValueError(f"알 수 없는 화자 편집: {op} {' '.join(args)}")  # words-ok: 앱 계약 오류
     t["speakers"] = _speakers_map(speakers, t["segments"])
     return t
 
@@ -321,12 +333,12 @@ def apply_text_edits(t: dict, edits: list) -> tuple[dict, int]:
     plan = []
     for e in edits:
         if not isinstance(e, dict) or not isinstance(e.get("id"), str) or not isinstance(e.get("text"), str):
-            raise ValueError(f"편집 형식은 {{\"id\": \"s0012\", \"text\": \"…\"}}입니다: {str(e)[:80]}")
+            raise ValueError(f"편집 형식은 {{\"id\": \"s0012\", \"text\": \"…\"}}입니다: {str(e)[:80]}")  # words-ok: 앱 계약 오류
         if e["id"] not in by_id:
-            raise ValueError(f"없는 세그먼트입니다: {e['id']}")
+            raise ValueError("해당 대화를 찾지 못했습니다. 회의를 다시 열어 주세요.")
         text = one_line(e["text"])
         if not text:
-            raise ValueError(f"빈 텍스트로 바꿀 수 없습니다: {e['id']}")
+            raise ValueError("대화 내용을 비워 둘 수 없습니다.")
         plan.append((by_id[e["id"]], text))
     from tractus.align import remap_words  # align이 store를 불러오므로 여기서 불러온다
 
@@ -366,7 +378,7 @@ def _vtt_time(sec: float) -> str:
 def render_vtt(t: dict) -> str:
     """WebVTT 자막. 큐 ID는 세그먼트 ID, 화자는 <v 이름> (브라우저 <track>, Obsidian Media Extended가 그대로 읽음)."""
     def voice(s: dict) -> str:  # 화자는 <v 이름> 태그. 이름 안의 마크업 문자는 뺀다
-        name = speaker_name(t, s.get("speaker"))
+        name = speaker_display(t, s.get("speaker"))
         return f"<v {' '.join(re.sub(r'[<>&]', '', name).split())}>" if name else ""
 
     cues = [
@@ -392,7 +404,7 @@ def render_markdown(t: dict, memos: list[dict] | None = None) -> str:
         "",
     ]
     def who(s: dict) -> str:
-        name = speaker_name(t, s.get("speaker"))
+        name = speaker_display(t, s.get("speaker"))
         return f"**{name}**: " if name else ""
 
     rows = [(s["start"], 0, f"[{_hms(s['start'])}] {who(s)}{seg_text(s)}") for s in t["segments"] if seg_text(s)]

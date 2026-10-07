@@ -209,7 +209,7 @@ def test_suggested_name_is_never_the_display_name():
     t = _t()
     assert store.speaker_name(t, "S1") == "S1"
     assert "홍길동" not in render_markdown(t) and "홍길동" not in render_vtt(t)
-    assert "**S1**: 가" in render_markdown(t) and "**박민수**: 다" in render_markdown(t)
+    assert "**참석자 1**: 가" in render_markdown(t) and "**박민수**: 다" in render_markdown(t)
 
 
 def test_rename_and_dismiss_clear_suggestion_and_merge_drops_source_suggestion():

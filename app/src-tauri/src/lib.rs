@@ -192,7 +192,7 @@ async fn load_meeting(state: State<'_, AppState>, id: String) -> Result<meetings
 #[tauri::command]
 async fn mcp_call(state: State<'_, AppState>, name: String, arguments: Value) -> Result<Value, String> {
     if !matches!(name.as_str(), "search_meetings" | "status") {
-        return Err(format!("허용하지 않는 도구: {name}"));
+        return Err(format!("허용하지 않는 검색 요청입니다: {name}"));
     }
     let client = state.mcp.clone();
     blocking(move || client.call_tool(&name, arguments)).await
@@ -203,7 +203,7 @@ const REC_FLAGS: &[&str] = &["--no-system", "--echo-cancel"];
 
 fn check_rec_flags(flags: &[String]) -> Result<(), String> {
     match flags.iter().find(|f| !REC_FLAGS.contains(&f.as_str())) {
-        Some(f) => Err(format!("허용하지 않는 녹음 인수: {f}")),
+        Some(f) => Err(format!("허용하지 않는 녹음 설정입니다: {f}")),
         None => Ok(()),
     }
 }
@@ -291,7 +291,7 @@ fn rec_send(state: State<'_, AppState>, cmd: String, text: Option<String>) -> Re
     let line = procs::recorder_line(&cmd, text.as_deref())?;
     let mut rec = state.rec.lock().unwrap();
     let stdin = rec.as_mut().ok_or("녹음 중이 아닙니다")?;
-    stdin.write_all(line.as_bytes()).and_then(|_| stdin.flush()).map_err(|e| format!("녹음 헬퍼에 보낼 수 없습니다: {e}"))?;
+    stdin.write_all(line.as_bytes()).and_then(|_| stdin.flush()).map_err(|e| format!("녹음 프로그램에 명령을 보내지 못했습니다: {e}"))?;
     // 자막도 지금 멈추기 시작한다 (녹음 헬퍼가 파일을 마무리하는 동안). 끝나기를 기다리는 것은 stopped 때(stop_live)
     if cmd == "stop" {
         if let Some(p) = state.live.lock().unwrap().as_mut() {
@@ -415,7 +415,7 @@ enum SpeakerEdit {
 
 /// `tractus speakers <회의> <명령> -- <인자…>`. 인자는 `--` 뒤에 둔다("-박" 같은 이름을 옵션으로 읽지 않게)
 fn speakers_args(id: &str, edit: &SpeakerEdit) -> Result<Vec<String>, String> {
-    let bad = || format!("잘못된 화자 편집: {edit:?}");
+    let bad = || "잘못된 참석자 편집입니다".to_string();
     if !is_meeting_id(id) {
         return Err(format!("잘못된 회의 ID: {id}"));
     }
@@ -434,7 +434,7 @@ fn speakers_args(id: &str, edit: &SpeakerEdit) -> Result<Vec<String>, String> {
 fn run_tractus(s: &Settings, args: &[String], input: Option<&str>, what: &str) -> Result<String, String> {
     let mut cmd = s.tractus(args);
     cmd.stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = cmd.spawn().map_err(|e| format!("실행할 수 없습니다 ({}): {e}", s.tractus_bin))?;
+    let mut child = cmd.spawn().map_err(|e| procs::cannot_run(&s.tractus_bin, e))?;
     if let (Some(text), Some(mut stdin)) = (input, child.stdin.take()) {
         // 코어는 stdin을 다 읽은 뒤에 출력하므로 먼저 쓰고 닫아도 막히지 않는다
         stdin.write_all(text.as_bytes()).map_err(|e| format!("{what}: 입력을 넘기지 못했습니다: {e}"))?;
@@ -442,9 +442,21 @@ fn run_tractus(s: &Settings, args: &[String], input: Option<&str>, what: &str) -
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
-        return Err(err.trim().lines().last().map(str::to_string).unwrap_or_else(|| format!("{what}: 실패 (종료 코드 {:?})", out.status.code())));
+        return Err(last_error_line(&err).unwrap_or_else(|| format!("{what} (종료 코드 {})", out.status.code().map_or("없음".into(), |c| c.to_string()))));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// stderr 마지막 줄 (코어가 WORDS.md 문장으로 쓴다). typer 접두어 `Error: `·`Error: Invalid value for MEETING: `는 뗀다
+/// (param_hint를 문자열로 주면 click은 따옴표 없이 찍는다. 자동 이름이면 `'--x'`처럼 따옴표가 붙는다)
+fn last_error_line(stderr: &str) -> Option<String> {
+    let line = stderr.trim().lines().last()?.trim();
+    let line = line.strip_prefix("Error: ").unwrap_or(line);
+    let line = match line.strip_prefix("Invalid value for ").and_then(|r| r.split_once(": ")) {
+        Some((_, rest)) => rest,
+        None => line,
+    };
+    (!line.is_empty()).then(|| line.to_string())
 }
 
 /// stdout 마지막 줄의 JSON 객체 ({"changed": N}, {"added": N}, {"path": …}).
@@ -454,7 +466,7 @@ fn stdout_json(out: &str) -> Result<Value, String> {
         .find(|l| !l.trim().is_empty())
         .and_then(|l| serde_json::from_str::<Value>(l).ok())
         .filter(Value::is_object)
-        .ok_or_else(|| "tractus 출력을 읽을 수 없습니다".to_string())
+        .ok_or_else(|| "결과를 읽지 못했습니다".to_string())
 }
 
 /// 화자 편집을 코어에 맡기고(transcript.json·md·vtt·검색 색인을 코어가 고친다) 고친 회의를 다시 읽어 돌려준다.
@@ -463,7 +475,7 @@ async fn edit_speakers(state: State<'_, AppState>, id: String, edit: SpeakerEdit
     let s = state.settings();
     let args = speakers_args(&id, &edit)?;
     blocking(move || {
-        run_tractus(&s, &args, None, "화자를 고치지 못했습니다")?;
+        run_tractus(&s, &args, None, "참석자를 고치지 못했습니다")?;
         meetings::load(&s.home(), &id)
     })
     .await
@@ -482,7 +494,7 @@ fn segments_edit(id: &str, edits: &[TextEdit]) -> Result<(Vec<String>, String), 
         return Err(format!("잘못된 회의 ID: {id}"));
     }
     if edits.is_empty() || edits.iter().any(|e| !is_tagged(&e.id, 's') || e.text.trim().is_empty()) {
-        return Err("잘못된 문장 편집입니다 (빈 문장은 저장할 수 없습니다)".into());
+        return Err("빈 내용은 저장할 수 없습니다".into());
     }
     Ok((["segments", id, "edit"].map(String::from).to_vec(), json!({ "edits": edits }).to_string()))
 }
@@ -500,7 +512,7 @@ async fn edit_segments(state: State<'_, AppState>, id: String, edits: Vec<TextEd
     let s = state.settings();
     let (args, input) = segments_edit(&id, &edits)?;
     blocking(move || {
-        let changed = stdout_json(&run_tractus(&s, &args, Some(&input), "문장을 고치지 못했습니다")?)?["changed"].as_u64().unwrap_or(0);
+        let changed = stdout_json(&run_tractus(&s, &args, Some(&input), "대화 내용을 수정하지 못했습니다")?)?["changed"].as_u64().unwrap_or(0);
         Ok(EditResult { changed, meeting: meetings::load(&s.home(), &id)? })
     })
     .await
@@ -510,7 +522,7 @@ async fn edit_segments(state: State<'_, AppState>, id: String, edits: Vec<TextEd
 fn glossary_args(terms: &[String]) -> Result<Vec<String>, String> {
     let terms: Vec<&str> = terms.iter().map(|t| t.trim()).filter(|t| !t.is_empty()).collect();
     if terms.is_empty() || terms.iter().any(|t| t.contains(['\n', '\r'])) {
-        return Err("용어집에 넣을 용어가 없습니다".into());
+        return Err("자주 쓰는 단어에 추가할 단어가 없습니다".into());
     }
     Ok(["glossary", "add", "--"].into_iter().chain(terms).map(String::from).collect())
 }
@@ -520,7 +532,7 @@ fn glossary_args(terms: &[String]) -> Result<Vec<String>, String> {
 async fn glossary_add(state: State<'_, AppState>, terms: Vec<String>) -> Result<u64, String> {
     let s = state.settings();
     let args = glossary_args(&terms)?;
-    blocking(move || Ok(stdout_json(&run_tractus(&s, &args, None, "용어집에 넣지 못했습니다")?)?["added"].as_u64().unwrap_or(0))).await
+    blocking(move || Ok(stdout_json(&run_tractus(&s, &args, None, "자주 쓰는 단어에 추가하지 못했습니다")?)?["added"].as_u64().unwrap_or(0))).await
 }
 
 const EXPORT_FORMATS: &[&str] = &["txt", "md", "srt", "vtt", "csv", "docx", "bundle"];
@@ -541,7 +553,7 @@ async fn export_meeting(state: State<'_, AppState>, id: String, format: String, 
     let args = export_args(&id, &format, Path::new(&out))?;
     blocking(move || {
         let v = stdout_json(&run_tractus(&s, &args, None, "내보내지 못했습니다")?)?;
-        let path = v["path"].as_str().ok_or("내보내기 결과에 경로가 없습니다")?.to_string();
+        let path = v["path"].as_str().ok_or("내보낸 파일 위치를 알 수 없습니다")?.to_string();
         // Finder 보여 주기가 실패해도 파일은 이미 저장됐다
         if let Err(e) = tauri_plugin_opener::reveal_item_in_dir(&path) {
             eprintln!("Finder에서 보여 주지 못했습니다: {e}");
@@ -827,5 +839,24 @@ mod tests {
         let v: Value = serde_json::from_str(&merge_rec_mode(Some(r#"{"home":"/x","rec_mode":"hybrid"}"#), "in_person").unwrap()).unwrap();
         assert_eq!(v, json!({"home": "/x", "rec_mode": "in_person"}));
         assert!(merge_rec_mode(None, "../etc").is_err());
+    }
+
+    #[test]
+    fn last_error_line_strips_typer_prefix() {
+        assert_eq!(last_error_line("로그\n같은 참석자끼리는 합칠 수 없습니다.\n").as_deref(), Some("같은 참석자끼리는 합칠 수 없습니다."));
+        assert_eq!(last_error_line("Error: 이름을 입력하세요.").as_deref(), Some("이름을 입력하세요."));
+        // resolve_meeting의 실제 출력 (TYPER_USE_RICH=0, param_hint="MEETING"이라 따옴표 없음)
+        assert_eq!(
+            last_error_line("Try 'tractus speakers --help' for help.\n\nError: Invalid value for MEETING: ‘x’에 해당하는 회의가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.\n").as_deref(),
+            Some("‘x’에 해당하는 회의가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.")
+        );
+        assert_eq!(last_error_line("Error: Invalid value for '--recording': 녹음된 소리가 없습니다").as_deref(), Some("녹음된 소리가 없습니다"));
+        assert_eq!(last_error_line(" \n"), None);
+    }
+
+    #[test]
+    fn cannot_run_names_the_program() {
+        assert!(procs::cannot_run("/x/recorder/.build/release/tractus-rec", "없음").starts_with("녹음 프로그램을 실행할 수 없습니다"));
+        assert!(procs::cannot_run("~/.local/bin/tractus", "없음").starts_with("Tractus 엔진을 실행할 수 없습니다"));
     }
 }

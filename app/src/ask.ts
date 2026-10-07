@@ -1,5 +1,6 @@
 // 회의 질의 (docs/roadmap.md §3 6.3): `tractus ask --progress-json` 이벤트 → 화면 상태, 인용 파싱, 대화 기록, 전송 안내.
 // 화면과 무관한 순수 로직. 전부 ask.test.ts에서 검사한다.
+import { exitMessage, exitSentence, JOB_ERROR, warningText } from "./lib";
 
 /** sources 이벤트 항목: 프롬프트에 넣은 근거 세그먼트 */
 export interface AskSource {
@@ -24,7 +25,7 @@ export type AskEvent =
   | { job: string; event: "sources"; sources: AskSource[] }
   | { job: string; event: "delta"; text: string }
   | { job: string; event: "done"; answer: string; citations: Citation[]; provider: string; model: string }
-  | { job: string; event: "error"; message: string }
+  | { job: string; event: "error"; message: string; code?: string }
   /** chat_save_failed: --save 저장 실패 (done 앞에 온다). 답은 그대로 나온다 */
   | { job: string; event: "warning"; code: string; message: string }
   | { job: string; event: "exit"; code: number | null; stderr: string };
@@ -39,12 +40,14 @@ export interface AskState {
   citations: Citation[];
   provider: string | null;
   model: string | null;
+  /** 코어 원래 문구 (화면에는 lib.errorView로) */
   error: string | null;
-  /** 끝나지 않는 경고 (예: 기록 저장 실패) */
+  errorCode: string | null;
+  /** 끝나지 않는 경고의 화면 문장 (예: 기록 저장 실패) */
   warning: string | null;
 }
 
-export const START_ASK: AskState = { phase: "starting", sources: [], answer: "", citations: [], provider: null, model: null, error: null, warning: null };
+export const START_ASK: AskState = { phase: "starting", sources: [], answer: "", citations: [], provider: null, model: null, error: null, errorCode: null, warning: null };
 
 export const isAsking = (s: AskState): boolean => s.phase === "starting" || s.phase === "retrieve" || s.phase === "answer";
 
@@ -53,7 +56,7 @@ export const isAsking = (s: AskState): boolean => s.phase === "starting" || s.ph
  * 멈춘 턴에 늦게 온 done은 받는다: 코어는 done보다 먼저 chat.json에 저장하므로 화면도 저장된 답과 맞춘다
  */
 export function askReduce(s: AskState, ev: AskEvent): AskState {
-  if (ev.event === "warning") return { ...s, warning: ev.message };
+  if (ev.event === "warning") return { ...s, warning: warningText(ev) };
   if (s.phase === "cancelled" && ev.event === "done") return askReduce({ ...s, phase: "answer" }, ev);
   if (!isAsking(s)) return s;
   switch (ev.event) {
@@ -66,9 +69,9 @@ export function askReduce(s: AskState, ev: AskEvent): AskState {
     case "done":
       return { ...s, phase: "done", answer: ev.answer, citations: ev.citations, provider: ev.provider, model: ev.model };
     case "error":
-      return { ...s, phase: "error", error: ev.message };
+      return { ...s, phase: "error", error: ev.message, errorCode: ev.code ?? null };
     case "exit":
-      return { ...s, phase: "error", error: ev.stderr.trim().split("\n").slice(-3).join("\n") || `질문을 처리하지 못했습니다 (종료 코드 ${ev.code})` };
+      return { ...s, phase: "error", error: exitMessage(exitSentence(JOB_ERROR.ask, ev.code), ev.stderr) };
     default:
       return s; // 모르는 이벤트 (코어가 먼저 새 이벤트를 낼 수 있다)
   }
@@ -81,8 +84,12 @@ export type AnswerPart = { kind: "text"; text: string } | { kind: "cite"; meetin
 const ONE = String.raw`(?:[0-9A-Za-z]{26}#)?s\d{4,}`;
 const GROUP = new RegExp(String.raw`\[(${ONE}(?:\s*,\s*${ONE})*)\]`, "g");
 
-/** 답 → 글과 인용 칩. 덜 온 인용("[s00")이나 다른 대괄호는 글 그대로 */
-export function answerParts(text: string): AnswerPart[] {
+/** 스트리밍 중 끝에 덜 온 인용 ("[s00", "[01K…#s0"). 내부 ID가 잠깐이라도 보이지 않게 뗀다 */
+const PARTIAL = /\[(?:[0-9A-Za-z]{0,26}#?s?\d*\s*,\s*)*[0-9A-Za-z]{0,26}#?s?\d*$/;
+
+/** 답 → 글과 인용 칩. 다른 대괄호는 글 그대로, 끝에 덜 온 인용은 뗀다 */
+export function answerParts(raw: string): AnswerPart[] {
+  const text = raw.replace(PARTIAL, "");
   const parts: AnswerPart[] = [];
   let last = 0;
   for (const m of text.matchAll(GROUP)) {
@@ -150,25 +157,28 @@ const PROVIDERS: Record<string, { label: string; model: string | null; local?: b
   openai: { label: "OpenAI", model: null },
   claude: { label: "Anthropic", model: "claude-sonnet-5-5" },
   gemini: { label: "Google Gemini", model: null },
-  "gemma-local": { label: "로컬", model: "gemma4:31b", local: true },
+  "gemma-local": { label: "이 Mac의 AI", model: "gemma4:31b", local: true },
 };
+
+/** 화면에 보일 AI 서비스 이름 (요약 바닥글·답한 AI). 모르는 값은 그대로 */
+export const providerLabel = (provider: string): string => PROVIDERS[provider]?.label ?? provider;
 
 /** 끝난 턴에 실제로 답한 곳 ("Upstage(solar-pro4)"). 근거도 인용도 없으면 LLM을 부르지 않았을 수 있어 보이지 않는다 */
 export function answeredBy(s: AskState): string | null {
   if (s.phase !== "done" || !s.provider || (s.sources.length === 0 && s.citations.length === 0)) return null;
   const p = PROVIDERS[s.provider];
-  const name = p?.local ? "로컬 모델" : (p?.label ?? s.provider);
+  const name = p?.local ? "이 Mac의 AI" : (p?.label ?? s.provider);
   return s.model ? `${name}(${s.model})` : name;
 }
 
 export function sendNotice(c: LlmConfig): { text: string; warn: boolean } {
-  if (!c.provider) return { text: "LLM 공급자가 설정되지 않았습니다 (TRACTUS_LLM_PROVIDER)", warn: true };
+  if (!c.provider) return { text: "AI 서비스가 설정되지 않았습니다. .env.local에 TRACTUS_LLM_PROVIDER를 지정하세요", warn: true };
   const p = PROVIDERS[c.provider];
-  if (!p) return { text: `알 수 없는 LLM 공급자입니다: ${c.provider}`, warn: true };
-  if (c.local_only && !p.local) return { text: `로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 원격 공급자(${p.label})로 보내지 않습니다`, warn: true };
+  if (!p) return { text: `알 수 없는 AI 서비스입니다: ${c.provider}`, warn: true };
+  if (c.local_only && !p.local) return { text: `로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 외부 AI 서비스(${p.label})로 보내지 않습니다`, warn: true };
   const model = c.model || p.model;
-  if (!model) return { text: `${p.label} 모델을 지정하세요 (TRACTUS_LLM_MODEL)`, warn: true };
+  if (!model) return { text: `사용할 ${p.label} AI 모델을 지정하세요 (TRACTUS_LLM_MODEL)`, warn: true };
   return p.local
-    ? { text: `질문과 관련 전사 일부가 이 Mac의 로컬 모델(${model})로 처리됩니다`, warn: false }
-    : { text: `질문과 관련 전사 일부가 ${p.label}(${model})로 전송됩니다`, warn: false };
+    ? { text: `질문과 관련 대화 일부를 이 Mac의 AI(${model})가 처리합니다`, warn: false }
+    : { text: `질문과 관련 대화 일부가 ${p.label}(${model})로 전송됩니다`, warn: false };
 }

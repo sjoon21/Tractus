@@ -65,13 +65,13 @@ def test_prompt_shows_speaker_names_and_labels():
     t = {**TRANSCRIPT, "speakers": {"S1": {"name": "김민수"}, "S2": {"name": None}},
          "segments": [{**TRANSCRIPT["segments"][0], "speaker": "S1"}, {**TRANSCRIPT["segments"][1], "speaker": "S2"}, TRANSCRIPT["segments"][2]]}
     prompt = build_prompt(t)
-    assert "[s0001 00:00:00 김민수] 다음 분기" in prompt and "[s0002 00:00:30 S2] 김철수" in prompt and "[s0003 01:00:00] 예산" in prompt
+    assert "[s0001 00:00:00 김민수] 다음 분기" in prompt and "[s0002 00:00:30 참석자 2] 김철수" in prompt and "[s0003 01:00:00] 예산" in prompt
 
 
 def test_system_prompt_rules_for_speakers():
     from tractus.summarize import SYSTEM_PROMPT
 
-    assert "자동 추정" in SYSTEM_PROMPT and "S1" in SYSTEM_PROMPT and "null" in SYSTEM_PROMPT
+    assert "자동 추정" in SYSTEM_PROMPT and "참석자 1" in SYSTEM_PROMPT and "null" in SYSTEM_PROMPT
 
 
 def test_clean_owners_drops_speaker_labels_and_placeholders():
@@ -87,7 +87,7 @@ def test_clean_owners_drops_speaker_labels_and_placeholders():
 def test_clean_owners_catches_label_variants():
     from tractus.summarize import clean_owners
 
-    owners = ["s2", "Speaker 1", "speaker", "SPEAKER_02", "S0012 담당", "Sam", "김민수"]
+    owners = ["s2", "Speaker 1", "speaker", "SPEAKER_02", "S0012 담당", "참석자 2", "Sam", "김민수"]
     items = [{"task": "t", "owner": o, "due": None, "segment_ids": ["s0001"]} for o in owners]
     s = MeetingSummary.model_validate({**SUMMARY, "action_items": items})
-    assert [a.owner for a in clean_owners(s).action_items] == [None, None, None, None, None, "Sam", "김민수"]
+    assert [a.owner for a in clean_owners(s).action_items] == [None, None, None, None, None, None, "Sam", "김민수"]

@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Citation, ChatMessage, LlmConfig } from "./ask";
-import { IDLE_JOB, IDLE_LIVE, IDLE_REC, jobReduce, liveReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type LiveEvent, type LiveState, type Memo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
+import { APP_ERROR, DetailedError, IDLE_JOB, IDLE_LIVE, IDLE_REC, jobReduce, liveReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type LiveEvent, type LiveState, type Memo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
 
 export type { JobState, LiveState, RecState } from "./lib";
 
@@ -154,6 +154,8 @@ export const api = {
 };
 
 export const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** DetailedError의 원래 문구 ('자세히'). 없으면 null */
+export const errDetail = (e: unknown): string | null => (e instanceof DetailedError ? e.detail : null);
 
 // ── 작업 (transcribe / summarize / import / align) ──
 
@@ -190,7 +192,7 @@ export function useJob(onDone: (meetingId: string, warnings: Warning[]) => void)
     try {
       await invoke("job_start", { kind, target, job });
     } catch (e) {
-      setState({ ...IDLE_JOB, error: errText(e) });
+      setState({ ...IDLE_JOB, error: errText(e), errorCode: APP_ERROR }); // 실행 실패 등 Rust 문장은 그대로 보인다
     }
   }, []);
 

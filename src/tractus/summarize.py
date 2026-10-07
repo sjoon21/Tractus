@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from tractus.llm import Provider, complete_json
-from tractus.store import _hms, _write_atomic, seg_text, speaker_name
+from tractus.store import _hms, _write_atomic, seg_text, speaker_display
 
 SCHEMA_VERSION = 1
 
@@ -17,10 +17,11 @@ SYSTEM_PROMPT = """너는 회의록 작성자다. 전사문만 근거로 회의�
 - 전사에 없는 내용을 지어내지 않는다. 담당자(owner)와 기한(due)은 전사에 명시된 경우에만 채우고, 아니면 null로 둔다.
 - 담당자(owner)는 전사 본문에 이름이 나온 사람만 쓴다. "제가 하겠습니다"처럼 말한 사람만 가리키면 owner는 null로 둔다.
 - 줄 앞의 화자 표시(예: `[s0012 00:05:31 김민수]`)는 목소리로 자동 추정한 값이라 틀릴 수 있다. 화자 표시가 사람 이름이면 사용자가 확인한 이름이므로, 그 사람이 "제가 하겠습니다"라고 했다면 owner로 쓸 수 있다.
-- S1, S2 같은 자동 라벨은 사람 이름이 아니다. owner에 절대 넣지 않는다. "화자", "발언자", 세그먼트 ID 같은 값도 넣지 않는다.
+- 참석자 1, 참석자 2 같은 자동 이름은 사람 이름이 아니다. owner에 절대 넣지 않는다. "화자", "발언자", 세그먼트 ID 같은 값도 넣지 않는다.
 - 모든 주제·결정 사항·할 일에는 근거가 되는 세그먼트 ID(예: s0012)를 segment_ids에 하나 이상 넣는다. 전사에 있는 ID만 쓴다.
 - 전사는 음성 인식 결과라 오인식이 있을 수 있다. 문맥상 명백한 오인식은 바로잡아 쓴다.
-- 결정 사항은 회의에서 합의·확정된 것만, 할 일은 누군가 하기로 한 구체적 행동만 넣는다. 없으면 빈 배열로 둔다."""
+- 결정 사항은 회의에서 합의·확정된 것만, 할 일은 누군가 하기로 한 구체적 행동만 넣는다. 없으면 빈 배열로 둔다.
+- 요약·결정 사항·할 일 문장에 '화자', '세그먼트', '전사', s0012 같은 말을 쓰지 않는다. 이름이 붙은 사람만 이름으로 쓰고, 아니면 '참석자 1'처럼 쓴다."""
 
 
 class _Strict(BaseModel):
@@ -54,7 +55,7 @@ class MeetingSummary(_Strict):
 
 def build_prompt(transcript: dict) -> str:
     def who(s: dict) -> str:
-        name = speaker_name(transcript, s.get("speaker"))
+        name = speaker_display(transcript, s.get("speaker"))
         return f" {name}" if name else ""
 
     lines = [f"[{s['id']} {_hms(s['start'])}{who(s)}] {seg_text(s)}" for s in transcript["segments"]]
@@ -67,13 +68,13 @@ def check_segment_ids(summary: MeetingSummary, transcript: dict) -> None:
     items = [*summary.topics, *summary.decisions, *summary.action_items]
     unknown = sorted({i for item in items for i in item.segment_ids} - known)
     if unknown:
-        raise ValueError(f"전사에 없는 segment_ids: {unknown[:20]}")
+        raise ValueError(f"전사에 없는 segment_ids: {unknown[:20]}")  # words-ok: LLM 재시도·stderr 전용
     empty = [getattr(item, "title", "") or getattr(item, "text", "") or getattr(item, "task", "") or "(빈 항목)" for item in items if not item.segment_ids]
     if empty:
         raise ValueError(f"근거 segment_ids가 빈 항목: {empty[:10]}")
 
 
-_NOT_OWNER = re.compile(r"^\s*(S\d+|speaker[\s_]*\d*|화자\s*\d*|발언자\s*\d*)\s*$|\bs\d{4}\b", re.IGNORECASE)  # "이화자" 같은 이름은 남긴다
+_NOT_OWNER = re.compile(r"^\s*(S\d+|참석자\s*\d+|speaker[\s_]*\d*|화자\s*\d*|발언자\s*\d*)\s*$|\bs\d{4}\b", re.IGNORECASE)  # "이화자" 같은 이름은 남긴다
 
 
 def _suggested_only(transcript: dict | None) -> set[str]:

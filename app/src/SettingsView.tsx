@@ -1,26 +1,27 @@
 import { useEffect, useState } from "react";
-import { api, errText, type McpStatus, type Settings, type VoiceList, type VoicePerson } from "./api";
-import { recMode, withRecMode } from "./lib";
+import { api, errDetail, errText, type McpStatus, type Settings, type VoiceList, type VoicePerson } from "./api";
+import { ErrorDetail } from "./ErrorDetail";
+import { recMode, statusLine, withRecMode } from "./lib";
 
 const FIELDS: { key: keyof Omit<Settings, "fake_recorder" | "rec_mode" | "live_captions">; label: string; hint: string }[] = [
   { key: "home", label: "데이터 위치 (TRACTUS_HOME)", hint: "meetings/와 recordings/가 들어 있는 폴더" },
-  { key: "models_dir", label: "모델 위치 (TRACTUS_MODELS_DIR)", hint: "비우면 데이터 위치의 models/" },
-  { key: "tractus_bin", label: "tractus 실행 파일", hint: "GUI 앱은 셸 PATH를 모르므로 절대 경로" },
+  { key: "models_dir", label: "변환 엔진 위치 (TRACTUS_MODELS_DIR)", hint: "비우면 데이터 위치의 models/" },
+  { key: "tractus_bin", label: "tractus 실행 파일", hint: "전체 경로로 적습니다 (앱은 터미널의 PATH를 읽지 않습니다)" },
   { key: "rec_bin", label: "tractus-rec 실행 파일", hint: "recorder/.build/release/tractus-rec" },
 ];
 
 export function SettingsView({ onSaved }: { onSaved: () => void }) {
   const [s, setS] = useState<Settings | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const [status, setStatus] = useState<McpStatus | string | null>(null);
+  const [status, setStatus] = useState<McpStatus | { text: string; detail: string | null } | null>(null);
 
   useEffect(() => {
     api.getSettings().then(setS, (e) => setMsg(errText(e)));
   }, []);
 
   const checkStatus = () => {
-    setStatus("확인 중…");
-    api.status().then(setStatus, (e) => setStatus(errText(e)));
+    setStatus({ text: "확인 중…", detail: null });
+    api.status().then(setStatus, (e) => setStatus({ text: errText(e), detail: errDetail(e) }));
   };
 
   if (!s) return <p className="page-loading">{msg ?? "불러오는 중…"}</p>;
@@ -53,14 +54,14 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
         <label className="check">
           <input type="checkbox" checked={s.fake_recorder} onChange={(e) => setS({ ...s, fake_recorder: e.target.checked })} />
           <span>
-            개발용 가짜 녹음 (<code>--fake</code>) — 권한 없이 합성 신호로 녹음 흐름을 시험합니다
+            테스트용 모의 녹음 (가상 신호) — 마이크 권한 없이 녹음 과정을 시험합니다
           </span>
         </label>
         <label className="check">
           <input type="checkbox" checked={s.live_captions} onChange={(e) => setS({ ...s, live_captions: e.target.checked })} />
           <span>
-            녹음 중 실시간 자막 (미리보기) — 미리보기용 작은 모델로 말하는 동안 자막을 보여 줍니다. 녹음을 멈추면 정식 전사가 처음부터 다시 만들고, 실시간 자막은 저장하지
-            않습니다. 녹음하는 동안 메모리를 약 2 GB 더 씁니다 (16 GB 미만 Mac에서는 켜지지 않습니다). 다음 녹음부터 적용됩니다.
+            녹음 중 실시간 텍스트 변환 (미리보기) — 말하는 동안 내용을 바로 보여 줍니다. 녹음 종료 후 고품질 텍스트로 정돈되며, 실시간 변환 내용은 저장하지 않습니다.
+            녹음하는 동안 메모리를 약 2 GB 더 씁니다 (메모리 16 GB 미만 Mac에서는 켜지지 않습니다). 다음 녹음부터 적용됩니다.
           </span>
         </label>
         <div className="settings-actions">
@@ -68,7 +69,7 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
             저장
           </button>
           <button className="ghost-button" type="button" onClick={checkStatus}>
-            검색 서버 상태
+            스마트 검색 상태
           </button>
           {msg && <span className="field-hint">{msg}</span>}
         </div>
@@ -76,15 +77,13 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
 
       {status && (
         <div className="status-box tnum">
-          {typeof status === "string" ? (
-            <p>{status}</p>
+          {"text" in status ? (
+            <div>
+              {status.text}
+              <ErrorDetail detail={status.detail} />
+            </div>
           ) : (
-            <>
-              <p>
-                회의 {status.meetings}개 · 색인 청크 {status.indexed_chunks}개 · 벡터 {status.vectors}개 · 의미 검색 {status.vector_search ? "켜짐" : "꺼짐"}
-              </p>
-              {status.hint && <p className="field-hint">{status.hint}</p>}
-            </>
+            <p>{statusLine(status)}</p>
           )}
         </div>
       )}
@@ -120,14 +119,15 @@ function VoicesSection({ home }: { home: string }) {
 
   return (
     <section className="voices" aria-labelledby="voices-title">
-      <h2 id="voices-title">목소리</h2>
+      <h2 id="voices-title">참석자 목소리 프로필</h2>
       <p className="field-hint">
-        회의 화면에서 화자 이름을 바꿀 때 ‘이 목소리 기억하기’를 고르면 등록됩니다. 다음 전사부터 비슷한 목소리에 이름을 <b>제안</b>만 하고, 확정은 직접 합니다. 목소리는
-        생체정보라 <code>{home.replace(/\/$/, "")}/voices.json</code>(이 Mac, 나만 읽을 수 있는 권한)에만 저장하고 이 Mac 밖으로 보내지 않습니다. 검색·요약·질문에도 쓰지 않습니다.
+        회의 화면에서 참석자 이름을 바꿀 때 ‘이 참석자 목소리 등록’을 고르면 등록됩니다. 다음 회의부터 비슷한 목소리에 이름을 <b>제안</b>만 하고, 맞는지는 직접 고릅니다.
+        목소리는 생체정보라 <code>{home.replace(/\/$/, "")}/voices.json</code>(이 Mac, 나만 읽을 수 있는 권한)에만 저장하고 이 Mac 밖으로 보내지 않습니다. 검색·요약·AI 질문에도 쓰지
+        않습니다.
       </p>
       {list?.needs_reenroll && (
         <p className="record-warning" role="status">
-          목소리 인식 모델이 바뀌어 지금 등록된 목소리로는 맞춰 보지 않습니다. 다시 등록하세요.
+          목소리 인식 방식이 바뀌어 지금 등록된 목소리로는 참석자를 알아보지 않습니다. 다시 등록하세요.
         </p>
       )}
       {list && list.people.length === 0 && <p className="voices-empty">아직 등록한 목소리가 없습니다.</p>}
@@ -149,7 +149,7 @@ function VoicesSection({ home }: { home: string }) {
       {asking && (
         <div className="speakers-confirm" role="alertdialog" aria-label="목소리 삭제">
           <p>
-            <b>{asking.name}</b>의 목소리 표본 {asking.samples}개를 지웁니다. 회의에 붙인 이름은 그대로 남고, 새로 전사하는 회의부터 이 사람을 제안하지 않습니다.
+            <b>{asking.name}</b>의 목소리 표본 {asking.samples}개를 지웁니다. 회의에 붙인 이름은 그대로 남고, 다음 회의부터 이 사람을 제안하지 않습니다.
           </p>
           <button className="primary-button" onClick={() => void forget(asking)} disabled={busy} autoFocus>
             지우기

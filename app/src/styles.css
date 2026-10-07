@@ -2402,11 +2402,6 @@ pre.inline-error {
   white-space: nowrap;
 }
 
-.cite-raw {
-  font-size: var(--fs-xs);
-  color: var(--ink-3);
-}
-
 .ask-status {
   display: flex;
   gap: 8px;
@@ -2698,4 +2693,34 @@ pre.inline-error {
 
 [hidden] {
   display: none !important;
+}
+
+/* 오류의 원래 문구 (WORDS.md §4.7): 접힌 '자세히' */
+.error-detail {
+  margin-top: 6px;
+  font-size: var(--fs-xs);
+}
+
+.error-detail summary {
+  width: fit-content;
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.error-detail pre {
+  margin: 6px 0 0;
+  max-height: 12em;
+  overflow: auto;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.toast-body {
+  display: grid;
+}
+
+.job-error {
+  margin: 14px 0;
+  font-size: var(--fs-sm);
 }

@@ -104,7 +104,7 @@ fn connect(spec: Spawn, id: u64) -> Result<Conn, String> {
     if let Some(cwd) = &spec.cwd {
         cmd.current_dir(cwd);
     }
-    let mut child = cmd.spawn().map_err(|e| format!("MCP 서버를 실행할 수 없습니다 ({}): {e}", spec.program.display()))?;
+    let mut child = cmd.spawn().map_err(|e| format!("스마트 검색을 시작하지 못했습니다 ({}): {e}", spec.program.display()))?;
     let stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let pending: Pending = Arc::default();
@@ -122,13 +122,13 @@ fn connect(spec: Spawn, id: u64) -> Result<Conn, String> {
         "clientInfo": {"name": "tractus-app", "version": env!("CARGO_PKG_VERSION")}
     }});
     let mut conn = Conn { spec, child, stdin, pending, alive };
-    send(&mut conn.stdin, &init).map_err(|e| format!("MCP initialize 실패: {e}"))?;
-    wait(rx).map_err(|e| format!("MCP initialize 실패: {e}"))?;
+    send(&mut conn.stdin, &init).map_err(|e| format!("스마트 검색을 시작하지 못했습니다: {e}"))?;
+    wait(rx).map_err(|e| format!("스마트 검색을 시작하지 못했습니다: {e}"))?;
     send(&mut conn.stdin, &json!({"jsonrpc": "2.0", "method": "notifications/initialized"})).map_err(|e| e.to_string())?;
     Ok(conn)
 }
 
-const DISCONNECTED: &str = "MCP 서버가 종료되었습니다";
+const DISCONNECTED: &str = "검색 엔진이 종료되었습니다. 다시 검색하면 새로 시작합니다";
 
 fn send(w: &mut impl Write, msg: &Value) -> std::io::Result<()> {
     let mut line = serde_json::to_vec(msg)?;
@@ -140,7 +140,7 @@ fn send(w: &mut impl Write, msg: &Value) -> std::io::Result<()> {
 fn wait(rx: std::sync::mpsc::Receiver<Result<Value, String>>) -> Result<Value, String> {
     match rx.recv_timeout(CALL_TIMEOUT) {
         Ok(r) => r,
-        Err(RecvTimeoutError::Timeout) => Err("MCP 서버 응답 시간이 초과되었습니다".into()),
+        Err(RecvTimeoutError::Timeout) => Err("검색 응답이 너무 늦습니다. 잠시 후 다시 시도하세요".into()),
         Err(RecvTimeoutError::Disconnected) => Err(DISCONNECTED.into()),
     }
 }
@@ -156,7 +156,7 @@ fn read_loop(reader: impl BufRead, pending: &Pending, alive: &AtomicBool) {
             continue;
         }
         let result = match msg.get("error") {
-            Some(err) => Err(err.get("message").and_then(Value::as_str).unwrap_or("MCP 오류").to_string()),
+            Some(err) => Err(err.get("message").and_then(Value::as_str).unwrap_or("검색 중 오류가 났습니다").to_string()),
             None => Ok(msg.get("result").cloned().unwrap_or(Value::Null)),
         };
         if let Some(tx) = pending.lock().unwrap().remove(&id) {
@@ -259,6 +259,6 @@ for line in sys.stdin:
     #[test]
     fn missing_binary_is_clear_error() {
         let c = McpClient::new(Spawn { program: "/nonexistent/tractus".into(), args: vec![], env: vec![], cwd: None });
-        assert!(c.call_tool("status", json!({})).unwrap_err().contains("실행할 수 없습니다"));
+        assert!(c.call_tool("status", json!({})).unwrap_err().contains("스마트 검색을 시작하지 못했습니다"));
     }
 }

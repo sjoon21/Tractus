@@ -96,7 +96,7 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 | `memos.json` | 녹음 중 메모·북마크 `[{"t": 초, "kind": "memo"\|"bookmark", "text": str\|null}]`. `transcript.md`에도 시각 순으로 끼워 넣는다 |
 | `tractus transcribe --recording <dir>` | `recording.json`의 트랙들을 FFmpeg `amix`로 섞어 전사한다. `marks`는 `memos.json`으로 옮긴다. 성공하면 녹음 폴더를 지운다(`--keep-tracks`면 회의 폴더의 `tracks/`로 옮김). 회의 시각은 `started_at` |
 | `--progress-json` | `transcribe`·`summarize`가 stdout에 JSON Lines를 출력한다. 사람용 출력은 원래대로 stderr로 보낸다 |
-| 화자 분리 (2026-10-04) | `transcribe`가 VAD 다음에 화자 분리를 한다(기본 켜짐, `--no-diarize`로 끔, `--max-speakers N`으로 상한. v3.15부터 상한 없음, Nemotron은 8명까지). 엔진은 `--diarizer auto|nemotron|fluid`(기본 auto: Nemotron이 8명을 모두 쓰면 Swift 헬퍼 `tractus-diar`로 다시 나눈다. 앱은 넘기지 않으므로 auto). 라벨은 `S1`…`Sn`이고 n은 8을 넘을 수 있다(앱 화자 색은 16칸: 잉크 8개, 9번째 슬롯부터 같은 잉크에 속 빈 점·빗금 막대, 16명이 넘으면 겹친다). `transcript.json` schema_version 2: `segments[].speaker`(`"S1"`… 또는 null), 최상위 `speakers: {"S1": {"name": null}}`, `diarization`(끄거나 모델이 없으면 null). 표시 이름 = `name`, 없으면 라벨, `speaker`가 null이면 md·vtt에 표시 안 함(앱은 화자 있는 회의에서 "화자 미상" 칩으로 보여 주고 화자를 고를 수 있게 한다). schema_version 1 회의는 `speakers`가 없다 (ARCHITECTURE.md §6) |
+| 화자 분리 (2026-10-04) | `transcribe`가 VAD 다음에 화자 분리를 한다(기본 켜짐, `--no-diarize`로 끔, `--max-speakers N`으로 상한. v3.15부터 상한 없음, Nemotron은 8명까지). 엔진은 `--diarizer auto|nemotron|fluid`(기본 auto: Nemotron이 8명을 모두 쓰면 Swift 헬퍼 `tractus-diar`로 다시 나눈다. 앱은 넘기지 않으므로 auto). 라벨은 `S1`…`Sn`이고 n은 8을 넘을 수 있다(앱 화자 색은 16칸: 잉크 8개, 9번째 슬롯부터 같은 잉크에 속 빈 점·빗금 막대, 16명이 넘으면 겹친다). `transcript.json` schema_version 2: `segments[].speaker`(`"S1"`… 또는 null), 최상위 `speakers: {"S1": {"name": null}}`, `diarization`(끄거나 모델이 없으면 null). 표시 이름 = `name`, 없으면 라벨, `speaker`가 null이면 md·vtt에 표시 안 함(앱은 화자 있는 회의에서 "알 수 없음" 참석자 칩으로 보여 주고 참석자를 고를 수 있게 한다). schema_version 1 회의는 `speakers`가 없다 (ARCHITECTURE.md §6) |
 | `tractus speakers` | 화자 편집. transcript.json을 고치고 md·vtt를 다시 쓴 뒤 검색 색인을 갱신한다. 오디오는 건드리지 않는다. 아래 §2.1 |
 | 표시 텍스트 (Phase 5) | 어디서나 `corrected_text`가 null이 아니면 그것, 아니면 `text`(코어 `store.seg_text`). md·vtt·요약 프롬프트·MCP·색인·CLI 검색·내보내기가 모두 따른다. 앱도 같은 규칙으로 표시한다 |
 | `tractus segments` | 텍스트 편집. 아래 §2.2 |
@@ -114,24 +114,45 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 {"event":"stage","stage":"decode"}            // decode | vad | diarize | voices | encode | load_model | transcribe | align | index | summarize
 {"event":"progress","done":37,"total":145}
 {"event":"stage","stage":"diarize","engine":"nemotron"}       // engine: nemotron | fluid. auto가 다시 나누면 diarize가 두 번 (nemotron → fluid)
-{"event":"warning","code":"diarizer_missing","message":"…"}   // 화자 분리 모델이 없음 → 화자 없이 계속 (diarizer_failed: 실패 → 화자 없이 계속. fluid가 실패했으면 Nemotron 결과로 계속)
+{"event":"warning","code":"diarizer_missing","message":"…"}   // 화자 분리 모델이 없음 → 화자 없이 계속 (diarizer_failed: 실패 → 화자 없이 계속, --diarizer fluid 실패면 Nemotron으로 계속. diarizer_cap_failed: auto의 9명 이상 재시도(fluid)만 실패 → Nemotron 결과(8명)로 계속)
 {"event":"warning","code":"diarizer_cap","message":"…"}       // auto: 8명을 모두 썼지만 tractus-diar 헬퍼나 모델이 없음 → Nemotron 결과(8명)로 계속. message에 빌드·받기 명령
 {"event":"warning","code":"fluid_missing","message":"…"}      // --diarizer fluid인데 헬퍼나 모델이 없음 → Nemotron으로 계속
 {"event":"warning","code":"aligner_missing","message":"…"}    // 단어 정렬 모델이 없음 → words null로 완료 (aligner_failed: 실패 → words null로 완료)
 {"event":"warning","code":"voices_model_missing","message":"…"} // 등록된 목소리가 있는데 모델이 없음 → 제안 없이 계속 (voices_failed: 실패 → 제안 없이 계속)
 {"event":"warning","code":"duplicate","message":"…"}           // 이미 전사된 파일 → 바로 기존 회의의 done이 이어진다 (종료 코드 0)
 {"event":"done","meeting_id":"01K…","meeting_dir":"/…/meetings/2026-10-02_…"}
-{"event":"error","message":"…"}               // 종료 코드 1
+{"event":"error","message":"…","code":"audio_failed"}   // 종료 코드 1 (중단은 130). code는 있을 때만
 ```
+
+- **`error`의 `code`(선택, 2026-10-07).** 앱은 `code`를 WORDS.md §4.7의 문장으로 바꾸고 `message`는 `자세히`에 접는다. `code`가 있는 `message`는 CLI용이라 기술적일 수 있다. `code`가 없으면 작업별 기본 문장을 보인다. 코어가 내는 코드:
+
+  | 코드 | 명령 | 언제 |
+  | --- | --- | --- |
+  | `model_missing` | transcribe, live, align | ASR·VAD·단어 정렬 모델이 없음 (`message`에 `hf download …`) |
+  | `audio_failed` | transcribe, align | ffmpeg가 오디오를 읽지 못함, 소리 없는 파일 |
+  | `ffmpeg_missing` | transcribe, align | ffmpeg가 설치되지 않음 (`brew install ffmpeg`) |
+  | `recording_missing` | transcribe `--recording` | `recording.json`을 읽지 못함, 녹음된 트랙이 없음 |
+  | `interrupted` | transcribe | 전사 중 중단 (종료 코드 130, 같은 명령으로 이어하기) |
+  | `incomplete` | transcribe | 전사되지 않은 청크가 남아 transcript.json을 쓰지 못함 |
+  | `align_interrupted` | transcribe | 단어 정렬 중 중단. 전사는 저장됨 (종료 코드 130) |
+  | `no_segments` | summarize | 세그먼트가 없음 |
+  | `llm_config` | summarize, ask | 공급자·키·모델 설정이 없거나 잘못됨 |
+  | `llm_local_only` | summarize, ask | `TRACTUS_LOCAL_ONLY`인데 원격 공급자 |
+  | `llm_api` | summarize, ask | API 호출 실패 (`openai.APIError`) |
+  | `llm_invalid` | summarize, ask | 요약 응답이 2회 연속 검증 실패(`message`는 짧은 문장, 원문은 stderr), 질의 답이 빔 |
+  | `live_low_memory` | live | 메모리 16GB 미만, `--force` 없음 |
+  | `live_failed` | live | 녹음 파일·WAV 형식 오류 등으로 실시간 전사를 멈춤 |
+
+  회의를 찾지 못한 오류(`resolve_meeting`)와 ask의 입력 오류에는 `code`가 없다.
 
 - `diarize` 단계는 모델이 있을 때만 나온다(84분 회의 약 14초, fluid는 90분 약 22초). auto가 fluid로 다시 나누면 `engine`만 다른 `diarize`가 한 번 더 나온다. 이어하기에서는 다시 하지 않는다(처음 쓴 엔진이 `.job.json`에 남는다).
 - `voices` 단계는 등록된 목소리가 있고 화자 분리를 했을 때만 나온다(화자당 구간 3개 임베딩, onnxruntime CPU). 등록된 사람이 없으면 단계도 경고도 없다. 이어하기에서는 다시 하지 않는다.
 - `align` 단계는 `transcribe` 다음, `index` 전에 나온다(모델이 있고 `--no-align`이 아닐 때). `progress`는 세그먼트 단위다(`done`/`total`). 44.7분 회의 약 66초.
-- `align` 중에 중단하면 전사는 이미 저장돼 있다. `error` 메시지에 `tractus align <id>` 안내가 있고 종료 코드는 130이다.
+- `align` 중에 중단하면 전사는 이미 저장돼 있다. `error`(`code: align_interrupted`) 메시지에 `tractus align <id>` 안내가 있고 종료 코드는 130이다.
 - `warning`은 종료가 아니다. 앱은 `message`를 알림으로 보여 주고 진행을 계속 표시한다.
 - `transcribe`는 첫 이벤트로 `{"event":"stage","stage":"decode"}`를 낸다. 큰 파일의 SHA-256 계산(중복 확인)보다 먼저 나온다.
-- 이미 전사된 파일이면 `stage(decode)` → `warning(duplicate)` → `done`(기존 회의의 `meeting_id`·`meeting_dir`) 순서다. 앱은 화면을 바꾸지 않고 "이미 전사한 파일입니다" 알림에 **열기**를 붙인다(고치던 문장을 잃지 않게).
-- 오디오 트랙이 없는 동영상은 `{"event":"error","message":"오디오 트랙이 없습니다 (소리 없는 동영상인지 확인하세요): …"}`, 종료 코드 1.
+- 이미 전사된 파일이면 `stage(decode)` → `warning(duplicate)` → `done`(기존 회의의 `meeting_id`·`meeting_dir`) 순서다. 앱은 화면을 바꾸지 않고 "이미 텍스트로 변환한 파일입니다" 알림에 **열기**를 붙인다(고치던 문장을 잃지 않게).
+- 오디오 트랙이 없는 동영상은 `{"event":"error","message":"음성 파일을 읽지 못했습니다: 소리가 없는 파일입니다. 소리 없는 동영상인지 확인하세요: …","code":"audio_failed"}`, 종료 코드 1.
 
 ### 2.1 `tractus speakers <회의>` (화자 편집)
 
@@ -140,10 +161,10 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 | 명령 | 동작 |
 | --- | --- |
 | `tractus speakers <회의> list --json` | 아래 JSON 한 줄을 stdout에 출력 |
-| `tractus speakers <회의> rename S1 "김민수"` | 이름 지정. `""`이면 이름을 지운다. `` []<>*_`\ `` 문자는 빠지고, `S2`처럼 라벨 모양인 이름은 exit 1 |
+| `tractus speakers <회의> rename S1 "김민수"` | 이름 지정. `""`이면 이름을 지운다. `` []<>*_`\ `` 문자는 빠지고, `S2`·`참석자 2`처럼 자동 이름 모양인 이름은 exit 1 |
 | `tractus speakers <회의> set s0012 S2` | 세그먼트 하나의 화자 변경. `S2` 대신 `new`면 다음 라벨(예: `S4`)을 만든다 |
 | `tractus speakers <회의> merge S3 S1` | S3의 세그먼트를 모두 S1으로 옮기고 S3을 없앤다. S1에 이름이 없으면 S3의 이름을 이어받는다. S3의 목소리 제안은 사라진다 |
-| `tractus speakers <회의> dismiss S1` | 목소리 제안을 지운다(앱의 '아님'). 제안을 받아들이는 '확정'은 제안된 이름으로 `rename`한다. rename은 언제나 제안을 지운다 |
+| `tractus speakers <회의> dismiss S1` | 목소리 제안을 지운다(앱의 '다름'). 제안을 받아들이는 '맞음'은 제안된 이름으로 `rename`한다. rename은 언제나 제안을 지운다 |
 
 세그먼트가 하나도 남지 않은 라벨은 `speakers`에서 지워진다.
 
@@ -175,20 +196,20 @@ stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없
 
 ### 2.3 `tractus glossary add <용어> [<용어>…]`
 
-`$TRACTUS_HOME/glossary.md`에 `- 용어` 줄로 덧붙인다(없으면 짧은 머리말과 함께 만든다). 앞뒤 공백을 지우고, 빈 값과 이미 있는 용어(대소문자 구분)는 건너뛴다. stdout: `{"added":N}`. 용어가 `-`로 시작할 수 있으므로 앱은 `tractus glossary add -- <용어>…`처럼 `--`를 앞에 둔다. 다음 전사부터 hotwords로 들어간다.
+`$TRACTUS_HOME/glossary.md`에 `- 용어` 줄로 덧붙인다(없으면 머리말 `# 자주 쓰는 단어`와 안내 한 줄로 만든다). 앞뒤 공백을 지우고, 빈 값과 이미 있는 용어(대소문자 구분)는 건너뛴다. stdout: `{"added":N}`. 용어가 `-`로 시작할 수 있으므로 앱은 `tractus glossary add -- <용어>…`처럼 `--`를 앞에 둔다. 다음 전사부터 hotwords로 들어간다.
 
 ### 2.4 `tractus export <회의> --format <형식> --out <경로> [--force]`
 
-파일을 쓰고 stdout에 `{"path":"<절대 경로>"}`를 출력한다. `--out`이 이미 있으면 `--force`일 때만 덮어쓰고, 아니면 종료 코드 1이다. 모든 형식이 화자는 표시 이름, 본문은 `corrected_text ?? text`를 쓴다.
+파일을 쓰고 stdout에 `{"path":"<절대 경로>"}`를 출력한다. `--out`이 이미 있으면 `--force`일 때만 덮어쓰고, 아니면 종료 코드 1이다. 모든 형식이 화자는 `store.speaker_display`(이름, 없으면 `S3` → `참석자 3`, 화자를 모르면 비움), 본문은 `corrected_text ?? text`를 쓴다. transcript.md·vtt도 같다.
 
 | 형식 | 내용 |
 | --- | --- |
-| `txt` | 제목, `날짜 시각 · 길이` 줄, 빈 줄, 그다음 `[HH:MM:SS] 화자: 문장` (화자를 모르면 `[HH:MM:SS] 문장`) |
+| `txt` | 제목, `날짜 시각 · 길이` 줄, 빈 줄, 그다음 `[HH:MM:SS] 참석자 1: 대화 내용` (화자를 모르면 `[HH:MM:SS] 대화 내용`) |
 | `md` | transcript.md와 같은 내용(메모·북마크 포함) + summary.md가 있으면 `---` 뒤에 붙인다 |
-| `srt` | 번호 큐, `HH:MM:SS,mmm --> HH:MM:SS,mmm`, 본문 `화자: 문장` |
+| `srt` | 번호 큐, `HH:MM:SS,mmm --> HH:MM:SS,mmm`, 본문 `참석자 1: 대화 내용` |
 | `vtt` | transcript.vtt와 같다 |
-| `csv` | UTF-8 BOM(utf-8-sig), 열 `시작,끝,화자,문장`, 시각은 `HH:MM:SS` |
-| `docx` | 제목, 일시·길이, 화자 목록, summary.json이 있으면 요약·결정 사항·할 일, 그다음 전사(시각 + **화자** + 문장). 한글 글꼴 `w:eastAsia = Apple SD Gothic Neo` |
+| `csv` | UTF-8 BOM(utf-8-sig), 열 `시작,끝,참석자,내용`, 시각은 `HH:MM:SS` |
+| `docx` | 제목, 일시·길이, `참석자 N명 (김민수, 참석자 2)`, summary.json이 있으면 요약·결정 사항·할 일, 그다음 제목 `대화 내용` 아래 시각 + **참석자** + 대화 내용. 한글 글꼴 `w:eastAsia = Apple SD Gothic Neo` |
 | `bundle` | 회의 폴더의 audio.ogg(또는 audio.opus), transcript.json/md/vtt, summary.md/json, memos.json 중 있는 것을 `<회의 폴더 이름>/…`로 묶은 zip. `tracks/`는 넣지 않는다 |
 
 ### 2.5 `tractus ask` (회의 질의, Phase 6)
@@ -219,13 +240,13 @@ stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없
 {"event":"stage","stage":"answer"}
 {"event":"delta","text":"3분기 총 예산은 "}             // 0개 이상. 스트리밍 원문 조각 (인용 정리 전)
 {"event":"done","answer":"3분기 총 예산은 … [s0012]","citations":[{"meeting_id":"01K…","segment_id":"s0012","start":176.6}],"provider":"upstage","model":"solar-pro4"}
-{"event":"error","message":"…"}                          // 종료 코드 1
+{"event":"error","message":"…","code":"llm_api"}         // 종료 코드 1. code: llm_config | llm_local_only | llm_api | llm_invalid (입력 오류는 없음)
 {"event":"warning","code":"chat_save_failed","message":"…"}   // --save 저장 실패 (done 바로 앞). 답(done)은 그대로 나온다
 ```
 
 - **앱은 `done`의 `answer`로 스트리밍 텍스트를 바꿔 표시한다.** `done`에서 인용을 정리한다: 근거(`sources`)에 있는 ID만 `[s0012]` / `[<meeting_id>#s0012]` 하나씩으로 다시 쓰고(`[s0012, s0013]` → `[s0012][s0013]`), 근거에 없는 ID는 답에서 지운다. `citations`는 답에 남은 인용을 처음 나온 순서로 중복 없이 모은 것이다.
-- 근거에 답이 없으면 답은 `회의 기록에서 근거를 찾지 못했습니다.`(질문이 한국어가 아니면 같은 뜻의 질문 언어)이고 `citations`는 비어 있다. 전체 범위에서 검색 결과가 하나도 없으면 LLM을 부르지 않고 `sources: []` 다음에 바로 이 답으로 `done`을 낸다(`stage answer`·`delta` 없음).
-- 공급자 해석은 `summarize`와 같다(`--provider` > `TRACTUS_LLM_PROVIDER`, `TRACTUS_LOCAL_ONLY`, 키 없음 오류 메시지 동일). 이런 오류는 첫 이벤트로 `error`가 나온다. 앱은 보내기 전에 설정된 `TRACTUS_LLM_PROVIDER`로 "질문과 관련 전사 일부가 Upstage(solar-pro4)로 전송됩니다"를 표시한다. 실제로 답한 곳(`done`의 `provider`·`model`)은 각 답 아래에 적는다. 근거가 없어 LLM을 부르지 않은 `done`은 `provider`·`model`이 `null`이다(아무것도 보내지 않았으므로 전송 안내에 쓰지 않는다).
+- 근거에 답이 없으면 답은 `회의 내용에서 답을 찾지 못했습니다.`(질문이 한국어가 아니면 같은 뜻의 질문 언어)이고 `citations`는 비어 있다. 전체 범위에서 검색 결과가 하나도 없으면 LLM을 부르지 않고 `sources: []` 다음에 바로 이 답으로 `done`을 낸다(`stage answer`·`delta` 없음).
+- 공급자 해석은 `summarize`와 같다(`--provider` > `TRACTUS_LLM_PROVIDER`, `TRACTUS_LOCAL_ONLY`, 키 없음 오류 메시지 동일). 이런 오류는 첫 이벤트로 `error`가 나온다. 앱은 보내기 전에 설정된 `TRACTUS_LLM_PROVIDER`로 "질문과 관련 대화 일부가 Upstage(solar-pro4)로 전송됩니다"를 표시한다. 실제로 답한 곳(`done`의 `provider`·`model`)은 각 답 아래에 적는다. 근거가 없어 LLM을 부르지 않은 `done`은 `provider`·`model`이 `null`이다(아무것도 보내지 않았으므로 전송 안내에 쓰지 않는다).
 - **원격 공급자로는 질문, history, `sources`의 텍스트만 보낸다.** 오디오, 요약, 다른 회의 전사는 보내지 않는다.
 - 취소: 앱은 자식 프로세스를 종료한다. `chat.json`은 `done`을 내보내기 직전에 원자적으로 쓰므로, 답 도중에 끊으면 기록이 바뀌지 않고 `done`을 받았다면 이미 저장돼 있다.
 
@@ -251,7 +272,7 @@ stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없
 ```
 
 - 정렬할 세그먼트가 없으면 모델을 올리지 않고 바로 끝난다(`skipped` = 세그먼트 수).
-- 모델이 없으면 `error`(메시지에 `hf download … --revision … --local-dir …`), 종료 코드 1.
+- 모델이 없으면 `error`(`code: model_missing`, 메시지에 `hf download … --revision … --local-dir …`), 종료 코드 1.
 - **정렬하는 동안 앱에서 고친 세그먼트는 덮어쓰지 않는다.** 저장 직전에 transcript.json을 다시 읽고, 표시 텍스트가 정렬을 시작할 때와 같은 세그먼트에만 `words`를 쓴다. 나머지는 `skipped`로 센다. `transcribe`의 align 단계도 같은 방식으로 저장한다(transcript.json이 생긴 뒤라 그 사이에 회의를 편집할 수 있다).
 - `failed`는 정렬에 실패한 세그먼트다(60초 초과, 모델 단어 수 불일치, 모두 길이 0). `words`는 null로 남고 앱은 세그먼트 단위로 이동한다.
 
@@ -283,9 +304,9 @@ transcript.json의 제안 (ARCHITECTURE.md §6):
 "speakers": {"S2": {"name": null, "suggested": {"person_id": "01K…", "name": "홍길동", "score": 0.82}}}
 ```
 
-- `name`은 언제나 **사용자가 확정한 이름**이다. 제안은 이름이 없는 화자에만 있다. 앱은 배지 "홍길동? · 자동 인식 82%"(`score` × 100, 반올림)와 **확정**(→ `speakers rename S2 홍길동`)·**아님**(→ `speakers dismiss S2`)을 보여 준다.
+- `name`은 언제나 **사용자가 확정한 이름**이다. 제안은 이름이 없는 화자에만 있다. 앱은 배지 "홍길동 님인가요? (일치율 82%)"(`score` × 100, 반올림)와 **맞음**(→ `speakers rename S2 홍길동`)·**다름**(→ `speakers dismiss S2`)을 보여 준다.
 - 표시 이름은 제안을 쓰지 않는다(`S2`). md·vtt·요약·MCP·색인·내보내기도 같다. `bundle`의 transcript.json에는 `suggested`가 없다.
-- 등록은 앱의 이름 바꾸기 대화상자에서 '이 목소리 기억하기'와 동의 확인("본인이거나 녹음·등록에 동의를 받은 사람입니다")을 둘 다 체크했을 때만 `voices enroll --consent`로 한다(이름 바꾸기도 같이 된다).
+- 등록은 앱의 이름 바꾸기 대화상자에서 '이 참석자 목소리 등록 (다음 회의에서 자동 인식)'과 동의 확인("본인이거나 녹음·등록에 동의를 받은 사람입니다")을 둘 다 체크했을 때만 `voices enroll --consent`로 한다(이름 바꾸기도 같이 된다).
 - 모델 파일: `$TRACTUS_MODELS_DIR/3dspeaker-campplus-zh-en/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx`. sha256이 다르면 오류(다른 모델의 벡터와 비교하지 않게).
 
 ### 2.8 `tractus live` (실시간 자막, Phase 7.2)
@@ -297,11 +318,11 @@ tractus live --recording <녹음 폴더> [--progress-json] [--speakers] [--force
 녹음하는 동안 자막을 **미리보기로만** 보여 준다. Qwen3-ASR 0.6B로 발화마다 전사하고 아무것도 저장하지 않는다. 정식 전사는 녹음을 멈춘 뒤 지금처럼 `transcribe --recording`이 만든다 (ARCHITECTURE.md §2.6).
 
 - **입력:** tractus-rec가 쓰는 중인 `<dir>`. `recording.json`의 `tracks`를 읽는다. 아직 없으면 5초까지 기다리고, 끝내 없으면 있는 `mic.wav`·`system.wav`를 쓴다. 둘 다 없으면 `error`다. 트랙이 여럿이면 표본 위치끼리 더해 자른다(배치 전사의 amix normalize=0과 같다).
-- **앱 실행:** 설정 "녹음 중 실시간 자막 (미리보기)"을 켰을 때만 녹음이 시작되면 띄운다. argv로 실행하고(셸 없이) `TYPER_USE_RICH=0`을 준다. `<dir>`은 그 녹음의 폴더다. 회의를 여는 job으로 세지 않는다.
+- **앱 실행:** 설정 "녹음 중 실시간 텍스트 변환 (미리보기)"을 켰을 때만 녹음이 시작되면 띄운다. argv로 실행하고(셸 없이) `TYPER_USE_RICH=0`을 준다. `<dir>`은 그 녹음의 폴더다. 회의를 여는 job으로 세지 않는다.
 - **정지:** stdin `stop` 줄, stdin EOF, SIGTERM이면 남은 오디오를 마무리하고 `done`을 낸 뒤 종료 코드 0으로 끝난다(실측 0.2초, 상한 약 2초). 앱은 녹음을 멈출 때 먼저 `stop`을 보내고 끝나기를 기다린다(5초 넘으면 kill). 그다음 지금과 같이 `transcribe --recording`을 시작한다. 앱이 죽으면 stdin EOF로 같이 끝난다.
-- **메모리:** 물리 메모리 16GB 미만이면 `--force` 없이는 `error`, 종료 코드 1이다. 1.7B는 올리지 않는다(실측 최대 footprint 1.8GB).
+- **메모리:** 물리 메모리 16GB 미만이면 `--force` 없이는 `error`(`code: live_low_memory`), 종료 코드 1이다. 1.7B는 올리지 않는다(실측 최대 footprint 1.8GB).
 - **화자:** 기본은 `speaker: null`이다. `--speakers`를 주면 Nemotron 스트리밍으로 `"S1"`…을 붙인다. 미리보기 안에서만 쓰는 라벨이라 최종 전사의 라벨과 다를 수 있다. GPU 사용률 증가분이 약 세 배가 되므로 앱은 쓰지 않는다(ARCHITECTURE.md §2.6).
-- 모델(`silero-vad-v6`, `qwen3-asr-0.6b-8bit`)이 없으면 `error`(메시지에 `hf download …`), 종료 코드 1.
+- 모델(`silero-vad-v6`, `qwen3-asr-0.6b-8bit`)이 없으면 `error`(`code: model_missing`, 메시지에 `hf download …`), 종료 코드 1.
 
 이벤트 (stdout JSON Lines):
 
@@ -312,7 +333,7 @@ tractus live --recording <녹음 폴더> [--progress-json] [--speakers] [--force
 {"event":"live","kind":"final","id":"l0001","start":12.34,"end":16.02,"text":"오늘 회의는 다음 분기 예산 검토입니다.","speaker":null}
 {"event":"warning","code":"live_lagging","message":"…"}  // 녹음을 따라가지 못해 밀린 구간을 건너뜀 (한 번만). 녹음·정식 전사에는 영향 없음
 {"event":"done","stats":{"audio_sec":68.2,"asr_sec":8.1,"asr_rtf":0.119,"asr_calls":41,"finals":14,"partials":27,"skipped_partials":0,"peak_memory_gb":1.68}}
-{"event":"error","message":"…"}           // 종료 코드 1
+{"event":"error","message":"…","code":"live_failed"}   // 종료 코드 1. code: live_low_memory | model_missing | live_failed
 ```
 
 - `start`·`end`는 녹음 시작 기준 초(소수 둘째 자리)다. `id`는 발화마다 `l0001`부터 늘어난다(버린 발화는 번호를 쓰지 않는다).
@@ -325,7 +346,7 @@ tractus live --recording <녹음 폴더> [--progress-json] [--speakers] [--force
 ## 3. Tauri 앱 (app/)
 
 - **스택:** Tauri 2 + React + TypeScript + Vite. 오디오는 자체 `media://` URI 스킴(`convertFileSrc(path, "media")`, MIME `audio/ogg`, HTTP Range 지원, `TRACTUS_HOME` 밖 경로 거부)으로 `<audio>`에 연결한다. Tauri 기본 asset protocol은 `.ogg`/`.opus`의 MIME과 Range 처리가 맞지 않아 쓰지 않는다(`app/README.md`).
-- **남은 녹음:** `recordings/<ULID>/recording.json`이 남아 있는 폴더는 "전사 안 된 녹음"으로 보여 준다. 코어는 전사에 **성공했을 때만** 녹음 폴더를 지운다(앱이 강제 종료되거나 전사가 실패해도 녹음은 남는다).
+- **남은 녹음:** `recordings/<ULID>/recording.json`이 남아 있는 폴더는 "변환 대기 중인 녹음"으로 보여 준다. 코어는 전사에 **성공했을 때만** 녹음 폴더를 지운다(앱이 강제 종료되거나 전사가 실패해도 녹음은 남는다).
 - **API 키·모델 위치:** 코어는 현재 폴더에 이어 `$TRACTUS_HOME/.env` / `.env.local`도 읽는다. 저장소 밖에 설치한 앱은 `$TRACTUS_HOME/.env.local`에 `UPSTAGE_API_KEY`, `TRACTUS_MODELS_DIR` 등을 둔다.
 - **설정:** `TRACTUS_HOME`(기본 `~/Tractus`), `TRACTUS_MODELS_DIR`, `tractus` 실행 파일 경로(기본: 저장소 `.venv/bin/tractus`), `tractus-rec` 경로. GUI 앱은 셸 PATH를 물려받지 않으므로 절대 경로로 둔다.
 - **데이터:** 회의 목록·전사·요약·메모는 Rust에서 파일을 직접 읽는다. 검색만 상주 `tractus mcp`의 `search_meetings`로 한다(색인·임베딩 모델을 매번 올리지 않으려고).

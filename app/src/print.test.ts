@@ -24,14 +24,14 @@ describe("PDF 인쇄 문서", () => {
     expect(d.title).toBe("주간 개발 회의");
     expect(d.date).toBe("2026년 10월 2일 (금) 14:05");
     expect(d.duration).toBe("1:02:03");
-    expect(d.speakers).toEqual(["김민수", "S2"]);
+    expect(d.speakers).toEqual(["김민수", "참석자 2"]);
   });
   test("전사: 시각 + 발언이 바뀔 때만 화자 + 고친 문장", () => {
     expect(printDoc(base).rows).toEqual([
       { id: "s0001", time: "0:00", speaker: "김민수", text: "시작합니다" },
       { id: "s0002", time: "0:10", speaker: null, text: "예산은 3억 원" },
-      { id: "s0003", time: "5:31", speaker: "S2", text: "동의합니다" },
-      { id: "s0004", time: "5:40", speaker: "화자 미상", text: "누군가" },
+      { id: "s0003", time: "5:31", speaker: "참석자 2", text: "동의합니다" },
+      { id: "s0004", time: "5:40", speaker: "알 수 없음", text: "누군가" },
     ]);
   });
   test("요약: 항목마다 가장 이른 근거 시각, 근거 없으면 null", () => {

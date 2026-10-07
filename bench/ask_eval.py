@@ -13,8 +13,8 @@
   precision       답의 인용 중 정답(gold) 또는 허용(ok) 세그먼트 비율 (답이 있는 질문, micro)
   recall          정답 세그먼트 중 답에 인용된 비율 (micro)
   hit             정답 세그먼트를 하나 이상 인용한 질문 비율
-  refused         답이 있는데 '근거를 찾지 못했다'고 한 비율
-  no_evidence     답이 없는 질문에서 '근거를 찾지 못했다' + 인용 0개로 답한 비율
+  refused         답이 있는데 NO_EVIDENCE('회의 내용에서 답을 찾지 못했습니다')로 답한 비율
+  no_evidence     답이 없는 질문에서 NO_EVIDENCE + 인용 0개로 답한 비율
   latency         첫 delta까지(TTFT)와 전체 시간의 p50 / 최대 (초)
 """
 
@@ -37,7 +37,7 @@ from tractus.index import Index  # noqa: E402
 from tractus.llm import make_client, resolve_provider  # noqa: E402
 
 EVAL = ROOT / "tests" / "fixtures" / "eval"
-REFUSAL = "근거를 찾지 못했"
+REFUSAL = qa.NO_EVIDENCE.rstrip(".")  # 답이 없을 때의 고정 문구 (마침표만 빼고 비교)
 
 
 def pairs(gold) -> set[tuple[str, str]]:

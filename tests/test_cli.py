@@ -109,7 +109,7 @@ def test_unreadable_audio_exits_with_message(env, fake_asr, tmp_path):
     bad = tmp_path / "bad.m4a"
     bad.write_bytes(b"not audio")
     result = run(bad)
-    assert result.exit_code == 1 and "오디오 처리 실패" in result.output
+    assert result.exit_code == 1 and "음성 파일을 읽지 못했습니다" in result.output
 
 
 def test_summarize_writes_summary_files(env, fake_asr, monkeypatch):
@@ -165,6 +165,22 @@ def test_error_text_with_brackets_is_printed_verbatim(env, fake_asr, monkeypatch
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
     result = CliRunner().invoke(cli.app, ["summarize", str(d), "--provider", "upstage"])
     assert result.exit_code == 1 and "[type=missing" in result.output
+
+
+def test_summarize_invalid_llm_reply_emits_code_and_keeps_detail_on_stderr(env, fake_asr, monkeypatch):
+    home, wav = env
+    assert run(wav).exit_code == 0
+    (d,) = (home / "meetings").iterdir()
+
+    def boom(*a, **k):
+        raise cli.LLMError("upstage/m 응답이 2회 연속 검증에 실패했습니다: 전사에 없는 segment_ids: ['s0099']", code="llm_invalid")
+
+    monkeypatch.setattr(cli.summ, "summarize", boom)
+    monkeypatch.setattr(cli, "make_client", lambda p: None)
+    monkeypatch.setenv("UPSTAGE_API_KEY", "k")
+    result = CliRunner().invoke(cli.app, ["summarize", str(d), "--provider", "upstage", "--progress-json"])
+    assert result.exit_code == 1 and "s0099" in result.stderr
+    assert events(result.stdout)[-1] == {"event": "error", "message": "AI 응답이 형식에 맞지 않아 요약하지 못했습니다", "code": "llm_invalid"}
 
 
 def make_recording(tmp_path, marks=None):
@@ -261,7 +277,7 @@ def test_transcribe_diarizes_before_asr(env, fake_asr, fake_diar):
     t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
     assert [s["speaker"] for s in t["segments"]] == ["S1", "S2", "S1"]
     assert t["speakers"] == {"S1": {"name": None}, "S2": {"name": None}} and t["diarization"]["model"] == "fake"
-    assert "**S2**: 청크1" in (d / "transcript.md").read_text(encoding="utf-8")
+    assert "**참석자 2**: 청크1" in (d / "transcript.md").read_text(encoding="utf-8")
 
 
 def test_resume_does_not_rerun_diarization(env, fake_asr, fake_diar):
@@ -409,7 +425,7 @@ def test_auto_fluid_failure_keeps_nemotron(env, fake_asr, fake_diar, fake_fluid,
     nemotron_turns(monkeypatch, EIGHT)
     fake_fluid.fail = True
     _, _, warns = transcribe_json(wav)
-    assert warns[0] == "diarizer_failed"
+    assert warns[0] == "diarizer_cap_failed"  # 9명 이상 재시도만 실패: 8명 결과는 남는다
     t = diarization(home)
     assert t["diarization"]["model"] == "fake" and len(t["speakers"]) == 3  # 청크 3개에 Nemotron 라벨
 
@@ -487,7 +503,7 @@ def test_speakers_commands_rewrite_transcript_and_renders(env, fake_asr, fake_di
     assert not list(d.glob("*.tmp"))
 
     bad = speakers(ref, "merge", "S9", "S1")
-    assert bad.exit_code == 1 and "S9" in bad.output
+    assert bad.exit_code == 1 and "참석자를 찾지 못했습니다" in bad.output
     human = speakers(ref, "list")
     assert human.exit_code == 0 and "김민수" in human.output
 
@@ -527,7 +543,17 @@ def test_video_without_audio_reports_korean_error(env, fake_asr, tmp_path):
     result = CliRunner().invoke(cli.app, ["transcribe", str(mp4), "--progress-json"])
     assert result.exit_code == 1
     err = events(result.stdout)[-1]
-    assert err["event"] == "error" and "오디오 트랙이 없습니다" in err["message"]
+    assert err["event"] == "error" and err["code"] == "audio_failed" and "소리가 없는 파일입니다" in err["message"]
+
+
+def test_missing_ffmpeg_has_its_own_code(env, fake_asr, tmp_path, monkeypatch):
+    wav = tmp_path / "a.wav"
+    wav.write_bytes(b"RIFF")
+    monkeypatch.setattr(cli.audio.shutil, "which", lambda _: None)
+    result = CliRunner().invoke(cli.app, ["transcribe", str(wav), "--progress-json"])
+    assert result.exit_code == 1
+    err = events(result.stdout)[-1]
+    assert err["code"] == "ffmpeg_missing" and err["message"].startswith("음성 파일을 읽는 데 필요한 ffmpeg가 없습니다")
 
 
 # ── 목소리 프로필 (Phase 7.1) ─────────────────────────────────────────

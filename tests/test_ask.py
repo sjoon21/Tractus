@@ -248,12 +248,13 @@ def test_cli_ask_long_meeting_falls_back_to_retrieval(cli_env, monkeypatch):
 
 @pytest.mark.parametrize("setup, message", [
     (lambda m: m.delenv("UPSTAGE_API_KEY"), "UPSTAGE_API_KEY가 없습니다"),
-    (lambda m: m.setenv("TRACTUS_LOCAL_ONLY", "1"), "local_only"),
+    (lambda m: m.setenv("TRACTUS_LOCAL_ONLY", "1"), "로컬 전용 모드"),
 ])
 def test_cli_ask_reports_provider_errors(cli_env, monkeypatch, setup, message):
     setup(monkeypatch)
     r, ev, _ = run_ask(monkeypatch, ["x"], '{"question": "예산"}', "--meeting", BUDGET[-6:])
-    assert r.exit_code == 1 and ev == [{"event": "error", "message": ev[0]["message"]}] and message in ev[0]["message"]
+    assert r.exit_code == 1 and ev == [{"event": "error", "message": ev[0]["message"], "code": ev[0]["code"]}] and message in ev[0]["message"]
+    assert ev[0]["code"] == ("llm_local_only" if "로컬" in message else "llm_config")
 
 
 def test_cli_ask_rejects_save_without_meeting_and_bad_input(cli_env, monkeypatch):

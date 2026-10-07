@@ -48,7 +48,7 @@ pub fn ask_input(question: &str, history: &[ChatMessage]) -> Result<String, Stri
         return Err("질문이 비어 있습니다".into());
     }
     if history.iter().any(|m| !matches!(m.role.as_str(), "user" | "assistant")) {
-        return Err("잘못된 대화 기록입니다".into());
+        return Err("잘못된 질문 기록입니다".into());
     }
     Ok(json!({ "question": question, "history": history }).to_string())
 }

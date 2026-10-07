@@ -20,7 +20,11 @@ TIMEOUT_S = 300
 
 
 class LLMError(RuntimeError):
-    pass
+    """code: 앱이 WORDS.md 문장으로 바꾸는 오류 코드 (llm_config | llm_local_only | llm_invalid)."""
+
+    def __init__(self, message: str, code: str = "llm_config"):
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -49,17 +53,17 @@ PROVIDERS = {
 def resolve_provider(name: str | None, model: str | None) -> tuple[Provider, str]:
     name = name or os.environ.get("TRACTUS_LLM_PROVIDER")
     if not name:
-        raise LLMError(f"공급자를 지정하세요: --provider 또는 TRACTUS_LLM_PROVIDER ({', '.join(PROVIDERS)})")
+        raise LLMError(f"AI 서비스를 지정하세요: --provider 또는 TRACTUS_LLM_PROVIDER ({', '.join(PROVIDERS)})")
     if name not in PROVIDERS:
-        raise LLMError(f"알 수 없는 공급자 {name!r}. 가능한 값: {', '.join(PROVIDERS)}")
+        raise LLMError(f"알 수 없는 AI 서비스 {name!r}. 가능한 값: {', '.join(PROVIDERS)}")
     provider = PROVIDERS[name]
     if local_only() and not provider.local:
-        raise LLMError(f"local_only 모드에서는 원격 공급자 {name}를 쓸 수 없습니다 (TRACTUS_LOCAL_ONLY)")
+        raise LLMError(f"로컬 전용 모드(TRACTUS_LOCAL_ONLY)에서는 외부 AI 서비스 {name}를 쓸 수 없습니다", code="llm_local_only")
     if provider.api_key_env and not os.environ.get(provider.api_key_env):
-        raise LLMError(f"{provider.api_key_env}가 없습니다. 저장소 루트의 .env.local에 넣거나 환경변수로 지정하세요")
+        raise LLMError(f"{provider.api_key_env}가 없습니다. .env.local에 넣거나 환경변수로 지정하세요")
     model = model or os.environ.get("TRACTUS_LLM_MODEL") or provider.default_model
     if not model:
-        raise LLMError(f"{name}는 기본 모델이 없습니다. --model 또는 TRACTUS_LLM_MODEL로 모델 ID를 지정하세요")
+        raise LLMError(f"{name}는 기본 AI 모델이 없습니다. --model 또는 TRACTUS_LLM_MODEL로 AI 모델 ID를 지정하세요")
     return provider, model
 
 
@@ -136,7 +140,7 @@ def complete_json(
                 {"role": "assistant", "content": text},
                 {"role": "user", "content": f"응답이 검증에 실패했습니다:\n{error}\n스키마와 조건에 맞는 JSON만 다시 출력하세요."},
             ]
-    raise LLMError(f"{provider.name}/{model} 응답이 2회 연속 검증에 실패했습니다: {error}")
+    raise LLMError(f"{provider.name}/{model} 응답이 2회 연속 검증에 실패했습니다: {error}", code="llm_invalid")
 
 
 def stream_chat(client, model: str, messages: list[dict]) -> Iterator[str]:

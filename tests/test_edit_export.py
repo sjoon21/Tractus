@@ -76,8 +76,8 @@ def test_segments_edit_writes_renders_and_syncs_without_embedding(meeting, monke
     segs = read_t(meeting)["segments"]
     assert [s["corrected_text"] for s in segs] == [None, "예산을 보겠습니다", None]  # s0001은 원문과 같아 교정 해제
     assert [s["text"] for s in segs] == ["안녕하세요", "예산, 보겠습니다", "마무리"] and segs[1]["words"] is None
-    assert "S2**: 예산을 보겠습니다" in (meeting / "transcript.md").read_text(encoding="utf-8")
-    assert "<v S2>예산을 보겠습니다" in (meeting / "transcript.vtt").read_text(encoding="utf-8")
+    assert "**참석자 2**: 예산을 보겠습니다" in (meeting / "transcript.md").read_text(encoding="utf-8")
+    assert "<v 참석자 2>예산을 보겠습니다" in (meeting / "transcript.vtt").read_text(encoding="utf-8")
     assert synced == [False] and not list(meeting.glob("*.tmp"))
 
 
@@ -97,7 +97,7 @@ def test_segments_edit_rejects_bad_input_and_writes_nothing(meeting, monkeypatch
 
 def test_segments_edit_unknown_id_names_it(meeting):
     r = invoke("segments", MID, "edit", input='{"edits": [{"id": "s9999", "text": "y"}]}')
-    assert r.exit_code == 1 and "s9999" in r.stderr
+    assert r.exit_code == 1 and r.stderr.strip().splitlines()[-1] == "해당 대화를 찾지 못했습니다. 회의를 다시 열어 주세요."
 
 
 # ── glossary add ────────────────────────────────────────────────────
@@ -127,7 +127,7 @@ def export(fmt, out, *extra):
 def test_export_txt_uses_display_names_and_corrected_text(meeting, tmp_path):
     lines = export("txt", tmp_path / "o.txt").read_text(encoding="utf-8").splitlines()
     assert lines[0] == "주간회의" and "2026-10-02 14:00" in lines[1] and "01:01:42" in lines[1]
-    assert lines[-3:] == ["[00:00:00] 김민수: 안녕하십니까", "[00:00:03] S2: 예산, 보겠습니다", "[01:01:40] 마무리"]
+    assert lines[-3:] == ["[00:00:00] 김민수: 안녕하십니까", "[00:00:03] 참석자 2: 예산, 보겠습니다", "[01:01:40] 마무리"]
 
 
 def test_export_md_appends_summary(meeting, tmp_path):
@@ -140,7 +140,7 @@ def test_export_srt_timing_and_vtt(meeting, tmp_path):
     srt = export("srt", tmp_path / "o.srt").read_text(encoding="utf-8")
     assert srt.startswith(
         "1\n00:00:00,000 --> 00:00:02,500\n김민수: 안녕하십니까\n\n"
-        "2\n00:00:03,000 --> 00:01:05,123\nS2: 예산, 보겠습니다\n\n"
+        "2\n00:00:03,000 --> 00:01:05,123\n참석자 2: 예산, 보겠습니다\n\n"
         "3\n01:01:40,500 --> 01:01:42,000\n마무리\n"
     )
     assert export("vtt", tmp_path / "o.vtt").read_text(encoding="utf-8") == render_vtt(read_t(meeting))
@@ -150,8 +150,8 @@ def test_export_csv_is_utf8_sig_with_korean_headers(meeting, tmp_path):
     raw = export("csv", tmp_path / "o.csv").read_bytes()
     assert raw.startswith(b"\xef\xbb\xbf")  # 한국어 Excel이 UTF-8로 연다
     rows = list(csv.reader(io.StringIO(raw.decode("utf-8-sig"))))
-    assert rows[0] == ["시작", "끝", "화자", "문장"]
-    assert rows[1:] == [["00:00:00", "00:00:02", "김민수", "안녕하십니까"], ["00:00:03", "00:01:05", "S2", "예산, 보겠습니다"], ["01:01:40", "01:01:42", "", "마무리"]]
+    assert rows[0] == ["시작", "끝", "참석자", "내용"]
+    assert rows[1:] == [["00:00:00", "00:00:02", "김민수", "안녕하십니까"], ["00:00:03", "00:01:05", "참석자 2", "예산, 보겠습니다"], ["01:01:40", "01:01:42", "", "마무리"]]
 
 
 def test_export_docx_roundtrip(meeting, tmp_path):
@@ -162,7 +162,7 @@ def test_export_docx_roundtrip(meeting, tmp_path):
     texts = [p.text for p in doc.paragraphs]
     assert texts[0] == "주간회의"
     body = "\n".join(texts)
-    assert "2026-10-02 14:00" in body and "01:01:42" in body and "김민수, S2" in body
+    assert "2026-10-02 14:00" in body and "01:01:42" in body and "참석자 2명 (김민수, 참석자 2)" in body and "대화 내용" in texts
     assert "예산을 검토했다." in body and "예산 동결" in body and "견적 받기 — 김민수, 금요일" in body
     line = next(p for p in doc.paragraphs if "안녕하십니까" in p.text)
     assert line.text == "00:00:00  김민수  안녕하십니까"
@@ -203,7 +203,7 @@ def test_long_error_stays_on_one_line_and_names_out(meeting, tmp_path):
     r = invoke("export", MID, "--format", "txt", "--out", out, "--force")
     assert r.exit_code == 1
     last = r.stderr.strip().splitlines()[-1]
-    assert last.startswith("내보내기 실패") and str(out) in last and ".tmp" not in last
+    assert last.startswith(str(out)) and last.endswith(")") and "에 저장할 수 없습니다" in last and ".tmp" not in last
 
 
 def test_control_chars_are_dropped_from_edits_and_names(meeting, monkeypatch):
@@ -219,7 +219,9 @@ def test_docx_export_error_is_one_line_not_traceback(meeting, tmp_path):
     t = read_t(meeting)
     save_transcript(meeting, {**t, "title": "제목\x01"})
     r = invoke("export", MID, "--format", "docx", "--out", tmp_path / "o.docx")
-    assert r.exit_code == 1 and "Traceback" not in r.output and r.stderr.strip().splitlines()[-1].startswith("내보내기 실패")
+    lines = r.stderr.strip().splitlines()
+    assert r.exit_code == 1 and "Traceback" not in r.output and lines[-1] == "제목이나 대화 내용에 쓸 수 없는 글자가 있습니다."
+    assert any(line.startswith("All strings must be XML compatible") for line in lines[:-1])  # 원인은 앞 줄 (CLI용)
 
 
 def test_csv_neutralizes_formula_cells(meeting, tmp_path):
@@ -280,7 +282,7 @@ def test_summary_prompt_and_owners_never_use_suggested_name():
 
     t = _transcript()
     t["speakers"]["S2"] = {"name": None, "suggested": {"person_id": "P1", "name": "홍길동", "score": 0.82}}
-    assert "홍길동" not in build_prompt(t) and " S2] " in build_prompt(t)
+    assert "홍길동" not in build_prompt(t) and " 참석자 2] " in build_prompt(t)
     s = MeetingSummary(title="t", summary="s", topics=[], decisions=[], action_items=[
         ActionItem(task="a", owner="홍길동", due=None, segment_ids=["s0002"]), ActionItem(task="b", owner="김민수", due=None, segment_ids=["s0001"])])
     assert [a.owner for a in clean_owners(s, t).action_items] == [None, "김민수"]

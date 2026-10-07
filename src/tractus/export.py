@@ -13,7 +13,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from tractus.store import MEMOS_FILE, _hms, _vtt_time, load_memos, one_line, render_markdown, render_vtt, seg_text, speaker_name
+from tractus.store import MEMOS_FILE, _hms, _vtt_time, load_memos, one_line, render_markdown, render_vtt, seg_text, speaker_display
 
 FORMATS = ("txt", "md", "srt", "vtt", "csv", "docx", "bundle")
 BUNDLE_FILES = ("audio.ogg", "audio.opus", "transcript.json", "transcript.md", "transcript.vtt", "summary.md", "summary.json", MEMOS_FILE)
@@ -29,7 +29,7 @@ def _when(t: dict) -> str:
 
 def _rows(t: dict) -> list[tuple[dict, str | None, str]]:
     """(세그먼트, 화자 표시 이름 또는 None, 표시 텍스트). 텍스트는 한 줄로(ASR 원문에 줄바꿈이 있으면 SRT 큐가 끊긴다). 빈 세그먼트는 뺀다."""
-    return [(s, speaker_name(t, s.get("speaker")), one_line(seg_text(s))) for s in t["segments"] if one_line(seg_text(s))]
+    return [(s, speaker_display(t, s.get("speaker")), one_line(seg_text(s))) for s in t["segments"] if one_line(seg_text(s))]
 
 
 def _txt(t: dict) -> str:
@@ -53,7 +53,7 @@ def _cell(v: str) -> str:
 def _csv(t: dict) -> bytes:
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["시작", "끝", "화자", "문장"])
+    w.writerow(["시작", "끝", "참석자", "내용"])
     w.writerows([_hms(s["start"]), _hms(s["end"]), _cell(who or ""), _cell(text)] for s, who, text in _rows(t))
     return buf.getvalue().encode("utf-8-sig")  # BOM: 한국어 Excel이 UTF-8로 연다
 
@@ -88,9 +88,9 @@ def _docx(d: Path, t: dict) -> bytes:
 
     doc.add_heading(t["title"], 0)
     doc.add_paragraph(f"일시 {_when(t)} · 길이 {_hms(t['audio']['duration_sec'])}")
-    names = [speaker_name(t, label) for label in t.get("speakers") or {}]
+    names = [speaker_display(t, label) for label in t.get("speakers") or {}]
     if names:
-        doc.add_paragraph("화자 " + ", ".join(names))
+        doc.add_paragraph(f"참석자 {len(names)}명 ({', '.join(names)})")
 
     if s := _load_summary(d):
         doc.add_heading("요약", 1)
@@ -103,7 +103,7 @@ def _docx(d: Path, t: dict) -> bytes:
             who = ", ".join(str(v) for v in (a.get("owner"), a.get("due")) if v)
             doc.add_paragraph(f"{a.get('task') or ''}{' — ' + who if who else ''}", style="List Bullet")
 
-    doc.add_heading("전사", 1)
+    doc.add_heading("대화 내용", 1)
     for seg, who, text in _rows(t):
         p = doc.add_paragraph()
         p.add_run(f"{_hms(seg['start'])}  ").font.color.rgb = RGBColor(0x80, 0x80, 0x80)

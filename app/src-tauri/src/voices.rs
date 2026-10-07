@@ -31,6 +31,8 @@ struct RawPerson {
     created_at: String,
 }
 
+const READ_FAILED: &str = "참석자 목소리 프로필을 읽지 못했습니다";
+
 /// `tractus voices list --json` 마지막 줄: {"people": [...], "reenroll": bool} (docs/desktop.md §2.7). 목록 그대로도 받는다.
 /// samples는 개수 또는 목록(길이만 센다), 읽지 못하는 항목은 건너뛴다
 fn parse_list(out: &str) -> Result<VoiceList, String> {
@@ -39,12 +41,12 @@ fn parse_list(out: &str) -> Result<VoiceList, String> {
         .rev()
         .find(|l| !l.trim().is_empty())
         .and_then(|l| serde_json::from_str(l).ok())
-        .ok_or("목소리 목록을 읽을 수 없습니다")?;
+        .ok_or(READ_FAILED)?;
     let needs_reenroll = v.get("reenroll").and_then(Value::as_bool).unwrap_or(false);
     let items = match &v {
         Value::Array(a) => a.clone(),
         Value::Object(o) => o.get("people").and_then(Value::as_array).cloned().unwrap_or_default(),
-        _ => return Err("목소리 목록을 읽을 수 없습니다".into()),
+        _ => return Err(READ_FAILED.into()),
     };
     let people = items
         .into_iter()
@@ -68,7 +70,7 @@ fn enroll_args(id: &str, label: &str, name: &str, consent: bool) -> Result<Vec<S
     }
     let name = name.trim();
     if !is_meeting_id(id) || !is_tagged(label, 'S') || name.is_empty() || name.contains(['\n', '\r']) {
-        return Err(format!("잘못된 목소리 등록: {id} {label} {name:?}"));
+        return Err("목소리를 등록할 수 없습니다 (잘못된 요청)".into());
     }
     Ok(vec!["voices".into(), "enroll".into(), id.into(), label.into(), format!("--name={name}"), "--consent".into()])
 }
@@ -84,7 +86,7 @@ fn forget_args(person: &str) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub async fn voices_list(state: State<'_, AppState>) -> Result<VoiceList, String> {
     let s = state.settings();
-    blocking(move || parse_list(&run_tractus(&s, &["voices".into(), "list".into(), "--json".into()], None, "목소리 목록을 읽지 못했습니다")?)).await
+    blocking(move || parse_list(&run_tractus(&s, &["voices".into(), "list".into(), "--json".into()], None, READ_FAILED)?)).await
 }
 
 #[derive(Serialize)]

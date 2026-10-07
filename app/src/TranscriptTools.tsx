@@ -33,7 +33,7 @@ export function SegmentEditor({ initial, onDone }: { initial: string; onDone: (r
       className="seg-text seg-editor"
       contentEditable="plaintext-only"
       role="textbox"
-      aria-label="문장 고치기 (Enter 저장, Esc 취소)"
+      aria-label="대화 내용 수정 (Enter 저장, Esc 취소)"
       spellCheck={false}
       onCompositionStart={() => (composing.current = true)}
       onCompositionEnd={() => (composing.current = false)}
@@ -99,7 +99,7 @@ export function FindBar({
   const canReplace = count > 0;
 
   return (
-    <div className="find-bar" role="search" aria-label="전사에서 찾기">
+    <div className="find-bar" role="search" aria-label="대화 내용에서 찾기">
       <div className="find-row">
         <input
           ref={inputRef}
@@ -142,7 +142,7 @@ export function FindBar({
       </div>
       <label className="check find-glossary">
         <input type="checkbox" checked={state.glossary} onChange={(e) => onChange({ ...state, glossary: e.target.checked })} />
-        바꾼 말을 용어집에 추가 <small>다음 전사부터 이 표기로 알아듣습니다</small>
+        바꾼 말을 자주 쓰는 단어에 추가 <small>다음 녹음부터 이 단어를 더 정확하게 인식합니다</small>
       </label>
     </div>
   );

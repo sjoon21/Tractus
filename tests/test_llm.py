@@ -91,7 +91,7 @@ def test_resolve_provider_reads_env_and_checks_key(monkeypatch):
 def test_local_only_blocks_remote_providers(monkeypatch):
     monkeypatch.setenv("TRACTUS_LOCAL_ONLY", "1")
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
-    with pytest.raises(LLMError, match="local_only"):
+    with pytest.raises(LLMError, match="로컬 전용 모드"):
         resolve_provider("upstage", None)
     assert resolve_provider("gemma-local", None)[0].local
 
@@ -116,7 +116,7 @@ def test_empty_choices_are_retried_then_raise():
 def test_local_only_fails_closed_for_any_truthy_value(monkeypatch, value):
     monkeypatch.setenv("TRACTUS_LOCAL_ONLY", value)
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
-    with pytest.raises(LLMError, match="local_only"):
+    with pytest.raises(LLMError, match="로컬 전용 모드"):
         resolve_provider("upstage", None)
 
 

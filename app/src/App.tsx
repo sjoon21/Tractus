@@ -4,7 +4,8 @@ import { ask, open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errText, useJob, useRecorder, type MeetingInfo, type PendingRecording } from "./api";
 import { AskPanel } from "./AskPanel";
-import { baseName, dayParts, IDLE_JOB, fmtTime, groupByDay, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, STAGE_LABEL, type RecMode } from "./lib";
+import { ErrorDetail } from "./ErrorDetail";
+import { baseName, dayParts, errorView, IDLE_JOB, JOB_ERROR, fmtTime, groupByDay, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, STAGE_FALLBACK, STAGE_LABEL, warningText, type RecMode } from "./lib";
 import { MeetingView } from "./MeetingView";
 import { RecordView } from "./RecordView";
 import { SearchView } from "./SearchView";
@@ -20,8 +21,8 @@ export type View =
 
 const GLOBAL = { kind: "global" } as const;
 
-/** 화면 아래 알림. 오류는 닫을 때까지 남고, 새 알림이 와도 밀려나지 않는다(쌓인다) */
-export type Toast = { text: string; error?: boolean; action?: { label: string; run: () => void } };
+/** 화면 아래 알림. 오류는 닫을 때까지 남고, 새 알림이 와도 밀려나지 않는다(쌓인다). detail: 원래 문구 (접힌 '자세히') */
+export type Toast = { text: string; detail?: string | null; error?: boolean; action?: { label: string; run: () => void } };
 export type Notify = (t: Toast) => void;
 const TOAST_MS = 6000;
 const TOAST_MAX = 4; // ponytail: 넘치면 가장 오래된 것부터 버린다. 여러 파일 실패를 다 보여야 하면 가져오기 패널에 실패 목록을 둔다
@@ -100,7 +101,7 @@ export function App() {
     const name = importing ? baseName(importing) : "파일";
     // 화면은 바꾸지 않는다: 고치던 문장·찾기가 사라진다. 열기는 사용자가 고른다
     const dup = warnings.some((w) => w.code === "duplicate");
-    notify({ text: dup ? `이미 전사한 파일입니다 — ${name}` : `전사를 마쳤습니다 — ${name}`, action: { label: "열기", run: () => openMeeting(meetingId) } });
+    notify({ text: dup ? `이미 텍스트로 변환한 파일입니다 — ${name}` : `텍스트 변환을 마쳤습니다 — ${name}`, action: { label: "열기", run: () => openMeeting(meetingId) } });
   });
   useEffect(() => {
     if (!waitDir || imp.job.running) return;
@@ -125,8 +126,12 @@ export function App() {
   }, [queue, imp.job.running, transcribing, imp.startJob]);
   // 실패는 알림으로 남긴다 (다음 파일이 시작되면 진행 표시는 그 파일로 바뀐다)
   useEffect(() => {
-    if (!imp.job.running && imp.job.error && importing) notify({ text: `‘${baseName(importing)}’ 가져오기 실패: ${imp.job.error}`, error: true });
-  }, [imp.job.running, imp.job.error, importing, notify]);
+    if (!imp.job.running && imp.job.error && importing) {
+      const e = errorView(imp.job.error, imp.job.errorCode, JOB_ERROR.import);
+      const why = e.text === JOB_ERROR.import ? "" : `. ${e.text}`;
+      notify({ text: `‘${baseName(importing)}’을(를) 텍스트로 변환하지 못했습니다${why}`, detail: e.detail, error: true });
+    }
+  }, [imp.job.running, imp.job.error, imp.job.errorCode, importing, notify]);
   const pickFiles = async () => {
     try {
       const picked = await open({ multiple: true, directory: false, filters: [{ name: "오디오·동영상", extensions: IMPORT_EXTS }] });
@@ -152,10 +157,10 @@ export function App() {
   // 창을 닫으면 앱이 끝난다: 전사 중이거나 대기 중인 파일이 있으면 묻는다.
   // ponytail: ⌘Q(macOS terminate:)는 막을 수 없어 묻지 않는다. 남은 전사 프로세스는 stdout이 닫혀 다음 진행 이벤트에서 끝난다
   const busyRef = useRef("");
-  busyRef.current = transcribing || imp.job.running || queue.length ? `진행 중인 전사${queue.length ? `와 대기 중인 파일 ${queue.length}개` : ""}가 취소됩니다.` : "";
+  busyRef.current = !(transcribing || imp.job.running || queue.length) ? "" : queue.length ? `진행 중인 변환과 대기 중인 파일 ${queue.length}개가 취소됩니다.` : "진행 중인 변환이 취소됩니다.";
   useEffect(() => {
     const un = getCurrentWindow().onCloseRequested(async (e) => {
-      if (busyRef.current && !(await ask(`${busyRef.current} 그래도 닫을까요?`, { title: "Tractus 닫기", kind: "warning", okLabel: "닫기", cancelLabel: "계속 전사" }))) e.preventDefault();
+      if (busyRef.current && !(await ask(`${busyRef.current} 그래도 닫을까요?`, { title: "Tractus 닫기", kind: "warning", okLabel: "닫기", cancelLabel: "계속 변환" }))) e.preventDefault();
     });
     return () => void un.then((f) => f());
   }, []);
@@ -213,7 +218,7 @@ export function App() {
               <time className="tnum">{fmtTime(rec.t)}</time>
             </>
           ) : transcribing ? (
-            <span>{transcribe.job.running ? "전사 중…" : "전사 대기 중…"}</span>
+            <span>{transcribe.job.running ? "변환 중…" : "변환 대기 중…"}</span>
           ) : (
             <span>녹음 시작</span>
           )}
@@ -241,7 +246,7 @@ export function App() {
           <section className="import-status" aria-live="polite" aria-label="가져오기 진행">
             <p className="import-file">{importing ? baseName(importing) : "대기 중"}</p>
             <p className="import-line tnum">
-              <span>{STAGE_LABEL[imp.job.stage ?? ""] ?? "준비 중"}</span>
+              <span>{STAGE_LABEL[imp.job.stage ?? ""] ?? STAGE_FALLBACK}</span>
               <span>{[importPct !== null && `${Math.round(importPct * 100)}%`, queue.length > 0 && `대기 ${queue.length}개`].filter(Boolean).join(" · ")}</span>
             </p>
             <div className="job-track">
@@ -251,7 +256,7 @@ export function App() {
               .filter((w) => w.code !== "duplicate")
               .map((w) => (
                 <p key={w.code} className="import-warning">
-                  {w.message}
+                  {warningText(w)}
                 </p>
               ))}
           </section>
@@ -269,8 +274,17 @@ export function App() {
           <input ref={searchRef} type="search" placeholder="회의 검색" aria-label="회의 검색" />
           <kbd aria-hidden>⌘K</kbd>
         </form>
-        <button ref={askButton} className="ask-entry" aria-expanded={askOpen} aria-controls="ask-drawer" aria-keyshortcuts="Meta+J" onClick={() => setAskOpen((o) => !o)}>
-          <span>전체 회의에 질문</span>
+        <button
+          ref={askButton}
+          className="ask-entry"
+          aria-expanded={askOpen}
+          aria-controls="ask-drawer"
+          aria-keyshortcuts="Meta+J"
+          aria-label="AI 어시스턴트에게 질문 (모든 회의 대상)"
+          title="AI 어시스턴트에게 질문 (모든 회의 대상)"
+          onClick={() => setAskOpen((o) => !o)}
+        >
+          <span>AI 어시스턴트에게 질문</span>
           <kbd aria-hidden>⌘J</kbd>
         </button>
 
@@ -278,7 +292,7 @@ export function App() {
           {listError && <p className="nav-note is-error">{listError}</p>}
           {leftover.length > 0 && (
             <section className="day-group">
-              <h2 className="month-label">전사 안 된 녹음</h2>
+              <h2 className="month-label">변환 대기 중인 녹음</h2>
               <ul className="pending-list">
                 {leftover.map((p) => (
                   <li key={p.dir}>
@@ -295,7 +309,7 @@ export function App() {
                       </span>
                       <span className="meeting-link-meta tnum">
                         {p.duration === null ? "끊긴 녹음" : fmtTime(p.duration)}
-                        <span className="badge">전사하기</span>
+                        <span className="badge">변환하기</span>
                       </span>
                     </button>
                   </li>
@@ -365,7 +379,7 @@ export function App() {
       >
         <header className="ask-drawer-head">
           <h2 id="ask-drawer-title" className="eyebrow">
-            전체 회의에 질문
+            AI 어시스턴트에게 질문 (모든 회의 대상)
           </h2>
           <button className="toast-close" aria-label="닫기 (Esc)" onClick={closeAsk}>
             ×
@@ -376,7 +390,7 @@ export function App() {
 
       {dropping && (
         <div className="drop-overlay" aria-hidden>
-          <p>파일을 놓으면 전사합니다</p>
+          <p>파일을 놓으면 텍스트로 변환합니다</p>
           <small>{IMPORT_EXTS.join(" · ")}</small>
         </div>
       )}
@@ -399,7 +413,10 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
   }, [toast.error]);
   return (
     <div className={`toast ${toast.error ? "is-error" : ""}`} role={toast.error ? "alert" : "status"}>
-      <span>{toast.text}</span>
+      <div className="toast-body">
+        {toast.text}
+        <ErrorDetail detail={toast.detail} />
+      </div>
       {toast.action && (
         <button
           className="text-button"
@@ -428,7 +445,7 @@ function Welcome({ count }: { count: number }) {
         기록은 남습니다.
       </h1>
       <p className="welcome-lead">
-        {count > 0 ? `회의 ${count}개가 이 Mac에 있습니다. 왼쪽에서 하나를 고르세요.` : "녹음은 이 Mac에서 전사되고, 파일로 남습니다."}
+        {count > 0 ? `회의 ${count}개가 이 Mac에 있습니다. 왼쪽에서 하나를 고르세요.` : "녹음은 이 Mac에서 텍스트로 변환되고, 파일로 남습니다."}
       </p>
       <dl className="shortcuts">
         <div>
@@ -453,7 +470,7 @@ function Welcome({ count }: { count: number }) {
         </div>
         <div>
           <dt><kbd>⌘J</kbd></dt>
-          <dd>전체 회의에 질문</dd>
+          <dd>AI 어시스턴트에게 질문</dd>
         </div>
       </dl>
     </section>

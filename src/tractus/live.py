@@ -449,7 +449,7 @@ class Live:
     def _skip_ahead(self) -> None:
         if not self.lagging:
             self.lagging = True
-            self.warn("live_lagging", "실시간 자막이 녹음을 따라가지 못해 일부 구간을 건너뜁니다. 녹음과 정식 전사에는 영향이 없습니다")
+            self.warn("live_lagging", "실시간 텍스트 변환이 녹음을 따라가지 못해 일부 구간을 건너뜁니다. 녹음과 녹음 종료 후 변환에는 영향이 없습니다")
         uid = self.seg.uid
         if self.shown and self.shown[0] == uid:  # 건너뛴 발화의 미리보기는 그 문장으로 확정해 둔다
             _, text, start = self.shown
@@ -483,7 +483,7 @@ def find_tracks(rec_dir: Path, stop: threading.Event, wait_s: float = WAIT_S) ->
         stop.wait(0.05)
     found = [p for p in (rec_dir / "mic.wav", rec_dir / "system.wav") if p.exists()]
     if not found:
-        raise LiveError(f"녹음 파일이 없습니다 (recording.json, mic.wav): {rec_dir}")
+        raise LiveError(f"녹음 파일을 찾지 못했습니다 (recording.json, mic.wav): {rec_dir}")
     return found
 
 

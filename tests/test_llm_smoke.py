@@ -68,7 +68,7 @@ def test_ask_streams_answer_with_valid_citations():
     assert "22" in done["answer"] and "s0006" in {c["segment_id"] for c in done["citations"]}, done
 
     done = list(qa.ask(client, provider.name, model, "사무실 이전은 언제 하기로 했나요?", [], "meeting", lambda: src))[-1]
-    assert "근거를 찾지 못했" in done["answer"] and done["citations"] == [], done
+    assert qa.NO_EVIDENCE.rstrip(".") in done["answer"] and done["citations"] == [], done
 
 
 @pytest.mark.llm

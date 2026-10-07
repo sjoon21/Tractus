@@ -107,11 +107,14 @@ export interface Suggestion {
 
 export type Speakers = Record<string, { name: string | null; suggested?: Suggestion | null }>;
 
-/** 표시 이름: 이름, 없으면 라벨. 화자가 없는 세그먼트는 null. */
+/** 표시 이름: 이름, 없으면 "참석자 N"(라벨 S3 → 참석자 3, WORDS.md §2). 라벨 꼴이 아니면 라벨 그대로. 화자가 없는 세그먼트는 null. */
 export function speakerName(label: string | null | undefined, speakers: Speakers): string | null {
   if (!label) return null;
-  return speakers[label]?.name?.trim() || label;
+  return speakers[label]?.name?.trim() || unnamedSpeaker(label);
 }
+
+/** 이름 없는 화자 표시. 합치기로 번호가 비어도 다시 매기지 않는다 (내보낸 파일과 같은 이름) */
+export const unnamedSpeaker = (label: string): string => (/^S\d+$/.test(label) ? `참석자 ${Number(label.slice(1))}` : label);
 
 /** 화자 잉크(--spk-0…7) 수. 슬롯 8..15는 같은 잉크에 두 번째 표시(속 빈 점·빗금 막대)를 쓴다 (fluid 화자 분리는 9명 이상) */
 export const SPEAKER_INKS = 8;
@@ -127,6 +130,8 @@ export function speakerSlot(label: string | null | undefined): number {
 export interface SpeakerStat {
   label: string;
   display: string;
+  /** 사용자가 이름을 붙였는지. 아니면 display는 "참석자 N" */
+  named: boolean;
   segments: number;
   talkSec: number;
   /** 화자가 붙은 발화 시간 전체에 대한 비율 0..1 */
@@ -158,6 +163,7 @@ export function speakerStats(segments: Segment[], speakers: Speakers): SpeakerSt
   return sorted.map(([label, t], i) => ({
     label,
     display: speakerName(label, speakers)!,
+    named: !!speakers[label]?.name?.trim(),
     ...t,
     share: total ? t.talkSec / total : 0,
     slot: own[i] ?? (speakerSlot(label) < 0 ? -1 : (free.shift() ?? speakerSlot(label))),
@@ -172,8 +178,8 @@ export function suggestionOf(label: string, speakers: Speakers): Suggestion | nu
   return !sp?.name?.trim() && s && s.name?.trim() && Number.isFinite(s.score) ? s : null;
 }
 
-/** 배지 글: "홍길동? · 자동 인식 82%" */
-export const suggestionText = (s: Suggestion) => `${s.name.trim()}? · 자동 인식 ${Math.round(Math.min(1, Math.max(0, s.score)) * 100)}%`;
+/** 배지 글: "홍길동 님인가요? (일치율 82%)" */
+export const suggestionText = (s: Suggestion) => `${s.name.trim()} 님인가요? (일치율 ${Math.round(Math.min(1, Math.max(0, s.score)) * 100)}%)`;
 
 export type RenameRequest = { name: string; remember: boolean } | { error: string };
 
@@ -181,7 +187,7 @@ export type RenameRequest = { name: string; remember: boolean } | { error: strin
 export function renameRequest(raw: string, remember: boolean, consent: boolean): RenameRequest {
   const name = raw.trim();
   if (!remember) return { name, remember: false };
-  if (!name) return { error: "목소리를 기억하려면 이름을 입력하세요" };
+  if (!name) return { error: "목소리를 등록하려면 이름을 입력하세요" };
   if (!consent) return { error: "본인이거나 동의를 받은 사람인지 확인해 주세요" };
   return { name, remember: true };
 }
@@ -228,14 +234,32 @@ export function evidenceStart(segmentIds: string[], starts: Map<string, number>)
   return ts.length ? Math.min(...ts) : null;
 }
 
-/** MCP tools/call result → 구조화 결과. isError면 서버 메시지로 예외를 던진다. */
+/** 화면 문장(message)과 원래 문구(detail). 오류 줄·토스트가 detail을 접힌 '자세히'에 넣는다 (WORDS.md §4.7) */
+export class DetailedError extends Error {
+  constructor(
+    message: string,
+    readonly detail: string | null,
+  ) {
+    super(message);
+  }
+}
+
+/** MCP tools/call result → 구조화 결과. isError면 "검색하지 못했습니다" + 서버 메시지(자세히)로 예외를 던진다. */
 export function parseToolResult<T>(result: unknown): T {
   const r = (result ?? {}) as { isError?: boolean; structuredContent?: T; content?: { type: string; text?: string }[] };
   const text = r.content?.find((c) => c.type === "text")?.text;
-  if (r.isError) throw new Error((text ?? "검색 실패").replace(/^Error executing tool \w+: /, ""));
+  if (r.isError) throw new DetailedError("검색하지 못했습니다", text?.replace(/^Error executing tool \w+: /, "") || null);
   if (r.structuredContent !== undefined) return r.structuredContent;
-  if (text === undefined) throw new Error("MCP 응답에 결과가 없습니다");
+  if (text === undefined) throw new Error("검색 결과를 읽지 못했습니다");
   return JSON.parse(text) as T;
+}
+
+/** 스마트 검색 상태 줄 (WORDS.md §4.6). MCP status.hint는 에이전트용이라 보이지 않고, 필드로 문장을 고른다 */
+export function statusLine(st: { meetings: number; indexed_chunks: number; vectors: number; vector_search: boolean }): string {
+  const n = `(회의 ${st.meetings}개)`;
+  if (!st.vector_search) return `스마트 검색 엔진(qwen3-embedding-0.6b)이 변환 엔진 위치에 없어 단어 일치로만 찾습니다 ${n}`;
+  if (st.vectors < st.indexed_chunks) return `일부 회의가 아직 스마트 검색에 포함되지 않았습니다. 터미널에서 tractus index를 실행하세요 ${n}`;
+  return `스마트 검색 준비 완료 ${n}`;
 }
 
 export interface DayGroup<T> {
@@ -283,23 +307,27 @@ export function levelFraction(db: number | null | undefined): number {
   return Math.min(1, Math.max(0, (db + 60) / 60));
 }
 
+/** 진행 단계 문구 (WORDS.md §3). 키는 코어 이벤트 키라 바꾸지 않는다 */
 export const STAGE_LABEL: Record<string, string> = {
-  decode: "오디오 읽는 중",
-  vad: "발화 구간 찾는 중",
-  diarize: "화자 구분 중…",
-  voices: "목소리 맞춰 보는 중",
-  encode: "오디오 보관 중",
-  load_model: "모델 불러오는 중",
-  transcribe: "전사 중",
-  align: "단어 타이밍 맞추는 중",
-  index: "검색 색인 중",
-  summarize: "요약 중",
+  decode: "음성 파일 불러오는 중…",
+  vad: "목소리 구간 분석 중…",
+  diarize: "말하는 사람 구분 중…",
+  voices: "등록된 참석자 확인 중…",
+  encode: "음성 파일 압축 보관 중…",
+  load_model: "변환 엔진 시작하는 중…",
+  transcribe: "음성을 글로 변환하는 중…",
+  align: "단어 싱크 맞추는 중…",
+  index: "스마트 검색 준비 중…",
+  summarize: "핵심 내용 요약 중…",
   // 앱 안 상태: 녹음 전사가 파일 가져오기가 끝나길 기다린다 (App.tsx waitDir)
-  wait_import: "가져오는 파일이 끝나면 전사합니다",
+  wait_import: "앞선 파일 변환이 끝나면 시작합니다",
   // 실시간 자막 (Phase 7.2, `tractus live`)
-  live_load: "실시간 자막 준비 중",
-  live: "실시간 자막",
+  live_load: "실시간 변환 준비 중…",
+  live: "실시간 텍스트 변환",
 };
+
+/** 모르는 단계 키의 대체 문구 */
+export const STAGE_FALLBACK = "준비 중…";
 
 /** 입력 중일 때는 단축키를 먹지 않는다: 글 입력, 세그먼트 편집(contentEditable), 재생 위치 막대(range, 방향키를 직접 쓴다). */
 export function isTypingTarget(el: EventTarget | null): boolean {
@@ -309,15 +337,89 @@ export function isTypingTarget(el: EventTarget | null): boolean {
 
 // ── 하위 프로세스 이벤트 → 화면 상태 (docs/desktop.md §1·§2). 이벤트 끝에는 Rust가 붙인 exit가 온다 ──
 
-/** stderr 끝 세 줄. 비어 있으면 fallback. */
-const stderrTail = (stderr: string, fallback: string) => stderr.trim().split("\n").slice(-3).join("\n") || fallback;
+/** stderr 끝 세 줄 (typer 접두어 `Error: `·`Error: Invalid value for MEETING: `(따옴표는 있을 수도 있다)는 뗀다). 비어 있으면 fallback. */
+export const stderrTail = (stderr: string, fallback: string) =>
+  stderr
+    .trim()
+    .split("\n")
+    .slice(-3)
+    .map((l) => l.replace(/^Error: (?:Invalid value for [^:]*: )?/, ""))
+    .join("\n") || fallback;
+
+/** 프로세스 종료 문장. code null = 신호로 끝남(kill -9, 메모리 부족) → 괄호 없이 문장만 */
+export const exitSentence = (sentence: string, code: number | null) => (code === null ? sentence : `${sentence} (종료 코드 ${code})`);
+
+/** 이벤트 없이 끝난 프로세스: 첫 줄은 앱 문장(…(종료 코드 N)), 다음 줄부터 stderr 끝 (자세히) */
+export const exitMessage = (sentence: string, stderr: string) => [sentence, stderrTail(stderr, "")].filter(Boolean).join("\n");
+
+const JOB_EXIT = "작업이 예기치 않게 끝났습니다";
+
+// ── 코어 경고·오류 코드 → 화면 문장 (WORDS.md §4.7). 모르는 코드는 코어 문구 그대로(경고) / 작업별 기본 문장(오류) ──
+
+export const WARNING_TEXT: Record<string, string> = {
+  duplicate: "이미 텍스트로 변환한 파일입니다.",
+  diarizer_missing: "참석자 구분에 필요한 파일이 없어 참석자 구분 없이 변환했습니다.",
+  diarizer_failed: "말하는 사람을 구분하지 못해 참석자 구분 없이 변환했습니다. 회의 화면에서 참석자를 직접 지정할 수 있습니다.",
+  diarizer_cap_failed: "참석자가 많아 정밀하게 구분하지 못했습니다. 최대 8명까지만 구분했습니다.",
+  diarizer_cap: "참석자가 8명을 넘을 수 있지만 최대 8명까지만 구분했습니다.",
+  fluid_missing: "참석자가 8명을 넘을 수 있지만 최대 8명까지만 구분했습니다.",
+  voices_model_missing: "목소리 인식에 필요한 파일이 없어 등록된 참석자를 확인하지 않았습니다.",
+  voices_failed: "등록된 참석자 목소리를 확인하지 못했습니다. 참석자 이름은 회의 화면에서 직접 지정할 수 있습니다.",
+  aligner_missing: "단어 싱크에 필요한 파일이 없어 단어 싱크 없이 저장했습니다.",
+  aligner_failed: "단어 싱크를 맞추지 못했습니다. 회의 화면의 ‘단어 싱크 맞추기’로 다시 시도할 수 있습니다.",
+  chat_save_failed: "질문 기록을 저장하지 못했습니다. 답변은 그대로 볼 수 있습니다.",
+  live_lagging: "실시간 텍스트 변환이 녹음을 따라가지 못해 일부 구간을 건너뜁니다. 녹음과 녹음 종료 후 변환에는 영향이 없습니다.",
+  system_zero: "상대방 소리(시스템 오디오)가 5초 동안 들리지 않습니다. 시스템 설정 > 개인정보 보호 및 보안 > 화면 및 시스템 오디오 녹음 권한을 확인하세요.",
+};
+
+export const ERROR_TEXT: Record<string, string> = {
+  model_missing: "변환 엔진 파일이 없어 진행하지 못했습니다. 설정의 ‘변환 엔진 위치’를 확인하세요.",
+  audio_failed: "음성 파일을 읽지 못했습니다. 소리가 있는 오디오·동영상 파일인지 확인하세요.",
+  ffmpeg_missing: "음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요.",
+  recording_missing: "녹음된 소리가 없습니다. 마이크 권한과 입력 장치를 확인하세요.",
+  interrupted: "변환을 중단했습니다. 다시 변환하면 멈춘 곳부터 이어서 진행합니다.",
+  incomplete: "변환이 끝나지 않은 구간이 있습니다. 다시 변환하면 멈춘 곳부터 이어서 진행합니다.",
+  align_interrupted: "단어 싱크를 맞추다가 중단했습니다. 대화 내용은 저장했고, 회의 화면의 ‘단어 싱크 맞추기’로 나중에 맞출 수 있습니다.",
+  no_segments: "인식된 대화가 없어 요약할 수 없습니다.",
+  llm_config: "AI 서비스 설정이 없거나 잘못되었습니다. .env.local의 TRACTUS_LLM_PROVIDER, TRACTUS_LLM_MODEL과 API 키를 확인하세요.",
+  llm_local_only: "로컬 전용 모드에서는 외부 AI 서비스를 쓸 수 없습니다.",
+  llm_api: "AI 서비스에 연결하지 못했습니다. 잠시 후 다시 시도하세요.",
+  llm_invalid: "AI 응답이 형식에 맞지 않았습니다. 다시 시도해 주세요.",
+  live_low_memory: "이 Mac은 메모리가 16 GB 미만이라 실시간 텍스트 변환을 켜지 않습니다. 녹음은 정상 진행되고, 녹음 종료 후 텍스트로 변환합니다.",
+  live_failed: "실시간 텍스트 변환을 계속하지 못했습니다.",
+};
+
+/** 코드가 없는 오류의 작업별 기본 문장 */
+export const JOB_ERROR = {
+  transcribe: "텍스트로 변환하지 못했습니다",
+  import: "텍스트로 변환하지 못했습니다",
+  summarize: "요약하지 못했습니다",
+  align: "단어 싱크를 맞추지 못했습니다",
+  ask: "답변을 받지 못했습니다",
+  live: "실시간 변환이 일시 중지되었습니다 (녹음은 정상 진행 중)",
+} as const;
+
+/** 앱(Rust invoke 거부)이 만든 오류: 문구가 이미 WORDS.md 문장이라 그대로 보인다 (예: 실행 파일 경로를 확인하세요) */
+export const APP_ERROR = "app";
+
+/**
+ * 오류 → 화면 문장(text)과 원래 문구(detail, 접힌 '자세히'). 앱 오류 > 코드 문장 > 앱이 만든 종료 문장(첫 줄이 "(종료 코드 N)"으로 끝남) > 기본 문장.
+ */
+export function errorView(message: string | null, code: string | null | undefined, fallback: string): { text: string; detail: string | null } {
+  if (code === APP_ERROR && message) return { text: message, detail: null };
+  const mapped = code ? ERROR_TEXT[code] : undefined;
+  if (mapped) return { text: mapped, detail: message || null };
+  const [first, ...rest] = (message ?? "").split("\n");
+  if (first === fallback || first === JOB_EXIT || /\(종료 코드 \d+\)$/.test(first)) return { text: first, detail: rest.join("\n") || null };
+  return { text: fallback, detail: message || null };
+}
 
 export type JobEvent =
   | { job: string; event: "stage"; stage: string }
   | { job: string; event: "progress"; done: number; total: number }
   | { job: string; event: "done"; meeting_id: string; meeting_dir: string }
   | { job: string; event: "warning"; code: string; message: string }
-  | { job: string; event: "error"; message: string }
+  | { job: string; event: "error"; message: string; code?: string }
   | { job: string; event: "exit"; code: number | null; stderr: string };
 
 export interface JobState {
@@ -326,14 +428,17 @@ export interface JobState {
   done: number;
   total: number;
   meetingId: string | null;
+  /** 코어 원래 문구 (화면에는 errorView로) */
   error: string | null;
+  /** 코어 오류 코드 (ERROR_TEXT) */
+  errorCode: string | null;
   /** 끝나지 않는 경고 (예: diarizer_missing → 화자 없이 계속) */
   warnings: { code: string; message: string }[];
 }
 
-export const IDLE_JOB: JobState = { running: false, stage: null, done: 0, total: 0, meetingId: null, error: null, warnings: [] };
+export const IDLE_JOB: JobState = { running: false, stage: null, done: 0, total: 0, meetingId: null, error: null, errorCode: null, warnings: [] };
 
-/** 성공은 exit 0 + done 이벤트. 그 밖의 종료는 error 이벤트 메시지, 없으면 stderr 끝부분을 오류로 보인다. */
+/** 성공은 exit 0 + done 이벤트. 그 밖의 종료는 error 이벤트 메시지(+코드), 없으면 "작업이 예기치 않게 끝났습니다 (종료 코드 N)" + stderr 끝부분. */
 export function jobReduce(s: JobState, ev: JobEvent): JobState {
   switch (ev.event) {
     case "stage":
@@ -345,10 +450,11 @@ export function jobReduce(s: JobState, ev: JobEvent): JobState {
     case "warning":
       return s.warnings.some((w) => w.code === ev.code) ? s : { ...s, warnings: [...s.warnings, { code: ev.code, message: ev.message }] };
     case "error":
-      return { ...s, error: ev.message };
+      return { ...s, error: ev.message, errorCode: ev.code ?? null };
     case "exit": {
       const ok = ev.code === 0 && s.meetingId !== null;
-      return { ...s, running: false, error: ok ? null : (s.error ?? stderrTail(ev.stderr, `종료 코드 ${ev.code}`)) };
+      if (ok) return { ...s, running: false, error: null, errorCode: null };
+      return { ...s, running: false, error: s.error ?? exitMessage(exitSentence(JOB_EXIT, ev.code), ev.stderr) };
     }
     default:
       // event 없는 줄(`tractus align`의 {"aligned": N, …} 결과)과 모르는 이벤트는 무시한다
@@ -383,12 +489,14 @@ export const recFlags = (mode: RecMode): string[] => (mode === "hybrid" ? ["--ec
 /** 설정을 고치지 않고 녹음 방식만 바꾼 사본. */
 export const withRecMode = <T extends { rec_mode: string }>(settings: T, mode: RecMode): T => ({ ...settings, rec_mode: mode });
 
-/** 녹음을 계속하면서 알리는 경고 중 설명을 덧붙이는 것. 모르는 코드는 헬퍼 메시지만 보인다. */
+/** 녹음을 계속하면서 알리는 경고 중 헬퍼 메시지에 설명을 덧붙이는 것 */
 const WARNING_NOTE: Record<string, string> = {
-  echo_cancel_failed: "에코 제거 없이 녹음을 계속합니다. 스피커 소리가 마이크 트랙에 섞여 같은 말이 두 번 전사될 수 있습니다.",
+  echo_cancel_failed: "에코 제거 없이 녹음을 계속합니다. 스피커 소리가 마이크에 섞여 같은 말이 두 번 기록될 수 있습니다.",
 };
 
-export const warningText = (w: { code: string; message: string }): string => (WARNING_NOTE[w.code] ? `${w.message} — ${WARNING_NOTE[w.code]}` : w.message);
+/** 경고 → 화면 문장: 코드 문장(WARNING_TEXT) > 헬퍼 메시지 + 설명(WARNING_NOTE) > 코어 메시지 그대로 */
+export const warningText = (w: { code: string; message: string }): string =>
+  WARNING_TEXT[w.code] ?? (WARNING_NOTE[w.code] ? `${w.message} — ${WARNING_NOTE[w.code]}` : w.message);
 
 export type RecPhase = "idle" | "starting" | "recording" | "stopping" | "stopped" | "error";
 
@@ -424,7 +532,7 @@ export function recReduce(s: RecState, ev: RecEvent): RecState {
       return { ...s, phase: "error", error: ev.message };
     case "exit":
       if (s.phase === "stopped" || s.phase === "error") return s;
-      return { ...s, phase: "error", error: stderrTail(ev.stderr, `녹음 헬퍼가 종료되었습니다 (코드 ${ev.code})`) };
+      return { ...s, phase: "error", error: stderrTail(ev.stderr, exitSentence("녹음이 예기치 않게 끝났습니다", ev.code)) };
   }
 }
 
@@ -434,7 +542,7 @@ export type LiveEvent =
   | { event: "stage"; stage: string }
   | { event: "live"; kind: "partial" | "final"; id: string; start: number; end: number; text: string }
   | { event: "warning"; code: string; message: string }
-  | { event: "error"; message: string }
+  | { event: "error"; message: string; code?: string }
   | { event: "done" }
   | { event: "exit"; code: number | null; stderr: string };
 
@@ -456,9 +564,10 @@ export interface LiveState {
   done: boolean;
   warnings: { code: string; message: string }[];
   error: string | null;
+  errorCode: string | null;
 }
 
-export const IDLE_LIVE: LiveState = { status: "off", finals: [], partial: null, done: false, warnings: [], error: null };
+export const IDLE_LIVE: LiveState = { status: "off", finals: [], partial: null, done: false, warnings: [], error: null, errorCode: null };
 
 /** 화면에 남기는 확정 줄 수. 긴 회의에서 DOM이 끝없이 커지지 않게 (정식 전사는 녹음이 끝난 뒤에 따로 만든다) */
 export const LIVE_CAP = 500;
@@ -480,14 +589,13 @@ export function liveReduce(s: LiveState, ev: LiveEvent): LiveState {
     case "warning":
       return s.warnings.some((w) => w.code === ev.code) ? s : { ...s, warnings: [...s.warnings, { code: ev.code, message: ev.message }] };
     case "error":
-      return { ...s, error: ev.message };
+      return { ...s, error: ev.message, errorCode: ev.code ?? null };
     case "done":
       return { ...s, done: true };
     case "exit": {
       // 확정되지 않은 partial은 버린다
       const ok = ev.code === 0 && s.done;
-      // code null = 신호로 끝남 (kill -9, 메모리 부족으로 OS가 정리). stderr가 비면 코드 대신 사람이 읽을 말을 쓴다
-      const fallback = ev.code === null ? "자막 프로세스가 종료되었습니다" : `종료 코드 ${ev.code}`;
+      const fallback = exitSentence("실시간 변환이 예기치 않게 끝났습니다", ev.code);
       return { ...s, status: ok ? "stopped" : "failed", partial: null, error: ok ? s.error : (s.error ?? stderrTail(ev.stderr, fallback)) };
     }
     default:
@@ -495,7 +603,7 @@ export function liveReduce(s: LiveState, ev: LiveEvent): LiveState {
   }
 }
 
-/** "실시간 자막이 멈췄습니다" 안내를 띄울지. 앱은 녹음 단계를 벗어난 뒤에야 stop을 보내므로,
+/** "실시간 변환이 일시 중지되었습니다" 안내를 띄울지. 앱은 녹음 단계를 벗어난 뒤에야 stop을 보내므로,
  *  녹음 중의 종료는 정상 종료(SIGTERM → done + exit 0)라도 예상 밖이다 */
 export const liveHalted = (s: LiveState, recording: boolean) => recording && (s.status === "failed" || s.status === "stopped");
 
@@ -609,13 +717,13 @@ export function isImportable(path: string): boolean {
 
 /** `tractus export --format`. bundle은 회의 폴더 묶음(zip) */
 export const EXPORT_FORMATS: { format: string; ext: string; label: string; note: string }[] = [
-  { format: "txt", ext: "txt", label: "텍스트", note: "[시각] 화자: 문장" },
-  { format: "md", ext: "md", label: "Markdown", note: "전사 + 요약" },
+  { format: "txt", ext: "txt", label: "텍스트", note: "[시각] 참석자: 대화 내용" },
+  { format: "md", ext: "md", label: "Markdown", note: "대화 내용 + 요약" },
   { format: "srt", ext: "srt", label: "SRT 자막", note: "영상 편집기" },
   { format: "vtt", ext: "vtt", label: "WebVTT 자막", note: "브라우저·Obsidian" },
   { format: "csv", ext: "csv", label: "CSV", note: "Excel" },
   { format: "docx", ext: "docx", label: "Word", note: "Word·Pages" },
-  { format: "bundle", ext: "zip", label: "묶음", note: "오디오·전사·요약 zip" },
+  { format: "bundle", ext: "zip", label: "전체 백업 (ZIP)", note: "오디오 원본 + 대화 내용 + 요약" },
 ];
 
 /** 저장 대화상자 기본 이름: <날짜>_<제목>.<확장자>. 파일 이름에 못 쓰는 문자는 공백으로. */

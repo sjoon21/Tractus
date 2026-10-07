@@ -3,8 +3,9 @@
 import { listen } from "@tauri-apps/api/event";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { api, errText, type ChatEntry } from "./api";
+import { ErrorDetail } from "./ErrorDetail";
 import { answeredBy, answerParts, askReduce, citeTarget, isAsking, sendNotice, START_ASK, trimHistory, turnsHistory, type AskEvent, type AskSource, type AskState, type LlmConfig } from "./ask";
-import { fmtTime, isImeKey } from "./lib";
+import { APP_ERROR, errorView, fmtTime, isImeKey, JOB_ERROR } from "./lib";
 
 export type AskScope = { kind: "meeting"; id: string; starts: Map<string, number> } | { kind: "global" };
 type Turn = { id: string; question: string; state: AskState };
@@ -16,7 +17,7 @@ const fromEntry = (e: ChatEntry, i: number): Turn => ({
   state: { ...START_ASK, phase: "done", answer: e.answer, citations: e.citations, provider: e.provider, model: e.model },
 });
 
-const STATUS: Partial<Record<AskState["phase"], string>> = { starting: "준비하는 중…", retrieve: "관련 대목을 찾는 중…", answer: "답을 쓰는 중…" };
+const STATUS: Partial<Record<AskState["phase"], string>> = { starting: "준비 중…", retrieve: "관련 대화를 찾는 중…", answer: "답변 작성 중…" };
 
 export function AskPanel({ scope, onCite, inputRef }: { scope: AskScope; onCite: OnCite; inputRef?: React.RefObject<HTMLTextAreaElement | null> }) {
   const meetingId = scope.kind === "meeting" ? scope.id : null;
@@ -77,7 +78,7 @@ export function AskPanel({ scope, onCite, inputRef }: { scope: AskScope; onCite:
     try {
       await api.askStart({ job, meeting: meetingId, from: range.from || null, to: range.to || null, question, history });
     } catch (e) {
-      setTurns((ts) => ts.map((t) => (t.id === job ? { ...t, state: { ...t.state, phase: "error", error: errText(e) } } : t)));
+      setTurns((ts) => ts.map((t) => (t.id === job ? { ...t, state: { ...t.state, phase: "error", error: errText(e), errorCode: APP_ERROR } } : t)));
     }
   };
   const cancel = () => {
@@ -95,13 +96,13 @@ export function AskPanel({ scope, onCite, inputRef }: { scope: AskScope; onCite:
         <div className="ask-empty">
           <p>
             {meetingId
-              ? "이 회의 기록에서 근거를 찾아 답합니다. 답 속 시각을 누르면 그 대목으로 이동합니다."
-              : "모든 회의에서 관련 대목을 찾아 답합니다. 시각을 누르면 그 회의의 그 대목을 엽니다."}
+              ? "이 회의 내용을 바탕으로 AI가 답변합니다. 답변 속 시각을 누르면 그 부분으로 이동합니다."
+              : "모든 회의 내용을 바탕으로 AI가 답변합니다. 시각을 누르면 그 회의의 해당 부분을 엽니다."}
           </p>
         </div>
       )}
       {loadError && <p className="inline-error ask-note">{loadError}</p>}
-      <ol className="ask-log" aria-label="질문과 답">
+      <ol className="ask-log" aria-label="질문과 답변">
         {turns.map((t) => (
           <TurnItem key={t.id} turn={t} scope={scope} onCite={onCite} />
         ))}
@@ -130,7 +131,7 @@ export function AskPanel({ scope, onCite, inputRef }: { scope: AskScope; onCite:
           maxLength={2000}
           value={draft}
           placeholder={meetingId ? "예: 예산은 얼마로 정했나요?" : "예: 지난주 회의들에서 정한 출시일은?"}
-          aria-label={meetingId ? "이 회의에 질문" : "전체 회의에 질문"}
+          aria-label={meetingId ? "이 회의에 대해 AI에게 질문" : "AI 어시스턴트에게 질문 (모든 회의 대상)"}
           aria-description="Enter 보내기, Shift+Enter 줄바꿈"
           onChange={(e) => setDraft(e.target.value)}
           onCompositionStart={() => (composing.current = true)}
@@ -172,29 +173,37 @@ function TurnItem({ turn: { question, state: s }, scope, onCite }: { turn: Turn;
             const to = citeTarget(p, ctx);
             const src = to && s.sources.find((x) => x.meeting_id === to.meetingId && x.segment_id === to.segId);
             return to ? (
-              <CiteChip key={i} label={chipLabel(to.t, scope.kind === "global" ? src : undefined)} title={src ? `${src.title} · ${to.segId}` : to.segId} onClick={() => onCite(to.meetingId, to.segId, to.t)} />
-            ) : (
-              <span key={i} className="cite-raw">
-                [{p.segId}]
-              </span>
-            );
+              <CiteChip
+                key={i}
+                label={chipLabel(to.t, scope.kind === "global" ? src : undefined)}
+                title={scope.kind === "global" && src ? `${src.title} · ${fmtTime(to.t)} 위치로 이동` : `${fmtTime(to.t)} 위치로 이동`}
+                onClick={() => onCite(to.meetingId, to.segId, to.t)}
+              />
+            ) : null; // 풀리지 않은 인용은 그리지 않는다 (내부 ID를 보이지 않는다)
           })}
         </p>
       )}
       <p className="ask-status" role="status">
         {status && !(s.phase === "answer" && s.answer) ? status : null}
-        {s.phase === "done" && s.citations.length === 0 && <span className="badge">출처 없음</span>}
+        {s.phase === "done" && s.citations.length === 0 && <span className="badge">근거 대화 없음</span>}
         {s.phase === "cancelled" && "멈췄습니다"}
         {answeredBy(s) && <span className="ask-by">{answeredBy(s)}</span>}
       </p>
-      {s.error && (
-        <p className="inline-error ask-note" role="alert">
-          {s.error}
-        </p>
-      )}
+      {s.error && <AskError error={s.error} code={s.errorCode} />}
       {s.warning && <p className="ask-note is-warn">{s.warning}</p>}
       {s.sources.length > 0 && <Sources sources={s.sources} global={scope.kind === "global"} onCite={onCite} />}
     </li>
+  );
+}
+
+/** 실패: 코드 문장 또는 "답변을 받지 못했습니다" + 원래 문구(자세히) */
+function AskError({ error, code }: { error: string; code: string | null }) {
+  const e = errorView(error, code, JOB_ERROR.ask);
+  return (
+    <div className="inline-error ask-note" role="alert">
+      {e.text}
+      <ErrorDetail detail={e.detail} />
+    </div>
   );
 }
 
@@ -206,7 +215,7 @@ function chipLabel(t: number, src?: AskSource | null): string {
 
 function CiteChip({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
   return (
-    <button type="button" className="time-chip cite-chip tnum" title={`근거: ${title}`} onClick={onClick}>
+    <button type="button" className="time-chip cite-chip tnum" title={title} onClick={onClick}>
       {label}
     </button>
   );
@@ -216,12 +225,12 @@ function Sources({ sources, global, onCite }: { sources: AskSource[]; global: bo
   return (
     <details className="ask-sources">
       <summary>
-        근거 <span className="tnum">{sources.length}</span>
+        참고한 대화 <span className="tnum">{sources.length}</span>
       </summary>
       <ol>
         {sources.map((s) => (
           <li key={`${s.meeting_id}#${s.segment_id}`}>
-            <CiteChip label={chipLabel(s.start, global ? s : undefined)} title={`${s.title} · ${s.segment_id}`} onClick={() => onCite(s.meeting_id, s.segment_id, s.start)} />
+            <CiteChip label={chipLabel(s.start, global ? s : undefined)} title={`${s.title} · ${fmtTime(s.start)}`} onClick={() => onCite(s.meeting_id, s.segment_id, s.start)} />
             <span>
               {global && <span className="ask-src-title">{s.title}</span>}
               {s.speaker && <span className="ask-src-speaker">{s.speaker}</span>}

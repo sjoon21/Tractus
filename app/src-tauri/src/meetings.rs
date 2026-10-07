@@ -252,7 +252,7 @@ fn find_dir(home: &Path, id: &str) -> Result<PathBuf, String> {
         .flatten()
         .map(|e| e.path())
         .find(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with(&suffix)))
-        .ok_or_else(|| format!("회의를 찾을 수 없습니다: {id}"))
+        .ok_or_else(|| "회의를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.".to_string())
 }
 
 pub fn load(home: &Path, id: &str) -> Result<MeetingDetail, String> {

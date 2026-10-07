@@ -31,6 +31,14 @@ import {
   speakerStats,
   transcriptRows,
   warningText,
+  DetailedError,
+  ERROR_TEXT,
+  APP_ERROR,
+  errorView,
+  stderrTail,
+  JOB_ERROR,
+  statusLine,
+  WARNING_TEXT,
   withRecMode,
   type Segment,
 } from "./lib";
@@ -113,9 +121,21 @@ describe("parseToolResult", () => {
   test("structuredContent가 없으면 text JSON", () => {
     expect(parseToolResult<{ hits: unknown[] }>({ content: [{ type: "text", text: '{"hits":[]}' }] })).toEqual({ hits: [] });
   });
-  test("isError면 서버 메시지로 예외 (SDK 접두어 제거)", () => {
+  test("isError면 '검색하지 못했습니다' + 서버 메시지(자세히, SDK 접두어 제거)", () => {
     const r = { content: [{ type: "text", text: "Error executing tool search_meetings: 'x'에 맞는 전사된 회의가 없습니다" }], isError: true };
-    expect(() => parseToolResult(r)).toThrow(/^'x'에 맞는 전사된 회의가 없습니다$/);
+    expect(() => parseToolResult(r)).toThrow(/^검색하지 못했습니다$/);
+    try {
+      parseToolResult(r);
+    } catch (e) {
+      expect(e).toBeInstanceOf(DetailedError);
+      expect((e as DetailedError).detail).toBe("'x'에 맞는 전사된 회의가 없습니다");
+    }
+  });
+  test("스마트 검색 상태 줄: 청크·벡터 수 대신 회의 수", () => {
+    const st = { meetings: 12, indexed_chunks: 300, vectors: 300, vector_search: true };
+    expect(statusLine(st)).toBe("스마트 검색 준비 완료 (회의 12개)");
+    expect(statusLine({ ...st, vectors: 10 })).toMatch(/^일부 회의가 아직 스마트 검색에 포함되지 않았습니다\. 터미널에서 tractus index를 실행하세요 \(회의 12개\)$/);
+    expect(statusLine({ ...st, vector_search: false })).toMatch(/단어 일치로만 찾습니다 \(회의 12개\)$/);
   });
   test("결과가 비면 예외", () => {
     expect(() => parseToolResult(null)).toThrow();
@@ -182,13 +202,32 @@ describe("jobReduce", () => {
   });
 
   test("exit 0인데 done이 없으면 stderr 끝 세 줄이 오류다", () => {
-    const s = run([{ job: "j", event: "exit", code: 0, stderr: "a\nb\nc\nd\n" }]);
-    expect(s).toMatchObject({ running: false, error: "b\nc\nd" });
+    const s = run([{ job: "j", event: "exit", code: 0, stderr: "a\nb\nc\nError: d\n" }]);
+    expect(s).toMatchObject({ running: false, error: "작업이 예기치 않게 끝났습니다 (종료 코드 0)\nb\nc\nd" });
+    expect(errorView(s.error, s.errorCode, JOB_ERROR.transcribe)).toEqual({ text: "작업이 예기치 않게 끝났습니다 (종료 코드 0)", detail: "b\nc\nd" });
+  });
+
+  test("stderrTail은 typer 접두어를 뗀다 (resolve_meeting은 param_hint가 따옴표 없는 MEETING)", () => {
+    const real = "Try 'tractus speakers --help' for help.\n\nError: Invalid value for MEETING: ‘x’에 해당하는 회의가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.";
+    expect(stderrTail(real, "").split("\n").at(-1)).toBe("‘x’에 해당하는 회의가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.");
+    expect(stderrTail("Error: Invalid value for '--recording': 녹음된 소리가 없습니다", "")).toBe("녹음된 소리가 없습니다");
   });
 
   test("error 이벤트 메시지가 stderr보다 우선이고, stderr도 없으면 종료 코드", () => {
-    expect(run([{ job: "j", event: "error", message: "키 없음" }, { job: "j", event: "exit", code: 1, stderr: "trace" }]).error).toBe("키 없음");
-    expect(run([{ job: "j", event: "exit", code: null, stderr: " " }]).error).toBe("종료 코드 null");
+    expect(run([{ job: "j", event: "error", message: "키 없음" }, { job: "j", event: "exit", code: 1, stderr: "trace" }])).toMatchObject({ error: "키 없음", errorCode: null });
+    expect(run([{ job: "j", event: "exit", code: null, stderr: " " }]).error).toBe("작업이 예기치 않게 끝났습니다"); // 신호로 끝남: 괄호 없이
+    expect(errorView("작업이 예기치 않게 끝났습니다\nKilled", null, JOB_ERROR.transcribe)).toEqual({ text: "작업이 예기치 않게 끝났습니다", detail: "Killed" });
+    const coded = run([{ job: "j", event: "error", message: "ASR model not found: /m/qwen3", code: "model_missing" }, { job: "j", event: "exit", code: 1, stderr: "" }]);
+    expect(coded).toMatchObject({ error: "ASR model not found: /m/qwen3", errorCode: "model_missing" });
+  });
+
+  test("errorView: 코드 문장 > 앱 종료 문장 > 작업별 기본 문장, 코어 문구는 자세히", () => {
+    expect(errorView("ASR model not found", "model_missing", JOB_ERROR.transcribe)).toEqual({ text: ERROR_TEXT.model_missing, detail: "ASR model not found" });
+    expect(errorView("키 없음", "unknown_code", JOB_ERROR.summarize)).toEqual({ text: "요약하지 못했습니다", detail: "키 없음" });
+    expect(errorView("답변을 받지 못했습니다 (종료 코드 1)", null, JOB_ERROR.ask)).toEqual({ text: "답변을 받지 못했습니다 (종료 코드 1)", detail: null });
+    expect(errorView(null, null, JOB_ERROR.align)).toEqual({ text: "단어 싱크를 맞추지 못했습니다", detail: null });
+    const spawn = "Tractus 엔진을 실행할 수 없습니다. 설정에서 tractus 실행 파일 경로를 확인하세요 (/x/tractus): 없음";
+    expect(errorView(spawn, APP_ERROR, JOB_ERROR.summarize)).toEqual({ text: spawn, detail: null });
   });
 });
 
@@ -214,7 +253,7 @@ describe("recReduce", () => {
   });
 
   test("stopped 없이 exit하면 오류, error 이벤트 뒤의 exit는 메시지를 덮지 않는다", () => {
-    expect(run([started, { event: "exit", code: 9, stderr: "" }])).toMatchObject({ phase: "error", error: "녹음 헬퍼가 종료되었습니다 (코드 9)" });
+    expect(run([started, { event: "exit", code: 9, stderr: "" }])).toMatchObject({ phase: "error", error: "녹음이 예기치 않게 끝났습니다 (종료 코드 9)" });
     expect(run([started, { event: "error", message: "장치 없음" }, { event: "exit", code: 1, stderr: "x" }])).toMatchObject({ phase: "error", error: "장치 없음" });
   });
 });
@@ -242,8 +281,11 @@ describe("녹음 방식", () => {
     for (const m of REC_MODES) expect(m.note).not.toMatch(/헤드폰|이어폰/);
   });
   test("echo_cancel_failed는 설명을 덧붙이고, 모르는 코드는 메시지 그대로", () => {
-    expect(warningText({ code: "echo_cancel_failed", message: "에코 제거를 켜지 못했습니다" })).toMatch(/^에코 제거를 켜지 못했습니다 — .*두 번 전사/);
+    expect(warningText({ code: "echo_cancel_failed", message: "에코 제거를 켜지 못했습니다" })).toMatch(/^에코 제거를 켜지 못했습니다 — .*두 번 기록될/);
     expect(warningText({ code: "new_code", message: "새 경고" })).toBe("새 경고");
+    // 코드 문장이 있으면 코어 문구 대신 그것 (WORDS.md §4.7)
+    expect(warningText({ code: "system_zero", message: "system 트랙이 5초 동안 정확히 0입니다" })).toBe(WARNING_TEXT.system_zero);
+    expect(warningText({ code: "diarizer_missing", message: "화자 분리 모델이 없습니다" })).toMatch(/^참석자 구분에 필요한 파일이 없어/);
   });
   test("녹음 상태는 시작할 때 고른 방식을 유지한다", () => {
     const s = recReduce({ ...IDLE_REC, phase: "starting", mode: "hybrid" }, { event: "started", dir: "/r", tracks: ["mic", "system"], started_at: "" });
@@ -264,11 +306,12 @@ describe("화자", () => {
     { id: "s0005", start: 30, end: 32, text: "e", speaker: null },
   ];
 
-  test("표시 이름: 이름 > 라벨, 화자 없음은 null", () => {
+  test("표시 이름: 이름 > 참석자 N, 화자 없음은 null", () => {
     expect(speakerName("S1", speakers)).toBe("김민수");
-    expect(speakerName("S2", speakers)).toBe("S2");
-    expect(speakerName("S3", speakers)).toBe("S3"); // 공백 이름은 없는 것과 같다
-    expect(speakerName("S9", speakers)).toBe("S9"); // speakers에 없는 라벨도 라벨로
+    expect(speakerName("S2", speakers)).toBe("참석자 2");
+    expect(speakerName("S3", speakers)).toBe("참석자 3"); // 공백 이름은 없는 것
+    expect(speakerName("X", {})).toBe("X"); // 라벨 꼴이 아니면 그대로
+    expect(speakerName("S9", speakers)).toBe("참석자 9"); // speakers에 없는 라벨도 번호로
     expect(speakerName(null, speakers)).toBeNull();
     expect(speakerName(undefined, {})).toBeNull();
   });
@@ -306,7 +349,9 @@ describe("화자", () => {
     expect(st.map((x) => x.label)).toEqual(["S1", "S2", "S3", "S10"]);
     expect(st[0]).toMatchObject({ display: "김민수", segments: 3, talkSec: 24 });
     expect(st[0].share).toBeCloseTo(24 / 32);
-    expect(st[2]).toMatchObject({ display: "S3", segments: 0, talkSec: 0, share: 0 });
+    expect(st[0].named).toBe(true);
+    expect(st[2]).toMatchObject({ display: "참석자 3", named: false, segments: 0, talkSec: 0, share: 0 });
+    expect(st[3].display).toBe("참석자 10");
   });
 
   test("schema v1(화자 필드 없음)은 화자가 없고 그대로 그린다", () => {
@@ -608,12 +653,12 @@ describe("목소리 제안 (7.1)", () => {
   };
 
   test("제안은 표시 이름이 아니다", () => {
-    expect(speakerName("S1", speakers)).toBe("S1");
+    expect(speakerName("S1", speakers)).toBe("참석자 1");
     expect(speakerStats([], speakers).map((s) => [s.display, s.suggested?.name ?? null])).toEqual([
-      ["S1", "홍길동"],
+      ["참석자 1", "홍길동"],
       ["김민수", null],
-      ["S3", null],
-      ["S4", null],
+      ["참석자 3", null],
+      ["참석자 4", null],
     ]);
   });
 
@@ -625,8 +670,8 @@ describe("목소리 제안 (7.1)", () => {
   });
 
   test("배지 글", () => {
-    expect(suggestionText(sug)).toBe("홍길동? · 자동 인식 82%");
-    expect(suggestionText({ ...sug, score: 1.4 })).toBe("홍길동? · 자동 인식 100%");
+    expect(suggestionText(sug)).toBe("홍길동 님인가요? (일치율 82%)");
+    expect(suggestionText({ ...sug, score: 1.4 })).toBe("홍길동 님인가요? (일치율 100%)");
   });
 
   test("기억하기는 이름과 동의 확인이 모두 있어야 한다", () => {
@@ -653,7 +698,7 @@ describe("목소리 제안 (7.1)", () => {
   });
 
   test("stage voices", () => {
-    expect(STAGE_LABEL.voices).toBe("목소리 맞춰 보는 중");
+    expect(STAGE_LABEL.voices).toBe("등록된 참석자 확인 중…");
   });
 
   // 실제 코어 출력 (가상 `say` 회의 통합 실행, 경로만 줄였다)
@@ -686,13 +731,13 @@ describe("목소리 제안 (7.1)", () => {
     const real: Speakers = { S1: { name: null, suggested: { person_id: "01M4ABVBAA6N46V7MCV8M7DC17", name: "유나", score: 0.96 } }, S2: { name: null, suggested: null } };
     const st = speakerStats([], real);
     expect(st.map((s) => [s.display, s.suggested && suggestionText(s.suggested)])).toEqual([
-      ["S1", "유나? · 자동 인식 96%"],
-      ["S2", null],
+      ["참석자 1", "유나 님인가요? (일치율 96%)"],
+      ["참석자 2", null],
     ]);
     // 확정(= 이름 바꾸기) 뒤 코어가 suggested를 지운 맵
     expect(speakerStats([], { S1: { name: "유나" }, S2: { name: null } }).map((s) => [s.display, s.suggested])).toEqual([
       ["유나", null],
-      ["S2", null],
+      ["참석자 2", null],
     ]);
   });
 });
@@ -766,8 +811,9 @@ describe("liveReduce", () => {
   });
 
   test("a signal exit with empty stderr reads as a stopped process, not '종료 코드 null'", () => {
-    expect(run([{ event: "stage", stage: "live" }, { event: "exit", code: null, stderr: "" }])).toMatchObject({ status: "failed", error: "자막 프로세스가 종료되었습니다" });
-    expect(run([{ event: "exit", code: 2, stderr: "" }]).error).toBe("종료 코드 2");
+    expect(run([{ event: "stage", stage: "live" }, { event: "exit", code: null, stderr: "" }])).toMatchObject({ status: "failed", error: "실시간 변환이 예기치 않게 끝났습니다" });
+    expect(run([{ event: "exit", code: 2, stderr: "" }]).error).toBe("실시간 변환이 예기치 않게 끝났습니다 (종료 코드 2)");
+    expect(run([{ event: "error", message: "RAM 8 GB < 16 GB", code: "live_low_memory" }, { event: "exit", code: 1, stderr: "" }])).toMatchObject({ error: "RAM 8 GB < 16 GB", errorCode: "live_low_memory" });
   });
 
   test("liveHalted: any exit while still recording shows the notice, even a clean SIGTERM stop", () => {

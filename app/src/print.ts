@@ -47,7 +47,7 @@ export function printDoc(d: {
     },
     rows: d.segments.map((seg, i) => {
       const turn = diarized && (i === 0 || (d.segments[i - 1].speaker ?? null) !== (seg.speaker ?? null));
-      return { id: seg.id, time: fmtTime(seg.start), speaker: turn ? (speakerName(seg.speaker, d.speakers) ?? "화자 미상") : null, text: segText(seg) };
+      return { id: seg.id, time: fmtTime(seg.start), speaker: turn ? (speakerName(seg.speaker, d.speakers) ?? "알 수 없음") : null, text: segText(seg) };
     }),
   };
 }

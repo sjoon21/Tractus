@@ -34,8 +34,10 @@ describe("인용 파싱", () => {
       { kind: "cite", meetingId: null, segId: "s0002" },
     ]);
   });
-  test("인용이 아닌 대괄호와 스트리밍 중 덜 온 인용은 글자 그대로", () => {
-    expect(answerParts("[참고] 값 [s12] 그리고 [s00")).toEqual([{ kind: "text", text: "[참고] 값 [s12] 그리고 [s00" }]);
+  test("인용이 아닌 대괄호는 글자 그대로, 스트리밍 중 끝에 덜 온 인용은 뗀다 (ID를 보이지 않는다)", () => {
+    expect(answerParts("[참고] 값 [s12] 그리고 [s00")).toEqual([{ kind: "text", text: "[참고] 값 [s12] 그리고 " }]);
+    expect(answerParts(`결정 [s0001, ${ID.slice(0, 10)}`)).toEqual([{ kind: "text", text: "결정 " }]);
+    expect(answerParts("끝 [")).toEqual([{ kind: "text", text: "끝 " }]);
     expect(answerParts("")).toEqual([]);
   });
 });
@@ -83,14 +85,14 @@ describe("askReduce", () => {
       { event: "warning", code: "chat_save_failed", message: "기록을 저장하지 못했습니다" },
       { event: "done", answer: "3억", citations: [], provider: "upstage", model: "solar-pro4" },
     ]);
-    expect(s).toMatchObject({ phase: "done", answer: "3억", warning: "기록을 저장하지 못했습니다" }); // 코어는 저장(경고) 뒤에 done을 보낸다
+    expect(s).toMatchObject({ phase: "done", answer: "3억", warning: "질문 기록을 저장하지 못했습니다. 답변은 그대로 볼 수 있습니다." }); // 코어는 저장(경고) 뒤에 done을 보낸다 (코드 → WORDS 문장)
     const w = run([{ event: "warning", code: "x", message: "경고" }, { event: "mystery" } as never, { event: "delta", text: "a" }]);
     expect(w).toMatchObject({ phase: "answer", answer: "a", warning: "경고" });
   });
   test("error 이벤트 메시지, 없으면 stderr 끝, 취소는 그대로", () => {
-    expect(run([{ event: "error", message: "UPSTAGE_API_KEY가 없습니다" }, { event: "exit", code: 1, stderr: "Traceback" }])).toMatchObject({ phase: "error", error: "UPSTAGE_API_KEY가 없습니다" });
-    expect(run([{ event: "stage", stage: "answer" }, { event: "exit", code: 1, stderr: "a\nb\nError: 죽음" }])).toMatchObject({ phase: "error", error: "a\nb\nError: 죽음" });
-    expect(run([{ event: "exit", code: null, stderr: "" }]).error).toBe("질문을 처리하지 못했습니다 (종료 코드 null)");
+    expect(run([{ event: "error", message: "UPSTAGE_API_KEY가 없습니다", code: "llm_config" }, { event: "exit", code: 1, stderr: "Traceback" }])).toMatchObject({ phase: "error", error: "UPSTAGE_API_KEY가 없습니다", errorCode: "llm_config" });
+    expect(run([{ event: "stage", stage: "answer" }, { event: "exit", code: 1, stderr: "a\nb\nError: 죽음" }])).toMatchObject({ phase: "error", error: "답변을 받지 못했습니다 (종료 코드 1)\na\nb\n죽음", errorCode: null });
+    expect(run([{ event: "exit", code: null, stderr: "" }]).error).toBe("답변을 받지 못했습니다"); // 신호로 끝남: 괄호 없이
     const cancelled = { ...START_ASK, phase: "cancelled" as const, answer: "예산은" };
     expect(run([{ event: "delta", text: " 3억" }, { event: "exit", code: null, stderr: "" }], cancelled)).toEqual(cancelled);
   });
@@ -103,7 +105,7 @@ describe("askReduce", () => {
     const done = { ...START_ASK, phase: "done" as const, provider: "upstage", model: "solar-pro4" };
     const cite = [{ meeting_id: ID, segment_id: "s0012", start: 331 }];
     expect(answeredBy({ ...done, citations: cite })).toBe("Upstage(solar-pro4)");
-    expect(answeredBy({ ...done, provider: "gemma-local", model: "gemma4:31b", citations: cite })).toBe("로컬 모델(gemma4:31b)");
+    expect(answeredBy({ ...done, provider: "gemma-local", model: "gemma4:31b", citations: cite })).toBe("이 Mac의 AI(gemma4:31b)");
     expect(answeredBy(done)).toBeNull(); // 근거가 없어 LLM을 부르지 않은 답
     expect(answeredBy({ ...done, phase: "answer", citations: cite })).toBeNull();
   });
@@ -134,14 +136,14 @@ describe("대화 기록", () => {
 
 describe("전송 안내", () => {
   test("공급자·모델 이름으로 어디로 보내는지 알린다", () => {
-    expect(sendNotice({ provider: "upstage", model: null, local_only: false })).toEqual({ text: "질문과 관련 전사 일부가 Upstage(solar-pro4)로 전송됩니다", warn: false });
-    expect(sendNotice({ provider: "openai", model: "gpt-x", local_only: false }).text).toBe("질문과 관련 전사 일부가 OpenAI(gpt-x)로 전송됩니다");
-    expect(sendNotice({ provider: "gemma-local", model: null, local_only: true })).toEqual({ text: "질문과 관련 전사 일부가 이 Mac의 로컬 모델(gemma4:31b)로 처리됩니다", warn: false });
+    expect(sendNotice({ provider: "upstage", model: null, local_only: false })).toEqual({ text: "질문과 관련 대화 일부가 Upstage(solar-pro4)로 전송됩니다", warn: false });
+    expect(sendNotice({ provider: "openai", model: "gpt-x", local_only: false }).text).toBe("질문과 관련 대화 일부가 OpenAI(gpt-x)로 전송됩니다");
+    expect(sendNotice({ provider: "gemma-local", model: null, local_only: true })).toEqual({ text: "질문과 관련 대화 일부를 이 Mac의 AI(gemma4:31b)가 처리합니다", warn: false });
   });
   test("공급자 없음·로컬 전용 모드는 경고", () => {
-    expect(sendNotice({ provider: null, model: null, local_only: false })).toEqual({ text: "LLM 공급자가 설정되지 않았습니다 (TRACTUS_LLM_PROVIDER)", warn: true });
-    expect(sendNotice({ provider: "upstage", model: null, local_only: true })).toEqual({ text: "로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 원격 공급자(Upstage)로 보내지 않습니다", warn: true });
-    expect(sendNotice({ provider: "mystery", model: null, local_only: false })).toEqual({ text: "알 수 없는 LLM 공급자입니다: mystery", warn: true });
-    expect(sendNotice({ provider: "openai", model: null, local_only: false })).toEqual({ text: "OpenAI 모델을 지정하세요 (TRACTUS_LLM_MODEL)", warn: true });
+    expect(sendNotice({ provider: null, model: null, local_only: false })).toEqual({ text: "AI 서비스가 설정되지 않았습니다. .env.local에 TRACTUS_LLM_PROVIDER를 지정하세요", warn: true });
+    expect(sendNotice({ provider: "upstage", model: null, local_only: true })).toEqual({ text: "로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 외부 AI 서비스(Upstage)로 보내지 않습니다", warn: true });
+    expect(sendNotice({ provider: "mystery", model: null, local_only: false })).toEqual({ text: "알 수 없는 AI 서비스입니다: mystery", warn: true });
+    expect(sendNotice({ provider: "openai", model: null, local_only: false })).toEqual({ text: "사용할 OpenAI AI 모델을 지정하세요 (TRACTUS_LLM_MODEL)", warn: true });
   });
 });

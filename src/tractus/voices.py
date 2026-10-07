@@ -74,7 +74,7 @@ class VoiceEmbedder:
         meta = self.session.get_modelmeta().custom_metadata_map
         if meta.get("feature_normalize_type") != "global-mean" or meta.get("normalize_samples", "1") != "1" \
                 or int(meta.get("sample_rate", SR)) != SR:
-            raise RuntimeError(f"지원하지 않는 화자 임베딩 모델입니다(3D-Speaker 16kHz만): {model_path}")
+            raise RuntimeError(f"목소리 인식 파일이 올바르지 않습니다. 다시 받아 주세요: {model_path}")
         self.input = self.session.get_inputs()[0].name
 
     def embed(self, pcm: np.ndarray) -> np.ndarray:
@@ -102,7 +102,7 @@ def load_embedder(models_dir: Path) -> VoiceEmbedder | None:
     if not p.is_file():
         return None
     if hashlib.sha256(p.read_bytes()).hexdigest() != MODEL_SHA256:
-        raise RuntimeError(f"목소리 모델 파일이 예상과 다릅니다 (sha256 불일치): {p}")
+        raise RuntimeError(f"목소리 인식 파일이 올바르지 않습니다. 다시 받아 주세요: {p}")
     return VoiceEmbedder(p)
 
 

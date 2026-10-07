@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { JobState, LiveState, RecState } from "./api";
-import { fmtTime, levelFraction, liveHalted, REC_MODES, STAGE_LABEL, warningText } from "./lib";
+import { ErrorDetail } from "./ErrorDetail";
+import { ERROR_TEXT, errorView, fmtTime, JOB_ERROR, levelFraction, liveHalted, REC_MODES, STAGE_LABEL, warningText } from "./lib";
 
 type Send = (cmd: "bookmark" | "memo" | "stop", text?: string) => Promise<void>;
 
@@ -59,7 +60,7 @@ export function RecordView({ rec, captions, job, send, retry }: { rec: RecState;
               북마크 <kbd>B</kbd>
             </button>
             <button className="stop-button" onClick={() => send("stop")} disabled={!live}>
-              <span aria-hidden className="stop-square" /> 정지하고 전사
+              <span aria-hidden className="stop-square" /> 녹음 종료 및 변환
             </button>
           </div>
 
@@ -106,7 +107,7 @@ export function RecordView({ rec, captions, job, send, retry }: { rec: RecState;
 /** 맨 아래에서 이만큼(px) 안이면 새 줄을 따라 내려간다. 위로 올려 읽는 중이면 멈춘다 */
 const FOLLOW_SLACK = 24;
 
-/** 실시간 자막 (Phase 7.2). 미리보기라 저장하지 않는다. 화면 읽기 프로그램에는 확정된 줄만 알린다 (partial은 계속 바뀐다) */
+/** 실시간 텍스트 변환 (Phase 7.2). 미리보기라 저장하지 않는다. 화면 읽기 프로그램에는 확정된 줄만 알린다 (partial은 계속 바뀐다) */
 function LivePane({ live, recording }: { live: LiveState; recording: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
@@ -120,31 +121,32 @@ function LivePane({ live, recording }: { live: LiveState; recording: boolean }) 
   return (
     <section className="live-pane" aria-labelledby="live-title">
       <p className="live-head">
-        <span id="live-title">{STAGE_LABEL[live.status === "loading" ? "live_load" : "live"]}</span>
-        <span className="live-note">미리보기 · 녹음을 멈추면 정식 전사가 다시 만듭니다</span>
+        <span id="live-title">{STAGE_LABEL.live} (미리보기)</span>
+        <span className="live-note">녹음 종료 후 고품질 텍스트로 정돈됩니다</span>
       </p>
       {liveHalted(live, recording) && (
-        <p className="record-warning" role="status">
-          실시간 자막이 멈췄습니다. 녹음은 계속됩니다
-          {live.error && <span className="live-error">{live.error}</span>}
-        </p>
+        <div className="record-warning" role="status">
+          {JOB_ERROR.live}
+          {live.errorCode && ERROR_TEXT[live.errorCode] && <span className="live-error">{ERROR_TEXT[live.errorCode]}</span>}
+          <ErrorDetail detail={live.error} />
+        </div>
       )}
       {live.warnings.map((w) => (
         <p key={w.code} className="live-warning" role="status">
-          {w.message}
+          {warningText(w)}
         </p>
       ))}
       <div
         className="live-scroll"
         ref={box}
         tabIndex={0}
-        aria-label="실시간 자막 내용"
+        aria-label="실시간 텍스트 변환 내용"
         onScroll={(e) => {
           const el = e.currentTarget;
           follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_SLACK;
         }}
       >
-        {empty && <p className="live-empty">{live.status === "loading" ? "작은 모델을 불러오는 중입니다…" : live.status === "on" ? "말이 시작되면 여기에 보입니다." : ""}</p>}
+        {empty && <p className="live-empty">{live.status === "loading" ? STAGE_LABEL.live_load : live.status === "on" ? "말씀하시면 실시간으로 기록됩니다" : ""}</p>}
         <ol className="live-lines" aria-live="polite" aria-relevant="additions">
           {live.finals.map((f) => (
             <li key={f.id}>
@@ -179,10 +181,11 @@ function Meter({ label, db, present }: { label: string; db: number | null; prese
 
 function JobProgress({ job, retry }: { job: JobState; retry: () => void }) {
   const pct = job.total ? Math.round((job.done / job.total) * 100) : null;
+  const err = job.error ? errorView(job.error, job.errorCode, JOB_ERROR.transcribe) : null;
   return (
     <div className="job" aria-live="polite">
       <div className="job-line">
-        <span>{job.error ? "전사 실패" : job.running ? (STAGE_LABEL[job.stage ?? ""] ?? "전사 준비 중") : "전사 완료"}</span>
+        <span>{job.error ? "텍스트 변환 실패" : job.running ? (STAGE_LABEL[job.stage ?? ""] ?? "변환 준비 중…") : "텍스트 변환 완료"}</span>
         {pct !== null && job.running && (
           <span className="tnum">
             {job.done}/{job.total} · {pct}%
@@ -192,17 +195,20 @@ function JobProgress({ job, retry }: { job: JobState; retry: () => void }) {
       {/* 화자 분리 모델이 없거나 실패해도 전사는 계속된다 (diarizer_missing·diarizer_failed) */}
       {job.warnings.map((w) => (
         <p key={w.code} className="record-warning" role="status">
-          {w.message}
+          {warningText(w)}
         </p>
       ))}
       <div className="job-track">
         <div className={`job-fill ${pct === null && job.running ? "is-indeterminate" : ""}`} style={{ transform: `scaleX(${pct === null ? (job.running ? 1 : 0) : pct / 100})` }} />
       </div>
-      {job.error && (
+      {err && (
         <>
-          <pre className="inline-error">{job.error}</pre>
+          <div className="inline-error job-error" role="alert">
+            {err.text}
+            <ErrorDetail detail={err.detail} />
+          </div>
           <button className="primary-button" onClick={retry}>
-            다시 전사
+            다시 변환
           </button>
         </>
       )}
