@@ -1,0 +1,860 @@
+{
+ "models": {
+  "campplus-zh-en": {
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx",
+   "local_dir": "models/3dspeaker-campplus-zh-en",
+   "license": "Apache-2.0",
+   "runtime": "onnxruntime + kaldi-native-fbank (tractus.voices)",
+   "rtf_cpu2": 0.0085,
+   "pairs": {
+    "same_session": {
+     "eer_pct": 7.65,
+     "eer_threshold": 0.545,
+     "th_far1": 0.729,
+     "frr_at_far1_pct": 25.41,
+     "th_far0.1": 0.905,
+     "frr_at_far0.1_pct": 93.6,
+     "n_target": 36798,
+     "n_nontarget": 224071
+    },
+    "all_labels": {
+     "eer_pct": 6.18,
+     "eer_threshold": 0.505,
+     "th_far1": 0.624,
+     "frr_at_far1_pct": 12.41,
+     "th_far0.1": 0.847,
+     "frr_at_far0.1_pct": 65.85,
+     "n_target": 36798,
+     "n_nontarget": 980653
+    },
+    "same_session_target_mean": 0.77,
+    "cross_session_target_mean_alias": 0.687,
+    "cross_session_nontarget_mean": 0.241
+   },
+   "production": {
+    "trials": {
+     "eer_pct": 2.62,
+     "eer_threshold": 0.603,
+     "th_far1": 0.652,
+     "frr_at_far1_pct": 2.62,
+     "th_far0.1": 0.87,
+     "frr_at_far0.1_pct": 24.45,
+     "n_target": 229,
+     "n_nontarget": 7099
+    },
+    "people": 32,
+    "probes": 229,
+    "match_sweep": [
+     {
+      "threshold": 0.3,
+      "n": 229,
+      "correct_pct": 88.21,
+      "wrong_pct": 1.31,
+      "none_pct": 10.48,
+      "open_false_pct": 23.58
+     },
+     {
+      "threshold": 0.35,
+      "n": 229,
+      "correct_pct": 88.21,
+      "wrong_pct": 1.31,
+      "none_pct": 10.48,
+      "open_false_pct": 23.58
+     },
+     {
+      "threshold": 0.4,
+      "n": 229,
+      "correct_pct": 88.21,
+      "wrong_pct": 1.31,
+      "none_pct": 10.48,
+      "open_false_pct": 23.58
+     },
+     {
+      "threshold": 0.45,
+      "n": 229,
+      "correct_pct": 88.21,
+      "wrong_pct": 1.31,
+      "none_pct": 10.48,
+      "open_false_pct": 23.58
+     },
+     {
+      "threshold": 0.5,
+      "n": 229,
+      "correct_pct": 88.21,
+      "wrong_pct": 1.31,
+      "none_pct": 10.48,
+      "open_false_pct": 22.71
+     },
+     {
+      "threshold": 0.55,
+      "n": 229,
+      "correct_pct": 88.21,
+      "wrong_pct": 1.31,
+      "none_pct": 10.48,
+      "open_false_pct": 19.65
+     },
+     {
+      "threshold": 0.6,
+      "n": 229,
+      "correct_pct": 88.21,
+      "wrong_pct": 1.31,
+      "none_pct": 10.48,
+      "open_false_pct": 13.97
+     },
+     {
+      "threshold": 0.65,
+      "n": 229,
+      "correct_pct": 88.21,
+      "wrong_pct": 1.31,
+      "none_pct": 10.48,
+      "open_false_pct": 11.79
+     },
+     {
+      "threshold": 0.7,
+      "n": 229,
+      "correct_pct": 88.21,
+      "wrong_pct": 1.31,
+      "none_pct": 10.48,
+      "open_false_pct": 11.35
+     },
+     {
+      "threshold": 0.75,
+      "n": 229,
+      "correct_pct": 87.77,
+      "wrong_pct": 1.31,
+      "none_pct": 10.92,
+      "open_false_pct": 10.48
+     },
+     {
+      "threshold": 0.8,
+      "n": 229,
+      "correct_pct": 86.9,
+      "wrong_pct": 1.31,
+      "none_pct": 11.79,
+      "open_false_pct": 8.3
+     },
+     {
+      "threshold": 0.85,
+      "n": 229,
+      "correct_pct": 76.86,
+      "wrong_pct": 0.87,
+      "none_pct": 22.27,
+      "open_false_pct": 3.93
+     }
+    ]
+   },
+   "production_alias": {
+    "trials": {
+     "eer_pct": 2.62,
+     "eer_threshold": 0.594,
+     "th_far1": 0.633,
+     "frr_at_far1_pct": 2.62,
+     "th_far0.1": 0.84,
+     "frr_at_far0.1_pct": 13.97,
+     "n_target": 229,
+     "n_nontarget": 6870
+    },
+    "people": 31,
+    "probes": 229,
+    "match_sweep": [
+     {
+      "threshold": 0.3,
+      "n": 229,
+      "correct_pct": 95.63,
+      "wrong_pct": 1.31,
+      "none_pct": 3.06,
+      "open_false_pct": 14.85
+     },
+     {
+      "threshold": 0.35,
+      "n": 229,
+      "correct_pct": 95.63,
+      "wrong_pct": 1.31,
+      "none_pct": 3.06,
+      "open_false_pct": 14.85
+     },
+     {
+      "threshold": 0.4,
+      "n": 229,
+      "correct_pct": 95.63,
+      "wrong_pct": 1.31,
+      "none_pct": 3.06,
+      "open_false_pct": 14.85
+     },
+     {
+      "threshold": 0.45,
+      "n": 229,
+      "correct_pct": 95.63,
+      "wrong_pct": 1.31,
+      "none_pct": 3.06,
+      "open_false_pct": 14.85
+     },
+     {
+      "threshold": 0.5,
+      "n": 229,
+      "correct_pct": 95.63,
+      "wrong_pct": 1.31,
+      "none_pct": 3.06,
+      "open_false_pct": 13.97
+     },
+     {
+      "threshold": 0.55,
+      "n": 229,
+      "correct_pct": 95.63,
+      "wrong_pct": 1.31,
+      "none_pct": 3.06,
+      "open_false_pct": 11.35
+     },
+     {
+      "threshold": 0.6,
+      "n": 229,
+      "correct_pct": 95.63,
+      "wrong_pct": 1.31,
+      "none_pct": 3.06,
+      "open_false_pct": 5.68
+     },
+     {
+      "threshold": 0.65,
+      "n": 229,
+      "correct_pct": 95.63,
+      "wrong_pct": 1.31,
+      "none_pct": 3.06,
+      "open_false_pct": 3.49
+     },
+     {
+      "threshold": 0.7,
+      "n": 229,
+      "correct_pct": 95.63,
+      "wrong_pct": 1.31,
+      "none_pct": 3.06,
+      "open_false_pct": 2.18
+     },
+     {
+      "threshold": 0.75,
+      "n": 229,
+      "correct_pct": 95.2,
+      "wrong_pct": 1.31,
+      "none_pct": 3.49,
+      "open_false_pct": 1.75
+     },
+     {
+      "threshold": 0.8,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.31,
+      "none_pct": 4.8,
+      "open_false_pct": 1.31
+     },
+     {
+      "threshold": 0.85,
+      "n": 229,
+      "correct_pct": 82.97,
+      "wrong_pct": 0.87,
+      "none_pct": 16.16,
+      "open_false_pct": 0.87
+     }
+    ]
+   },
+   "cross_session": {
+    "pairs": 1,
+    "same_session_probes": {
+     "n": 20,
+     "mean": 0.891,
+     "min": 0.812,
+     "p10": 0.857,
+     "ge_0.65_pct": 100.0,
+     "ge_0.7_pct": 100.0,
+     "ge_0.75_pct": 100.0,
+     "ge_0.8_pct": 100.0
+    },
+    "cross_session_probes": {
+     "n": 20,
+     "mean": 0.827,
+     "min": 0.736,
+     "p10": 0.79,
+     "ge_0.65_pct": 100.0,
+     "ge_0.7_pct": 100.0,
+     "ge_0.75_pct": 95.0,
+     "ge_0.8_pct": 80.0
+    }
+   }
+  },
+  "eres2netv2-zh-cn": {
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2netv2_sv_zh-cn_16k-common.onnx",
+   "local_dir": "models/3dspeaker-eres2netv2-zh-cn",
+   "license": "Apache-2.0",
+   "runtime": "onnxruntime + kaldi-native-fbank (tractus.voices)",
+   "rtf_cpu2": 0.0499,
+   "pairs": {
+    "same_session": {
+     "eer_pct": 7.58,
+     "eer_threshold": 0.573,
+     "th_far1": 0.754,
+     "frr_at_far1_pct": 22.66,
+     "th_far0.1": 0.912,
+     "frr_at_far0.1_pct": 92.84,
+     "n_target": 36798,
+     "n_nontarget": 224071
+    },
+    "all_labels": {
+     "eer_pct": 5.77,
+     "eer_threshold": 0.525,
+     "th_far1": 0.637,
+     "frr_at_far1_pct": 10.69,
+     "th_far0.1": 0.865,
+     "frr_at_far0.1_pct": 66.04,
+     "n_target": 36798,
+     "n_nontarget": 980653
+    },
+    "same_session_target_mean": 0.797,
+    "cross_session_target_mean_alias": 0.674,
+    "cross_session_nontarget_mean": 0.274
+   },
+   "production": {
+    "trials": {
+     "eer_pct": 2.62,
+     "eer_threshold": 0.614,
+     "th_far1": 0.668,
+     "frr_at_far1_pct": 3.06,
+     "th_far0.1": 0.854,
+     "frr_at_far0.1_pct": 13.97,
+     "n_target": 229,
+     "n_nontarget": 7099
+    },
+    "people": 32,
+    "probes": 229,
+    "match_sweep": [
+     {
+      "threshold": 0.3,
+      "n": 229,
+      "correct_pct": 90.83,
+      "wrong_pct": 1.75,
+      "none_pct": 7.42,
+      "open_false_pct": 22.71
+     },
+     {
+      "threshold": 0.35,
+      "n": 229,
+      "correct_pct": 90.83,
+      "wrong_pct": 1.75,
+      "none_pct": 7.42,
+      "open_false_pct": 22.71
+     },
+     {
+      "threshold": 0.4,
+      "n": 229,
+      "correct_pct": 90.83,
+      "wrong_pct": 1.75,
+      "none_pct": 7.42,
+      "open_false_pct": 22.71
+     },
+     {
+      "threshold": 0.45,
+      "n": 229,
+      "correct_pct": 90.83,
+      "wrong_pct": 1.75,
+      "none_pct": 7.42,
+      "open_false_pct": 22.71
+     },
+     {
+      "threshold": 0.5,
+      "n": 229,
+      "correct_pct": 90.83,
+      "wrong_pct": 1.75,
+      "none_pct": 7.42,
+      "open_false_pct": 22.27
+     },
+     {
+      "threshold": 0.55,
+      "n": 229,
+      "correct_pct": 90.83,
+      "wrong_pct": 1.75,
+      "none_pct": 7.42,
+      "open_false_pct": 18.78
+     },
+     {
+      "threshold": 0.6,
+      "n": 229,
+      "correct_pct": 90.83,
+      "wrong_pct": 1.75,
+      "none_pct": 7.42,
+      "open_false_pct": 14.41
+     },
+     {
+      "threshold": 0.65,
+      "n": 229,
+      "correct_pct": 90.83,
+      "wrong_pct": 1.75,
+      "none_pct": 7.42,
+      "open_false_pct": 12.66
+     },
+     {
+      "threshold": 0.7,
+      "n": 229,
+      "correct_pct": 90.83,
+      "wrong_pct": 1.75,
+      "none_pct": 7.42,
+      "open_false_pct": 10.48
+     },
+     {
+      "threshold": 0.75,
+      "n": 229,
+      "correct_pct": 90.83,
+      "wrong_pct": 1.75,
+      "none_pct": 7.42,
+      "open_false_pct": 10.04
+     },
+     {
+      "threshold": 0.8,
+      "n": 229,
+      "correct_pct": 90.39,
+      "wrong_pct": 1.75,
+      "none_pct": 7.86,
+      "open_false_pct": 5.68
+     },
+     {
+      "threshold": 0.85,
+      "n": 229,
+      "correct_pct": 83.41,
+      "wrong_pct": 1.75,
+      "none_pct": 14.85,
+      "open_false_pct": 2.18
+     }
+    ]
+   },
+   "production_alias": {
+    "trials": {
+     "eer_pct": 2.62,
+     "eer_threshold": 0.604,
+     "th_far1": 0.65,
+     "frr_at_far1_pct": 3.06,
+     "th_far0.1": 0.854,
+     "frr_at_far0.1_pct": 15.72,
+     "n_target": 229,
+     "n_nontarget": 6870
+    },
+    "people": 31,
+    "probes": 229,
+    "match_sweep": [
+     {
+      "threshold": 0.3,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 13.97
+     },
+     {
+      "threshold": 0.35,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 13.97
+     },
+     {
+      "threshold": 0.4,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 13.97
+     },
+     {
+      "threshold": 0.45,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 13.97
+     },
+     {
+      "threshold": 0.5,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 13.54
+     },
+     {
+      "threshold": 0.55,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 10.04
+     },
+     {
+      "threshold": 0.6,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 6.11
+     },
+     {
+      "threshold": 0.65,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 4.37
+     },
+     {
+      "threshold": 0.7,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 1.75
+     },
+     {
+      "threshold": 0.75,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 1.31
+     },
+     {
+      "threshold": 0.8,
+      "n": 229,
+      "correct_pct": 93.01,
+      "wrong_pct": 1.75,
+      "none_pct": 5.24,
+      "open_false_pct": 1.31
+     },
+     {
+      "threshold": 0.85,
+      "n": 229,
+      "correct_pct": 84.28,
+      "wrong_pct": 1.75,
+      "none_pct": 13.97,
+      "open_false_pct": 1.31
+     }
+    ]
+   },
+   "cross_session": {
+    "pairs": 1,
+    "same_session_probes": {
+     "n": 20,
+     "mean": 0.887,
+     "min": 0.812,
+     "p10": 0.841,
+     "ge_0.65_pct": 100.0,
+     "ge_0.7_pct": 100.0,
+     "ge_0.75_pct": 100.0,
+     "ge_0.8_pct": 100.0
+    },
+    "cross_session_probes": {
+     "n": 20,
+     "mean": 0.797,
+     "min": 0.73,
+     "p10": 0.75,
+     "ge_0.65_pct": 100.0,
+     "ge_0.7_pct": 100.0,
+     "ge_0.75_pct": 90.0,
+     "ge_0.8_pct": 50.0
+    }
+   }
+  },
+  "eres2net-base-200k-zh-cn": {
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx",
+   "local_dir": "models/3dspeaker-eres2net-base-200k-zh-cn",
+   "license": "Apache-2.0",
+   "runtime": "onnxruntime + kaldi-native-fbank (tractus.voices)",
+   "rtf_cpu2": 0.0222,
+   "pairs": {
+    "same_session": {
+     "eer_pct": 7.09,
+     "eer_threshold": 0.565,
+     "th_far1": 0.75,
+     "frr_at_far1_pct": 23.1,
+     "th_far0.1": 0.918,
+     "frr_at_far0.1_pct": 93.85,
+     "n_target": 36798,
+     "n_nontarget": 224071
+    },
+    "all_labels": {
+     "eer_pct": 5.64,
+     "eer_threshold": 0.529,
+     "th_far1": 0.625,
+     "frr_at_far1_pct": 10.01,
+     "th_far0.1": 0.865,
+     "frr_at_far0.1_pct": 64.97,
+     "n_target": 36798,
+     "n_nontarget": 980653
+    },
+    "same_session_target_mean": 0.795,
+    "cross_session_target_mean_alias": 0.651,
+    "cross_session_nontarget_mean": 0.258
+   },
+   "production": {
+    "trials": {
+     "eer_pct": 2.62,
+     "eer_threshold": 0.609,
+     "th_far1": 0.655,
+     "frr_at_far1_pct": 2.62,
+     "th_far0.1": 0.853,
+     "frr_at_far0.1_pct": 15.72,
+     "n_target": 229,
+     "n_nontarget": 7099
+    },
+    "people": 32,
+    "probes": 229,
+    "match_sweep": [
+     {
+      "threshold": 0.3,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 21.83
+     },
+     {
+      "threshold": 0.35,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 21.83
+     },
+     {
+      "threshold": 0.4,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 21.83
+     },
+     {
+      "threshold": 0.45,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 21.83
+     },
+     {
+      "threshold": 0.5,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 20.52
+     },
+     {
+      "threshold": 0.55,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 14.85
+     },
+     {
+      "threshold": 0.6,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 11.79
+     },
+     {
+      "threshold": 0.65,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 10.04
+     },
+     {
+      "threshold": 0.7,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 8.3
+     },
+     {
+      "threshold": 0.75,
+      "n": 229,
+      "correct_pct": 93.45,
+      "wrong_pct": 1.75,
+      "none_pct": 4.8,
+      "open_false_pct": 6.55
+     },
+     {
+      "threshold": 0.8,
+      "n": 229,
+      "correct_pct": 92.58,
+      "wrong_pct": 1.75,
+      "none_pct": 5.68,
+      "open_false_pct": 3.49
+     },
+     {
+      "threshold": 0.85,
+      "n": 229,
+      "correct_pct": 84.28,
+      "wrong_pct": 1.75,
+      "none_pct": 13.97,
+      "open_false_pct": 1.75
+     }
+    ]
+   },
+   "production_alias": {
+    "trials": {
+     "eer_pct": 2.62,
+     "eer_threshold": 0.604,
+     "th_far1": 0.644,
+     "frr_at_far1_pct": 2.62,
+     "th_far0.1": 0.853,
+     "frr_at_far0.1_pct": 17.03,
+     "n_target": 229,
+     "n_nontarget": 6870
+    },
+    "people": 31,
+    "probes": 229,
+    "match_sweep": [
+     {
+      "threshold": 0.3,
+      "n": 229,
+      "correct_pct": 94.32,
+      "wrong_pct": 1.75,
+      "none_pct": 3.93,
+      "open_false_pct": 17.47
+     },
+     {
+      "threshold": 0.35,
+      "n": 229,
+      "correct_pct": 94.32,
+      "wrong_pct": 1.75,
+      "none_pct": 3.93,
+      "open_false_pct": 17.47
+     },
+     {
+      "threshold": 0.4,
+      "n": 229,
+      "correct_pct": 94.32,
+      "wrong_pct": 1.75,
+      "none_pct": 3.93,
+      "open_false_pct": 17.47
+     },
+     {
+      "threshold": 0.45,
+      "n": 229,
+      "correct_pct": 94.32,
+      "wrong_pct": 1.75,
+      "none_pct": 3.93,
+      "open_false_pct": 17.47
+     },
+     {
+      "threshold": 0.5,
+      "n": 229,
+      "correct_pct": 94.32,
+      "wrong_pct": 1.75,
+      "none_pct": 3.93,
+      "open_false_pct": 16.16
+     },
+     {
+      "threshold": 0.55,
+      "n": 229,
+      "correct_pct": 94.32,
+      "wrong_pct": 1.75,
+      "none_pct": 3.93,
+      "open_false_pct": 10.48
+     },
+     {
+      "threshold": 0.6,
+      "n": 229,
+      "correct_pct": 94.32,
+      "wrong_pct": 1.75,
+      "none_pct": 3.93,
+      "open_false_pct": 7.42
+     },
+     {
+      "threshold": 0.65,
+      "n": 229,
+      "correct_pct": 94.32,
+      "wrong_pct": 1.75,
+      "none_pct": 3.93,
+      "open_false_pct": 5.68
+     },
+     {
+      "threshold": 0.7,
+      "n": 229,
+      "correct_pct": 94.32,
+      "wrong_pct": 1.75,
+      "none_pct": 3.93,
+      "open_false_pct": 2.62
+     },
+     {
+      "threshold": 0.75,
+      "n": 229,
+      "correct_pct": 93.89,
+      "wrong_pct": 1.75,
+      "none_pct": 4.37,
+      "open_false_pct": 1.31
+     },
+     {
+      "threshold": 0.8,
+      "n": 229,
+      "correct_pct": 92.58,
+      "wrong_pct": 1.75,
+      "none_pct": 5.68,
+      "open_false_pct": 1.31
+     },
+     {
+      "threshold": 0.85,
+      "n": 229,
+      "correct_pct": 83.41,
+      "wrong_pct": 1.75,
+      "none_pct": 14.85,
+      "open_false_pct": 1.31
+     }
+    ]
+   },
+   "cross_session": {
+    "pairs": 1,
+    "same_session_probes": {
+     "n": 20,
+     "mean": 0.881,
+     "min": 0.826,
+     "p10": 0.83,
+     "ge_0.65_pct": 100.0,
+     "ge_0.7_pct": 100.0,
+     "ge_0.75_pct": 100.0,
+     "ge_0.8_pct": 100.0
+    },
+    "cross_session_probes": {
+     "n": 20,
+     "mean": 0.769,
+     "min": 0.699,
+     "p10": 0.712,
+     "ge_0.65_pct": 100.0,
+     "ge_0.7_pct": 95.0,
+     "ge_0.75_pct": 60.0,
+     "ge_0.8_pct": 25.0
+    }
+   }
+  }
+ },
+ "data": {
+  "sessions": 4,
+  "speakers": 40,
+  "utterances": 1427,
+  "clip_s": [
+   1.5,
+   10.0
+  ],
+  "per_speaker_cap": 60,
+  "margin": 0.08
+ },
+ "recommended": {
+  "model": "campplus-zh-en",
+  "runtime": "onnxruntime 1.30.0 + kaldi-native-fbank 1.22.3 (sherpa-onnx는 espeak-ng GPL-3 정적 링크라 뺐다)",
+  "sha256": "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2",
+  "threshold": 0.7,
+  "margin": 0.08,
+  "why": "T=0.70. 매칭 시뮬레이션(probe 229개, 등록과 probe가 같은 세션): AI Hub 라벨 그대로(32명) 맞음 88.2% / 틀림 1.3% / 없음 10.5% / 미등록 오제안 11.4%, ALIASES 1쌍을 같은 사람으로 보면(31명, 미검증) 95.6% / 1.3% / 3.1% / 2.2%. 두 행의 차이는 거의 전부 서로 0.9로 맞는 두 세션 사회자 1쌍(probe 20개)이다. 세션 간(그 1쌍만, probe 20개): 같은 세션 평균 0.891 → 다른 세션 평균 0.827, 최소 0.736, 0.75 이상 95%, 0.70 이상 100%. 회의가 바뀌면 점수가 약 0.06 내려가므로 0.75 대신 0.70을 쓴다(같은 세션 오제안 +0.4%p). 다른 회의에서의 재현율은 1쌍 말고는 재지 못했다. 세 모델 지표가 비슷하고 CAM++가 가장 작고(28MB) 빠르다(RTF 0.0085, 2스레드)."
+ }
+}

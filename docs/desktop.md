@@ -103,21 +103,24 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 | `tractus export` | 내보내기. 아래 §2.4 |
 | `tractus ask` (Phase 6) | 회의 질의. 아래 §2.5 |
 | 단어 타이밍 (Phase 6) | `transcribe`가 전사 뒤 `segments[].words`를 채운다(`--no-align`으로 끔). 기존 회의는 `tractus align`. 아래 §2.6 |
+| 목소리 프로필 (Phase 7.1) | `transcribe`가 화자 분리 뒤 등록된 목소리와 맞춰 `speakers.S1.suggested`에 이름을 제안한다. `tractus voices`, `tractus speakers <회의> dismiss`. 아래 §2.7 |
 | 가져오기 (Phase 5) | 앱 job kind `import` = `tractus transcribe <파일> --progress-json` (다른 작업과 같은 환경변수). ffmpeg가 읽는 모든 형식을 받는다(m4a, mp3, wav, webm, mp4, mov …). 동영상은 소리만 쓴다(`-vn`) |
 
 진행 이벤트:
 
 ```jsonc
-{"event":"stage","stage":"decode"}            // decode | vad | diarize | encode | load_model | transcribe | align | index | summarize
+{"event":"stage","stage":"decode"}            // decode | vad | diarize | voices | encode | load_model | transcribe | align | index | summarize
 {"event":"progress","done":37,"total":145}
 {"event":"warning","code":"diarizer_missing","message":"…"}   // 화자 분리 모델이 없음 → 화자 없이 계속 (diarizer_failed: 실패 → 화자 없이 계속)
 {"event":"warning","code":"aligner_missing","message":"…"}    // 단어 정렬 모델이 없음 → words null로 완료 (aligner_failed: 실패 → words null로 완료)
+{"event":"warning","code":"voices_model_missing","message":"…"} // 등록된 목소리가 있는데 모델이 없음 → 제안 없이 계속 (voices_failed: 실패 → 제안 없이 계속)
 {"event":"warning","code":"duplicate","message":"…"}           // 이미 전사된 파일 → 바로 기존 회의의 done이 이어진다 (종료 코드 0)
 {"event":"done","meeting_id":"01K…","meeting_dir":"/…/meetings/2026-10-02_…"}
 {"event":"error","message":"…"}               // 종료 코드 1
 ```
 
 - `diarize` 단계는 모델이 있을 때만 나온다(84분 회의 약 14초). 이어하기에서는 다시 하지 않는다.
+- `voices` 단계는 등록된 목소리가 있고 화자 분리를 했을 때만 나온다(화자당 구간 3개 임베딩, onnxruntime CPU). 등록된 사람이 없으면 단계도 경고도 없다. 이어하기에서는 다시 하지 않는다.
 - `align` 단계는 `transcribe` 다음, `index` 전에 나온다(모델이 있고 `--no-align`이 아닐 때). `progress`는 세그먼트 단위다(`done`/`total`). 44.7분 회의 약 66초.
 - `align` 중에 중단하면 전사는 이미 저장돼 있다. `error` 메시지에 `tractus align <id>` 안내가 있고 종료 코드는 130이다.
 - `warning`은 종료가 아니다. 앱은 `message`를 알림으로 보여 주고 진행을 계속 표시한다.
@@ -134,15 +137,16 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 | `tractus speakers <회의> list --json` | 아래 JSON 한 줄을 stdout에 출력 |
 | `tractus speakers <회의> rename S1 "김민수"` | 이름 지정. `""`이면 이름을 지운다. `` []<>*_`\ `` 문자는 빠지고, `S2`처럼 라벨 모양인 이름은 exit 1 |
 | `tractus speakers <회의> set s0012 S2` | 세그먼트 하나의 화자 변경. `S2` 대신 `new`면 다음 라벨(예: `S4`)을 만든다 |
-| `tractus speakers <회의> merge S3 S1` | S3의 세그먼트를 모두 S1으로 옮기고 S3을 없앤다. S1에 이름이 없으면 S3의 이름을 이어받는다 |
+| `tractus speakers <회의> merge S3 S1` | S3의 세그먼트를 모두 S1으로 옮기고 S3을 없앤다. S1에 이름이 없으면 S3의 이름을 이어받는다. S3의 목소리 제안은 사라진다 |
+| `tractus speakers <회의> dismiss S1` | 목소리 제안을 지운다(앱의 '아님'). 제안을 받아들이는 '확정'은 제안된 이름으로 `rename`한다. rename은 언제나 제안을 지운다 |
 
 세그먼트가 하나도 남지 않은 라벨은 `speakers`에서 지워진다.
 
 ```jsonc
 // tractus speakers 01K6X3 list --json
 {"meeting_id":"01K6X3…","speakers":[
-  {"label":"S1","name":"김민수","display":"김민수","segments":31,"talk_sec":812.4},
-  {"label":"S2","name":null,"display":"S2","segments":18,"talk_sec":402.0}],
+  {"label":"S1","name":"김민수","display":"김민수","suggested":null,"segments":31,"talk_sec":812.4},
+  {"label":"S2","name":null,"display":"S2","suggested":{"person_id":"01K…","name":"홍길동","score":0.82},"segments":18,"talk_sec":402.0}],
  "diarization":{"model":"mlx-community/Nemotron-3-Diarization","revision":"59ed2dbf…","params":{…}}}   // 화자 분리 안 했으면 speakers [], diarization null
 ```
 
@@ -256,6 +260,28 @@ stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없
 - **불변식:** `words`가 null이 아니면 `words.length`가 표시 텍스트의 공백 토큰 수(Python `str.split()`, 앱은 `/\S+/g`)와 같고 `words[k].text`는 k번째 토큰과 같다. 드문 공백 문자(U+FEFF 등)에서 둘이 어긋나면 앱은 그 세그먼트를 세그먼트 단위로만 다룬다. 표시 텍스트 = `corrected_text ?? text`. 앱은 어긋나면(낙관적 편집 직후 등) 그 세그먼트의 `words`를 쓰지 않는다.
 - 시각은 회의 기준 초(소수 둘째 자리)다. 세그먼트 `[start, end]` 안에 있고, 앞 단어보다 줄지 않으며, `start <= end`다. 길이 0인 단어가 있다(문장부호만 있는 토큰, 모델 출력). 실측 회의에서 6%다.
 - `approx: true`는 텍스트 편집 뒤 시각을 추정한 단어에만 있다. 앱은 이런 단어를 클릭하면 세그먼트 시작으로 이동한다.
+
+### 2.7 `tractus voices` (목소리 프로필, Phase 7.1)
+
+목소리 임베딩은 생체정보(개인정보보호법 제23조 민감정보)다. `$TRACTUS_HOME/voices.json`(권한 0600)에만 저장하고 이 Mac 밖으로 보내지 않는다. 회의 폴더·transcript.json·MCP·LLM·색인·내보내기·로그·stdout 어디에도 벡터를 쓰지 않는다 (ARCHITECTURE.md §2.5).
+
+| 명령 | 동작 · stdout (한 줄 JSON) |
+| --- | --- |
+| `tractus voices list --json` | `{"people":[{"id","name","samples","created_at"}],"reenroll":false}`. `reenroll: true`면 모델이 바뀌어 등록된 목소리를 매칭에 쓰지 않는다(다시 등록 필요) |
+| `tractus voices enroll <회의> S1 --name 홍길동 --consent` | 그 화자를 `홍길동`으로 확정(= `speakers rename`)하고 목소리 표본을 더한다. 이름이 정확히 같은 사람에 붙고(최대 5개, 넘으면 가장 오래된 것을 버림) 없으면 새 사람. `{"person_id","name","samples"}`. `--consent`가 없으면 동의 안내와 함께 **종료 코드 2**. 없는 라벨·쓸 수 없는 이름·1.5초 이상 이어 말한 구간이 없음·모델 없음은 종료 코드 1이고 아무것도 바꾸지 않는다 |
+| `tractus voices forget <이름\|id>` | 사람을 지우고, 회의들에 남은 그 사람의 제안도 지운다(확정한 이름은 그대로). `{"forgotten":N}` |
+| `tractus voices match <회의> [--progress-json]` | 기존 회의의 제안을 다시 계산한다. 이름을 확정한 화자와, 이 회의에서 이미 확정된 이름의 사람은 건너뛴다. `{"suggested":N}`. `--progress-json`: `stage(decode)` → `stage(voices)` → `done{…, "suggested":N}`. 등록된 사람이 없으면 오디오를 읽지 않고 `{"suggested":0}` |
+
+transcript.json의 제안 (ARCHITECTURE.md §6):
+
+```jsonc
+"speakers": {"S2": {"name": null, "suggested": {"person_id": "01K…", "name": "홍길동", "score": 0.82}}}
+```
+
+- `name`은 언제나 **사용자가 확정한 이름**이다. 제안은 이름이 없는 화자에만 있다. 앱은 배지 "홍길동? · 자동 인식 82%"(`score` × 100, 반올림)와 **확정**(→ `speakers rename S2 홍길동`)·**아님**(→ `speakers dismiss S2`)을 보여 준다.
+- 표시 이름은 제안을 쓰지 않는다(`S2`). md·vtt·요약·MCP·색인·내보내기도 같다. `bundle`의 transcript.json에는 `suggested`가 없다.
+- 등록은 앱의 이름 바꾸기 대화상자에서 '이 목소리 기억하기'와 동의 확인("본인이거나 녹음·등록에 동의를 받은 사람입니다")을 둘 다 체크했을 때만 `voices enroll --consent`로 한다(이름 바꾸기도 같이 된다).
+- 모델 파일: `$TRACTUS_MODELS_DIR/3dspeaker-campplus-zh-en/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx`. sha256이 다르면 오류(다른 모델의 벡터와 비교하지 않게).
 
 ## 3. Tauri 앱 (app/)
 

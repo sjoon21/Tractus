@@ -63,9 +63,11 @@
 
 | 항목 | 접근 | 참고 코드 | 일수 | 완료 기준 |
 | --- | --- | --- | --- | --- |
-| **7.1 목소리 프로필** | sherpa-onnx(Apache-2.0)와 3D-Speaker CAM++ zh_en(192차원, 28MB, Apache-2.0)을 쓴다. 이름을 바꿀 때 '기억하기'를 체크하면 화자당 1.5~10초 구간 최대 3개로 등록한다. `voices.json`은 권한 0600, 1인당 최대 5개를 둔다. 매칭은 `linear_sum_assignment`와 임계값 + 2위와 차이 0.08로 한다. '자동 인식 82%' 배지를 달고 미확정으로 남긴다. `tractus voices list\|enroll\|forget`을 둔다. 벡터는 MCP와 LLM으로 내보내지 않는다. 다른 사람을 등록할 때는 동의 확인(개인정보보호법 23조)을 받는다 | anarlog `crates/voiceprint/src/matching.rs` L1-165, `lib.rs` L36-100. k2-fsa/sherpa-onnx(Apache-2.0, 15121★) `python-api-examples/speaker-identification.py` L114-250 @99ddefaa | 5 | `bench/voice_eval.py`로 한국어 EER을 재고 FAR 1%가 되는 임계값을 정한다 |
+| **7.1 목소리 프로필** | onnxruntime(MIT)·kaldi-native-fbank(Apache-2.0)와 3D-Speaker CAM++ zh_en(192차원, 28MB, Apache-2.0)을 쓴다(sherpa-onnx는 espeak-ng GPL-3 정적 링크라 뺐다). 이름을 바꿀 때 '기억하기'를 체크하면 화자당 1.5~10초 구간 최대 3개로 등록한다. `voices.json`은 권한 0600, 1인당 최대 5개를 둔다. 매칭은 `linear_sum_assignment`와 임계값 + 2위와 차이 0.08로 한다. '자동 인식 82%' 배지를 달고 미확정으로 남긴다. `tractus voices list\|enroll\|forget`을 둔다. 벡터는 MCP와 LLM으로 내보내지 않는다. 다른 사람을 등록할 때는 동의 확인(개인정보보호법 23조)을 받는다 | anarlog `crates/voiceprint/src/matching.rs` L1-165, `lib.rs` L36-100. k2-fsa/sherpa-onnx(Apache-2.0, 15121★) `python-api-examples/speaker-identification.py` L114-250 @99ddefaa | 5 | `bench/voice_eval.py`로 한국어 EER을 재고 FAR 1%가 되는 임계값을 정한다 |
 | **7.2 실시간 전사 (옵트인)** | `tractus live --recording <dir>`: 커지는 WAV를 꼬리부터 읽고 Silero `feed()`를 쓴다. 0.5초 무음이나 8초 상한에서 확정하고, 3초마다 미리보기를 낸다. Qwen3-ASR 0.6B와 Nemotron 'low' 설정을 쓴다. 정지하면 워커가 먼저 종료하고 배치 전사가 최종본이 된다. 16GB 미만 기기에서는 기본으로 꺼 둔다 | yazinsai/OpenOats(MIT, 2596★) `StreamingTranscriber.swift` L89-260, `DiarizationManager.swift` L19-63 @c6c6f164. meetily `audio/pipeline.rs` L16-27 | 4.5 | 시뮬레이션 실측: 확정 지연 p95 0.70초, GPU 점유율 0.29, 최대 메모리 3.4GB. 팬 없는 M3 Air에서 1시간 연속 테스트 |
 | **7.3 9명 이상 화자** | `recorder/`에 `tractus-diar`(FluidAudio v0.17.5, `offlineMode`)를 추가하고 `--diarizer auto\|nemotron\|fluid`로 고른다. auto는 Nemotron 8채널이 모두 쓰였을 때만 재실행한다 | FluidInference/FluidAudio(Apache-2.0, 2960★, 가중치 CC-BY-4.0) `OfflineDiarizerManager.swift` L127-180, `ProcessCommand.swift` L120-160 @04e363c2 | 2.5 | AI Hub 17명 세션에서 confusion이 26.5%보다 낮아진다 |
+
+**7.1 상태 (2026-10-07, core 완료):** `voices.py`(onnxruntime 1.30 + kaldi-native-fbank + CAM++ zh_en advanced, sha256 고정), `transcribe`의 `voices` 단계(제안은 `.job.json`에 남겨 이어하기 때 다시 계산하지 않음), `tractus voices list|enroll --consent|forget|match`, `tractus speakers <회의> dismiss`. 제안(`speakers.S1.suggested`)은 표시 이름·md·vtt·요약·MCP·색인·내보내기에 나가지 않는다. 가상 음성(`say` Yuna·Grandpa) 같은 목소리 0.94–0.95, 다른 목소리 0.23–0.27. `bench/voice_eval.py`(AI Hub 4세션·40명·발화 1,427개)로 모델 3종을 비교해 CAM++와 `THRESHOLD` = 0.70을 골랐다. 3구간 등록 EER 2.62%. 매칭 시뮬레이션(등록과 probe가 같은 세션)은 AI Hub 라벨 그대로 맞음 88.2% / 틀림 1.3% / 없음 10.5% / 미등록자 오제안 11.4%, 두 세션 사회자 1쌍을 같은 사람으로 보면(미검증) 95.6% / 1.3% / 3.1% / 2.2%. **다른 회의에서의 재현율은 재지 못했다.** 그 1쌍의 세션 간 점수가 평균 0.827·최소 0.736으로 같은 세션보다 약 0.06 낮아 0.70을 골랐다(ARCHITECTURE §2.5, `bench/results/voice_summary.json`).
 
 ## 5. 하지 않는 것
 
@@ -85,6 +87,6 @@
 - **정렬 정확도:** 깨끗한 TTS 음성으로만 검증했다. 원거리 마이크, 발화 겹침, 웃음 소리 구간은 아직 측정하지 않았다. 8bit 모델은 110~140초를 넘으면 시간이 틀어진다.
 - **WebKit 하한:** Highlight API, `plaintext-only`, `preservesPitch`는 macOS 26.6에서만 확인했다. 앱 최소 버전인 14.4에서는 확인하지 않았다.
 - **질의 품질:** 자연어 한국어 질문으로 검색했을 때의 재현율, Upstage의 스트리밍 응답과 인라인 인용 준수 여부를 아직 확인하지 않았다.
-- **목소리 프로필:** CAM++의 한국어 EER을 측정하지 않았다. 오인식은 요약의 담당자 이름으로 번진다. 생체정보이므로 로컬 저장과 삭제 명령이 필수다.
+- **목소리 프로필:** 한국어 EER은 AI Hub로만 쟀다(`bench/voice_eval.py`). 실제 대면 회의(원거리 마이크)에서는 아직 재지 않았다. 오인식은 요약의 담당자 이름으로 번진다. 생체정보이므로 로컬 저장과 삭제 명령이 필수다.
 - **실시간 전사:** 장시간 사용 시 발열을 확인하지 않았다. 실시간 화자 라벨은 최종 라벨과 다를 수 있으므로 이름 변경은 최종 전사 뒤에만 허용한다.
 - **클로바노트 근거의 수명:** 웹 클라이언트 청크 해시는 배포 때마다 바뀐다. 증거로 쓴 웹 클라이언트 문자열은 위 표의 출처 URL에 있다.

@@ -17,6 +17,7 @@ import {
   oneLine,
   parseRate,
   RATES,
+  renameRemembering,
   replaceEdits,
   SEEK_STEP,
   SEEK_STEP_BIG,
@@ -153,6 +154,24 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
       });
     },
     [id, serial, commit],
+  );
+  // 이름 바꾸기 + 목소리 기억하기 (7.1). 코어가 rename까지 하므로 편집 한 번이다. 등록이 실패하면 이름만 바꾼다(renameRemembering). 동의 확인은 RenameForm이 받았다
+  const renameSpeaker = useCallback(
+    (label: string, name: string, remember: boolean) => {
+      if (!remember) return void editSpeakers({ op: "rename", label, name });
+      setEditError(null);
+      void serial(async () => {
+        const r = await renameRemembering(
+          () => api.voicesEnroll(id, label, name),
+          () => api.editSpeakers(id, { op: "rename", label, name }),
+        );
+        if ("meeting" in r) commit(r.meeting);
+        if ("samples" in r) notify({ text: `‘${name}’의 목소리를 기억합니다 (표본 ${r.samples}개). 다음 전사부터 자동으로 제안합니다` });
+        else if ("renameError" in r) setEditError(`이름을 바꾸지 못했습니다: ${errText(r.renameError)} (목소리: ${errText(r.voiceError)})`);
+        else setEditError(`이름은 ‘${name}’(으)로 바꿨지만 목소리는 기억하지 못했습니다: ${errText(r.voiceError)}`);
+      });
+    },
+    [id, serial, commit, editSpeakers, notify],
   );
 
   // 문장 편집 (5.3): 낙관적으로 반영하고 줄을 세워 저장한다. 되돌리기는 묶음 단위(⌘Z)
@@ -531,9 +550,9 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
               busy={editing}
               renaming={renaming}
               merge={merge}
-              onRename={(label, name) => {
+              onRename={(label, name, remember) => {
                 setRenaming(null);
-                void editSpeakers({ op: "rename", label, name });
+                renameSpeaker(label, name, remember);
               }}
               onStartRename={setRenaming}
               onCancelRename={() => setRenaming(null)}
@@ -544,6 +563,8 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
               }}
               onCancelMerge={() => setMerge(null)}
               onMenu={(label, anchor) => setMenu({ kind: "speaker", label, anchor })}
+              onConfirm={(label, name) => void editSpeakers({ op: "rename", label, name })}
+              onDismiss={(label) => void editSpeakers({ op: "dismiss", label })}
             />
           )}
         </header>
@@ -675,7 +696,7 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
             busy={editing}
             onClose={() => setMenu(null)}
             onSet={(segment, label) => void editSpeakers({ op: "set", segment, label })}
-            onRename={(label, name) => void editSpeakers({ op: "rename", label, name })}
+            onRename={renameSpeaker}
             onStartRename={setRenaming}
             onAskMerge={setMerge}
           />

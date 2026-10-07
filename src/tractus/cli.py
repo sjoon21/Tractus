@@ -21,6 +21,7 @@ from rich.markup import escape  # noqa: E402
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn  # noqa: E402
 
 from tractus import audio  # noqa: E402
+from tractus import voices  # noqa: E402
 from tractus import summarize as summ  # noqa: E402
 from tractus.env import load_env_all  # noqa: E402
 from tractus.llm import LLMError, make_client, resolve_provider  # noqa: E402
@@ -31,7 +32,7 @@ from tractus.asr import SR, Transcriber  # noqa: E402
 from tractus.diarize import MAX_SPEAKERS, MODEL_DIR as DIARIZER_DIR, MODEL_REPO as DIARIZER_REPO, MODEL_REVISION as DIARIZER_REVISION  # noqa: E402
 from tractus.diarize import load_diarizer, split_chunks  # noqa: E402
 from tractus.export import FORMATS as EXPORT_FORMATS, render_export, write_bytes_atomic  # noqa: E402
-from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
+from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_suggestions, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
 from tractus.store import load_glossary, meeting_dir_name, new_ulid, save_transcript, seg_text, speaker_name, write_transcript  # noqa: E402
 from tractus.store import _hms  # noqa: E402
 from tractus.vad import find_chunks  # noqa: E402
@@ -209,6 +210,24 @@ def _diarize(pcm, max_speakers: int | None) -> tuple[list, dict | None]:
         return [], None
 
 
+def _suggest_voices(pcm, turns: list[dict]) -> dict:
+    """화자 분리 결과를 등록된 목소리와 맞춘 제안 {라벨: {person_id, name, score}}. 등록된 사람이 없으면 조용히 건너뛴다.
+    모델이 없거나 실패해도 전사는 계속한다 (onnxruntime CPU라 MLX 메모리와 겹치지 않는다)."""
+    try:
+        people = voices.usable_people(voices.load_profiles(home_dir()))
+        if not people or not turns:
+            return {}
+        embedder = voices.load_embedder(models_dir())
+        if embedder is None:
+            _warn("voices_model_missing", f"목소리 모델이 없어 등록된 목소리를 맞춰 보지 않습니다: {voices.model_hint(models_dir())}")
+            return {}
+        Events.emit("stage", stage="voices")
+        return voices.suggest(embedder, pcm, turns, people, sorted({t["speaker"] for t in turns}))
+    except Exception as e:  # noqa: BLE001 — 목소리 제안 실패가 전사를 막지 않는다
+        _warn("voices_failed", f"등록된 목소리를 맞춰 보지 못했습니다 (`tractus voices match <회의>`로 다시 시도): {e}")
+        return {}
+
+
 def _aligner_hint() -> str:
     path = models_dir() / ALIGNER_DIR
     return f"{path}\n  hf download {ALIGNER_REPO} --revision {ALIGNER_REVISION} --local-dir {path}"
@@ -275,6 +294,7 @@ def _new_job(
         turns, diarization = _diarize(pcm, max_speakers) if diarize else ([], None)
         _free_mlx()  # 화자 분리 모델을 내린 뒤 ASR 모델을 올린다
         chunks = split_chunks(chunks, turns)
+        suggestions = _suggest_voices(pcm, [{"start": s, "end": e, "speaker": spk} for s, e, spk in turns])
 
     meeting_id = new_ulid()
     title = title or source.title
@@ -292,7 +312,7 @@ def _new_job(
         dir=d, meeting_id=meeting_id, sha256=digest, source=source.name, title=title,
         created_at=source.recorded.isoformat(timespec="seconds"), duration_sec=round(len(pcm) / SR, 2),
         model=MODELS[track], track=track.value, language=language.value, hotwords=hotwords, chunks=chunks, audio_file="audio.ogg",
-        diarizer=diarization,
+        diarizer=diarization, suggestions=suggestions,
     )
     job.save()
     n_spk = len({c[2] for c in chunks} - {None})
@@ -653,7 +673,7 @@ def speakers_list(ctx: typer.Context, as_json: bool = typer.Option(False, "--jso
     """화자별 이름·세그먼트 수·발화 시간."""
     t = _read_transcript(ctx.obj)
     rows = [
-        {"label": label, "name": (info or {}).get("name"), "display": speaker_name(t, label),
+        {"label": label, "name": (info or {}).get("name"), "display": speaker_name(t, label), "suggested": (info or {}).get("suggested"),
          "segments": sum(1 for s in t["segments"] if s.get("speaker") == label),
          "talk_sec": round(sum(s["end"] - s["start"] for s in t["segments"] if s.get("speaker") == label), 2)}
         for label, info in (t.get("speakers") or {}).items()
@@ -664,7 +684,8 @@ def speakers_list(ctx: typer.Context, as_json: bool = typer.Option(False, "--jso
     if not rows:
         print("화자 정보가 없습니다 (화자 분리 없이 전사됨). `tractus speakers <회의> set <세그먼트> new`로 직접 붙일 수 있습니다")
     for r in rows:
-        print(f"{r['label']}\t{r['name'] or '-'}\t세그먼트 {r['segments']}개\t{_hms(r['talk_sec'])}")
+        hint = f"\t{r['suggested']['name']}? (자동 인식 {r['suggested']['score']:.0%})" if r["suggested"] else ""
+        print(f"{r['label']}\t{r['name'] or '-'}\t세그먼트 {r['segments']}개\t{_hms(r['talk_sec'])}{hint}")
 
 
 def _edit_speakers(d: Path, op: str, *args: str) -> None:
@@ -694,6 +715,160 @@ def speakers_set(ctx: typer.Context, segment_id: str = typer.Argument(..., help=
 def speakers_merge(ctx: typer.Context, src: str = typer.Argument(..., help="없앨 화자"), dst: str = typer.Argument(..., help="합칠 대상 화자")) -> None:
     """두 화자를 하나로 합친다 (SRC의 세그먼트를 모두 DST로)."""
     _edit_speakers(ctx.obj, "merge", src, dst)
+
+
+@speakers_app.command("dismiss")
+def speakers_dismiss(ctx: typer.Context, label: str = typer.Argument(..., help="S1 등")) -> None:
+    """목소리 제안('홍길동?')을 지운다. 제안을 받아들이려면 그 이름으로 rename한다."""
+    _edit_speakers(ctx.obj, "dismiss", label)
+
+
+voices_app = typer.Typer(help="목소리 프로필($TRACTUS_HOME/voices.json, 권한 0600). 등록한 사람의 목소리로 새 회의 화자에 이름을 제안한다. 이 Mac 밖으로 보내지 않는다")
+app.add_typer(voices_app, name="voices")
+
+CONSENT_MESSAGE = (
+    "목소리는 생체정보(개인정보보호법 제23조 민감정보)입니다. 본인이거나 녹음·등록에 동의를 받은 사람만 등록하세요.\n"
+    "동의를 받았으면 --consent를 붙여 다시 실행하세요. 등록한 목소리는 이 Mac의 voices.json에만 저장되고 `tractus voices forget`으로 지웁니다."
+)
+
+
+@voices_app.callback()
+def voices_main() -> None:
+    """목소리 프로필 관리."""
+
+
+def _profiles() -> dict:
+    try:
+        return voices.load_profiles(home_dir())
+    except ValueError as e:  # 깨진 voices.json은 덮어쓰지 않는다
+        console.print(f"[red]목소리 프로필을 읽지 못했습니다:[/red] {escape(str(e))}")
+        raise typer.Exit(1)
+
+
+def _fail(message: str, code: int = 1) -> NoReturn:
+    Events.emit("error", message=message)
+    console.print(f"[red]{escape(message)}[/red]")
+    raise typer.Exit(code)
+
+
+def _voice_embedder():
+    try:
+        embedder = voices.load_embedder(models_dir())
+    except RuntimeError as e:
+        _fail(str(e))
+    if embedder is None:
+        _fail(f"목소리 모델이 없습니다: {voices.model_hint(models_dir())}")
+    return embedder
+
+
+def _meeting_pcm(d: Path, t: dict):
+    try:
+        audio.require_ffmpeg()
+        Events.emit("stage", stage="decode")
+        return audio.decode(d / t["audio"]["file"])
+    except audio.FFmpegError as e:
+        _fail(f"오디오 처리 실패: {e}")
+
+
+@voices_app.command("list")
+def voices_list(as_json: bool = typer.Option(False, "--json", help="JSON으로 stdout에 출력 (데스크톱 앱용)")) -> None:
+    """등록된 사람(이름, 표본 수, 등록일). 벡터는 출력하지 않는다. stdout(--json): {"people": [...], "reenroll": bool}"""
+    data = _profiles()
+    rows = [{"id": p["id"], "name": p["name"], "samples": len(p.get("samples") or []), "created_at": p.get("created_at")} for p in data["people"]]
+    reenroll = voices.needs_reenroll(data)
+    if as_json:
+        print(json.dumps({"people": rows, "reenroll": reenroll}, ensure_ascii=False))
+        return
+    if reenroll:
+        console.print("[yellow]목소리 모델이 바뀌어 등록된 목소리를 쓸 수 없습니다. 다시 등록하세요 (`tractus voices enroll`).[/yellow]")
+    if not rows:
+        print("등록된 목소리가 없습니다. `tractus voices enroll <회의> S1 --name 이름 --consent`로 등록합니다")
+    for r in rows:
+        print(f"{r['name']}\t표본 {r['samples']}개\t{(r['created_at'] or '')[:10]}\t{r['id']}")
+
+
+@voices_app.command("enroll")
+def voices_enroll(
+    meeting: str = typer.Argument(..., help="회의 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
+    label: str = typer.Argument(..., help="S1 등"),
+    name: str = typer.Option(..., "--name", help="이 화자의 이름. 같은 이름이 있으면 그 사람에 표본을 더한다 (최대 5개)"),
+    consent: bool = typer.Option(False, "--consent", help="본인이거나 녹음·등록에 동의를 받았음 (필수)"),
+) -> None:
+    """화자의 목소리를 기억하고 그 이름으로 확정한다(= speakers rename + 등록). stdout: {"person_id", "name", "samples"}"""
+    if not consent:
+        console.print(f"[red]{escape(CONSENT_MESSAGE)}[/red]")
+        raise typer.Exit(2)
+    d = resolve_meeting(meeting)
+    t = _read_transcript(d)
+    try:
+        renamed = apply_speaker_edit(t, "rename", label, name)
+    except ValueError as e:
+        _fail(str(e))
+    clean = renamed["speakers"][label]["name"]
+    if not clean:
+        _fail("이름이 필요합니다")
+    data = _profiles()
+    embedder = _voice_embedder()
+    emb = voices.speaker_embedding(embedder, _meeting_pcm(d, t), t["segments"], label)
+    if emb is None:
+        _fail(f"{label}이(가) {voices.MIN_CLIP_S:g}초 이상 이어서 말한 구간이 없어 목소리를 등록할 수 없습니다")
+    data, person = voices.enroll(data, clean, emb, t["meeting_id"])
+    voices.save_profiles(home_dir(), data)
+    save_transcript(d, renamed)
+    _sync_index_quietly(embed=False)
+    print(json.dumps({"person_id": person["id"], "name": person["name"], "samples": len(person["samples"])}, ensure_ascii=False))
+
+
+@voices_app.command("forget")
+def voices_forget(ref: str = typer.Argument(..., help="이름 또는 id")) -> None:
+    """등록한 사람을 지운다. 회의에 남은 그 사람의 목소리 제안도 지운다 (확정한 이름은 그대로). stdout: {"forgotten": N}"""
+    data, gone = voices.forget(_profiles(), ref)
+    if gone:
+        voices.save_profiles(home_dir(), data)
+        for p in sorted((home_dir() / "meetings").glob("*/transcript.json")):
+            # ponytail: 회의 폴더 전체를 훑는다. 수천 개가 되면 제안이 있는 회의 목록을 따로 둔다
+            try:
+                t = _read_transcript(p.parent)
+            except (OSError, ValueError):
+                continue
+            keep = {k: v["suggested"] for k, v in (t.get("speakers") or {}).items() if (v or {}).get("suggested") and v["suggested"].get("person_id") not in gone}
+            new = apply_suggestions(t, keep)
+            if new["speakers"] != t["speakers"]:
+                save_transcript(p.parent, new)
+    print(json.dumps({"forgotten": len(gone)}))
+
+
+@voices_app.command("match")
+def voices_match(
+    meeting: str = typer.Argument(..., help="회의 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
+    progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
+) -> None:
+    """기존 회의의 목소리 제안을 다시 계산한다. 이름을 확정한 화자와 그 이름의 사람은 건너뛴다.
+    stdout: {"suggested": N} (--progress-json이면 같은 값이 done 이벤트에 들어간다)"""
+    Events.enabled = progress_json
+    try:
+        d = resolve_meeting(meeting)
+    except typer.BadParameter as e:
+        Events.emit("error", message=str(e))
+        raise
+    t = _read_transcript(d)
+    speakers = t.get("speakers") or {}
+    confirmed = {(v or {}).get("name") for v in speakers.values()} - {None}
+    labels = [k for k, v in speakers.items() if not (v or {}).get("name")]
+    people = [p for p in voices.usable_people(_profiles()) if p["name"] not in confirmed]
+    suggestions = {}
+    if people and labels:
+        embedder = _voice_embedder()
+        pcm = _meeting_pcm(d, t)
+        Events.emit("stage", stage="voices")
+        suggestions = voices.suggest(embedder, pcm, t["segments"], people, labels)
+    new = apply_suggestions(t, suggestions)
+    if new["speakers"] != speakers:
+        save_transcript(d, new)
+    if progress_json:
+        Events.emit("done", meeting_id=t["meeting_id"], meeting_dir=str(d), suggested=len(suggestions))
+    else:
+        print(json.dumps({"suggested": len(suggestions)}))
 
 
 segments_app = typer.Typer(help="회의 전사 텍스트 고치기. 원문(text)은 두고 corrected_text에 쓴 뒤 md·vtt를 다시 쓰고 검색 색인을 갱신한다")

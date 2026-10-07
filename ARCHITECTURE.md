@@ -9,6 +9,7 @@
 
 | 날짜 | 버전 | 변경 |
 | --- | --- | --- |
+| 2026-10-07 | v3.13 | **Phase 7.1 목소리 프로필 core.** onnxruntime 1.30(MIT, CPU)과 kaldi-native-fbank(Apache-2.0)로 3D-Speaker CAM++ zh_en advanced(192차원, Apache-2.0, sha256 고정)를 직접 돌려 화자 임베딩을 만든다. sherpa-onnx는 휠에 espeak-ng(GPL-3)가 정적 링크돼 있어 쓰지 않는다. `transcribe`는 화자 분리 뒤 등록된 목소리와 맞춰 `voices` 단계에서 이름을 **제안**한다(`speakers.S1.suggested`, 확정은 사용자). 매칭은 사람 중심 벡터와 코사인 + 헝가리안 1:1 + 임계값 + 2위와 차이 0.08. `tractus voices list\|enroll --consent\|forget\|match`, `tractus speakers <회의> dismiss`. 프로필은 `$TRACTUS_HOME/voices.json`(0600)에만 두고 회의 폴더·MCP·LLM·색인·내보내기로 보내지 않는다(§2.5). 계약: `docs/desktop.md` §2.7 |
 | 2026-10-06 | v3.12 | **Phase 6.1 단어 타임스탬프 core.** Qwen3-ForcedAligner-0.6B-8bit(Apache-2.0, revision 고정)로 `segment.words`를 채운다. `transcribe`는 ASR 모델을 내린 뒤 `align` 단계를 돌린다(`--no-align`으로 끔, 모델이 없으면 `aligner_missing` 경고 후 words null). 기존 회의는 `tractus align <회의> [--force]`. 단어 = 표시 텍스트의 공백 토큰(1:1 불변식). mlx-audio의 한국어 토크나이저는 soynlp(LGPL-3)를 불러오므로 공백 토크나이저로 바꿔 끼운다. 텍스트를 고치면 difflib으로 시각을 옮기고 새 단어에 `approx`. 실제 대면 회의 44.7분(세그먼트 295개): 정렬 66초, 294개 성공·1개 실패, 불변식 위반 0. 계약: `docs/desktop.md` §2.6 |
 | 2026-10-06 | v3.11 | **Phase 6.3 회의 질의 core.** `tractus ask [--meeting] [--from/--to] [--save] --progress-json`: stdin JSON(질문 + history), 이벤트 `stage(retrieve)` → `sources` → `stage(answer)` → `delta`* → `done{answer, citations, provider, model}`. 회의 범위는 전사 전체, 전체 범위는 색인 검색 8개 + 앞뒤 세그먼트. 인용은 근거와 대조해 없는 ID를 지운다. 근거가 없으면 LLM을 부르지 않는다. `--save`는 회의 폴더 `chat.json`(최근 50개). `llm.stream_chat`, `Index.meeting_dir`. 평가 세트 `tests/fixtures/eval/ask_questions.jsonl`(28개)·`bench/ask_eval.py`. 계약: `docs/desktop.md` §2.5 |
 | 2026-10-06 | v3.10 | **Phase 5 core.** 표시 텍스트 `seg_text`(= `corrected_text` 우선)를 md·vtt·요약 프롬프트·MCP·색인·CLI 검색·내보내기에 적용. `tractus segments <회의> edit`(stdin JSON 묶음, 원문과 같으면 교정 해제, 색인은 `embed=False`), `tractus glossary add`, `tractus export --format txt\|md\|srt\|vtt\|csv\|docx\|bundle`(python-docx MIT 추가). 가져오기: 해시 전에 `decode` 단계, 중복이면 `duplicate` 경고 후 `done`, 동영상(mp4·mov)은 `-vn`, 오디오 없는 동영상은 오류. 계약: `docs/desktop.md` §2.2–2.4 |
@@ -196,6 +197,47 @@
 - **미검증:** ① 실제 대면 회의(마이크 1개) 녹음. ② 청크가 짧아질 때 ASR CER 변화. ③ 같은 TTS 엔진 음성끼리는 한 화자로 합쳐진다(macOS Grandpa·Grandma). 가상 음성은 순위 근거로 쓰지 않는다.
 - 엔진·파라미터를 바꾸면 AI Hub(로컬, 지표만)와 가상 음성 **둘 다**에서 DER·confusion을 다시 잰다.
 
+### 2.5 목소리 프로필 — 화자 이름 제안 (2026-10-07, v3.13)
+
+**결정: 등록한 사람의 화자 임베딩과 새 회의의 화자를 맞춰 이름을 _제안_만 한다.** 제안은 앱에 "홍길동? · 자동 인식 82%" 배지로만 보이고, 사용자가 확정(= 그 이름으로 rename)하거나 '아님'(dismiss)으로 지운다. 오인식이 요약의 담당자 이름으로 번지지 않게 확정 전에는 어디에도 이름으로 쓰지 않는다.
+
+| 항목 | 값 |
+| --- | --- |
+| 런타임 | onnxruntime 1.30.0 (MIT, CPU 2스레드) + kaldi-native-fbank 1.22.3 (Apache-2.0). MLX 메모리와 겹치지 않는다. 입력은 80차원 Kaldi fbank(25ms/10ms, povey, dither 0, snip_edges=False)에서 프레임 평균을 뺀 값이다(모델 메타데이터 `feature_normalize_type=global-mean`). sherpa-onnx는 쓰지 않는다: macOS 휠이 TTS용 espeak-ng(GPL-3.0)를 정적 링크하고, 라이선스 고지에도 빠져 있다. onnxruntime은 1.29 이상이어야 한다. 1.28까지(sherpa-onnx 1.13.8 내장 포함)는 `AveragePool(ceil_mode)`의 마지막 짧은 창을 창 크기 전체로 나눠 PyTorch 원본과 임베딩이 달라진다(긴 구간에서 cosine 약 0.975). 벤치의 매칭 지표는 두 런타임에서 같았다 |
+| 모델 | 3D-Speaker CAM++ zh_en advanced `3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx` (192차원, 28MB, Apache-2.0 — ModelScope `iic/speech_campplus_sv_zh_en_16k-common_advanced`). k2-fsa 릴리스 `speaker-recongition-models`, sha256 `aa3cfc16…ceba2`를 불러올 때 확인한다 |
+| 화자 임베딩 | 그 화자 구간 중 1.5초 이상을 긴 것부터 3개(10초 넘으면 앞 10초) → 구간 임베딩의 정규화 평균. 전사 중에는 화자 분리 turn, 기존 회의는 세그먼트를 쓴다 |
+| 사람 중심 벡터 | 등록 표본(최대 5개, 넘으면 가장 오래된 것을 버림)의 정규화 평균 |
+| 매칭 (`voices.match`) | 코사인 행렬 → `scipy.optimize.linear_sum_assignment` 1:1 배정 → 점수 ≥ `THRESHOLD` **그리고** 그 화자의 2위 사람보다 0.08 이상 높을 때만 제안. `THRESHOLD` = 0.70 (아래 '벤치 근거') |
+| 가상 음성 (`pytest -m slow`) | macOS `say` Yuna 문장 2개 사이 0.94, Grandpa 0.95, 서로 다른 음성 0.23–0.27 |
+
+**벤치 근거 (`bench/voice_eval.py`, AI Hub 한국어 회의 4세션·40명·발화 1,427개, 로컬 전용, 지표만 `bench/results/voice_summary.json`).** 화자 앞 절반의 긴 3구간으로 등록하고, 뒤 절반을 3개씩 묶어 매칭한다(probe 229개). CAM++, T=0.70:
+
+| 정답 기준 | 사람 | 맞음 | 틀림 | 제안 없음 | 미등록자 오제안 |
+| --- | --- | --- | --- | --- | --- |
+| AI Hub 라벨 그대로 (기본) | 32 | 88.2% | 1.3% | 10.5% | 11.4% |
+| 두 세션 사회자 1쌍을 같은 사람으로 (민감도, 미검증) | 31 | 95.6% | 1.3% | 3.1% | 2.2% |
+
+- AI Hub 화자 ID는 세션마다 새로 붙어 세션 간 동일인을 알 수 없다. 두 행의 차이는 거의 전부 서로 0.9로 맞는 두 세션 사회자 1쌍(probe 20개)이다. 같은 사람으로 묶은 근거는 모델 점수와 역할뿐이고, AI Hub 화자 메타데이터는 연령대·직업이 달라 오히려 다른 사람 쪽이다. 다른 사람이라면 이 정도로 닮은 목소리는 임계값으로 막을 수 없다(2위와 차이 규칙이 둘 다 등록됐을 때만 막는다). 그래서 이름은 제안으로만 남기고 사용자가 확정한다.
+- **위 수치는 등록과 probe가 같은 녹음(같은 방·마이크·날)이다.** 실제 사용(회의 A에서 등록, 회의 B에서 매칭)의 재현율은 재지 못했다. 근거는 그 1쌍뿐이다: 같은 세션 probe 평균 0.891 → 다른 세션 평균 0.827, 최소 0.736(0.75 이상 95%, 0.70 이상 100%). 회의가 바뀌면 점수가 약 0.06 내려가므로 0.75 대신 0.70을 쓴다. 대가는 같은 세션 오제안 +0.4%p다. 실제 회의 간 데이터가 생기면 다시 잰다.
+- 모델 3종(CAM++, ERes2NetV2, ERes2Net base)의 3구간 등록 EER은 모두 2.62%였다. 가장 작고(28MB) 빠른(RTF 0.0085) CAM++를 골랐다. NeMo TitaNet small(CC-BY-4.0)은 특징 추출이 달라 sherpa-onnx를 뺀 뒤 비교에서 제외했다.
+
+- **흐름:** `transcribe`는 화자 분리 → `_free_mlx()` → 청크 분할 뒤, 등록된 사람이 있을 때만 `voices` 단계를 돌린다. 제안은 `.job.json`의 `suggestions`에 두므로 이어하기 때 다시 계산하지 않는다. 등록된 사람이 없으면 아무것도 하지 않는다(경고 없음). 사람은 있는데 모델이 없으면 `voices_model_missing`, 실패하면 `voices_failed` 경고를 내고 전사는 계속한다.
+- **등록 (`tractus voices enroll <회의> S1 --name 홍길동 --consent`):** 그 화자의 이름을 확정하고(= `speakers rename`) 목소리 표본을 더한다. 이름이 정확히 같은 사람이 있으면 그 사람에, 없으면 새 사람으로. `--consent`가 없으면 종료 코드 2.
+- **모델 교체:** `voices.json`의 `model`이 지금 `MODEL_ID`와 다르면 매칭에 쓰지 않고 `voices list`가 다시 등록하라고 알린다. 다음 등록 때 옛 모델의 표본은 지운다(지금 모델과 비교할 수 없는 생체정보라).
+- 모델·`THRESHOLD`·구간 선택을 바꾸면 `bench/voice_eval.py`를 다시 돌린다.
+
+#### 개인정보 — 목소리는 생체정보다
+
+목소리 임베딩은 특정 개인을 알아볼 목적으로 처리하는 생체인식정보이므로 개인정보보호법 제23조의 **민감정보**로 다룬다.
+
+| 규칙 | 구현 |
+| --- | --- |
+| 별도 동의 | 등록은 `--consent`(앱: "본인이거나 녹음·등록에 동의를 받은 사람입니다" 확인)가 있어야 한다. 프로필에 `consent: true`를 남긴다 |
+| 이 Mac에만 저장 | `$TRACTUS_HOME/voices.json` 하나. 권한 0600으로 임시 파일을 만들어 원자적으로 바꿔 끼운다(기존 권한과 상관없이 결과는 0600). 깨진 파일은 덮어쓰지 않는다 |
+| 밖으로 보내지 않음 | 벡터는 회의 폴더·`transcript.json`·MCP 도구·LLM 프롬프트·검색 색인·내보내기·로그에 쓰지 않는다. `voices list`도 이름·표본 수·등록일만 출력한다 |
+| 제안은 표시 이름이 아님 | `speaker_name`은 확정한 `name`만 쓴다. md·vtt·요약 프롬프트·MCP·색인·내보내기에는 라벨(`S1`)이 나가고, `bundle` 내보내기의 transcript.json에서는 `suggested`를 뺀다. 요약 owner가 확정되지 않은 제안 이름이면 `clean_owners`가 null로 바꾼다 |
+| 삭제 | `tractus voices forget <이름\|id>`가 사람을 지우고, 회의에 남은 그 사람의 제안도 지운다(확정한 이름은 사용자가 붙인 것이라 남긴다) |
+
 ---
 
 ## 3. LLM 레이어 — OpenAI 호환 API
@@ -302,6 +344,7 @@ Anthropic은 OpenAI 호환 레이어를 "테스트·비교용이며 장기 운�
 │       ├── summary.json          # 같은 내용의 기계용 원본 (MCP list_action_items 등에서 사용)
 │       └── notes.md              # 사용자 메모
 ├── glossary.md                   # 용어집 (ASR 프롬프트 + LLM 교정에 공용)
+├── voices.json                   # 목소리 프로필 (권한 0600, 생체정보 — §2.5). 회의 폴더·색인·MCP로 내보내지 않음
 └── .tractus/
     └── index.sqlite              # FTS5 + sqlite-vec — 삭제해도 파일로부터 재생성 가능
 ```
@@ -409,7 +452,8 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
   "asr": { "model": "mlx-community/Qwen3-ASR-1.7B-8bit", "track": "standard", "runtime": "mlx-audio", "language": "auto", "hotwords": ["WTO"] },
   "speakers": {                 // 세그먼트에 쓰인 라벨만. 화자 분리를 안 했으면 {}
     "S1": { "name": "김민수" },   // tractus speakers <회의> rename S1 김민수
-    "S2": { "name": null }
+    "S2": { "name": null },
+    "S3": { "name": null, "suggested": { "person_id": "01K…", "name": "홍길동", "score": 0.82 } }  // 목소리 제안 (v3.13, §2.5). 이름이 없을 때만
   },
   "diarization": {              // 화자 분리를 안 했거나 모델이 없었으면 null
     "model": "mlx-community/Nemotron-3-Diarization",
@@ -435,12 +479,13 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 ```
 
 - **표시 이름**은 `speakers[라벨].name`, 없으면 라벨(`S1`), `speaker`가 null이면 표시하지 않는다. `transcript.md`는 `[00:00:12] **김민수**: …`, `transcript.vtt`는 `<v 김민수>…`.
-- **화자 편집** (`tractus speakers <회의> rename|set|merge`)은 transcript.json을 고친 뒤 md·vtt를 다시 쓰고 검색 색인을 갱신한다. 오디오는 건드리지 않는다. 편집하면 schema_version 1 전사도 2가 된다.
+- **목소리 제안** `suggested`는 표시 이름이 아니다. rename(앱의 '확정')·dismiss('아님')가 지우고, merge하면 없어지는 화자의 제안도 사라진다. 벡터는 여기에 없다(`voices.json`에만).
+- **화자 편집** (`tractus speakers <회의> rename|set|merge|dismiss`)은 transcript.json을 고친 뒤 md·vtt를 다시 쓰고 검색 색인을 갱신한다. 오디오는 건드리지 않는다. 편집하면 schema_version 1 전사도 2가 된다.
   - 이름에서 `` []<>*_`\ `` 문자는 뺀다(md 굵게·VTT `<v>`·MCP 줄 `[s0012 00:05:31 이름]`이 깨지지 않게). `S2`처럼 라벨 모양인 이름은 거부한다.
   - 화자 편집은 청크 본문을 바꾸지 않으므로 색인은 기존 벡터를 그대로 옮겨 쓰고 임베딩 모델을 올리지 않는다(`sync(embed=False)`). 본문이 바뀐 청크만 다음 임베딩 동기화에서 다시 임베딩한다.
 - **텍스트 편집** (`tractus segments <회의> edit`)은 `corrected_text`만 바꾸고 원문 `text`는 그대로 둔다. 원문과 같게 고치면 null로 돌린다. md·vtt·요약·검색·MCP·내보내기는 모두 `corrected_text ?? text`를 쓴다. 화자 편집처럼 md·vtt를 다시 쓰고 `sync(embed=False)`로 색인한다(본문이 바뀐 청크는 다음 임베딩 동기화까지 키워드로만 찾힌다).
 - **단어 시각** `words[k]`는 `seg_text(s).split()[k]`와 1:1이다. 시각은 회의 기준 초(소수 둘째 자리), 세그먼트 안, 줄지 않음, `start <= end`. 텍스트를 고치면 `align.remap_words`가 difflib으로 같은 단어의 시각은 그대로 두고, 바뀌거나 새로 생긴 단어는 앞뒤 단어 사이에 고르게 펴서 `approx: true`를 붙인다. 원문으로 되돌려도 불변식은 지켜지지만 추정한 시각은 남는다(`tractus align --force`로 다시 맞춘다). 단어는 색인하지 않는다.
-- **이어하기 파일** `.job.json`의 `chunks`는 `[시작 표본, 끝 표본, 화자]`이고, `diarizer`에 위 `diarization` 값을 둔다. 예전 `[시작, 끝]`도 읽는다(화자 null).
+- **이어하기 파일** `.job.json`의 `chunks`는 `[시작 표본, 끝 표본, 화자]`이고, `diarizer`에 위 `diarization` 값을, `suggestions`에 목소리 제안을 둔다. 예전 `[시작, 끝]`도 읽는다(화자 null).
 
 ---
 
@@ -454,6 +499,7 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 | ASR 런타임 (macOS) | mlx-audio (라이브러리로 직접 호출) | MIT | `hotwords` 때문에 서버 대신 프로세스 안에서 호출 (D1). Windows 대비용은 llama.cpp `llama-server` |
 | VAD | Silero VAD v6 (mlx-audio MLX 포팅) | MIT | torch 불필요 |
 | 화자 분리 | Nemotron 3 Diarization (mlx-audio `mlx_audio.vad`) | 코드 MIT / 가중치 OpenMDW-1.1 | 최대 8명, revision 고정 (§2.4) |
+| 목소리 프로필 | onnxruntime 1.30.0 + kaldi-native-fbank 1.22.3 + 3D-Speaker CAM++ zh_en advanced | MIT / Apache-2.0 / 가중치 Apache-2.0 | sha256 고정, 매칭은 scipy `linear_sum_assignment` (§2.5). sherpa-onnx는 espeak-ng(GPL-3) 정적 링크라 쓰지 않음 |
 | 단어 정렬 | Qwen3-ForcedAligner-0.6B-8bit (mlx-audio `mlx_audio.stt`) | 코드 MIT / 가중치 Apache-2.0 | revision 고정, soynlp 대신 자체 공백 토크나이저 (§2.3) |
 | 오디오 변환 | FFmpeg (**외부 바이너리로 호출**) | LGPL/GPL | 번들하지 않음 → Apache-2.0 배포물과 분리 |
 | 저장·검색 | SQLite FTS5 + sqlite-vec 0.1.9 (고정) | Public Domain / MIT·Apache | pre-1.0이라 업그레이드 시 테스트 재실행 |
@@ -462,7 +508,7 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 | UI (Phase 4) | Tauri 2 + React + TypeScript (B안). 백업은 SwiftUI 메뉴바 녹음기 + Obsidian 플러그인 (D안) | MIT·Apache | 2026-10-02 결정, `docs/desktop.md` |
 | 녹음 (Phase 4) | `tractus-rec` (Swift): AVAudioEngine 마이크 + Core Audio process tap 시스템 오디오, 2트랙 WAV | — | B·D 공용 |
 
-모델 가중치는 저장소에 포함하지 않고 사용자가 `hf download`로 받는다. 다운로드 링크와 명령은 `README.md`에 있다. 라이선스: Qwen3-ASR · Qwen3-ForcedAligner · Qwen3-Embedding · Gemma 4는 Apache-2.0, Silero VAD는 MIT, Nemotron 3 Diarization은 OpenMDW-1.1. 기본으로 받는 모델의 라이선스는 저장소 루트 `NOTICE`에 모았다.
+모델 가중치는 저장소에 포함하지 않고 사용자가 `hf download`로 받는다. 다운로드 링크와 명령은 `README.md`에 있다. 라이선스: Qwen3-ASR · Qwen3-ForcedAligner · Qwen3-Embedding · Gemma 4는 Apache-2.0, Silero VAD는 MIT, Nemotron 3 Diarization은 OpenMDW-1.1, 3D-Speaker CAM++는 Apache-2.0(GitHub 릴리스에서 `curl`로 받는다). 기본으로 받는 모델의 라이선스는 저장소 루트 `NOTICE`에 모았다.
 
 ---
 

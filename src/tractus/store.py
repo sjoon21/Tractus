@@ -1,4 +1,7 @@
-"""회의 폴더(§4.1 레이아웃), 진행 상태(이어하기), transcript.json/md/vtt 저장, 화자·텍스트 편집, 용어집."""
+"""회의 폴더(§4.1 레이아웃), 진행 상태(이어하기), transcript.json/md/vtt 저장, 화자·텍스트 편집, 용어집.
+
+화자 맵 speakers: {"S1": {"name": 사용자가 확정한 이름 | null, "suggested"?: {person_id, name, score}}}.
+suggested는 목소리 프로필이 맞춘 **제안**이다(voices.py). 이름이 없는 화자에만 있고, 표시 이름·md·vtt·요약·MCP·내보내기에 쓰지 않는다."""
 
 import copy
 import json
@@ -18,7 +21,7 @@ CHUNKS_FILE = ".chunks.jsonl"
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 __all__ = [
-    "Job", "Segment", "add_glossary_terms", "apply_speaker_edit", "apply_text_edits", "find_job", "find_meeting_dir", "load_glossary",
+    "Job", "Segment", "add_glossary_terms", "apply_speaker_edit", "apply_suggestions", "apply_text_edits", "find_job", "find_meeting_dir", "load_glossary",
     "meeting_dir_name", "new_ulid", "render_markdown", "save_transcript", "seg_text", "speaker_name", "write_transcript",
 ]
 
@@ -80,6 +83,7 @@ class Job:
     chunks: list[tuple[int, int, str | None]] = field(default_factory=list)  # (시작 표본, 끝 표본, 화자 라벨 또는 None)
     audio_file: str = "audio.opus"  # 새 작업은 audio.ogg. 값이 없는 예전 .job.json은 audio.opus
     diarizer: dict | None = None  # transcript.json의 diarization. None이면 화자 분리 안 함
+    suggestions: dict = field(default_factory=dict)  # 목소리 제안 {라벨: {person_id, name, score}}. 이어하기 때 다시 맞추지 않는다
 
     def __post_init__(self) -> None:
         self.chunks = [(c[0], c[1], c[2] if len(c) > 2 else None) for c in self.chunks]  # 예전 작업의 [s, e]도 받는다
@@ -182,7 +186,7 @@ def write_transcript(job: Job) -> dict:
         "created_at": job.created_at,
         "audio": {"file": job.audio_file, "duration_sec": job.duration_sec, "source": job.source, "sha256": job.sha256},
         "asr": {"model": job.model, "track": job.track, "runtime": "mlx-audio", "language": job.language, "hotwords": job.hotwords},
-        "speakers": _speakers_map({}, segments),
+        "speakers": _speakers_map({k: {"name": None, "suggested": v} for k, v in job.suggestions.items()}, segments),
         "diarization": job.diarizer,
         "segments": segments,
     }
@@ -207,10 +211,25 @@ def _label_key(label: str) -> tuple[int, str]:
     return (int(label[1:]), label) if label[1:].isdigit() else (1 << 30, label)
 
 
+def _speaker_entry(info: dict | None) -> dict:
+    """{"name"}, 이름이 없을 때만 목소리 제안 {"suggested"}을 남긴다 (이름을 확정하면 제안은 지운다)."""
+    info = info or {}
+    if info.get("name") is None and info.get("suggested"):
+        return {"name": None, "suggested": info["suggested"]}
+    return {"name": info.get("name")}
+
+
 def _speakers_map(old: dict, segments: list[dict]) -> dict:
-    """세그먼트에 쓰인 라벨만 S1, S2 … 순서로 남긴다. 이름은 old에서 이어받는다."""
+    """세그먼트에 쓰인 라벨만 S1, S2 … 순서로 남긴다. 이름·제안은 old에서 이어받는다."""
     used = {s.get("speaker") for s in segments} - {None}
-    return {k: {"name": (old.get(k) or {}).get("name")} for k in sorted(used, key=_label_key)}
+    return {k: _speaker_entry(old.get(k)) for k in sorted(used, key=_label_key)}
+
+
+def apply_suggestions(t: dict, suggestions: dict) -> dict:
+    """이름이 없는 화자의 목소리 제안을 suggestions로 바꾼 새 전사. 이름이 확정된 화자는 건드리지 않고, suggestions에 없는 화자의 옛 제안은 지운다."""
+    speakers = {k: {"name": (v or {}).get("name"), **({"suggested": suggestions[k]} if k in suggestions else {})}
+                for k, v in (t.get("speakers") or {}).items()}
+    return {**t, "speakers": _speakers_map(speakers, t["segments"])}
 
 
 def speaker_name(t: dict, label: str | None) -> str | None:
@@ -239,7 +258,8 @@ def _clean_name(raw: str) -> str | None:
 def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
     """화자 편집. 원본은 건드리지 않고 새 전사를 돌려준다. 잘못된 인자는 ValueError.
 
-    rename LABEL NAME   이름 지정 (빈 문자열이면 이름 지움)
+    rename LABEL NAME   이름 지정 (빈 문자열이면 이름 지움). 목소리 제안은 지운다 (앱의 '확정' = 제안된 이름으로 rename)
+    dismiss LABEL       목소리 제안 지우기 ('아님')
     set SEGMENT LABEL   세그먼트 화자 변경. LABEL이 new면 다음 라벨(S4 등)을 만든다
     merge SRC DST       SRC 화자의 세그먼트를 모두 DST로 옮기고 SRC를 없앤다"""
     t = copy.deepcopy(t)
@@ -253,6 +273,9 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
 
     if op == "rename" and len(args) == 2:
         speakers[known(args[0])] = {"name": _clean_name(args[1])}
+    elif op == "dismiss" and len(args) == 1:
+        label = known(args[0])
+        speakers[label] = {"name": (speakers[label] or {}).get("name")}
     elif op == "set" and len(args) == 2:
         seg = next((s for s in t["segments"] if s["id"] == args[0]), None)
         if seg is None:
@@ -271,8 +294,8 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
         for seg in t["segments"]:
             if seg.get("speaker") == src:
                 seg["speaker"] = dst
-        if not (speakers[dst] or {}).get("name"):
-            speakers[dst] = {"name": (speakers[src] or {}).get("name")}
+        if not (speakers[dst] or {}).get("name") and (speakers[src] or {}).get("name"):
+            speakers[dst] = {"name": speakers[src]["name"]}  # SRC의 목소리 제안은 SRC와 함께 사라진다
     else:
         raise ValueError(f"알 수 없는 화자 편집: {op} {' '.join(args)}")
     t["speakers"] = _speakers_map(speakers, t["segments"])

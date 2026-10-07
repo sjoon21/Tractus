@@ -36,11 +36,27 @@ export interface MeetingDetail {
   audio_path: string | null;
 }
 
-/** `tractus speakers <회의> rename | set | merge` (docs/desktop.md §2.1). set의 label은 "new"면 새 화자 */
+/** `tractus speakers <회의> rename | set | merge | dismiss` (docs/desktop.md §2.1·§2.7). set의 label은 "new"면 새 화자.
+ * dismiss는 목소리 제안 거절, 제안 확정은 그 이름으로 rename */
 export type SpeakerEdit =
   | { op: "rename"; label: string; name: string }
   | { op: "set"; segment: string; label: string }
-  | { op: "merge"; from: string; into: string };
+  | { op: "merge"; from: string; into: string }
+  | { op: "dismiss"; label: string };
+
+/** `tractus voices list --json` (Rust voices::VoiceList). 벡터는 오지 않는다 */
+export interface VoicePerson {
+  id: string;
+  name: string;
+  samples: number;
+  created_at: string;
+}
+
+export interface VoiceList {
+  people: VoicePerson[];
+  /** 임베딩 모델이 바뀌어 지금 프로필로는 맞춰 보지 않는다 → 다시 등록 */
+  needs_reenroll: boolean;
+}
 
 export interface PendingRecording {
   dir: string;
@@ -109,6 +125,13 @@ export const api = {
   editSpeakers: (id: string, edit: SpeakerEdit) => invoke<MeetingDetail>("edit_speakers", { id, edit }),
   /** `tractus segments <회의> edit` 묶음 한 번. 원문과 같은 문장은 해제된다. 코어가 바꾼 세그먼트 수와 고친 회의 */
   editSegments: (id: string, edits: TextEdit[]) => invoke<{ changed: number; meeting: MeetingDetail }>("edit_segments", { id, edits }),
+  /** 목소리 프로필 (Phase 7.1, docs/desktop.md §2.7) */
+  voicesList: () => invoke<VoiceList>("voices_list"),
+  /** 이름 바꾸기 + 목소리 기억하기. 동의 확인(폼의 두 번째 체크)을 받은 뒤에만 부른다. 그 사람의 표본 수와 고친 회의 */
+  voicesEnroll: (meeting: string, label: string, name: string) =>
+    invoke<{ samples: number; meeting: MeetingDetail }>("voices_enroll", { meeting, label, name, consent: true }),
+  /** 지운 사람 수 */
+  voicesForget: (id: string) => invoke<number>("voices_forget", { id }),
   /** `tractus glossary add`. 새로 더한 개수 */
   glossaryAdd: (terms: string[]) => invoke<number>("glossary_add", { terms }),
   /** `tractus export` 후 Finder에서 보여 준다. 저장한 절대 경로 */

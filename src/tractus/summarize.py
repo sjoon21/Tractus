@@ -76,10 +76,20 @@ def check_segment_ids(summary: MeetingSummary, transcript: dict) -> None:
 _NOT_OWNER = re.compile(r"^\s*(S\d+|speaker[\s_]*\d*|화자\s*\d*|발언자\s*\d*)\s*$|\bs\d{4}\b", re.IGNORECASE)  # "이화자" 같은 이름은 남긴다
 
 
-def clean_owners(s: MeetingSummary) -> MeetingSummary:
+def _suggested_only(transcript: dict | None) -> set[str]:
+    """목소리 제안으로만 나온 이름 (사용자가 확정한 이름과 겹치지 않는 것)."""
+    speakers = (transcript or {}).get("speakers") or {}
+    confirmed = {(v or {}).get("name") for v in speakers.values()}
+    return {v["suggested"]["name"] for v in speakers.values() if (v or {}).get("suggested")} - confirmed
+
+
+def clean_owners(s: MeetingSummary, transcript: dict | None = None) -> MeetingSummary:
     """자동 화자 라벨(S2)·"발언자" 같은 owner는 null로 바꾼 새 요약. 프롬프트로 막아도 모델이 넣는 경우가 있다
-    (2026-10-04 solar-pro4: 라벨이 붙은 가상 회의에서 3회 중 3회)."""
-    items = [a.model_copy(update={"owner": None}) if a.owner and _NOT_OWNER.search(a.owner) else a for a in s.action_items]
+    (2026-10-04 solar-pro4: 라벨이 붙은 가상 회의에서 3회 중 3회).
+    transcript를 주면 확정되지 않은 목소리 제안 이름도 지운다 (제안은 프롬프트에 넣지 않지만 에이전트가 save_summary로 넣을 수 있다)."""
+    bad = _suggested_only(transcript)
+    items = [a.model_copy(update={"owner": None}) if a.owner and (_NOT_OWNER.search(a.owner) or a.owner.strip() in bad) else a
+             for a in s.action_items]
     return s.model_copy(update={"action_items": items})
 
 
@@ -129,7 +139,7 @@ def render_summary_md(s: MeetingSummary, transcript: dict, provider: str, model:
 
 def write_summary(meeting_dir: Path, s: MeetingSummary, transcript: dict, provider: str, model: str) -> None:
     """저장 경로는 이것 하나라 MCP save_summary(에이전트 작성)도 여기서 owner 정리를 거친다."""
-    s = clean_owners(s)
+    s = clean_owners(s, transcript)
     generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
     data = {"schema_version": SCHEMA_VERSION, "meeting_id": transcript["meeting_id"], "provider": provider,
             "model": model, "generated_at": generated_at, **s.model_dump()}

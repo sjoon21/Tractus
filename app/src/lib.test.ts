@@ -575,3 +575,104 @@ test("jobReduce: event 없는 결과 줄({\"aligned\": N})과 모르는 이벤�
   expect(jobReduce(s, { job: "j", aligned: 3, failed: 0, skipped: 1 } as unknown as JobEvent)).toBe(s);
   expect(jobReduce(s, { job: "j", event: "later" } as unknown as JobEvent)).toBe(s);
 });
+
+import { renameRemembering, renameRequest, STAGE_LABEL, suggestionOf, suggestionText, type Speakers } from "./lib";
+
+describe("목소리 제안 (7.1)", () => {
+  const sug = { person_id: "01P", name: "홍길동", score: 0.823 };
+  const speakers: Speakers = {
+    S1: { name: null, suggested: sug },
+    S2: { name: "김민수", suggested: sug }, // 확정한 이름이 이긴다
+    S3: { name: null },
+    S4: { name: null, suggested: { person_id: "x", name: " ", score: 0.9 } },
+  };
+
+  test("제안은 표시 이름이 아니다", () => {
+    expect(speakerName("S1", speakers)).toBe("S1");
+    expect(speakerStats([], speakers).map((s) => [s.display, s.suggested?.name ?? null])).toEqual([
+      ["S1", "홍길동"],
+      ["김민수", null],
+      ["S3", null],
+      ["S4", null],
+    ]);
+  });
+
+  test("이름이 없을 때만, 이름이 빈 제안은 버린다", () => {
+    expect(suggestionOf("S1", speakers)).toBe(sug);
+    expect(suggestionOf("S2", speakers)).toBeNull();
+    expect(suggestionOf("S4", speakers)).toBeNull();
+    expect(suggestionOf("S9", speakers)).toBeNull();
+  });
+
+  test("배지 글", () => {
+    expect(suggestionText(sug)).toBe("홍길동? · 자동 인식 82%");
+    expect(suggestionText({ ...sug, score: 1.4 })).toBe("홍길동? · 자동 인식 100%");
+  });
+
+  test("기억하기는 이름과 동의 확인이 모두 있어야 한다", () => {
+    expect(renameRequest(" 홍길동 ", false, false)).toEqual({ name: "홍길동", remember: false });
+    expect(renameRequest("", false, false)).toEqual({ name: "", remember: false }); // 이름 지우기
+    expect(renameRequest("홍길동", true, false)).toHaveProperty("error");
+    expect(renameRequest("  ", true, true)).toHaveProperty("error");
+    expect(renameRequest("홍길동", true, true)).toEqual({ name: "홍길동", remember: true });
+  });
+
+  test("목소리 등록이 실패해도 입력한 이름은 바꾼다", async () => {
+    const calls: string[] = [];
+    const rename = async () => (calls.push("rename"), "renamed");
+    const fail = (msg: string) => async () => {
+      throw new Error(msg);
+    };
+    expect(await renameRemembering(async () => ({ samples: 2, meeting: "enrolled" }), rename)).toEqual({ meeting: "enrolled", samples: 2 });
+    expect(calls).toEqual([]); // 코어 enroll이 이름도 바꿨다
+    const r = await renameRemembering(fail("목소리 모델이 없습니다"), rename);
+    expect(r).toMatchObject({ meeting: "renamed" });
+    expect((r as { voiceError: Error }).voiceError.message).toBe("목소리 모델이 없습니다");
+    expect(calls).toEqual(["rename"]);
+    expect(await renameRemembering(fail("v"), fail("r"))).toMatchObject({ voiceError: { message: "v" }, renameError: { message: "r" } });
+  });
+
+  test("stage voices", () => {
+    expect(STAGE_LABEL.voices).toBe("목소리 맞춰 보는 중");
+  });
+
+  // 실제 코어 출력 (가상 `say` 회의 통합 실행, 경로만 줄였다)
+  test("실제 transcribe·match 이벤트와 화자 맵", () => {
+    const run = (evs: object[]) => evs.map((e) => ({ job: "j", ...e }) as JobEvent).reduce(jobReduce, { ...IDLE_JOB, running: true });
+    const stages = ["decode", "vad", "diarize", "voices", "encode", "load_model", "transcribe", "align", "index"];
+    const evs = [
+      ...stages.map((stage) => ({ event: "stage", stage })),
+      { event: "done", meeting_id: "01M4ABVPTZ4KVT6M6V9RDYRDHB", meeting_dir: "/h/meetings/x" },
+      { event: "exit", code: 0, stderr: "" },
+    ];
+    expect(run(evs.slice(0, 4)).stage).toBe("voices");
+    expect(stages.filter((s) => !STAGE_LABEL[s])).toEqual([]);
+    expect(run(evs)).toMatchObject({ running: false, error: null, meetingId: "01M4ABVPTZ4KVT6M6V9RDYRDHB" });
+
+    // voices match --progress-json: done에 suggested가 붙어도 성공
+    expect(run([{ event: "stage", stage: "decode" }, { event: "stage", stage: "voices" }, { event: "done", meeting_id: "01M", meeting_dir: "/h", suggested: 1 }, { event: "exit", code: 0, stderr: "" }]).error).toBeNull();
+
+    // 모델이 없으면 경고만 남기고 끝까지 간다
+    const missing = run([
+      { event: "stage", stage: "diarize" },
+      { event: "warning", code: "voices_model_missing", message: "목소리 모델이 없어 등록된 목소리를 맞춰 보지 않습니다: /m/3dspeaker-campplus-zh-en/x.onnx\n  mkdir -p …" },
+      { event: "done", meeting_id: "01M4AC0D65GG2T9NMDF4QJR9RD", meeting_dir: "/h" },
+      { event: "exit", code: 0, stderr: "" },
+    ]);
+    expect(missing.error).toBeNull();
+    expect(missing.warnings.map((w) => w.code)).toEqual(["voices_model_missing"]);
+
+    // Rust가 직렬화한 화자 맵 (S2는 suggested: null)
+    const real: Speakers = { S1: { name: null, suggested: { person_id: "01M4ABVBAA6N46V7MCV8M7DC17", name: "유나", score: 0.96 } }, S2: { name: null, suggested: null } };
+    const st = speakerStats([], real);
+    expect(st.map((s) => [s.display, s.suggested && suggestionText(s.suggested)])).toEqual([
+      ["S1", "유나? · 자동 인식 96%"],
+      ["S2", null],
+    ]);
+    // 확정(= 이름 바꾸기) 뒤 코어가 suggested를 지운 맵
+    expect(speakerStats([], { S1: { name: "유나" }, S2: { name: null } }).map((s) => [s.display, s.suggested])).toEqual([
+      ["유나", null],
+      ["S2", null],
+    ]);
+  });
+});

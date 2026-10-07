@@ -11,13 +11,13 @@ Tauri 2 + React + TypeScript + Vite로 만든 앱이다. 구성 요소 사이의
 ```bash
 cd app
 pnpm install
-pnpm test                                   # vitest: 시각 → 세그먼트 찾기, 시간 형식, 메모 끼워 넣기, MCP 응답 해석, 속도·무음 건너뛰기·찾아 바꾸기·되돌리기·가져오기·내보내기 이름, 질의 이벤트·인용 파싱·대화 기록 자르기·전송 안내(ask.test.ts), PDF 인쇄 문서(print.test.ts), 단어 찾기·단어 타이밍 검사·단어 클릭 시각(Phase 6.1·6.2)
+pnpm test                                   # vitest: 시각 → 세그먼트 찾기, 시간 형식, 메모 끼워 넣기, MCP 응답 해석, 속도·무음 건너뛰기·찾아 바꾸기·되돌리기·가져오기·내보내기 이름, 질의 이벤트·인용 파싱·대화 기록 자르기·전송 안내(ask.test.ts), PDF 인쇄 문서(print.test.ts), 단어 찾기·단어 타이밍 검사·단어 클릭 시각(Phase 6.1·6.2), 목소리 제안 표시·기억하기 동의 검사(Phase 7.1)
 pnpm build                                  # tsc + vite → dist/
 pnpm tauri dev                              # 개발 실행 (Vite 1420 포트)
 pnpm tauri build --debug --bundles app      # → src-tauri/target/debug/bundle/macos/Tractus.app
 
 cd src-tauri
-cargo test      # transcript/summary/memos 읽기, media 스킴 Range 응답, MCP 줄 단위 송수신(가짜 서버), 하위 프로세스 이벤트 전달·kill, ask 인수·stdin, chat.json, LLM 설정 읽기, words 너그럽게 읽기, 작업 인수(align 포함)
+cargo test      # transcript/summary/memos 읽기, media 스킴 Range 응답, MCP 줄 단위 송수신(가짜 서버), 하위 프로세스 이벤트 전달·kill, ask 인수·stdin, chat.json, LLM 설정 읽기, words 너그럽게 읽기, 작업 인수(align 포함), 목소리 제안 너그럽게 읽기, voices 인수(동의 필수)·목록 읽기
 TRACTUS_TEST_HOME=<합성 홈> cargo test meetings   # 다른 회의 폴더로 읽기 테스트 (기본: ../../tests/fixtures/eval)
 ```
 
@@ -74,6 +74,20 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 
 **인쇄:** Tauri 2는 macOS에서 `window.print()`를 `plugin:webview|print`(WKWebView `printOperation`)로 바꿔 둔다. 그래서 권한 `core:webview:allow-print`가 필요하다. 여백은 `@page`로 준다(wry가 여백 0으로 인쇄한다). 화면의 `ss06`·`tnum` 대체 글리프는 PDF에서 글자로 복사되지 않아(2026 → 202!) 인쇄 문서는 기본 글리프를 쓴다.
 
+## 목소리 프로필 (Phase 7.1)
+
+계약은 [`docs/desktop.md`](../docs/desktop.md) §2.7이다. 목소리 벡터는 앱으로 오지 않는다. 코어가 `$TRACTUS_HOME/voices.json`(권한 0600)에만 두고, 앱은 이름·표본 수·등록일만 받는다.
+
+| 기능 | 앱 | 코어 |
+| --- | --- | --- |
+| 기억하기 | 이름 바꾸기 폼(화자 막대에서 두 번 누르기, 칩·⋯ 메뉴)의 '이 목소리 기억하기'. 고르면 두 번째 체크 "본인이거나 녹음·등록에 동의를 받은 사람입니다"가 나타나고, 이것까지 골라야 저장된다(생체정보, 개인정보보호법 제23조). 이름 바꾸기와 등록이 명령 한 번이다 | `tractus voices enroll <회의> <라벨> --name=<이름> --consent` (`voices_enroll`, `consent: true`가 아니면 Rust가 거부) |
+| 제안 | 전사 때 등록된 목소리와 맞으면 화자 막대에 점선 배지 "홍길동? · 자동 인식 82%"와 **확정**·**아님**을 붙인다. 확정 전에는 칩·전사·내보내기·요약에 라벨(S1)이 그대로 보인다 | transcript.json `speakers.S1.suggested` (Rust는 이상한 값을 null로 읽는다) |
+| 확정·아님 | 확정은 그 이름으로 rename, 아님은 제안만 지운다. 다른 화자 편집과 같은 줄에 선다 | `tractus speakers <회의> rename` / `dismiss -- <라벨>` (`edit_speakers` op `dismiss`) |
+| 목록·삭제 | 설정 › 목소리. 이름·표본 수·등록일. 삭제는 앱 안에서 한 번 더 묻는다. 임베딩 모델이 바뀌면 다시 등록하라고 알린다 | `tractus voices list --json` (`voices_list`), `tractus voices forget -- <id>` (`voices_forget`, ID로만) |
+| 진행 | 전사 단계 `voices` → "목소리 맞춰 보는 중". `voices_model_missing`·`voices_failed` 경고는 다른 경고처럼 보여 주고 전사는 계속된다 | `transcribe --progress-json` |
+
+`voices list --json`은 `{"people": [{"id", "name", "samples", "created_at"}], "reenroll": bool}`(docs/desktop.md §2.7)로 읽어 앱에는 `needs_reenroll`로 넘긴다. 목록 그대로, `samples`가 목록인 것도 받는다(`voices.rs parse_list`).
+
 ## 녹음 방식
 
 주로 쓰는 경우는 한 방에서 여러 사람이 Mac 주위에 둘러앉은 대면 회의다. 화상·하이브리드 회의는 그다음이다. 어느 쪽이든 헤드폰 없이 스피커로 들어도 되게 한다.
@@ -98,6 +112,7 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 | 파일 | 역할 |
 | --- | --- |
 | `src-tauri/src/lib.rs` | 설정, Tauri 명령(`list_meetings`, `list_recordings`, `load_meeting`, `edit_speakers`, `edit_segments`, `glossary_add`, `export_meeting`, `mcp_call`, `rec_start`, `rec_send`, `job_start`, `ask_start`, `ask_cancel`, `load_chat`, `llm_config`), 앱 종료 시 녹음 정지 |
+| `src-tauri/src/voices.rs` | 목소리 프로필 명령(`voices_list`, `voices_enroll`, `voices_forget`)과 인수·목록 읽기 (Phase 7.1) |
 | `src-tauri/src/meetings.rs` | transcript.json, summary.json, memos.json 읽기. 손상된 회의는 건너뛴다. 전사 안 된 녹음(`recordings/<ULID>/recording.json`) 목록과 녹음 폴더 검사 |
 | `src-tauri/src/mcp.rs` | 상주 MCP 클라이언트. initialize(`2025-11-25`) → initialized 순서로 연결하고, 하위 프로세스가 죽으면 다시 띄운다 |
 | `src-tauri/src/procs.rs` | 하위 프로세스 stdout JSON Lines를 이벤트로 전달하고, 종료할 때 `exit` 이벤트(stderr 끝부분 포함)를 보낸다 |

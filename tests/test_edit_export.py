@@ -253,3 +253,34 @@ def test_srt_and_txt_keep_one_line_per_cue(meeting, tmp_path):
     save_transcript(meeting, t)
     assert export("srt", tmp_path / "o.srt").read_text(encoding="utf-8").endswith("01:01:40,500 --> 01:01:42,000\na → b 줄 바꿈\n")
     assert export("txt", tmp_path / "o.txt").read_text(encoding="utf-8").endswith("[01:01:40] a --> b 줄 바꿈\n")
+
+
+# ── 목소리 제안은 내보내지 않는다 (Phase 7.1) ───────────────────────
+
+
+def test_voice_suggestion_never_leaks_into_exports(meeting, tmp_path):
+    import docx
+
+    t = read_t(meeting)
+    t["speakers"]["S2"] = {"name": None, "suggested": {"person_id": "P1", "name": "홍길동", "score": 0.82}}
+    save_transcript(meeting, t)
+    for fmt in ("txt", "md", "srt", "vtt"):
+        assert "홍길동" not in export(fmt, tmp_path / f"o.{fmt}").read_text(encoding="utf-8"), fmt
+    assert "홍길동" not in export("csv", tmp_path / "o.csv").read_bytes().decode("utf-8-sig")
+    assert "홍길동" not in "\n".join(p.text for p in docx.Document(str(export("docx", tmp_path / "o.docx"))).paragraphs)
+    with zipfile.ZipFile(export("bundle", tmp_path / "o.zip")) as z:
+        raw = {n: z.read(n).decode("utf-8", "replace") for n in z.namelist()}
+    assert not any("홍길동" in v or "suggested" in v for v in raw.values())
+    assert json.loads(raw[f"{meeting.name}/transcript.json"])["speakers"] == {"S1": {"name": "김민수"}, "S2": {"name": None}}
+    assert "suggested" in (meeting / "transcript.json").read_text(encoding="utf-8")  # 원본은 그대로
+
+
+def test_summary_prompt_and_owners_never_use_suggested_name():
+    from tractus.summarize import ActionItem, MeetingSummary, build_prompt, clean_owners
+
+    t = _transcript()
+    t["speakers"]["S2"] = {"name": None, "suggested": {"person_id": "P1", "name": "홍길동", "score": 0.82}}
+    assert "홍길동" not in build_prompt(t) and " S2] " in build_prompt(t)
+    s = MeetingSummary(title="t", summary="s", topics=[], decisions=[], action_items=[
+        ActionItem(task="a", owner="홍길동", due=None, segment_ids=["s0002"]), ActionItem(task="b", owner="김민수", due=None, segment_ids=["s0001"])])
+    assert [a.owner for a in clean_owners(s, t).action_items] == [None, "김민수"]

@@ -98,7 +98,14 @@ export function interleave(segments: Segment[], memos: Memo[]): Row[] {
 
 // ── 화자 (transcript.json schema_version 2, docs/desktop.md §2.1). 라벨은 자동 추정이고 이름은 사용자가 붙인다 ──
 
-export type Speakers = Record<string, { name: string | null }>;
+/** 등록된 목소리와 맞춘 제안 (Phase 7.1). 확정 전이라 표시 이름으로 쓰지 않는다. score는 코사인 유사도 0..1 */
+export interface Suggestion {
+  person_id: string;
+  name: string;
+  score: number;
+}
+
+export type Speakers = Record<string, { name: string | null; suggested?: Suggestion | null }>;
 
 /** 표시 이름: 이름, 없으면 라벨. 화자가 없는 세그먼트는 null. */
 export function speakerName(label: string | null | undefined, speakers: Speakers): string | null {
@@ -124,6 +131,8 @@ export interface SpeakerStat {
   share: number;
   /** 색 슬롯. 라벨 번호대로(speakerSlot) 두되, 이미 쓰인 슬롯이면 빈 슬롯을 쓴다 (8명이 넘으면 겹친다) */
   slot: number;
+  /** 목소리 제안. 이름을 붙인 화자는 null */
+  suggested: Suggestion | null;
 }
 
 /** 화자 막대용 목록. 편집해도 순서가 흔들리지 않게 라벨 번호 순이다. */
@@ -150,7 +159,51 @@ export function speakerStats(segments: Segment[], speakers: Speakers): SpeakerSt
     ...t,
     share: total ? t.talkSec / total : 0,
     slot: own[i] ?? (speakerSlot(label) < 0 ? -1 : (free.shift() ?? speakerSlot(label))),
+    suggested: suggestionOf(label, speakers),
   }));
+}
+
+/** 확정 전 제안만. 사용자가 이름을 붙였으면 제안은 없는 것으로 본다(코어도 rename 때 지운다) */
+export function suggestionOf(label: string, speakers: Speakers): Suggestion | null {
+  const sp = speakers[label];
+  const s = sp?.suggested;
+  return !sp?.name?.trim() && s && s.name?.trim() && Number.isFinite(s.score) ? s : null;
+}
+
+/** 배지 글: "홍길동? · 자동 인식 82%" */
+export const suggestionText = (s: Suggestion) => `${s.name.trim()}? · 자동 인식 ${Math.round(Math.min(1, Math.max(0, s.score)) * 100)}%`;
+
+export type RenameRequest = { name: string; remember: boolean } | { error: string };
+
+/** 이름 바꾸기 폼 제출. '기억하기'는 이름과 동의 확인이 모두 있어야 한다 (생체정보, 개인정보보호법 제23조) */
+export function renameRequest(raw: string, remember: boolean, consent: boolean): RenameRequest {
+  const name = raw.trim();
+  if (!remember) return { name, remember: false };
+  if (!name) return { error: "목소리를 기억하려면 이름을 입력하세요" };
+  if (!consent) return { error: "본인이거나 동의를 받은 사람인지 확인해 주세요" };
+  return { name, remember: true };
+}
+
+export type RememberResult<M> =
+  | { meeting: M; samples: number }
+  | { meeting: M; voiceError: unknown } // 이름만 바꿨다
+  | { voiceError: unknown; renameError: unknown };
+
+/**
+ * 이름 바꾸기 + 목소리 기억하기. 코어 `voices enroll`은 목소리를 못 구하면(모델 없음, 1.5초 이상 이어 말한 구간 없음,
+ * voices.json 손상) 이름도 바꾸지 않고 멈춘다. 사용자가 입력한 이름은 잃지 않도록 이름만이라도 바꾼다
+ */
+export async function renameRemembering<M>(enroll: () => Promise<{ samples: number; meeting: M }>, rename: () => Promise<M>): Promise<RememberResult<M>> {
+  try {
+    const r = await enroll();
+    return { meeting: r.meeting, samples: r.samples };
+  } catch (voiceError) {
+    try {
+      return { meeting: await rename(), voiceError };
+    } catch (renameError) {
+      return { voiceError, renameError };
+    }
+  }
 }
 
 /**
@@ -232,6 +285,7 @@ export const STAGE_LABEL: Record<string, string> = {
   decode: "오디오 읽는 중",
   vad: "발화 구간 찾는 중",
   diarize: "화자 구분 중…",
+  voices: "목소리 맞춰 보는 중",
   encode: "오디오 보관 중",
   load_model: "모델 불러오는 중",
   transcribe: "전사 중",

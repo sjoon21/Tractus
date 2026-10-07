@@ -186,6 +186,19 @@ def test_search_hits_include_speaker(home):
     assert {s["speaker"] for s in segs} <= {"김민수", "S2", None} and any(s["speaker"] == "김민수" for s in segs)
 
 
+def test_voice_suggestion_never_reaches_mcp(home):
+    t = _with_speakers(home)
+    t["speakers"]["S2"] = {"name": None, "suggested": {"person_id": "P1", "name": "홍길동", "score": 0.82}}
+    (d,) = [p for p in (home / "meetings").iterdir() if RELEASE in p.name]
+    (d / "transcript.json").write_text(json.dumps(t, ensure_ascii=False), encoding="utf-8")
+    server = build_server(home, None)
+    page = text(call(server, "get_transcript", {"meeting_id": RELEASE, "max_segments": 500}))
+    assert "홍길동" not in page and " S2] " in page
+    word = t["segments"][1]["text"].split()[0]
+    hits = call(server, "search_meetings", {"query": word, "meeting_id": RELEASE})
+    assert "홍길동" not in json.dumps(structured(hits), ensure_ascii=False)
+
+
 def test_instructions_mention_estimated_speakers():
     from tractus.mcp_server import INSTRUCTIONS
 

@@ -72,6 +72,10 @@ hf download mlx-community/Nemotron-3-Diarization --revision 59ed2dbfc1346dcea9d4
 hf download mlx-community/Qwen3-ForcedAligner-0.6B-8bit --revision 0e1a68e91d815300c7c9754b2a7639378b23db15 --local-dir $TRACTUS_MODELS_DIR/qwen3-forcedaligner-0.6b-8bit
 # 검색용 임베딩 (1.1 GB, 선택 — 없으면 키워드 검색만 함). revision을 고정해서 받습니다
 hf download Qwen/Qwen3-Embedding-0.6B --revision 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3 --local-dir $TRACTUS_MODELS_DIR/qwen3-embedding-0.6b
+# 목소리 프로필 (28 MB, 선택 — 등록한 사람의 이름을 제안할 때만 씀). GitHub 릴리스에서 받고 sha256을 확인합니다
+mkdir -p $TRACTUS_MODELS_DIR/3dspeaker-campplus-zh-en && curl -L -o $TRACTUS_MODELS_DIR/3dspeaker-campplus-zh-en/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx \
+  https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx
+shasum -a 256 $TRACTUS_MODELS_DIR/3dspeaker-campplus-zh-en/*.onnx   # aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2
 ```
 
 | 모델 | 용도 | 라이선스 |
@@ -80,6 +84,7 @@ hf download Qwen/Qwen3-Embedding-0.6B --revision 97b0c614be4d77ee51c0cef4e5f07c0
 | [mlx-community/Nemotron-3-Diarization](https://huggingface.co/mlx-community/Nemotron-3-Diarization) | 화자 분리 (최대 8명, mlx-audio로 실행) | [OpenMDW-1.1](https://openmdw.ai/license/1-1/) |
 | [mlx-community/Qwen3-ForcedAligner-0.6B-8bit](https://huggingface.co/mlx-community/Qwen3-ForcedAligner-0.6B-8bit) | 단어 타이밍 (재생 중 단어 강조, 단어 클릭 이동) | Apache-2.0 |
 | [Qwen/Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) | 의미 검색 (공식 가중치를 mlx-lm으로 실행) | Apache-2.0 |
+| [3D-Speaker CAM++ zh_en](https://modelscope.cn/models/iic/speech_campplus_sv_zh_en_16k-common_advanced) ([ONNX 변환](https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models)) | 목소리 프로필 (화자 임베딩, onnxruntime으로 CPU 실행) | Apache-2.0 |
 
 모델 라이선스 고지는 [NOTICE](NOTICE)에 있습니다.
 
@@ -134,6 +139,20 @@ uv run tractus speakers 01K6X3 merge S3 S1          # S3을 S1에 합치기
 ```
 
 `transcript.json`을 고친 뒤 `transcript.md`·`transcript.vtt`를 다시 쓰고 검색 색인을 갱신합니다. 오디오는 건드리지 않습니다. 이름을 붙인 화자는 요약에서 담당자(owner)로 쓰일 수 있고, `S1` 같은 라벨은 쓰이지 않습니다.
+
+### 목소리 기억하기
+
+```bash
+uv run tractus voices enroll 01K6X3 S1 --name "홍길동" --consent   # S1을 홍길동으로 확정하고 목소리 등록
+uv run tractus voices list                                          # 등록된 사람 (--json: 앱용)
+uv run tractus voices match 01K6X3                                  # 기존 회의에 이름 제안 다시 계산
+uv run tractus speakers 01K6X3 dismiss S2                           # 틀린 제안 지우기 (맞으면 그 이름으로 rename)
+uv run tractus voices forget "홍길동"                               # 등록 삭제 (회의에 남은 제안도 지움)
+```
+
+목소리를 등록하면 다음 전사부터 비슷한 목소리의 화자에 "홍길동?" 같은 **제안**이 붙습니다. 제안은 앱에만 보이고, 확정하기 전에는 md·vtt·요약·검색·MCP·내보내기에 이름으로 쓰이지 않습니다.
+
+> **동의가 필요합니다.** 목소리는 생체정보(개인정보보호법 제23조 민감정보)입니다. 본인이거나 녹음·등록에 동의를 받은 사람만 등록하세요(`--consent` 없이는 등록되지 않습니다). 등록한 목소리는 `~/Tractus/voices.json`(권한 0600)에만 저장되고 이 Mac 밖으로 보내지 않습니다. 목소리 모델을 바꾸면 다시 등록해야 합니다.
 
 ### 전사 텍스트 고치기·용어집
 

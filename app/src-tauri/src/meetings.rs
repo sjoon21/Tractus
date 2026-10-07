@@ -18,7 +18,7 @@ pub struct Segment {
     #[serde(default)]
     pub speaker: Option<String>,
     /// 단어 타이밍 (Phase 6.1, `tractus align`). 정렬 전이거나 값이 이상하면 null
-    #[serde(default, deserialize_with = "lenient_words")]
+    #[serde(default, deserialize_with = "lenient")]
     pub words: Option<Vec<Word>>,
 }
 
@@ -32,16 +32,28 @@ pub struct Word {
     pub approx: bool,
 }
 
-/// words가 이상해도 회의 전체를 못 읽지 않게 null로 본다 (단어 강조만 빠지고 세그먼트 단위로 돈다)
-fn lenient_words<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Vec<Word>>, D::Error> {
+/// 선택 필드(words, suggested)가 이상해도 회의 전체를 못 읽지 않게 null로 본다
+/// (단어 강조만 빠지고 세그먼트 단위로 돈다 / 목소리 제안만 빠진다)
+fn lenient<'de, D: serde::Deserializer<'de>, T: serde::de::DeserializeOwned>(d: D) -> Result<Option<T>, D::Error> {
     Ok(serde_json::from_value(serde_json::Value::deserialize(d)?).ok())
 }
 
-/// transcript.json `speakers` 값. 이름은 사용자가 붙인다 (`tractus speakers rename`)
+/// transcript.json `speakers` 값. 이름은 사용자가 붙인다 (`tractus speakers rename`).
+/// suggested는 등록된 목소리와 맞춘 제안(Phase 7.1)이고 확정 전이다. 표시 이름으로 쓰지 않는다
 #[derive(Deserialize, Serialize, Clone, Debug, Default)]
 pub struct Speaker {
     #[serde(default)]
     pub name: Option<String>,
+    #[serde(default, deserialize_with = "lenient")]
+    pub suggested: Option<Suggestion>,
+}
+
+/// 목소리 제안. score는 코사인 유사도 0..1 (화면에는 "자동 인식 82%")
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct Suggestion {
+    pub person_id: String,
+    pub name: String,
+    pub score: f64,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
@@ -424,6 +436,46 @@ mod tests {
         assert_eq!(list(&home).len(), 5); // 목록에서 빠지지 않는다
         // 프론트엔드는 speakers를 항상 객체로 받는다
         assert_eq!(serde_json::to_value(&v1).unwrap()["speakers"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn reads_voice_suggestions_leniently() {
+        let home = temp_home("suggest");
+        let dir = home.join("meetings/2026-10-07_v_01VOICE");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("transcript.json"),
+            r#"{"schema_version":2,"meeting_id":"01VOICE","speakers":{
+                "S1":{"name":null,"suggested":{"person_id":"01P","name":"홍길동","score":0.82}},
+                "S2":{"name":"김민수","suggested":null},
+                "S3":{"name":"박","suggested":{"name":"깨짐"}},
+                "S4":{"name":null,"suggested":"x"}},"segments":[]}"#,
+        )
+        .unwrap();
+        let sp = load(&home, "01VOICE").unwrap().speakers;
+        let s1 = sp["S1"].suggested.as_ref().unwrap();
+        assert_eq!((s1.person_id.as_str(), s1.name.as_str(), s1.score), ("01P", "홍길동", 0.82));
+        assert_eq!(sp["S1"].name, None, "제안은 이름이 아니다");
+        assert!(sp["S2"].suggested.is_none());
+        // 제안이 이상해도 이름은 남는다
+        assert_eq!((sp["S3"].name.as_deref(), sp["S3"].suggested.is_none()), (Some("박"), true));
+        assert!(sp["S4"].suggested.is_none());
+        let v = serde_json::to_value(&sp).unwrap();
+        assert_eq!(v["S1"]["suggested"], serde_json::json!({"person_id": "01P", "name": "홍길동", "score": 0.82}));
+        assert!(v["S2"]["suggested"].is_null());
+    }
+
+    /// 실제 코어가 쓴 transcript.json (가상 `say` 회의, 세그먼트 1개만 남김): 제안 있는 화자, `suggested` 키가 없는 화자
+    #[test]
+    fn reads_real_core_transcript_with_suggestion() {
+        let home = temp_home("real-suggest");
+        let dir = home.join("meetings/2026-10-07_배포_01M4ABVPTZ4KVT6M6V9RDYRDHB");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("transcript.json"), r#"{"schema_version": 2, "meeting_id": "01M4ABVPTZ4KVT6M6V9RDYRDHB", "title": "배포", "created_at": "2026-10-07T14:01:46+09:00", "audio": {"file": "audio.ogg", "duration_sec": 37.66, "source": "m2.wav", "sha256": "549b73075ab3638e8fa5b50ae2b5f2e5e5aba9dd9d95679a5e3ca48c6581cb07"}, "asr": {"model": "mlx-community/Qwen3-ASR-1.7B-8bit", "track": "standard", "runtime": "mlx-audio", "language": "auto", "hotwords": []}, "speakers": {"S1": {"name": null, "suggested": {"person_id": "01M4ABVBAA6N46V7MCV8M7DC17", "name": "유나", "score": 0.96}}, "S2": {"name": null}}, "diarization": {"model": "mlx-community/Nemotron-3-Diarization", "revision": "59ed2dbfc1346dcea9d423c71306a3a2499c568f", "params": {"threshold": 0.5, "median_frames": 11, "min_turn_s": 1.0, "fill_gap_s": 1.0, "min_piece_s": 1.0, "max_speakers": null}}, "segments": [{"id": "s0001", "start": 0.0, "end": 4.97, "text": "이번 주 배포 일정에 대해 이야기해 보겠습니다. 테스트는 끝났나요?", "lang": "ko", "speaker": "S1", "corrected_text": null, "words": [{"text": "이번", "start": 0.0, "end": 0.32}, {"text": "주", "start": 0.32, "end": 0.48}]}]}"#).unwrap();
+        let sp = load(&home, "01M4ABVPTZ4KVT6M6V9RDYRDHB").unwrap().speakers;
+        let s1 = sp["S1"].suggested.as_ref().unwrap();
+        assert_eq!((s1.name.as_str(), s1.score, sp["S1"].name.as_deref()), ("유나", 0.96, None));
+        assert!(sp["S2"].suggested.is_none() && sp["S2"].name.is_none());
     }
 
     #[test]

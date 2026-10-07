@@ -5,6 +5,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import numpy as np
 import pytest
 from typer.testing import CliRunner
 
@@ -334,8 +335,8 @@ def test_speakers_commands_rewrite_transcript_and_renders(env, fake_asr, fake_di
     listed = json.loads(r.stdout)
     assert listed["meeting_id"].endswith(ref) and listed["diarization"]["model"] == "fake"
     assert listed["speakers"] == [
-        {"label": "S1", "name": None, "display": "S1", "segments": 2, "talk_sec": 4.0},
-        {"label": "S2", "name": None, "display": "S2", "segments": 1, "talk_sec": 2.0},
+        {"label": "S1", "name": None, "display": "S1", "suggested": None, "segments": 2, "talk_sec": 4.0},
+        {"label": "S2", "name": None, "display": "S2", "suggested": None, "segments": 1, "talk_sec": 2.0},
     ]
 
     assert speakers(ref, "rename", "S1", "김민수").exit_code == 0
@@ -390,3 +391,179 @@ def test_video_without_audio_reports_korean_error(env, fake_asr, tmp_path):
     assert result.exit_code == 1
     err = events(result.stdout)[-1]
     assert err["event"] == "error" and "오디오 트랙이 없습니다" in err["message"]
+
+
+# ── 목소리 프로필 (Phase 7.1) ─────────────────────────────────────────
+
+
+class FakeVoiceEmbedder:
+    """모든 구간에 같은 단위 벡터: 등록한 사람과 점수 1.0. 매칭 세부는 test_voices에서 본다."""
+
+    calls = 0
+
+    def embed(self, pcm):
+        FakeVoiceEmbedder.calls += 1
+        return np.full(4, 0.5, np.float32)
+
+
+@pytest.fixture
+def fake_voice(monkeypatch):
+    FakeVoiceEmbedder.calls = 0
+    monkeypatch.setattr(cli.voices, "load_embedder", lambda models: FakeVoiceEmbedder())
+    return FakeVoiceEmbedder
+
+
+def voices_cmd(*args):
+    return CliRunner().invoke(cli.app, ["voices", *map(str, args)])
+
+
+def another_wav(tmp_path, name="두번째회의.wav", freq=880):
+    wav = tmp_path / name  # 주파수가 다르면 sha256이 달라 중복 전사로 건너뛰지 않는다
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", f"sine=frequency={freq}:duration=8", "-ar", "16000", str(wav)], check=True)
+    return wav
+
+
+def _enrolled(env, monkeypatch):
+    """첫 회의를 전사하고 S1을 홍길동으로 등록한다 → (회의 폴더, enroll 결과)."""
+    home, wav = env
+    assert run(wav).exit_code == 0
+    (d,) = (home / "meetings").iterdir()
+    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: None)
+    r = voices_cmd("enroll", d.name[-6:], "S1", "--name", "홍길동", "--consent")
+    assert r.exit_code == 0, r.output
+    return d, json.loads(r.stdout)
+
+
+def test_enroll_requires_consent(env, fake_asr, fake_diar, fake_voice):
+    home, wav = env
+    assert run(wav).exit_code == 0
+    (d,) = (home / "meetings").iterdir()
+    r = voices_cmd("enroll", d.name[-6:], "S1", "--name", "홍길동")
+    assert r.exit_code == 2 and "동의" in r.stderr and "제23조" in r.stderr
+    assert not (home / "voices.json").exists() and fake_voice.calls == 0
+
+
+def test_enroll_renames_and_stores_0600_profile_without_leaking_vectors(env, fake_asr, fake_diar, fake_voice, monkeypatch):
+    home, _ = env
+    d, out = _enrolled(env, monkeypatch)
+    assert out["name"] == "홍길동" and out["samples"] == 1 and len(out["person_id"]) == 26
+    assert (home / "voices.json").stat().st_mode & 0o777 == 0o600
+    t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+    assert t["speakers"]["S1"] == {"name": "홍길동"}
+    assert fake_voice.calls == 2  # S1 구간 2개 (0–2초, 6–8초)
+    assert not any("embedding" in p.read_text(encoding="utf-8", errors="replace") for p in d.iterdir() if p.is_file())
+
+    again = voices_cmd("enroll", d.name[-6:], "S1", "--name", "홍길동", "--consent")
+    assert json.loads(again.stdout)["samples"] == 2 and json.loads(again.stdout)["person_id"] == out["person_id"]
+    listed = json.loads(voices_cmd("list", "--json").stdout)
+    assert listed["reenroll"] is False
+    assert listed["people"] == [{"id": out["person_id"], "name": "홍길동", "samples": 2, "created_at": listed["people"][0]["created_at"]}]
+    human = voices_cmd("list")
+    assert human.exit_code == 0 and "홍길동" in human.stdout and "embedding" not in human.output
+
+
+def test_enroll_rejects_unknown_label_and_speaker_without_clips(env, fake_asr, fake_diar, fake_voice, monkeypatch):
+    home, wav = env
+    assert run(wav).exit_code == 0
+    (d,) = (home / "meetings").iterdir()
+    assert voices_cmd("enroll", d.name[-6:], "S9", "--name", "홍길동", "--consent").exit_code == 1
+    monkeypatch.setattr(cli.voices, "MIN_CLIP_S", 5.0)
+    r = voices_cmd("enroll", d.name[-6:], "S1", "--name", "홍길동", "--consent")
+    assert r.exit_code == 1 and "초 이상" in r.stderr and not (home / "voices.json").exists()
+    assert json.loads((d / "transcript.json").read_text(encoding="utf-8"))["speakers"]["S1"]["name"] is None  # 실패하면 이름도 그대로
+
+
+def test_transcribe_suggests_enrolled_voice_without_displaying_it(env, fake_asr, fake_diar, fake_voice, monkeypatch, tmp_path):
+    home, _ = env
+    d1, out = _enrolled(env, monkeypatch)
+    result = CliRunner().invoke(cli.app, ["transcribe", str(another_wav(tmp_path)), "--progress-json"])
+    assert result.exit_code == 0, result.output
+    stages = [e["stage"] for e in events(result.stdout) if e["event"] == "stage"]
+    assert stages[:6] == ["decode", "vad", "diarize", "voices", "encode", "load_model"]
+    (d2,) = [p for p in (home / "meetings").iterdir() if p != d1]
+    t = json.loads((d2 / "transcript.json").read_text(encoding="utf-8"))
+    sugg = {k: v["suggested"] for k, v in t["speakers"].items() if "suggested" in v}
+    assert list(sugg.values()) == [{"person_id": out["person_id"], "name": "홍길동", "score": 1.0}]  # 1:1이라 한 화자만
+    assert all(v["name"] is None for v in t["speakers"].values())
+    assert "홍길동" not in (d2 / "transcript.md").read_text(encoding="utf-8") + (d2 / "transcript.vtt").read_text(encoding="utf-8")
+    (label,) = sugg
+    listed = json.loads(speakers(d2.name[-6:], "list", "--json").stdout)
+    assert next(r for r in listed["speakers"] if r["label"] == label)["suggested"]["name"] == "홍길동"
+    assert next(r for r in listed["speakers"] if r["label"] == label)["display"] == label
+
+    assert speakers(d2.name[-6:], "dismiss", label).exit_code == 0
+    assert "suggested" not in json.loads((d2 / "transcript.json").read_text(encoding="utf-8"))["speakers"][label]
+    m = voices_cmd("match", d2.name[-6:])
+    assert m.exit_code == 0, m.output
+    assert json.loads(m.stdout) == {"suggested": 1}
+    assert speakers(d2.name[-6:], "rename", label, "홍길동").exit_code == 0  # 앱의 '확정'
+    assert json.loads((d2 / "transcript.json").read_text(encoding="utf-8"))["speakers"][label] == {"name": "홍길동"}
+    assert json.loads(voices_cmd("match", d2.name[-6:]).stdout) == {"suggested": 0}  # 확정된 화자·이미 쓰인 이름은 다시 제안하지 않는다
+
+
+def test_forget_deletes_person_and_their_suggestions(env, fake_asr, fake_diar, fake_voice, monkeypatch, tmp_path):
+    home, _ = env
+    d1, out = _enrolled(env, monkeypatch)
+    assert run(another_wav(tmp_path)).exit_code == 0
+    (d2,) = [p for p in (home / "meetings").iterdir() if p != d1]
+    assert "suggested" in (d2 / "transcript.json").read_text(encoding="utf-8")
+    r = voices_cmd("forget", "홍길동")
+    assert r.exit_code == 0 and json.loads(r.stdout) == {"forgotten": 1}
+    assert json.loads((home / "voices.json").read_text(encoding="utf-8"))["people"] == []
+    assert "suggested" not in (d2 / "transcript.json").read_text(encoding="utf-8")
+    assert json.loads((d1 / "transcript.json").read_text(encoding="utf-8"))["speakers"]["S1"] == {"name": "홍길동"}  # 확정한 이름은 남는다
+    assert json.loads(voices_cmd("forget", out["person_id"]).stdout) == {"forgotten": 0}
+
+
+def test_resume_keeps_suggestions_without_re_embedding(env, fake_asr, fake_diar, fake_voice, monkeypatch, tmp_path):
+    home, _ = env
+    d1, _ = _enrolled(env, monkeypatch)
+    calls = fake_voice.calls
+    wav = another_wav(tmp_path)
+    fake_asr.fail_at = len(fake_asr.calls) + 1
+    assert run(wav).exit_code == 130
+    after_first = fake_voice.calls
+    assert after_first > calls
+    fake_asr.fail_at = None
+    assert run(wav).exit_code == 0
+    assert fake_voice.calls == after_first
+    (d2,) = [p for p in (home / "meetings").iterdir() if p != d1]
+    assert "suggested" in (d2 / "transcript.json").read_text(encoding="utf-8")
+
+
+def test_no_profiles_means_no_voices_stage_or_warning(env, fake_asr, fake_diar, fake_voice):
+    _, wav = env
+    result = CliRunner().invoke(cli.app, ["transcribe", str(wav), "--progress-json"])
+    assert result.exit_code == 0
+    ev = events(result.stdout)
+    assert "voices" not in [e.get("stage") for e in ev] and not [e for e in ev if e.get("code", "").startswith("voices")]
+    assert fake_voice.calls == 0
+
+
+def test_voices_model_missing_or_failing_warns_and_transcription_continues(env, fake_asr, fake_diar, fake_voice, monkeypatch, tmp_path):
+    home, _ = env
+    _enrolled(env, monkeypatch)
+    monkeypatch.setattr(cli.voices, "load_embedder", lambda models: None)
+    r = CliRunner().invoke(cli.app, ["transcribe", str(another_wav(tmp_path)), "--progress-json"])
+    assert r.exit_code == 0, r.output
+    (w,) = [e for e in events(r.stdout) if e.get("code", "").startswith("voices")]
+    assert w["code"] == "voices_model_missing" and "curl" in w["message"] and cli.voices.MODEL_DIR in w["message"]
+
+    class Broken:
+        def embed(self, pcm):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(cli.voices, "load_embedder", lambda models: Broken())
+    r = CliRunner().invoke(cli.app, ["transcribe", str(another_wav(tmp_path, "세번째.wav", 990)), "--progress-json"])
+    assert r.exit_code == 0, r.output
+    assert [e["code"] for e in events(r.stdout) if e.get("code", "").startswith("voices")] == ["voices_failed"]
+    assert len(list((home / "meetings").glob("*/transcript.json"))) == 3
+
+
+def test_voices_list_flags_profiles_from_another_model(env):
+    home, _ = env
+    (home / "voices.json").write_text(json.dumps({"version": 1, "model": "old", "people": [
+        {"id": "P1", "name": "홍길동", "created_at": "2026-10-01T10:00:00+09:00", "consent": True, "samples": [{"embedding": [1.0], "meeting_id": "m", "added_at": "x"}]}]}))
+    listed = json.loads(voices_cmd("list", "--json").stdout)
+    assert listed["reenroll"] is True and listed["people"][0]["samples"] == 1
+    assert "다시 등록" in voices_cmd("list").stderr

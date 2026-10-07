@@ -36,6 +36,19 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 - **불변식:** `words`가 null이 아니면 `words[k]["text"] == seg_text(s).split()[k]`이다. 텍스트를 바꾸는 코드는 `align.remap_words`로 `words`를 함께 옮긴다(`store.apply_text_edits`).
 - 모델이 없거나 실패하면 `words`는 null이고 `aligner_missing`/`aligner_failed` 경고만 낸다. `tractus align <회의>`가 나중에 채운다.
 
+## 목소리 프로필 (Phase 7.1, 2026-10-07)
+
+| 모델 | 로컬 경로 | 라이선스 |
+| --- | --- | --- |
+| 3D-Speaker CAM++ zh_en advanced (k2-fsa 릴리스 ONNX, sha256 `aa3cfc16…ceba2`) | `models/3dspeaker-campplus-zh-en/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx` | Apache-2.0 |
+
+- 런타임은 `onnxruntime`(1.29 이상, CPU) + `kaldi-native-fbank`다. **`sherpa-onnx`를 넣지 않는다**(휠에 espeak-ng GPL-3가 정적 링크). 화자 분리 뒤, 등록된 사람이 있을 때만 `voices` 단계를 돌린다. 결과는 `speakers.S1.suggested` **제안**이고 `name`(사용자 확정)이 아니다.
+- **벡터는 `$TRACTUS_HOME/voices.json`(0600)에만 둔다.** 회의 폴더·transcript.json·MCP·LLM 프롬프트·색인·내보내기·로그·stdout에 쓰지 않는다. `voices list`도 이름·표본 수만 낸다.
+- **제안 이름을 표시 이름으로 쓰지 않는다.** `store.speaker_name`은 `name`만 본다. bundle 내보내기는 `suggested`를 뺀다. `summarize.clean_owners(s, transcript)`는 확정되지 않은 제안 이름 owner를 null로 바꾼다.
+- **등록에는 동의가 필수다**(`voices enroll --consent`, 개인정보보호법 제23조). `--consent` 없이 등록하는 경로를 만들지 않는다.
+- **모델·`voices.THRESHOLD`·`MARGIN`·구간 선택·onnxruntime 버전을 바꾸면 `bench/voice_eval.py`(AI Hub, 로컬 전용, 지표만, 저장소 루트에서 `uv run --with soundfile python bench/voice_eval.py`)를 다시 돌린다.** AI Hub 라벨 행과 ALIASES 민감도 행을 둘 다 보고, 수치가 같은 세션 기준임을 적는다. 모델을 바꾸면 `MODEL_ID`가 바뀌어 기존 프로필은 매칭에서 빠지고 다시 등록해야 한다.
+- 테스트는 가짜 임베더를 쓴다. 실제 모델은 `pytest -m slow`(가상 `say` 음성)만.
+
 ## ASR 파이프라인 기본값 (Phase 0 근거)
 
 - **언어는 자동 감지(`language=None`)가 기본이다.** `Korean`으로 고정하면 영어 위주 발화를 한국어로 번역하거나 반복 루프에 빠진다.
@@ -60,7 +73,8 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 | `diarize.py` | 화자 분리(Nemotron 3), 단일 화자 평활(`smooth`), 화자 경계로 청크 나누기(`split_chunks`) |
 | `asr.py` | `Transcriber`: 청크 전사, 토큰 상한, 반복 루프 재시도·보정 |
 | `align.py` | 단어 정렬(Qwen3-ForcedAligner): `tokenize`(soynlp 대체), `Aligner.align`, `align_segments`, 편집 뒤 시각 옮기기 `remap_words` |
-| `store.py` | 회의 폴더, `.job.json`·`.chunks.jsonl`(이어하기), transcript.json/md/vtt (schema_version 2: 화자), `apply_speaker_edit`, `apply_text_edits`(words도 옮김), `seg_text`(표시 텍스트 = `corrected_text` 우선), `add_glossary_terms` |
+| `store.py` | 회의 폴더, `.job.json`·`.chunks.jsonl`(이어하기, 목소리 제안 포함), transcript.json/md/vtt (schema_version 2: 화자), `apply_speaker_edit`(rename·set·merge·dismiss), `apply_suggestions`, `apply_text_edits`(words도 옮김), `seg_text`(표시 텍스트 = `corrected_text` 우선), `add_glossary_terms` |
+| `voices.py` | 목소리 프로필: CAM++ 임베딩(onnxruntime + kaldi-native-fbank), 화자 구간 고르기, `voices.json`(0600, 원자적 쓰기), `match`(헝가리안 + 임계값 + 2위와 차이) |
 | `export.py` | 내보내기 txt·md·srt·vtt·csv(utf-8-sig)·docx(python-docx, `w:eastAsia`)·bundle(zip) |
 | `llm.py` | 공급자 표(`PROVIDERS`), `complete_json`: strict JSON + Pydantic 검증 + 1회 재요청, `stream_chat`: 평문 스트리밍 |
 | `summarize.py` | 요약 스키마, segment_ids 검증, summary.md/json |
@@ -70,7 +84,7 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 | `embed.py` | Qwen3-Embedding-0.6B (공식 가중치 bf16, mlx-lm), `LazyEmbedder` |
 | `index.py` | SQLite FTS5 음절 bigram + sqlite-vec, 증분 동기화, strict 우선 + 가중 RRF |
 | `mcp_server.py` | MCP 서버 7개 도구 (`build_server(home, embedder)`) |
-| `cli.py` | `tractus transcribe`, `align`, `summarize`, `ask`, `index`, `search`, `speakers`, `segments`, `glossary`, `export`, `mcp` |
+| `cli.py` | `tractus transcribe`, `align`, `summarize`, `ask`, `index`, `search`, `speakers`, `voices`, `segments`, `glossary`, `export`, `mcp` |
 
 환경변수는 `.env.example`에 모두 있다. 개발 중에는 저장소 루트의 `.env`(기본값)와 `.env.local`(API 키)을 CLI가 읽는다. 우선순위는 셸 > `.env.local` > `.env`.
 
@@ -103,7 +117,8 @@ uv run pytest -m llm                                # 실제 LLM API 스모크 (
 uv run tractus summarize <meeting_id>               # 요약
 echo "질문" | uv run tractus ask [--meeting <id>] [--from/--to YYYY-MM-DD] [--save]   # 회의 질의 (앱: stdin JSON + --progress-json)
 uv run tractus index / search "<질의>"              # 색인, 검색
-uv run tractus speakers <meeting_id> list --json    # 화자 (rename S1 이름 / set s0012 S2|new / merge S3 S1)
+uv run tractus speakers <meeting_id> list --json    # 화자 (rename S1 이름 / set s0012 S2|new / merge S3 S1 / dismiss S1)
+uv run tractus voices enroll <meeting_id> S1 --name 이름 --consent   # 목소리 등록 + 이름 확정 (list --json / forget / match)
 echo '{"edits":[{"id":"s0012","text":"새 문장"}]}' | uv run tractus segments <meeting_id> edit   # 텍스트 교정 → {"changed": N}
 uv run tractus glossary add 쿠버네티스 "Project Atlas"  # 용어집 추가 → {"added": N}
 uv run tractus export <meeting_id> --format docx --out 회의.docx [--force]   # txt|md|srt|vtt|csv|docx|bundle → {"path": …}

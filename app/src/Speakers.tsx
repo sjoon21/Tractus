@@ -1,6 +1,6 @@
 // 화자 표시·편집 (docs/desktop.md §2.1). 편집은 전부 코어(`tractus speakers`)가 하고 앱은 고친 회의를 다시 받는다.
 import { memo, useLayoutEffect, useRef, useState } from "react";
-import { fmtTime, type Segment, type SpeakerStat } from "./lib";
+import { fmtTime, renameRequest, suggestionText, type Segment, type SpeakerStat } from "./lib";
 
 /** 화자 색 (SpeakerStat.slot). 화자 미상이면 무채색 */
 export const spkStyle = (slot: number | undefined) => ({ "--spk": slot === undefined || slot < 0 ? "var(--ink-3)" : `var(--spk-${slot})` }) as React.CSSProperties;
@@ -36,31 +36,84 @@ export const SpeakerChip = memo(function SpeakerChip({
 });
 
 /**
- * 이름 입력. 한글 조합 중의 Enter는 조합을 끝낼 뿐 제출하지 않는다(WebKit은 compositionend가 keydown보다 먼저 와서
- * 조합 플래그만으로는 못 거른다 → isComposing·keyCode 229로 본다). Esc·포커스 이탈은 취소.
+ * 이름 입력 + '이 목소리 기억하기' (Phase 7.1). 한글 조합 중의 Enter는 조합을 끝낼 뿐 제출하지 않는다(WebKit은 compositionend가
+ * keydown보다 먼저 와서 조합 플래그만으로는 못 거른다 → isComposing·keyCode 229로 본다). Esc·폼 밖으로 초점 이탈은 취소.
+ * 기억하기는 동의 확인을 한 번 더 받는다(생체정보). 확인 전에는 제출하지 않는다.
  */
-export function RenameInput({ label, initial, onSubmit, onCancel }: { label: string; initial: string; onSubmit: (name: string) => void; onCancel: () => void }) {
+export function RenameForm({
+  label,
+  initial,
+  onSubmit,
+  onCancel,
+}: {
+  label: string;
+  initial: string;
+  onSubmit: (name: string, remember: boolean) => void;
+  onCancel: () => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const [remember, setRemember] = useState(false);
+  const [consent, setConsent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = () => {
+    const r = renameRequest(input.current?.value ?? "", remember, consent);
+    if ("error" in r) setError(r.error);
+    else onSubmit(r.name, r.remember);
+  };
   return (
-    <input
-      className="spk-rename"
-      defaultValue={initial}
-      placeholder={label}
-      aria-label={`${label} 이름`}
-      autoFocus
-      onFocus={(e) => e.currentTarget.select()}
-      onBlur={onCancel}
+    <div
+      className="spk-rename-form"
+      role="group"
+      aria-label={`${label} 이름 바꾸기`}
+      // WebKit은 클릭으로 체크박스에 초점을 주지 않는다 → 입력란이 초점을 잃어 취소되지 않게 누르기만 막는다(체크는 click으로 바뀐다)
+      onMouseDown={(e) => e.target !== input.current && e.preventDefault()}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && onCancel()}
       onKeyDown={(e) => {
         if (e.nativeEvent.isComposing || e.keyCode === 229) return;
         if (e.key === "Enter") {
           e.preventDefault();
-          onSubmit(e.currentTarget.value.trim());
+          submit();
         } else if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation(); // 팝오버까지 닫지 않는다
           onCancel();
         }
       }}
-    />
+    >
+      <input ref={input} className="spk-rename" defaultValue={initial} placeholder={label} aria-label={`${label} 이름`} autoFocus onFocus={(e) => e.currentTarget.select()} />
+      <label className="spk-check">
+        <input
+          type="checkbox"
+          checked={remember}
+          onChange={(e) => {
+            setRemember(e.target.checked);
+            setError(null);
+          }}
+        />
+        이 목소리 기억하기
+      </label>
+      {remember && (
+        <label className="spk-check is-consent">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => {
+              setConsent(e.target.checked);
+              setError(null);
+            }}
+          />
+          <span>
+            본인이거나 녹음·등록에 동의를 받은 사람입니다
+            <small>목소리는 생체정보입니다. 이 Mac에만 저장하고 설정에서 지울 수 있습니다</small>
+          </span>
+        </label>
+      )}
+      {error && (
+        <p className="spk-rename-error" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -78,6 +131,8 @@ export function SpeakersBar({
   onMerge,
   onCancelMerge,
   onMenu,
+  onConfirm,
+  onDismiss,
 }: {
   stats: SpeakerStat[];
   only: string | null;
@@ -85,13 +140,16 @@ export function SpeakersBar({
   busy: boolean;
   renaming: string | null;
   merge: MergeAsk | null;
-  onRename: (label: string, name: string) => void;
+  onRename: (label: string, name: string, remember: boolean) => void;
   onStartRename: (label: string) => void;
   onCancelRename: () => void;
   onAskMerge: (ask: MergeAsk) => void;
   onMerge: () => void;
   onCancelMerge: () => void;
   onMenu: (label: string, anchor: HTMLElement) => void;
+  /** 목소리 제안 확정 (= 그 이름으로 rename) / 거절 (dismiss) */
+  onConfirm: (label: string, name: string) => void;
+  onDismiss: (label: string) => void;
 }) {
   const [dragFrom, setDragFrom] = useState<string | null>(null);
   const [dropOn, setDropOn] = useState<string | null>(null);
@@ -123,7 +181,7 @@ export function SpeakersBar({
           <li
             key={s.label}
             style={spkStyle(s.slot)}
-            className={`${dropOn === s.label ? "is-drop" : ""} ${only && only !== s.label ? "is-dim" : ""}`}
+            className={`${dropOn === s.label ? "is-drop" : ""} ${only && only !== s.label ? "is-dim" : ""} ${renaming === s.label ? "is-editing" : ""}`}
             draggable={!busy && renaming !== s.label}
             onDragStart={(e) => {
               e.dataTransfer.setData("text/plain", s.label);
@@ -150,7 +208,12 @@ export function SpeakersBar({
             {renaming === s.label ? (
               <span className="speaker-filter is-editing">
                 <span className="spk-dot" aria-hidden />
-                <RenameInput label={s.label} initial={s.display === s.label ? "" : s.display} onSubmit={(name) => onRename(s.label, name)} onCancel={onCancelRename} />
+                <RenameForm
+                  label={s.label}
+                  initial={s.display === s.label ? (s.suggested?.name ?? "") : s.display}
+                  onSubmit={(name, remember) => onRename(s.label, name, remember)}
+                  onCancel={onCancelRename}
+                />
               </span>
             ) : (
               <button
@@ -164,6 +227,19 @@ export function SpeakersBar({
                 <span className={`speaker-name ${s.display === s.label ? "is-label" : ""}`}>{s.display}</span>
                 <span className="speaker-share tnum">{Math.round(s.share * 100)}%</span>
               </button>
+            )}
+            {s.suggested && renaming !== s.label && (
+              <span className="spk-suggest" role="group" aria-label={`${s.label} 목소리 제안: ${suggestionText(s.suggested)}`}>
+                <span className="spk-suggest-text tnum" aria-hidden>
+                  {suggestionText(s.suggested)}
+                </span>
+                <button disabled={busy} onClick={() => onConfirm(s.label, s.suggested!.name.trim())} aria-label={`${s.label}을 ${s.suggested.name.trim()}(으)로 확정`}>
+                  확정
+                </button>
+                <button disabled={busy} onClick={() => onDismiss(s.label)} aria-label={`${s.suggested.name.trim()} 아님`}>
+                  아님
+                </button>
+              </span>
             )}
             <button className="speaker-more" aria-label={`${s.display} 편집`} aria-haspopup="dialog" disabled={busy} onClick={(e) => onMenu(s.label, e.currentTarget)}>
               <MoreIcon />
@@ -206,7 +282,7 @@ export function SpeakerMenu({
   busy: boolean;
   onClose: () => void;
   onSet: (segment: string, label: string) => void;
-  onRename: (label: string, name: string) => void;
+  onRename: (label: string, name: string, remember: boolean) => void;
   onStartRename: (label: string) => void;
   onAskMerge: (ask: MergeAsk) => void;
 }) {
@@ -265,10 +341,10 @@ export function SpeakerMenu({
           {current &&
             (renaming ? (
               <div className="spk-menu-rename">
-                <RenameInput
+                <RenameForm
                   label={current.label}
-                  initial={current.display === current.label ? "" : current.display}
-                  onSubmit={(name) => done(() => onRename(current.label, name))}
+                  initial={current.display === current.label ? (current.suggested?.name ?? "") : current.display}
+                  onSubmit={(name, remember) => done(() => onRename(current.label, name, remember))}
                   onCancel={() => setRenaming(false)}
                 />
                 <span className="spk-menu-hint">Enter로 저장 · Esc 취소</span>

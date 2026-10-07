@@ -6,9 +6,11 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
+    "kaldi-native-fbank==1.22.3",
     "mcp>=2.2,<2.3",
     "mlx-audio>=0.5.7",
     "mlx-lm>=0.32.0",
+    "onnxruntime==1.30.0",
     "openai>=3.23.0",
     "python-docx>=1.2",
     "sqlite-vec==0.1.9",

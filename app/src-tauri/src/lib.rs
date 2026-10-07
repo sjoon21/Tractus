@@ -5,6 +5,7 @@ mod mcp;
 mod media;
 mod meetings;
 mod procs;
+mod voices;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -335,13 +336,15 @@ fn is_tagged(s: &str, prefix: char) -> bool {
     s.strip_prefix(prefix).is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// 화자 편집 (docs/desktop.md §2.1). 프론트엔드가 {"op":"rename","label":"S1","name":"김민수"} 꼴로 보낸다
+/// 화자 편집 (docs/desktop.md §2.1). 프론트엔드가 {"op":"rename","label":"S1","name":"김민수"} 꼴로 보낸다.
+/// dismiss: 목소리 제안 거절 (Phase 7.1, §2.7). 제안 확정은 그 이름으로 rename
 #[derive(Deserialize, Debug)]
 #[serde(tag = "op", rename_all = "lowercase")]
 enum SpeakerEdit {
     Rename { label: String, name: String },
     Set { segment: String, label: String },
     Merge { from: String, into: String },
+    Dismiss { label: String },
 }
 
 /// `tractus speakers <회의> <명령> -- <인자…>`. 인자는 `--` 뒤에 둔다("-박" 같은 이름을 옵션으로 읽지 않게)
@@ -350,13 +353,14 @@ fn speakers_args(id: &str, edit: &SpeakerEdit) -> Result<Vec<String>, String> {
     if !is_meeting_id(id) {
         return Err(format!("잘못된 회의 ID: {id}"));
     }
-    let (op, a, b) = match edit {
-        SpeakerEdit::Rename { label, name } if is_tagged(label, 'S') && !name.contains(['\n', '\r']) => ("rename", label, name.trim()),
-        SpeakerEdit::Set { segment, label } if is_tagged(segment, 's') && (is_tagged(label, 'S') || label == "new") => ("set", segment, label.as_str()),
-        SpeakerEdit::Merge { from, into } if is_tagged(from, 'S') && is_tagged(into, 'S') && from != into => ("merge", from, into.as_str()),
+    let (op, rest) = match edit {
+        SpeakerEdit::Rename { label, name } if is_tagged(label, 'S') && !name.contains(['\n', '\r']) => ("rename", vec![label.as_str(), name.trim()]),
+        SpeakerEdit::Set { segment, label } if is_tagged(segment, 's') && (is_tagged(label, 'S') || label == "new") => ("set", vec![segment.as_str(), label]),
+        SpeakerEdit::Merge { from, into } if is_tagged(from, 'S') && is_tagged(into, 'S') && from != into => ("merge", vec![from.as_str(), into]),
+        SpeakerEdit::Dismiss { label } if is_tagged(label, 'S') => ("dismiss", vec![label.as_str()]),
         _ => return Err(bad()),
     };
-    Ok(["speakers", id, op, "--", a, b].map(String::from).to_vec())
+    Ok(["speakers", id, op, "--"].into_iter().chain(rest).map(String::from).collect())
 }
 
 /// tractus 명령을 끝까지 실행하고 stdout을 돌려준다. input이 있으면 stdin으로 넘기고 닫는다.
@@ -540,7 +544,10 @@ pub fn run() {
             ask_start,
             ask_cancel,
             load_chat,
-            llm_config
+            llm_config,
+            voices::voices_list,
+            voices::voices_enroll,
+            voices::voices_forget
         ])
         .build(tauri::generate_context!())
         .expect("Tauri 앱을 만들 수 없습니다")
@@ -588,6 +595,7 @@ mod tests {
         assert_eq!(args(json!({"op":"set","segment":"s0012","label":"new"})).unwrap(), ["speakers", "01ABC", "set", "--", "s0012", "new"]);
         assert_eq!(args(json!({"op":"set","segment":"s0012","label":"S2"})).unwrap()[5], "S2");
         assert_eq!(args(json!({"op":"merge","from":"S3","into":"S1"})).unwrap(), ["speakers", "01ABC", "merge", "--", "S3", "S1"]);
+        assert_eq!(args(json!({"op":"dismiss","label":"S2"})).unwrap(), ["speakers", "01ABC", "dismiss", "--", "S2"]);
 
         for bad in [
             json!({"op":"rename","label":"S1; rm","name":"x"}),
@@ -596,6 +604,7 @@ mod tests {
             json!({"op":"set","segment":"s0001","label":"S"}),
             json!({"op":"merge","from":"S1","into":"S1"}),
             json!({"op":"merge","from":"new","into":"S1"}),
+            json!({"op":"dismiss","label":"new"}),
         ] {
             assert!(args(bad.clone()).is_err(), "{bad}");
         }

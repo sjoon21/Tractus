@@ -121,7 +121,11 @@ def _bundle(d: Path) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for name in BUNDLE_FILES:
-            if (d / name).is_file():
+            if name == "transcript.json":  # 목소리 제안(suggested)은 이 Mac 밖으로 내보내지 않는다
+                t = json.loads((d / name).read_text(encoding="utf-8"))
+                t = {**t, "speakers": {k: {"name": (v or {}).get("name")} for k, v in (t.get("speakers") or {}).items()}}
+                z.writestr(f"{d.name}/{name}", json.dumps(t, ensure_ascii=False, indent=1))
+            elif (d / name).is_file():
                 z.write(d / name, f"{d.name}/{name}")
     return buf.getvalue()
 

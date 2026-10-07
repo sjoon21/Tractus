@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, errText, type McpStatus, type Settings } from "./api";
+import { api, errText, type McpStatus, type Settings, type VoiceList, type VoicePerson } from "./api";
 import { recMode, withRecMode } from "./lib";
 
 const FIELDS: { key: keyof Omit<Settings, "fake_recorder" | "rec_mode">; label: string; hint: string }[] = [
@@ -80,6 +80,82 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
             </>
           )}
         </div>
+      )}
+
+      <VoicesSection home={s.home} />
+    </section>
+  );
+}
+
+/** 목소리 프로필 (Phase 7.1). 지우기는 앱 안에서 한 번 더 묻는다 (window.confirm은 쓰지 않는다) */
+function VoicesSection({ home }: { home: string }) {
+  const [list, setList] = useState<VoiceList | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [asking, setAsking] = useState<VoicePerson | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => api.voicesList().then(setList, (e) => setMsg(errText(e)));
+  useEffect(() => void load(), []);
+
+  const forget = async (p: VoicePerson) => {
+    setBusy(true);
+    try {
+      await api.voicesForget(p.id);
+      setMsg(`‘${p.name}’의 목소리를 지웠습니다.`);
+      setAsking(null);
+      await load();
+    } catch (e) {
+      setMsg(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="voices" aria-labelledby="voices-title">
+      <h2 id="voices-title">목소리</h2>
+      <p className="field-hint">
+        회의 화면에서 화자 이름을 바꿀 때 ‘이 목소리 기억하기’를 고르면 등록됩니다. 다음 전사부터 비슷한 목소리에 이름을 <b>제안</b>만 하고, 확정은 직접 합니다. 목소리는
+        생체정보라 <code>{home.replace(/\/$/, "")}/voices.json</code>(이 Mac, 나만 읽을 수 있는 권한)에만 저장하고 이 Mac 밖으로 보내지 않습니다. 검색·요약·질문에도 쓰지 않습니다.
+      </p>
+      {list?.needs_reenroll && (
+        <p className="record-warning" role="status">
+          목소리 인식 모델이 바뀌어 지금 등록된 목소리로는 맞춰 보지 않습니다. 다시 등록하세요.
+        </p>
+      )}
+      {list && list.people.length === 0 && <p className="voices-empty">아직 등록한 목소리가 없습니다.</p>}
+      {list && list.people.length > 0 && (
+        <ul className="voices-list">
+          {list.people.map((p) => (
+            <li key={p.id}>
+              <span className="voices-name">{p.name}</span>
+              <span className="voices-meta tnum">
+                표본 {p.samples}개{p.created_at && ` · ${p.created_at.slice(0, 10)} 등록`}
+              </span>
+              <button className="text-button" disabled={busy} onClick={() => setAsking(p)} aria-label={`${p.name} 목소리 삭제`}>
+                삭제
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {asking && (
+        <div className="speakers-confirm" role="alertdialog" aria-label="목소리 삭제">
+          <p>
+            <b>{asking.name}</b>의 목소리 표본 {asking.samples}개를 지웁니다. 회의에 붙인 이름은 그대로 남고, 새로 전사하는 회의부터 이 사람을 제안하지 않습니다.
+          </p>
+          <button className="primary-button" onClick={() => void forget(asking)} disabled={busy} autoFocus>
+            지우기
+          </button>
+          <button className="text-button" onClick={() => setAsking(null)}>
+            취소
+          </button>
+        </div>
+      )}
+      {msg && (
+        <p className="field-hint" role="status">
+          {msg}
+        </p>
       )}
     </section>
   );
