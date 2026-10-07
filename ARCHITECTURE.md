@@ -9,6 +9,7 @@
 
 | 날짜 | 버전 | 변경 |
 | --- | --- | --- |
+| 2026-10-07 | v3.14 | **Phase 7.2 실시간 자막 core (옵트인, 미리보기).** `tractus live --recording <dir> [--progress-json] [--speakers] [--force]`: 녹음 중인 트랙 WAV를 꼬리부터 읽어 표본 위치로 섞고(amix normalize=0과 같음), 48k → 16k 상태 있는 FIR로 줄여 Silero `feed()`에 넣는다. 0.5초 무음이나 8초 상한에서 확정하고 3초마다 미리보기를 낸다. ASR은 Qwen3-ASR 0.6B 8bit만 쓴다. 아무것도 저장하지 않으며, 정지하면 이 워커가 먼저 끝나고 배치 전사가 정식 전사를 만든다. 가상 대화 68초 실시간 실측: 확정 지연 p50 0.60초·p95 0.72–0.76초, footprint 최대 1.8GB, GPU 사용률은 시스템 전체 29%에서 기준값을 뺀 약 12%p(프로세스 몫은 sudo가 필요해 재지 못함), 정지 → 종료 0.13–0.19초. 계약: `docs/desktop.md` §2.8, 설계: §2.6 |
 | 2026-10-07 | v3.13 | **Phase 7.1 목소리 프로필 core.** onnxruntime 1.30(MIT, CPU)과 kaldi-native-fbank(Apache-2.0)로 3D-Speaker CAM++ zh_en advanced(192차원, Apache-2.0, sha256 고정)를 직접 돌려 화자 임베딩을 만든다. sherpa-onnx는 휠에 espeak-ng(GPL-3)가 정적 링크돼 있어 쓰지 않는다. `transcribe`는 화자 분리 뒤 등록된 목소리와 맞춰 `voices` 단계에서 이름을 **제안**한다(`speakers.S1.suggested`, 확정은 사용자). 매칭은 사람 중심 벡터와 코사인 + 헝가리안 1:1 + 임계값 + 2위와 차이 0.08. `tractus voices list\|enroll --consent\|forget\|match`, `tractus speakers <회의> dismiss`. 프로필은 `$TRACTUS_HOME/voices.json`(0600)에만 두고 회의 폴더·MCP·LLM·색인·내보내기로 보내지 않는다(§2.5). 계약: `docs/desktop.md` §2.7 |
 | 2026-10-06 | v3.12 | **Phase 6.1 단어 타임스탬프 core.** Qwen3-ForcedAligner-0.6B-8bit(Apache-2.0, revision 고정)로 `segment.words`를 채운다. `transcribe`는 ASR 모델을 내린 뒤 `align` 단계를 돌린다(`--no-align`으로 끔, 모델이 없으면 `aligner_missing` 경고 후 words null). 기존 회의는 `tractus align <회의> [--force]`. 단어 = 표시 텍스트의 공백 토큰(1:1 불변식). mlx-audio의 한국어 토크나이저는 soynlp(LGPL-3)를 불러오므로 공백 토크나이저로 바꿔 끼운다. 텍스트를 고치면 difflib으로 시각을 옮기고 새 단어에 `approx`. 실제 대면 회의 44.7분(세그먼트 295개): 정렬 66초, 294개 성공·1개 실패, 불변식 위반 0. 계약: `docs/desktop.md` §2.6 |
 | 2026-10-06 | v3.11 | **Phase 6.3 회의 질의 core.** `tractus ask [--meeting] [--from/--to] [--save] --progress-json`: stdin JSON(질문 + history), 이벤트 `stage(retrieve)` → `sources` → `stage(answer)` → `delta`* → `done{answer, citations, provider, model}`. 회의 범위는 전사 전체, 전체 범위는 색인 검색 8개 + 앞뒤 세그먼트. 인용은 근거와 대조해 없는 ID를 지운다. 근거가 없으면 LLM을 부르지 않는다. `--save`는 회의 폴더 `chat.json`(최근 50개). `llm.stream_chat`, `Index.meeting_dir`. 평가 세트 `tests/fixtures/eval/ask_questions.jsonl`(28개)·`bench/ask_eval.py`. 계약: `docs/desktop.md` §2.5 |
@@ -239,6 +240,49 @@
 | 삭제 | `tractus voices forget <이름\|id>`가 사람을 지우고, 회의에 남은 그 사람의 제안도 지운다(확정한 이름은 사용자가 붙인 것이라 남긴다) |
 
 ---
+
+### 2.6 실시간 자막 — 녹음 중 미리보기 (2026-10-07, v3.14)
+
+**결정: 녹음하는 동안 작은 모델로 자막을 미리 보여 주기만 한다.** 실시간 자막은 저장하지 않는다. 녹음을 멈추면 `tractus live` 워커가 먼저 끝나고, 지금까지와 같은 배치 전사(1.7B + 화자 분리 + 단어 정렬)가 정식 전사를 만든다. 설정에서 켜야 동작한다(기본 꺼짐).
+
+```
+tractus-rec가 쓰는 mic.wav · system.wav (48 kHz int16, 헤더 크기 필드는 0.25초마다 갱신)
+  → WavTail: 헤더의 크기 필드 대신 파일 크기로 표본 수를 센다. 반만 쓰인 표본은 다음에 읽는다
+  → Mixer: 같은 표본 위치끼리 더하고 [-1, 1]로 자름 (배치의 amix normalize=0과 같음). 1초 넘게 멈춘 트랙은 0으로 채움
+  → Resampler: 48k → 16k (97탭 Hamming windowed-sinc, 차단 7 kHz, 이전 블록 꼬리를 이어 붙이는 상태 있는 FIR)
+  → Segmenter: Silero feed() 512표본(32ms)마다 → 발화 자르기
+  → Live: Qwen3-ASR 0.6B 8bit (language 자동, hotwords = glossary.md) → live 이벤트
+```
+
+| 규칙 | 값 |
+| --- | --- |
+| 확정 (`final`) | 발화 중 무음 0.51초, 또는 8초 상한. 상한은 마지막 약 1초 중 가장 조용한 창에서 자르고 나머지는 다음 발화로 잇는다. 상한이 끝 쉼(0.19초 이상) 안에서 걸리면 쉼에서 끝난 것으로 본다 |
+| 미리보기 (`partial`) | 말이 이어지는 동안 약 3초마다 지금까지의 발화 전체. 무음을 세는 중이면 말이 다시 나올 때까지 미룬다 |
+| 쉼 미리 전사 | 쉼이 0.19초 이어지면 그 순간의 버퍼가 곧 확정될 오디오와 같다(끝 무음은 0.19초만 남기므로). 이때 전사해 `partial`로 내고, 0.51초에서 확정할 때 같은 문장을 다시 쓴다. 확정 지연에서 ASR 시간(0.2–0.4초)이 빠진다 |
+| 버리는 소리 | 0.26초보다 짧은 발화, 텍스트가 빈 발화(보여 준 미리보기가 없을 때) |
+| 뒤처짐 | 라이브 끝에서 1초 넘게 뒤인 미리보기는 건너뛴다. 10초 넘게 밀리면 `live_lagging` 경고를 한 번 내고 밀린 오디오를 버린 뒤 라이브 끝으로 간다. 버린 발화에 미리보기가 있었으면 그 문장으로 확정한다 |
+| 정지 | stdin `stop` 줄, stdin EOF, SIGTERM·SIGINT. 디스크에 남은 오디오를 읽고, 측정한 RTF로 1초 안에 끝날 전사만 한다. 못 하면 보이던 미리보기 문장으로 확정한다 |
+| 메모리 | 1.7B를 올리지 않는다. 물리 메모리가 16GB 미만이면 `--force` 없이는 거부한다 |
+
+**실측 (`bench/live_sim.py`, 2026-10-07, M3 16GB).** macOS `say` 두 음성으로 만든 대화 68초(발화 9개)를 tractus-rec와 같은 형식으로 실시간 속도로 쓰면서 측정했다. 결과는 `bench/results/live_summary.json`에 있다.
+
+| 지표 | 화자 끔 (기본) | `--speakers` |
+| --- | --- | --- |
+| 확정 지연 p50 / p95 (발화 끝 표본을 쓴 순간 → `final`) | 0.60초 / 0.76초 (다른 실행 0.72·0.74초) | 0.61초 / 0.79초 |
+| 처리 지연 p50 / p95 (0.51초 무음이 다 쓰인 순간 → `final`) | 0.02초 / 0.15초 | 0.04초 / 0.21초 |
+| ASR 시간 / 오디오 길이 | 0.118 | 0.131 |
+| 최대 footprint (`footprint -p`, Metal 버퍼 포함) | 1.82GB (RSS 1.19GB) | 2.97GB (다른 실행 3.24GB) |
+| GPU 사용률 평균 − 시작 전 기준값 (시스템 전체, `ioreg`) | 29.4% − 17.5% = 약 12%p (다른 실행 46% − 29% = 17%p) | 56.5% − 14.2% = 약 42%p |
+| CER (final을 이은 문장 vs 대본) | 15% | 15% |
+| 모델 로드 · 정지 → 종료 | 2.2초 · 0.13초 | 비슷함 |
+
+- 확정 지연의 대부분은 설계상 무음 대기(0.51초)다. 쉼 미리 전사를 넣기 전에는 p95가 1.08초였다.
+- CER은 0.6B 미리보기 기준이다. `say`가 숫자를 읽은 소리("오 퍼센트")를 모델이 "5%"로 쓰는 차이가 포함돼 있다. 정식 전사 품질과 비교하는 숫자가 아니다.
+- GPU 사용률은 `powermetrics`(sudo 필요) 대신 `ioreg`의 `Device Utilization %`를 0.5초마다 읽었다. 이 값은 시스템 전체라 이 Mac의 다른 작업이 함께 잡힌다. 그래서 시작 전 1초의 기준값을 빼서 적었다. 실행 중에 다른 작업이 바뀌면 틀리는 근사이고, `live` 프로세스만의 몫은 재지 못했다. 로드맵의 GPU 점유율 목표(0.29) 달성 여부도 그래서 확인하지 못했다. 화자 끔과 `--speakers`는 각각 다른 실행이라 기준값이 다르다.
+
+**실시간 화자 라벨은 `--speakers`로만 켠다(기본 끔, `speaker: null`).** mlx-audio 0.5.7의 Nemotron 3 Diarization `feed()` 스트리밍('low' 프리셋, 입력 지연 1.04초)이 동작은 한다. 가상 대화에서 S1·S2 두 화자가 나왔다. 하지만 인코더가 0.72초마다 화자 캐시(최대 528프레임) 전체를 다시 돌린다. 그래서 GPU 사용률 증가분(기준값을 뺀 값)이 약 세 배(12–17%p → 42%p), footprint가 약 1.2–1.4GB 늘었다. 팬 없는 MacBook Air에서 녹음과 함께 오래 돌리기에는 부담이 커서 앱은 켜지 않는다. 라벨은 미리보기 안에서 처음 나온 순서이고 최종 전사의 라벨과 다를 수 있다. 정확도(DER)는 재지 않았다. 배치 화자 분리 엔진·파라미터는 바꾸지 않았으므로 §2.4의 DER 재측정 규칙에는 해당하지 않는다.
+
+- **미검증:** 팬 없는 M3 Air에서 1시간 연속 사용할 때의 발열·스로틀링(사람이 직접 확인), 실제 대면 회의(원거리 마이크·겹침 발화)에서의 지연과 품질, 시스템 오디오를 섞은 화상 회의.
 
 ## 3. LLM 레이어 — OpenAI 호환 API
 

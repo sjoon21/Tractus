@@ -11,13 +11,14 @@ Tauri 2 + React + TypeScript + Vite로 만든 앱이다. 구성 요소 사이의
 ```bash
 cd app
 pnpm install
-pnpm test                                   # vitest: 시각 → 세그먼트 찾기, 시간 형식, 메모 끼워 넣기, MCP 응답 해석, 속도·무음 건너뛰기·찾아 바꾸기·되돌리기·가져오기·내보내기 이름, 질의 이벤트·인용 파싱·대화 기록 자르기·전송 안내(ask.test.ts), PDF 인쇄 문서(print.test.ts), 단어 찾기·단어 타이밍 검사·단어 클릭 시각(Phase 6.1·6.2), 목소리 제안 표시·기억하기 동의 검사(Phase 7.1)
+pnpm test                                   # vitest: 시각 → 세그먼트 찾기, 시간 형식, 메모 끼워 넣기, MCP 응답 해석, 속도·무음 건너뛰기·찾아 바꾸기·되돌리기·가져오기·내보내기 이름, 질의 이벤트·인용 파싱·대화 기록 자르기·전송 안내(ask.test.ts), PDF 인쇄 문서(print.test.ts), 단어 찾기·단어 타이밍 검사·단어 클릭 시각(Phase 6.1·6.2), 목소리 제안 표시·기억하기 동의 검사(Phase 7.1), 실시간 자막 상태(`liveReduce`, Phase 7.2)
 pnpm build                                  # tsc + vite → dist/
 pnpm tauri dev                              # 개발 실행 (Vite 1420 포트)
 pnpm tauri build --debug --bundles app      # → src-tauri/target/debug/bundle/macos/Tractus.app
 
 cd src-tauri
-cargo test      # transcript/summary/memos 읽기, media 스킴 Range 응답, MCP 줄 단위 송수신(가짜 서버), 하위 프로세스 이벤트 전달·kill, ask 인수·stdin, chat.json, LLM 설정 읽기, words 너그럽게 읽기, 작업 인수(align 포함), 목소리 제안 너그럽게 읽기, voices 인수(동의 필수)·목록 읽기
+cargo test      # transcript/summary/memos 읽기, media 스킴 Range 응답, MCP 줄 단위 송수신(가짜 서버), 하위 프로세스 이벤트 전달·kill, ask 인수·stdin, chat.json, LLM 설정 읽기, words 너그럽게 읽기, 작업 인수(align 포함), 목소리 제안 너그럽게 읽기, voices 인수(동의 필수)·목록 읽기, live 인수(녹음 폴더만)·정지 명령 후 대기·시간 초과 kill
+cargo test -- --ignored real_live   # 실제 tractus live(.venv + 0.6B·VAD 모델)를 앱 명령 그대로 띄우고 stop → done + 종료 코드 0, 2초 이내
 TRACTUS_TEST_HOME=<합성 홈> cargo test meetings   # 다른 회의 폴더로 읽기 테스트 (기본: ../../tests/fixtures/eval)
 ```
 
@@ -39,6 +40,16 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 | `rec_bin` | `<저장소>/recorder/.build/release/tractus-rec` | 녹음 헬퍼 경로 |
 | `fake_recorder` | `false` | 개발용. `record --fake`로 띄워 권한 없이 녹음 흐름을 시험한다 |
 | `rec_mode` | `in_person` | 마지막으로 고른 녹음 방식. 사이드바 녹음 버튼 아래 스위치로 바꾸고, 바꿀 때마다 이 값만 저장한다(다른 값은 설정 화면에서 저장할 때만 파일에 쓴다) |
+| `live_captions` | `false` | 녹음 중 실시간 자막(미리보기, Phase 7.2). 녹음을 시작할 때의 값을 쓴다 |
+
+## 실시간 자막 (Phase 7.2)
+
+설정에서 켜면 녹음하는 동안 녹음 화면의 레벨미터 아래에 자막이 보인다. 미리보기일 뿐 저장하지 않는다. 계약은 `docs/desktop.md` §2.8이다.
+
+- Rust `rec_start`가 녹음 헬퍼의 `started`를 받으면 `tractus live --recording <녹음 폴더> --progress-json`을 띄운다(인수 배열, 이 앱이 만든 녹음 폴더만). 이벤트는 `"live"`로 보낸다. 작업(`"job"`)이 아니므로 회의를 열지 않는다.
+- 정지: `rec_send("stop")`가 녹음 헬퍼와 자막 프로세스에 함께 `stop`을 보낸다. 녹음 헬퍼의 `stopped`를 화면에 보내기 **전에** 자막 프로세스가 끝나기를 5초까지 기다리고, 넘으면 kill한다. 프론트엔드는 `stopped`를 받고 정식 전사를 시작하므로, 작은 모델과 정식 전사 모델이 메모리에 함께 올라가지 않는다.
+- 녹음 헬퍼가 죽거나(`exit`) 앱을 끝내면 자막 프로세스도 끝낸다. 자막 프로세스만 죽으면 "실시간 자막이 멈췄습니다. 녹음은 계속됩니다"를 보이고 녹음은 그대로다.
+- 화면 상태는 `lib.ts`의 `liveReduce`가 만든다. 같은 id의 partial은 다음 partial·final이 바꾸고, 빈 final은 그 줄을 지우고, 확정 줄은 시작 시각 순으로 마지막 500줄만 남긴다. 확정 줄만 `aria-live="polite"`로 알린다. 위로 스크롤하면 따라 내려가기를 멈춘다.
 
 ## 편집·가져오기·내보내기 (Phase 5)
 
@@ -111,13 +122,13 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 
 | 파일 | 역할 |
 | --- | --- |
-| `src-tauri/src/lib.rs` | 설정, Tauri 명령(`list_meetings`, `list_recordings`, `load_meeting`, `edit_speakers`, `edit_segments`, `glossary_add`, `export_meeting`, `mcp_call`, `rec_start`, `rec_send`, `job_start`, `ask_start`, `ask_cancel`, `load_chat`, `llm_config`), 앱 종료 시 녹음 정지 |
+| `src-tauri/src/lib.rs` | 설정, Tauri 명령(`list_meetings`, `list_recordings`, `load_meeting`, `edit_speakers`, `edit_segments`, `glossary_add`, `export_meeting`, `mcp_call`, `rec_start`, `rec_send`, `job_start`, `ask_start`, `ask_cancel`, `load_chat`, `llm_config`), 앱 종료 시 녹음 정지, 녹음과 함께 도는 실시간 자막(`start_live`, `stop_live`) |
 | `src-tauri/src/voices.rs` | 목소리 프로필 명령(`voices_list`, `voices_enroll`, `voices_forget`)과 인수·목록 읽기 (Phase 7.1) |
 | `src-tauri/src/meetings.rs` | transcript.json, summary.json, memos.json 읽기. 손상된 회의는 건너뛴다. 전사 안 된 녹음(`recordings/<ULID>/recording.json`) 목록과 녹음 폴더 검사 |
 | `src-tauri/src/mcp.rs` | 상주 MCP 클라이언트. initialize(`2025-11-25`) → initialized 순서로 연결하고, 하위 프로세스가 죽으면 다시 띄운다 |
-| `src-tauri/src/procs.rs` | 하위 프로세스 stdout JSON Lines를 이벤트로 전달하고, 종료할 때 `exit` 이벤트(stderr 끝부분 포함)를 보낸다 |
+| `src-tauri/src/procs.rs` | 하위 프로세스 stdout JSON Lines를 이벤트로 전달하고, 종료할 때 `exit` 이벤트(stderr 끝부분 포함)를 보낸다. `Stoppable`: stop 명령 → 대기 → kill (실시간 자막) |
 | `src-tauri/src/media.rs` | 회의 오디오 전용 `media://` 스킴(아래 참고) |
-| `src/lib.ts` | 순수 로직: 시간·세그먼트·단어 계산, 녹음·작업 이벤트 → 화면 상태(`recReduce`, `jobReduce`) (`lib.test.ts`) |
+| `src/lib.ts` | 순수 로직: 시간·세그먼트·단어 계산, 녹음·작업·실시간 자막 이벤트 → 화면 상태(`recReduce`, `jobReduce`, `liveReduce`) (`lib.test.ts`) |
 | `src-tauri/Entitlements.plist` | 마이크 entitlement (서명하면 hardened runtime이 켜져서 필요하다) |
 | `src/api.ts` | 명령·이벤트 연결, `useJob`, `useRecorder` |
 | `src/TranscriptTools.tsx` | 문장 편집기, 찾기·바꾸기 막대, 내보내기 메뉴 (Phase 5) |
@@ -162,6 +173,7 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 - [ ] 녹음 중 `B`로 북마크를 남기고, 메모를 입력한 뒤 Enter를 누른다. 녹음 화면 목록과 `recording.json` 모두에 시각이 함께 남아야 한다.
 - [ ] 정지하면 전사 진행률(단계, done/total)이 보이고, 끝나면 새 회의 상세로 넘어간다. 메모와 북마크가 전사 사이에 시각 순으로 보여야 한다.
 - [ ] 녹음 중 다른 회의를 열었다가 사이드바의 "녹음 중" 버튼으로 돌아온다.
+- [ ] **실시간 자막:** 설정에서 켜고 녹음한다. "실시간 자막 준비 중" 뒤에 말한 내용이 몇 초 안에 옅은 줄(partial)로 보이고 확정된다. 위로 스크롤하면 따라 내려가지 않는다. 정지하면 자막이 5초 안에 끝난 뒤 정식 전사가 시작된다(활성 상태 보기에서 `tractus live`가 남지 않아야 한다). 녹음 중 `tractus live` 프로세스를 kill하면 "실시간 자막이 멈췄습니다" 안내가 뜨고 녹음은 계속된다.
 - [ ] 녹음 중 앱을 종료(⌘Q)한다. 녹음 폴더의 WAV가 정상으로 열려야 한다. 다시 띄우면 사이드바 "전사 안 된 녹음"에 그 녹음이 보이고, 누르면 전사된다.
 - [ ] 전사에 실패한 녹음(예: ffmpeg를 PATH에서 빼고 시험)도 "전사 안 된 녹음"에 남는다. 새 녹음을 시작한 뒤에도 거기서 다시 전사할 수 있어야 한다.
 - [ ] **한글 입력:** 한글 입력 상태에서 메모를 "예산 확인"처럼 마지막 글자를 조합 중인 채로 Enter한다. 메모가 한 번만 저장되고, 입력란에 글자가 남지 않아야 한다(조합 중 Enter는 무시되므로 Enter를 한 번 더 눌러야 할 수 있다). 한글 입력 상태에서 `B`와 `⌘K`도 동작해야 한다.

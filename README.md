@@ -220,6 +220,19 @@ echo '{"question":"담당자는?","history":[{"role":"user","content":"Redis 캐
 
 **공급자에는 질문, 최근 대화(6개 메시지), 근거 세그먼트만 전송됩니다.** 회의 범위는 그 회의 전사 전체(10만 자가 넘으면 회의 안에서 검색한 부분), 전체 범위는 검색 상위 8개 결과와 앞뒤 세그먼트입니다. 전체 범위에서 검색 결과가 없으면 LLM을 부르지 않습니다. 공급자 선택과 `TRACTUS_LOCAL_ONLY`는 요약과 같습니다. 앱 연동 계약은 `docs/desktop.md` §2.5에 있습니다.
 
+### 녹음 중 실시간 자막 (미리보기)
+
+```bash
+uv run tractus live --recording ~/Tractus/recordings/01K… --progress-json   # 녹음 중인 폴더. stdin에 stop을 쓰거나 Ctrl-D로 끝냄
+```
+
+녹음하는 동안 작은 모델(Qwen3-ASR 0.6B)로 말을 끊어 자막을 미리 보여 줍니다. 앱에서는 설정의 "녹음 중 실시간 자막 (미리보기)"을 켜면 씁니다(기본 꺼짐).
+
+- **저장하지 않습니다.** 녹음을 멈추면 지금처럼 1.7B·화자 분리·단어 정렬로 정식 전사를 다시 만듭니다.
+- 말이 0.5초 멈추면 문장을 확정합니다. 길게 이어지면 3초마다 미리보기를, 8초마다 확정을 냅니다. 실측 확정 지연은 p95 0.72~0.76초입니다(가상 대화, M3).
+- 메모리를 약 2GB 더 씁니다. 16GB 미만 Mac에서는 `--force` 없이는 실행하지 않습니다. 화자 라벨(`--speakers`)은 GPU를 약 세 배로 써서 기본으로 끕니다.
+- 앱 연동 계약은 `docs/desktop.md` §2.8에 있습니다.
+
 ## MCP 연동 (Claude Code · Codex · Antigravity)
 
 에이전트 CLI가 Tractus를 도구로 써서 과거 회의를 검색합니다. 근거를 `[meeting_id#s0012 00:05:31]` 형식으로 인용하고, 요약을 직접 써서 저장할 수도 있습니다. **MCP 서버는 LLM을 호출하지 않습니다.** 추론은 각 CLI가 자기 구독·키로 합니다.
@@ -280,7 +293,7 @@ uv run python bench/ask_eval.py      # 회의 질의 평가 (가상 회의 5건,
 
 ```text
 ARCHITECTURE.md   설계 백본 (결정 사항, 로드맵, Phase 0 결과)
-src/tractus/      CLI, 전사, 화자 분리, LLM 요약, 검색, MCP (audio · vad · diarize · asr · store · llm · summarize · ask · embed · index · export · mcp_server · cli)
+src/tractus/      CLI, 전사, 화자 분리, LLM 요약, 검색, MCP (audio · vad · diarize · asr · live · store · llm · summarize · ask · embed · index · export · mcp_server · cli)
 tests/            pytest
 bench/            Phase 0 ASR 벤치마크 (코드, 지표 요약, 리포트)
 models/           모델 가중치 (git 제외, 직접 받음)

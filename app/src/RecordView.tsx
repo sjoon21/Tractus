@@ -1,10 +1,10 @@
-import { useRef, useState } from "react";
-import type { JobState, RecState } from "./api";
-import { fmtTime, levelFraction, REC_MODES, STAGE_LABEL, warningText } from "./lib";
+import { useLayoutEffect, useRef, useState } from "react";
+import type { JobState, LiveState, RecState } from "./api";
+import { fmtTime, levelFraction, liveHalted, REC_MODES, STAGE_LABEL, warningText } from "./lib";
 
 type Send = (cmd: "bookmark" | "memo" | "stop", text?: string) => Promise<void>;
 
-export function RecordView({ rec, job, send, retry }: { rec: RecState; job: JobState; send: Send; retry: () => void }) {
+export function RecordView({ rec, captions, job, send, retry }: { rec: RecState; captions: LiveState; job: JobState; send: Send; retry: () => void }) {
   const [memo, setMemo] = useState("");
   // 한글 조합 중 Enter로 제출하고 입력을 비우면 조합 중인 글자가 다시 들어간다(한 글자짜리 메모가 하나 더 생김).
   // 조합 중에는 제출하지 않는다. 조합이 끝난 뒤의 Enter가 제출한다
@@ -52,6 +52,8 @@ export function RecordView({ rec, job, send, retry }: { rec: RecState; job: JobS
             {rec.mode === "hybrid" && <Meter label="시스템 오디오" db={rec.system} present={rec.tracks.includes("system")} />}
           </div>
 
+          <LivePane live={captions} recording={live} />
+
           <div className="record-controls">
             <button className="ghost-button" onClick={() => send("bookmark")} disabled={!live}>
               북마크 <kbd>B</kbd>
@@ -97,6 +99,67 @@ export function RecordView({ rec, job, send, retry }: { rec: RecState; job: JobS
           ))}
         </ol>
       )}
+    </section>
+  );
+}
+
+/** 맨 아래에서 이만큼(px) 안이면 새 줄을 따라 내려간다. 위로 올려 읽는 중이면 멈춘다 */
+const FOLLOW_SLACK = 24;
+
+/** 실시간 자막 (Phase 7.2). 미리보기라 저장하지 않는다. 화면 읽기 프로그램에는 확정된 줄만 알린다 (partial은 계속 바뀐다) */
+function LivePane({ live, recording }: { live: LiveState; recording: boolean }) {
+  const box = useRef<HTMLDivElement>(null);
+  const follow = useRef(true);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (el && follow.current) el.scrollTop = el.scrollHeight;
+  }, [live.finals, live.partial]);
+
+  if (live.status === "off") return null;
+  const empty = !live.finals.length && !live.partial;
+  return (
+    <section className="live-pane" aria-labelledby="live-title">
+      <p className="live-head">
+        <span id="live-title">{STAGE_LABEL[live.status === "loading" ? "live_load" : "live"]}</span>
+        <span className="live-note">미리보기 · 녹음을 멈추면 정식 전사가 다시 만듭니다</span>
+      </p>
+      {liveHalted(live, recording) && (
+        <p className="record-warning" role="status">
+          실시간 자막이 멈췄습니다. 녹음은 계속됩니다
+          {live.error && <span className="live-error">{live.error}</span>}
+        </p>
+      )}
+      {live.warnings.map((w) => (
+        <p key={w.code} className="live-warning" role="status">
+          {w.message}
+        </p>
+      ))}
+      <div
+        className="live-scroll"
+        ref={box}
+        tabIndex={0}
+        aria-label="실시간 자막 내용"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_SLACK;
+        }}
+      >
+        {empty && <p className="live-empty">{live.status === "loading" ? "작은 모델을 불러오는 중입니다…" : live.status === "on" ? "말이 시작되면 여기에 보입니다." : ""}</p>}
+        <ol className="live-lines" aria-live="polite" aria-relevant="additions">
+          {live.finals.map((f) => (
+            <li key={f.id}>
+              <time className="tnum">{fmtTime(f.start)}</time>
+              <span>{f.text}</span>
+            </li>
+          ))}
+        </ol>
+        {live.partial && (
+          <p className="live-partial">
+            <time className="tnum">{fmtTime(live.partial.start)}</time>
+            <span>{live.partial.text}</span>
+          </p>
+        )}
+      </div>
     </section>
   );
 }

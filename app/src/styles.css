@@ -1517,6 +1517,85 @@ mark {
   text-align: right;
 }
 
+/* 실시간 자막: 미리보기라 원고(정식 전사)보다 한 단계 옅게. 말하는 중인 줄(partial)은 더 옅다 */
+.live-pane {
+  max-width: 44rem;
+  margin: -8px 0 28px;
+}
+
+.live-head {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin: 0 0 8px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.live-note,
+.live-warning,
+.live-empty {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+.live-warning {
+  margin: 0 0 8px;
+}
+
+.live-error {
+  display: block;
+  margin-top: 6px;
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  white-space: pre-wrap;
+}
+
+.live-scroll {
+  height: 11.5rem;
+  overflow-y: auto;
+  padding: 10px 14px;
+  border-left: 2px solid var(--rule-strong);
+  background: var(--paper-3);
+  overscroll-behavior: contain;
+}
+
+.live-empty {
+  margin: 0;
+}
+
+.live-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.live-lines li,
+.live-partial {
+  display: grid;
+  grid-template-columns: var(--time-col) minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  margin: 0;
+  padding: 4px 0;
+  color: var(--ink-2);
+}
+
+.live-lines li {
+  animation: rise 360ms var(--ease) both;
+}
+
+.live-lines time,
+.live-partial time {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
+.live-partial {
+  color: var(--ink-3);
+}
+
 .record-controls {
   display: flex;
   gap: 12px;

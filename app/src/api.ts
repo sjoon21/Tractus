@@ -3,9 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Citation, ChatMessage, LlmConfig } from "./ask";
-import { IDLE_JOB, IDLE_REC, jobReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type Memo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
+import { IDLE_JOB, IDLE_LIVE, IDLE_REC, jobReduce, liveReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type LiveEvent, type LiveState, type Memo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
 
-export type { JobState, RecState } from "./lib";
+export type { JobState, LiveState, RecState } from "./lib";
 
 export interface MeetingInfo {
   id: string;
@@ -72,6 +72,8 @@ export interface Settings {
   fake_recorder: boolean;
   /** 마지막으로 고른 녹음 방식 ("in_person" | "hybrid"). lib.ts recMode로 읽는다 */
   rec_mode: string;
+  /** 녹음 중 실시간 자막 (Phase 7.2). 기본 꺼짐. Rust가 녹음을 시작할 때 읽어 `tractus live`를 띄운다 */
+  live_captions: boolean;
 }
 
 export interface SearchHit {
@@ -197,9 +199,11 @@ export function useJob(onDone: (meetingId: string, warnings: Warning[]) => void)
 
 // ── 녹음 (tractus-rec record) ──
 
-/** 녹음 상태는 App이 들고 있는다 (다른 화면으로 가도 녹음은 계속된다). 정지되면 onStopped(녹음 폴더). */
+/** 녹음 상태는 App이 들고 있는다 (다른 화면으로 가도 녹음은 계속된다). 정지되면 onStopped(녹음 폴더).
+ * 실시간 자막(live)도 여기서 모은다: Rust가 녹음과 함께 띄우고, stopped를 보내기 전에 끝낸다 */
 export function useRecorder(onStopped: (dir: string) => void) {
   const [rec, setRec] = useState<RecState>(IDLE_REC);
+  const [live, setLive] = useState<LiveState>(IDLE_LIVE);
   const onStoppedRef = useRef(onStopped);
   onStoppedRef.current = onStopped;
   const startedAt = useRef(0);
@@ -210,7 +214,11 @@ export function useRecorder(onStopped: (dir: string) => void) {
       if (ev.event === "stopped") onStoppedRef.current(ev.dir);
       setRec((s) => recReduce(s, ev));
     });
-    return () => void un.then((f) => f());
+    const unLive = listen<LiveEvent>("live", ({ payload: ev }) => setLive((s) => liveReduce(s, ev)));
+    return () => {
+      void un.then((f) => f());
+      void unLive.then((f) => f());
+    };
   }, []);
 
   // level 이벤트 사이에도 시계가 흐르게 한다
@@ -222,6 +230,7 @@ export function useRecorder(onStopped: (dir: string) => void) {
 
   const start = useCallback(async (mode: RecMode) => {
     setRec({ ...IDLE_REC, phase: "starting", mode });
+    setLive(IDLE_LIVE);
     try {
       await invoke<string>("rec_start", { flags: recFlags(mode) });
     } catch (e) {
@@ -238,7 +247,10 @@ export function useRecorder(onStopped: (dir: string) => void) {
     }
   }, []);
 
-  const reset = useCallback(() => setRec(IDLE_REC), []);
+  const reset = useCallback(() => {
+    setRec(IDLE_REC);
+    setLive(IDLE_LIVE);
+  }, []);
 
-  return { rec, startRec: start, sendRec: send, resetRec: reset };
+  return { rec, live, startRec: start, sendRec: send, resetRec: reset };
 }

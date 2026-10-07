@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, errText, type McpStatus, type Settings, type VoiceList, type VoicePerson } from "./api";
 import { recMode, withRecMode } from "./lib";
 
-const FIELDS: { key: keyof Omit<Settings, "fake_recorder" | "rec_mode">; label: string; hint: string }[] = [
+const FIELDS: { key: keyof Omit<Settings, "fake_recorder" | "rec_mode" | "live_captions">; label: string; hint: string }[] = [
   { key: "home", label: "데이터 위치 (TRACTUS_HOME)", hint: "meetings/와 recordings/가 들어 있는 폴더" },
   { key: "models_dir", label: "모델 위치 (TRACTUS_MODELS_DIR)", hint: "비우면 데이터 위치의 models/" },
   { key: "tractus_bin", label: "tractus 실행 파일", hint: "GUI 앱은 셸 PATH를 모르므로 절대 경로" },
@@ -54,6 +54,13 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
           <input type="checkbox" checked={s.fake_recorder} onChange={(e) => setS({ ...s, fake_recorder: e.target.checked })} />
           <span>
             개발용 가짜 녹음 (<code>--fake</code>) — 권한 없이 합성 신호로 녹음 흐름을 시험합니다
+          </span>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={s.live_captions} onChange={(e) => setS({ ...s, live_captions: e.target.checked })} />
+          <span>
+            녹음 중 실시간 자막 (미리보기) — 미리보기용 작은 모델로 말하는 동안 자막을 보여 줍니다. 녹음을 멈추면 정식 전사가 처음부터 다시 만들고, 실시간 자막은 저장하지
+            않습니다. 녹음하는 동안 메모리를 약 2 GB 더 씁니다 (16 GB 미만 Mac에서는 켜지지 않습니다). 다음 녹음부터 적용됩니다.
           </span>
         </label>
         <div className="settings-actions">

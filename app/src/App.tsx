@@ -77,7 +77,7 @@ export function App() {
     transcribeDir.current = dir;
     setWaitDir(dir);
   }, []);
-  const { rec, startRec, sendRec, resetRec } = useRecorder(startTranscribe);
+  const { rec, live, startRec, sendRec, resetRec } = useRecorder(startTranscribe);
   const recording = rec.phase === "recording" || rec.phase === "starting" || rec.phase === "stopping";
 
   // 녹음 방식: 마지막으로 고른 값을 설정에 저장해 두고 다음에도 쓴다
@@ -346,7 +346,7 @@ export function App() {
         {view.kind === "home" && <Welcome count={meetings.length} />}
         {view.kind === "meeting" && <MeetingView key={view.id} id={view.id} seek={view.seek} onChanged={refresh} notify={notify} />}
         {view.kind === "search" && <SearchView key={view.q} query={view.q} onOpen={openMeeting} />}
-        {view.kind === "record" && <RecordView rec={rec} job={waitDir ? { ...IDLE_JOB, running: true, stage: "wait_import" } : transcribe.job} send={sendRec} retry={() => transcribeDir.current && startTranscribe(transcribeDir.current)} />}
+        {view.kind === "record" && <RecordView rec={rec} captions={live} job={waitDir ? { ...IDLE_JOB, running: true, stage: "wait_import" } : transcribe.job} send={sendRec} retry={() => transcribeDir.current && startTranscribe(transcribeDir.current)} />}
         {view.kind === "settings" && <SettingsView onSaved={refresh} />}
       </main>
 

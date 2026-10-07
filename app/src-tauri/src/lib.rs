@@ -15,6 +15,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 /// 앱 설정. 앱 설정 폴더의 settings.json에 저장한다. GUI 앱은 셸 환경을 물려받지 않으므로 경로는 절대 경로로 둔다.
@@ -30,6 +31,8 @@ pub struct Settings {
     pub fake_recorder: bool,
     /// 마지막으로 고른 녹음 방식: "in_person"(마이크만) | "hybrid"(마이크 + 시스템, 에코 제거). 앱이 해석한다
     pub rec_mode: String,
+    /// 녹음 중 실시간 자막 (Phase 7.2, `tractus live`). 기본 꺼짐: 메모리를 약 2 GB 더 쓴다 (실측 footprint 1.8 GB)
+    pub live_captions: bool,
 }
 
 impl Default for Settings {
@@ -44,6 +47,7 @@ impl Default for Settings {
             models_dir: var("TRACTUS_MODELS_DIR").unwrap_or_default(),
             fake_recorder: false,
             rec_mode: "in_person".into(),
+            live_captions: false,
         }
     }
 }
@@ -109,7 +113,11 @@ struct AppState {
     rec: Arc<Mutex<Option<ChildStdin>>>,
     /// 진행 중인 질문 (작업 ID → 프로세스). 멈추기(ask_cancel)가 kill한다
     asks: Arc<Mutex<HashMap<String, Arc<Mutex<Child>>>>>,
+    /// 녹음 중 실시간 자막 프로세스. 녹음이 끝나면(stopped·exit) 정식 전사보다 먼저 끝낸다
+    live: LiveSlot,
 }
+
+type LiveSlot = Arc<Mutex<Option<procs::Stoppable>>>;
 
 impl AppState {
     fn settings(&self) -> Settings {
@@ -200,6 +208,48 @@ fn check_rec_flags(flags: &[String]) -> Result<(), String> {
     }
 }
 
+/// 실시간 자막이 정지 명령을 받고 끝나기를 기다리는 시간. 넘으면 kill한다 (자막은 저장하지 않으므로 잃을 것이 없다)
+const LIVE_STOP_WAIT: Duration = Duration::from_secs(5);
+
+/// `tractus live --recording <녹음 폴더> --progress-json` (docs/desktop.md §2.8). 이 앱이 만든 녹음 폴더만 받는다
+fn live_args(home: &Path, dir: &Path) -> Result<Vec<String>, String> {
+    if !meetings::is_recording_dir(home, dir) {
+        return Err(format!("녹음 폴더가 아닙니다: {}", dir.display()));
+    }
+    Ok(vec!["live".into(), "--recording".into(), dir.to_string_lossy().into_owned(), "--progress-json".into()])
+}
+
+/// 실시간 자막 시작. 이벤트는 "live"로 보낸다 (작업 "job"이 아니므로 회의를 열지 않는다).
+/// 실행조차 못 하면 error + exit를 대신 보내 화면이 "자막이 멈췄습니다"를 보이게 한다. 녹음은 그대로 계속된다
+fn start_live(app: &AppHandle, s: &Settings, dir: &Path, live: &LiveSlot) {
+    let forward = app.clone();
+    let spawned = live_args(&s.home(), dir).and_then(|args| {
+        procs::spawn_stoppable(s.tractus(&args), serde_json::Map::new(), move |ev| {
+            let _ = forward.emit("live", ev);
+        })
+    });
+    match spawned {
+        Ok(p) => {
+            let old = live.lock().unwrap().replace(p);
+            if let Some(old) = old {
+                old.kill();
+            }
+        }
+        Err(e) => {
+            let _ = app.emit("live", json!({"event": "error", "message": e}));
+            let _ = app.emit("live", json!({"event": "exit", "code": null, "stderr": ""}));
+        }
+    }
+}
+
+/// 정지 명령을 보내고 끝나기를 기다린다 (LIVE_STOP_WAIT, 넘으면 kill). 잠금은 기다리기 전에 푼다
+fn stop_live(live: &LiveSlot) {
+    let running = live.lock().unwrap().take();
+    if let Some(p) = running {
+        p.stop(LIVE_STOP_WAIT);
+    }
+}
+
 /// 녹음 시작. 이벤트는 "rec"로 보낸다. 반환값은 녹음 폴더.
 #[tauri::command]
 fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>) -> Result<String, String> {
@@ -216,8 +266,17 @@ fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>) -> 
     if s.fake_recorder {
         cmd.arg("--fake");
     }
-    let slot = state.rec.clone();
+    let (slot, live, live_dir) = (state.rec.clone(), state.live.clone(), dir.clone());
+    // 실시간 자막은 녹음 헬퍼가 트랙 파일을 만든 뒤(started)에 띄운다. 설정은 녹음을 시작할 때의 값을 쓴다
+    let live_settings = s.live_captions.then(|| s.clone());
     let (stdin, _) = procs::spawn_streaming(cmd, serde_json::Map::new(), move |ev| {
+        match (ev["event"].as_str(), &live_settings) {
+            (Some("started"), Some(ls)) => start_live(&app, ls, &live_dir, &live),
+            // stopped를 화면에 보내기 전에 자막 프로세스를 끝낸다: 프론트엔드는 stopped를 받고 정식 전사를 시작하므로
+            // 작은 모델(0.6B)과 정식 전사 모델이 메모리에 같이 올라가지 않는다. 녹음 헬퍼가 죽어도(exit) 자막을 남기지 않는다
+            (Some("stopped" | "exit"), _) => stop_live(&live),
+            _ => {}
+        }
         if ev["event"] == "exit" {
             slot.lock().unwrap().take();
         }
@@ -232,7 +291,14 @@ fn rec_send(state: State<'_, AppState>, cmd: String, text: Option<String>) -> Re
     let line = procs::recorder_line(&cmd, text.as_deref())?;
     let mut rec = state.rec.lock().unwrap();
     let stdin = rec.as_mut().ok_or("녹음 중이 아닙니다")?;
-    stdin.write_all(line.as_bytes()).and_then(|_| stdin.flush()).map_err(|e| format!("녹음 헬퍼에 보낼 수 없습니다: {e}"))
+    stdin.write_all(line.as_bytes()).and_then(|_| stdin.flush()).map_err(|e| format!("녹음 헬퍼에 보낼 수 없습니다: {e}"))?;
+    // 자막도 지금 멈추기 시작한다 (녹음 헬퍼가 파일을 마무리하는 동안). 끝나기를 기다리는 것은 stopped 때(stop_live)
+    if cmd == "stop" {
+        if let Some(p) = state.live.lock().unwrap().as_mut() {
+            p.send_stop();
+        }
+    }
+    Ok(())
 }
 
 /// 작업 종류 → tractus 인수. 대상은 종류마다 검사한다
@@ -522,7 +588,7 @@ pub fn run() {
                     eprintln!("MCP 예열 실패: {e}");
                 }
             });
-            app.manage(AppState { settings: Mutex::new(settings), config_path, mcp, rec: Arc::default(), asks: Arc::default() });
+            app.manage(AppState { settings: Mutex::new(settings), config_path, mcp, rec: Arc::default(), asks: Arc::default(), live: Arc::default() });
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -552,10 +618,15 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Tauri 앱을 만들 수 없습니다")
         .run(|app, event| {
-            // 앱을 닫으면 녹음을 정상 종료시킨다 (WAV 헤더 마무리)
+            // 앱을 닫으면 녹음을 정상 종료시킨다 (WAV 헤더 마무리). 실시간 자막은 저장할 것이 없으므로 바로 끝낸다
             if let tauri::RunEvent::Exit = event {
-                if let Some(stdin) = app.state::<AppState>().rec.lock().unwrap().as_mut() {
+                let state = app.state::<AppState>();
+                if let Some(stdin) = state.rec.lock().unwrap().as_mut() {
                     let _ = stdin.write_all(b"stop\n").and_then(|_| stdin.flush());
+                }
+                let live = state.live.lock().unwrap().take();
+                if let Some(p) = live {
+                    p.kill();
                 }
             }
         });
@@ -628,6 +699,62 @@ mod tests {
         std::fs::write(dir.join(".m4a"), b"x").unwrap();
         assert!(import_args(&dir.join(".m4a")).is_err()); // 확장자가 아니라 숨김 파일 이름
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn live_command_args() {
+        let home = Path::new("/h");
+        assert_eq!(live_args(home, Path::new("/h/recordings/01REC")).unwrap(), ["live", "--recording", "/h/recordings/01REC", "--progress-json"]);
+        for bad in ["/etc", "/h/recordings", "/h/recordings/../x", "/h/recordings/01REC/mic.wav", "/h/meetings/01ABC"] {
+            assert!(live_args(home, Path::new(bad)).is_err(), "{bad}");
+        }
+        let partial: Settings = serde_json::from_str(r#"{"home":"/x"}"#).unwrap();
+        assert!(!partial.live_captions); // 기본 꺼짐 (예전 설정 파일에는 없다)
+    }
+
+    /// 실제 `tractus live`(저장소 .venv + 0.6B·VAD 모델)를 앱과 같은 명령·환경으로 띄우고 stop으로 끝낸다.
+    /// 모델이 필요해 기본에서는 빠진다: `cargo test -- --ignored real_live`
+    #[test]
+    #[ignore]
+    fn real_live_starts_and_stops_through_app_command() {
+        let home = std::env::temp_dir().join(format!("tractus-live-{}", std::process::id()));
+        let dir = home.join("recordings").join("01LIVETEST");
+        std::fs::create_dir_all(&dir).unwrap();
+        // tractus-rec 레이아웃: 48 kHz mono 16-bit mic.wav (무음 1초) + recording.json
+        let data = vec![0u8; 96000];
+        let mut wav = b"RIFF".to_vec();
+        wav.extend((36 + data.len() as u32).to_le_bytes());
+        wav.extend(b"WAVEfmt ");
+        wav.extend(16u32.to_le_bytes());
+        wav.extend([1u16, 1].iter().flat_map(|v| v.to_le_bytes()));
+        wav.extend([48000u32, 96000].iter().flat_map(|v| v.to_le_bytes()));
+        wav.extend([2u16, 16].iter().flat_map(|v| v.to_le_bytes()));
+        wav.extend(b"data");
+        wav.extend((data.len() as u32).to_le_bytes());
+        wav.extend(data);
+        std::fs::write(dir.join("mic.wav"), wav).unwrap();
+        std::fs::write(dir.join("recording.json"), r#"{"schema_version":1,"started_at":"2026-10-07T10:00:00+09:00","duration":null,"tracks":{"mic":"mic.wav"},"marks":[]}"#).unwrap();
+
+        let s = Settings { home: home.to_string_lossy().into_owned(), ..Default::default() };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let p = procs::spawn_stoppable(s.tractus(&live_args(&s.home(), &dir).unwrap()), serde_json::Map::new(), move |v| tx.send(v).unwrap()).unwrap();
+        let wait_live = std::time::Instant::now();
+        loop {
+            let ev = rx.recv_timeout(Duration::from_secs(60)).expect("no event from tractus live");
+            assert_ne!(ev["event"], "exit", "tractus live exited early: {ev}");
+            if ev["stage"] == "live" {
+                break;
+            }
+        }
+        assert!(wait_live.elapsed() < Duration::from_secs(60));
+        let t = std::time::Instant::now();
+        assert!(p.stop(LIVE_STOP_WAIT), "not stopped by the stop line");
+        assert!(t.elapsed() < Duration::from_secs(2), "stop took {:?}", t.elapsed());
+        let rest: Vec<Value> = rx.try_iter().collect();
+        let kinds: Vec<&str> = rest.iter().filter_map(|v| v["event"].as_str()).collect();
+        assert_eq!(kinds[kinds.len() - 2..], ["done", "exit"], "{rest:?}");
+        assert_eq!(rest.last().unwrap()["code"], 0);
+        std::fs::remove_dir_all(&home).unwrap();
     }
 
     #[test]

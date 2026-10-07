@@ -49,6 +49,14 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 - **모델·`voices.THRESHOLD`·`MARGIN`·구간 선택·onnxruntime 버전을 바꾸면 `bench/voice_eval.py`(AI Hub, 로컬 전용, 지표만, 저장소 루트에서 `uv run --with soundfile python bench/voice_eval.py`)를 다시 돌린다.** AI Hub 라벨 행과 ALIASES 민감도 행을 둘 다 보고, 수치가 같은 세션 기준임을 적는다. 모델을 바꾸면 `MODEL_ID`가 바뀌어 기존 프로필은 매칭에서 빠지고 다시 등록해야 한다.
 - 테스트는 가짜 임베더를 쓴다. 실제 모델은 `pytest -m slow`(가상 `say` 음성)만.
 
+## 실시간 자막 (Phase 7.2, 2026-10-07)
+
+- **미리보기 전용이다.** `tractus live`는 아무것도 저장하지 않는다(회의 폴더·색인·로그·stdout 외 어디에도 자막 텍스트를 쓰지 않는다). 정식 전사는 녹음을 멈춘 뒤 배치 `transcribe --recording`이 만든다. 앱은 `stop`을 보내 워커가 끝난 **뒤에** 배치 전사를 띄운다.
+- 모델은 Qwen3-ASR **0.6B** 8bit와 Silero `feed()`만 쓴다. 1.7B를 올리지 않는다. 물리 메모리 16GB 미만이면 `--force` 없이 거부한다.
+- 실시간 화자 라벨(`--speakers`, Nemotron 스트리밍 'low')은 기본으로 끈다. GPU 사용률 증가분(시스템 전체 − 시작 전 기준값)이 약 세 배(12–17%p → 42%p)라서다. `gpu_util_mean`은 시스템 전체 값이니 `gpu_util_delta`로 비교한다. 최종 라벨과 다를 수 있다.
+- **확정 규칙·임계값(`live.SILENCE_FRAMES`, `MAX_FRAMES`, `PARTIAL_FRAMES`, `TAIL_FRAMES`, 뒤처짐 상한)을 바꾸면 `uv run python bench/live_sim.py`(가상 `say` 대화, 실시간 약 75초)를 다시 돌려** `bench/results/live_summary.json`의 확정 지연·footprint·GPU를 비교한다. AI Hub 파일은 `--source`/`--reference`로 로컬에서만 재고 지표만 남긴다.
+- 테스트는 가짜 VAD·ASR로 돈다(`tests/test_live.py`). 실제 모델은 `pytest -m slow`의 `test_real_live_captions_follow_a_growing_recording`(2배속).
+
 ## ASR 파이프라인 기본값 (Phase 0 근거)
 
 - **언어는 자동 감지(`language=None`)가 기본이다.** `Korean`으로 고정하면 영어 위주 발화를 한국어로 번역하거나 반복 루프에 빠진다.
@@ -74,6 +82,7 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 | `asr.py` | `Transcriber`: 청크 전사, 토큰 상한, 반복 루프 재시도·보정 |
 | `align.py` | 단어 정렬(Qwen3-ForcedAligner): `tokenize`(soynlp 대체), `Aligner.align`, `align_segments`, 편집 뒤 시각 옮기기 `remap_words` |
 | `store.py` | 회의 폴더, `.job.json`·`.chunks.jsonl`(이어하기, 목소리 제안 포함), transcript.json/md/vtt (schema_version 2: 화자), `apply_speaker_edit`(rename·set·merge·dismiss), `apply_suggestions`, `apply_text_edits`(words도 옮김), `seg_text`(표시 텍스트 = `corrected_text` 우선), `add_glossary_terms` |
+| `live.py` | 실시간 자막(미리보기): `WavTail`(커지는 WAV 꼬리 읽기), `Mixer`(트랙 합산·클립), `Resampler`(48k → 16k FIR), `Segmenter`(Silero feed, 0.5초 무음·8초 상한·3초 미리보기·쉼 미리 전사), `Live`(ASR·뒤처짐·정지), `SpeakerTrack`(선택) |
 | `voices.py` | 목소리 프로필: CAM++ 임베딩(onnxruntime + kaldi-native-fbank), 화자 구간 고르기, `voices.json`(0600, 원자적 쓰기), `match`(헝가리안 + 임계값 + 2위와 차이) |
 | `export.py` | 내보내기 txt·md·srt·vtt·csv(utf-8-sig)·docx(python-docx, `w:eastAsia`)·bundle(zip) |
 | `llm.py` | 공급자 표(`PROVIDERS`), `complete_json`: strict JSON + Pydantic 검증 + 1회 재요청, `stream_chat`: 평문 스트리밍 |
@@ -126,6 +135,8 @@ uv run python bench/search_eval.py                  # 검색 평가 (가상)
 uv run python bench/ask_eval.py                     # 질의 평가 (가상 회의만 원격 LLM으로)
 uv run tractus transcribe <파일> [--no-align]       # 전사 (+ 단어 타이밍)
 uv run tractus align <meeting_id> [--force]         # 단어 타이밍 채우기 → {"aligned": N, "failed": M, "skipped": K}
+echo stop | uv run tractus live --recording <녹음 폴더> --progress-json   # 녹음 중 실시간 자막 (stdin stop/EOF로 끝, 저장 안 함)
+uv run python bench/live_sim.py                     # 실시간 자막 시뮬레이션 (가상 대화, 실시간 약 75초)
 
 cd bench && uv sync                                 # 벤치마크 의존성
 uv run python run.py qwen3-1.7b hike --lang auto    # 실험 1회 (모델 × 데이터셋 × 조건)

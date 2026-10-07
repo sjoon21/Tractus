@@ -21,6 +21,7 @@ from rich.markup import escape  # noqa: E402
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn  # noqa: E402
 
 from tractus import audio  # noqa: E402
+from tractus import live as live_mod  # noqa: E402
 from tractus import voices  # noqa: E402
 from tractus import summarize as summ  # noqa: E402
 from tractus.env import load_env_all  # noqa: E402
@@ -69,9 +70,12 @@ def local_model(repo: str) -> Path:
     return path
 
 
+def physical_memory() -> int:
+    return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+
+
 def recommended_track() -> Track:
-    memory = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-    return Track.standard if memory >= STANDARD_MIN_MEMORY else Track.lite
+    return Track.standard if physical_memory() >= STANDARD_MIN_MEMORY else Track.lite
 
 
 @app.callback()
@@ -384,6 +388,52 @@ def _run(job: Job, pcm, source: Source, keep_tracks: bool, align: bool = True) -
         f"{job.dir / 'transcript.md'}"
     )
     Events.emit("done", meeting_id=job.meeting_id, meeting_dir=str(job.dir))
+
+
+@app.command("live")
+def live_cmd(
+    recording: Path = typer.Option(..., "--recording", exists=True, file_okay=False, help="녹음 중인 tractus-rec 폴더"),
+    force: bool = typer.Option(False, "--force", help="메모리 16GB 미만 기기에서도 실행한다"),
+    speakers: bool = typer.Option(False, "--speakers", help="실시간 화자 라벨(S1…, 미리보기 전용). GPU 사용률이 약 두 배가 된다"),
+    progress_json: bool = typer.Option(False, "--progress-json", help="자막 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
+) -> None:
+    """녹음 중 실시간 자막(미리보기). Qwen3-ASR 0.6B로 발화마다 전사해 내보내고 아무것도 저장하지 않는다.
+    stdin에 `stop` 줄, stdin EOF, SIGTERM이면 마무리하고 종료 코드 0으로 끝난다. 정식 전사는 녹음을 멈춘 뒤 `transcribe --recording`."""
+    import signal
+    import threading
+
+    Events.enabled = progress_json
+
+    def fail(message: str) -> NoReturn:
+        Events.emit("error", message=message)
+        console.print(f"[red]{escape(message)}[/red]")
+        raise typer.Exit(1)
+
+    memory = physical_memory()
+    if memory < STANDARD_MIN_MEMORY and not force:
+        fail(f"실시간 자막은 메모리 16GB 이상에서만 켭니다 (이 Mac {memory / 1024**3:.0f}GB). 녹음과 함께 약 2GB를 더 써서 "
+             "녹음 뒤 정식 전사가 느려지거나 메모리가 부족할 수 있습니다. 그래도 쓰려면 --force")
+    try:
+        vad_dir, asr_dir = local_model(VAD_MODEL), local_model(MODELS[Track.lite])
+    except typer.BadParameter as e:
+        fail(str(e))
+
+    stop = threading.Event()
+
+    def watch_stdin() -> None:
+        for line in sys.stdin:
+            if line.strip() == "stop":
+                break
+        stop.set()  # stop 줄 또는 EOF (부모 앱이 죽어도 고아로 남지 않게)
+
+    threading.Thread(target=watch_stdin, daemon=True).start()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, lambda *_: stop.set())
+    hotwords = load_glossary(home_dir() / "glossary.md")
+    try:
+        live_mod.run(recording, Events.emit, _warn, stop, vad_dir, asr_dir, models_dir() / DIARIZER_DIR if speakers else None, hotwords)
+    except (live_mod.LiveError, ValueError, OSError) as e:
+        fail(f"실시간 자막을 멈췄습니다: {e}")
 
 
 @app.command("align")

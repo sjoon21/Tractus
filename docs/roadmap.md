@@ -64,10 +64,23 @@
 | 항목 | 접근 | 참고 코드 | 일수 | 완료 기준 |
 | --- | --- | --- | --- | --- |
 | **7.1 목소리 프로필** | onnxruntime(MIT)·kaldi-native-fbank(Apache-2.0)와 3D-Speaker CAM++ zh_en(192차원, 28MB, Apache-2.0)을 쓴다(sherpa-onnx는 espeak-ng GPL-3 정적 링크라 뺐다). 이름을 바꿀 때 '기억하기'를 체크하면 화자당 1.5~10초 구간 최대 3개로 등록한다. `voices.json`은 권한 0600, 1인당 최대 5개를 둔다. 매칭은 `linear_sum_assignment`와 임계값 + 2위와 차이 0.08로 한다. '자동 인식 82%' 배지를 달고 미확정으로 남긴다. `tractus voices list\|enroll\|forget`을 둔다. 벡터는 MCP와 LLM으로 내보내지 않는다. 다른 사람을 등록할 때는 동의 확인(개인정보보호법 23조)을 받는다 | anarlog `crates/voiceprint/src/matching.rs` L1-165, `lib.rs` L36-100. k2-fsa/sherpa-onnx(Apache-2.0, 15121★) `python-api-examples/speaker-identification.py` L114-250 @99ddefaa | 5 | `bench/voice_eval.py`로 한국어 EER을 재고 FAR 1%가 되는 임계값을 정한다 |
-| **7.2 실시간 전사 (옵트인)** | `tractus live --recording <dir>`: 커지는 WAV를 꼬리부터 읽고 Silero `feed()`를 쓴다. 0.5초 무음이나 8초 상한에서 확정하고, 3초마다 미리보기를 낸다. Qwen3-ASR 0.6B와 Nemotron 'low' 설정을 쓴다. 정지하면 워커가 먼저 종료하고 배치 전사가 최종본이 된다. 16GB 미만 기기에서는 기본으로 꺼 둔다 | yazinsai/OpenOats(MIT, 2596★) `StreamingTranscriber.swift` L89-260, `DiarizationManager.swift` L19-63 @c6c6f164. meetily `audio/pipeline.rs` L16-27 | 4.5 | 시뮬레이션 실측: 확정 지연 p95 0.70초, GPU 점유율 0.29, 최대 메모리 3.4GB. 팬 없는 M3 Air에서 1시간 연속 테스트 |
+| **7.2 실시간 전사 (옵트인)** | `tractus live --recording <dir>`: 커지는 WAV를 꼬리부터 읽고 Silero `feed()`를 쓴다. 0.5초 무음이나 8초 상한에서 확정하고, 3초마다 미리보기를 낸다. Qwen3-ASR 0.6B를 쓴다. 화자 라벨(Nemotron 'low' 스트리밍)은 `--speakers` 옵트인이다. 정지하면 워커가 먼저 종료하고 배치 전사가 최종본이 된다. 16GB 미만 기기에서는 기본으로 꺼 둔다 | yazinsai/OpenOats(MIT, 2596★) `StreamingTranscriber.swift` L89-260, `DiarizationManager.swift` L19-63 @c6c6f164. meetily `audio/pipeline.rs` L16-27 | 4.5 | 시뮬레이션 실측: 확정 지연 p95 0.70초, GPU 점유율 0.29, 최대 메모리 3.4GB. 팬 없는 M3 Air에서 1시간 연속 테스트 |
 | **7.3 9명 이상 화자** | `recorder/`에 `tractus-diar`(FluidAudio v0.17.5, `offlineMode`)를 추가하고 `--diarizer auto\|nemotron\|fluid`로 고른다. auto는 Nemotron 8채널이 모두 쓰였을 때만 재실행한다 | FluidInference/FluidAudio(Apache-2.0, 2960★, 가중치 CC-BY-4.0) `OfflineDiarizerManager.swift` L127-180, `ProcessCommand.swift` L120-160 @04e363c2 | 2.5 | AI Hub 17명 세션에서 confusion이 26.5%보다 낮아진다 |
 
 **7.1 상태 (2026-10-07, core 완료):** `voices.py`(onnxruntime 1.30 + kaldi-native-fbank + CAM++ zh_en advanced, sha256 고정), `transcribe`의 `voices` 단계(제안은 `.job.json`에 남겨 이어하기 때 다시 계산하지 않음), `tractus voices list|enroll --consent|forget|match`, `tractus speakers <회의> dismiss`. 제안(`speakers.S1.suggested`)은 표시 이름·md·vtt·요약·MCP·색인·내보내기에 나가지 않는다. 가상 음성(`say` Yuna·Grandpa) 같은 목소리 0.94–0.95, 다른 목소리 0.23–0.27. `bench/voice_eval.py`(AI Hub 4세션·40명·발화 1,427개)로 모델 3종을 비교해 CAM++와 `THRESHOLD` = 0.70을 골랐다. 3구간 등록 EER 2.62%. 매칭 시뮬레이션(등록과 probe가 같은 세션)은 AI Hub 라벨 그대로 맞음 88.2% / 틀림 1.3% / 없음 10.5% / 미등록자 오제안 11.4%, 두 세션 사회자 1쌍을 같은 사람으로 보면(미검증) 95.6% / 1.3% / 3.1% / 2.2%. **다른 회의에서의 재현율은 재지 못했다.** 그 1쌍의 세션 간 점수가 평균 0.827·최소 0.736으로 같은 세션보다 약 0.06 낮아 0.70을 골랐다(ARCHITECTURE §2.5, `bench/results/voice_summary.json`).
+
+**7.2 상태 (2026-10-07, core 완료):** `live.py`와 `tractus live --recording <dir> [--progress-json] [--speakers] [--force]`(계약 `docs/desktop.md` §2.8, 설계 ARCHITECTURE.md §2.6). 커지는 WAV를 파일 크기 기준으로 꼬리부터 읽고, 트랙을 표본 위치로 합산·클립하고, 48k → 16k 상태 있는 FIR로 줄여 Silero `feed()`에 넣는다. 0.5초 무음·8초 상한에서 확정하고 3초마다 미리보기를 낸다. 0.19초 쉼에서 미리 전사해 두고 확정 때 다시 쓴다. 뒤처지면 미리보기부터 건너뛰고, 10초 넘게 밀리면 `live_lagging` 후 라이브 끝으로 간다. 아무것도 저장하지 않는다. `bench/live_sim.py` 실측(가상 `say` 대화 68초, 실시간, M3 16GB, 화자 끔):
+
+| 지표 | 목표 | 실측 |
+| --- | --- | --- |
+| 확정 지연 p95 | 0.70초 | 0.76초 (같은 조건 다른 실행 0.72·0.74초. p50 0.60초, 발화 9개, 무음 대기 0.51초 포함) |
+| GPU 점유율 | 0.29 | **확인 못 함.** `live` 프로세스만의 몫은 `powermetrics`(sudo 필요)로만 잴 수 있어 재지 않았다. `ioreg` 시스템 전체 평균 29.4%에서 시작 전 기준값 17.5%를 빼면 약 12%p(같은 조건 다른 실행 17%p)이지만, 실행 중 다른 작업이 섞인 근사다 |
+| 최대 메모리 | 3.4GB 이하 | footprint 1.82GB (RSS 1.19GB, MLX 최대 1.68GB) |
+| 정지 → 종료 | 2초 이내 | 0.13초 (앱 순서 통합 확인 0.18–0.24초) |
+
+- Nemotron 'low' 스트리밍 화자 라벨은 동작하지만 GPU 사용률 증가분(기준값 뺀 값)이 약 42%p로 화자 끔(12–17%p)의 약 세 배, footprint가 2.97–3.24GB로 늘어 `--speakers` 옵트인으로 뺐다. 앱은 켜지 않는다(`speaker: null`).
+- **앱 통합 확인 (2026-10-07):** 실제 `tractus-rec record --fake`(mic + system 두 트랙) 녹음 중에 `tractus live`를 띄우고 앱과 같은 순서(녹음 stop → 자막 stop → stdin 닫기 → 5초 대기)로 멈췄다. 0.24초 만에 `done` 뒤 종료 코드 0, 남은 프로세스 없음. 이어서 `transcribe --recording`이 성공했다. 가상 대화(실시간)로도 같은 순서를 돌렸다: final 14개, 정지 → 종료 0.18초, 자막 프로세스가 끝난 뒤 정식 전사(1.7B + 화자 분리 + 정렬)가 성공. 그 이벤트(`app/src/fixtures/live_say.jsonl`)를 앱 `liveReduce` 테스트에 넣었고, 앱 명령 그대로 실제 `tractus live`를 띄우는 Rust 테스트(`cargo test -- --ignored real_live`)를 두었다.
+- **남은 일 (사람만 할 수 있음):** 팬 없는 M3 Air에서 1시간 연속 녹음 + 실시간 자막으로 발열·스로틀링·확정 지연 확인. 실제 대면 회의(원거리 마이크)와 화상 회의(시스템 오디오 혼합)에서 미리보기 품질 확인.
 
 ## 5. 하지 않는 것
 

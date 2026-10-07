@@ -12,6 +12,7 @@ B안(Tauri 데스크톱 앱)을 먼저 만들어 완성도를 보고, 부족하�
 │                         ├─ spawn: tractus summarize <id> --progress-json
 │                         ├─ spawn: tractus speakers <id> rename | set | merge   (화자 목록은 transcript.json을 직접 읽는다)
 │                         ├─ spawn: tractus ask [--meeting <id>] --progress-json   (stdin JSON, 대화 기록은 chat.json을 직접 읽는다)
+│                         ├─ spawn: tractus live --recording <dir> --progress-json  (녹음 중 실시간 자막, 설정에서 켰을 때만. stdin stop)
 │                         └─ 상주: tractus mcp (stdio JSON-RPC) ── search_meetings, status
 └──────────────────────────────────────────┘
 ```
@@ -104,6 +105,7 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 | `tractus ask` (Phase 6) | 회의 질의. 아래 §2.5 |
 | 단어 타이밍 (Phase 6) | `transcribe`가 전사 뒤 `segments[].words`를 채운다(`--no-align`으로 끔). 기존 회의는 `tractus align`. 아래 §2.6 |
 | 목소리 프로필 (Phase 7.1) | `transcribe`가 화자 분리 뒤 등록된 목소리와 맞춰 `speakers.S1.suggested`에 이름을 제안한다. `tractus voices`, `tractus speakers <회의> dismiss`. 아래 §2.7 |
+| 실시간 자막 (Phase 7.2) | 녹음 중 `tractus live --recording <dir> --progress-json`. 미리보기 전용이고 아무것도 저장하지 않는다. 아래 §2.8 |
 | 가져오기 (Phase 5) | 앱 job kind `import` = `tractus transcribe <파일> --progress-json` (다른 작업과 같은 환경변수). ffmpeg가 읽는 모든 형식을 받는다(m4a, mp3, wav, webm, mp4, mov …). 동영상은 소리만 쓴다(`-vn`) |
 
 진행 이벤트:
@@ -283,6 +285,40 @@ transcript.json의 제안 (ARCHITECTURE.md §6):
 - 등록은 앱의 이름 바꾸기 대화상자에서 '이 목소리 기억하기'와 동의 확인("본인이거나 녹음·등록에 동의를 받은 사람입니다")을 둘 다 체크했을 때만 `voices enroll --consent`로 한다(이름 바꾸기도 같이 된다).
 - 모델 파일: `$TRACTUS_MODELS_DIR/3dspeaker-campplus-zh-en/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx`. sha256이 다르면 오류(다른 모델의 벡터와 비교하지 않게).
 
+### 2.8 `tractus live` (실시간 자막, Phase 7.2)
+
+```text
+tractus live --recording <녹음 폴더> [--progress-json] [--speakers] [--force]
+```
+
+녹음하는 동안 자막을 **미리보기로만** 보여 준다. Qwen3-ASR 0.6B로 발화마다 전사하고 아무것도 저장하지 않는다. 정식 전사는 녹음을 멈춘 뒤 지금처럼 `transcribe --recording`이 만든다 (ARCHITECTURE.md §2.6).
+
+- **입력:** tractus-rec가 쓰는 중인 `<dir>`. `recording.json`의 `tracks`를 읽는다. 아직 없으면 5초까지 기다리고, 끝내 없으면 있는 `mic.wav`·`system.wav`를 쓴다. 둘 다 없으면 `error`다. 트랙이 여럿이면 표본 위치끼리 더해 자른다(배치 전사의 amix normalize=0과 같다).
+- **앱 실행:** 설정 "녹음 중 실시간 자막 (미리보기)"을 켰을 때만 녹음이 시작되면 띄운다. argv로 실행하고(셸 없이) `TYPER_USE_RICH=0`을 준다. `<dir>`은 그 녹음의 폴더다. 회의를 여는 job으로 세지 않는다.
+- **정지:** stdin `stop` 줄, stdin EOF, SIGTERM이면 남은 오디오를 마무리하고 `done`을 낸 뒤 종료 코드 0으로 끝난다(실측 0.2초, 상한 약 2초). 앱은 녹음을 멈출 때 먼저 `stop`을 보내고 끝나기를 기다린다(5초 넘으면 kill). 그다음 지금과 같이 `transcribe --recording`을 시작한다. 앱이 죽으면 stdin EOF로 같이 끝난다.
+- **메모리:** 물리 메모리 16GB 미만이면 `--force` 없이는 `error`, 종료 코드 1이다. 1.7B는 올리지 않는다(실측 최대 footprint 1.8GB).
+- **화자:** 기본은 `speaker: null`이다. `--speakers`를 주면 Nemotron 스트리밍으로 `"S1"`…을 붙인다. 미리보기 안에서만 쓰는 라벨이라 최종 전사의 라벨과 다를 수 있다. GPU 사용률 증가분이 약 세 배가 되므로 앱은 쓰지 않는다(ARCHITECTURE.md §2.6).
+- 모델(`silero-vad-v6`, `qwen3-asr-0.6b-8bit`)이 없으면 `error`(메시지에 `hf download …`), 종료 코드 1.
+
+이벤트 (stdout JSON Lines):
+
+```jsonc
+{"event":"stage","stage":"live_load"}     // 녹음 파일을 기다리고 모델을 올린다 (약 2초). 그동안 쌓인 오디오는 뒤에 따라잡는다
+{"event":"stage","stage":"live"}
+{"event":"live","kind":"partial","id":"l0001","start":12.34,"end":15.40,"text":"오늘 회의는 다음 분기","speaker":null}
+{"event":"live","kind":"final","id":"l0001","start":12.34,"end":16.02,"text":"오늘 회의는 다음 분기 예산 검토입니다.","speaker":null}
+{"event":"warning","code":"live_lagging","message":"…"}  // 녹음을 따라가지 못해 밀린 구간을 건너뜀 (한 번만). 녹음·정식 전사에는 영향 없음
+{"event":"done","stats":{"audio_sec":68.2,"asr_sec":8.1,"asr_rtf":0.119,"asr_calls":41,"finals":14,"partials":27,"skipped_partials":0,"peak_memory_gb":1.68}}
+{"event":"error","message":"…"}           // 종료 코드 1
+```
+
+- `start`·`end`는 녹음 시작 기준 초(소수 둘째 자리)다. `id`는 발화마다 `l0001`부터 늘어난다(버린 발화는 번호를 쓰지 않는다).
+- **같은 `id`의 `partial`은 앞의 `partial`을 바꾸고, `final`은 그 `id`의 `partial`을 바꾼다.** `final` 뒤에는 같은 `id`가 다시 오지 않는다. `id` 순서는 시각 순서다.
+- `partial`은 말이 이어지는 동안 약 3초마다, 그리고 0.19초 쉼마다 나온다. 쉼에서 나온 `partial`은 보통 0.3초 뒤 같은 문장의 `final`로 바뀐다. 뒤처지면 `partial`부터 건너뛴다.
+- **`final`의 `text`가 빈 문자열이면 그 `id`의 줄을 지운다.** 보여 준 `partial`이 있을 때만 나온다(보여 준 적 없는 빈 발화는 아무 이벤트도 내지 않는다).
+- `warning`은 종료가 아니다. 이 밖에 `--speakers`에서만 `diarizer_missing`·`diarizer_failed`가 나올 수 있다(화자 없이 계속).
+- `done.stats`는 측정용이다. 앱은 쓰지 않아도 된다. 키는 늘어날 수 있다.
+
 ## 3. Tauri 앱 (app/)
 
 - **스택:** Tauri 2 + React + TypeScript + Vite. 오디오는 자체 `media://` URI 스킴(`convertFileSrc(path, "media")`, MIME `audio/ogg`, HTTP Range 지원, `TRACTUS_HOME` 밖 경로 거부)으로 `<audio>`에 연결한다. Tauri 기본 asset protocol은 `.ogg`/`.opus`의 MIME과 Range 처리가 맞지 않아 쓰지 않는다(`app/README.md`).
@@ -302,7 +338,7 @@ transcript.json의 제안 (ARCHITECTURE.md §6):
 
 ### 제외 (v1)
 
-실시간 전사, 전사 텍스트 직접 편집(찾아 바꾸기는 다음 단계), 회의 자동 감지, 자동 업데이트, 공증.
+실시간 전사(Phase 7.2에서 옵트인 미리보기로 추가, §2.8), 전사 텍스트 직접 편집(찾아 바꾸기는 다음 단계), 회의 자동 감지, 자동 업데이트, 공증.
 
 ## 4. B안 판정 기준 (D안으로 갈지 정할 때)
 

@@ -294,6 +294,9 @@ export const STAGE_LABEL: Record<string, string> = {
   summarize: "요약 중",
   // 앱 안 상태: 녹음 전사가 파일 가져오기가 끝나길 기다린다 (App.tsx waitDir)
   wait_import: "가져오는 파일이 끝나면 전사합니다",
+  // 실시간 자막 (Phase 7.2, `tractus live`)
+  live_load: "실시간 자막 준비 중",
+  live: "실시간 자막",
 };
 
 /** 입력 중일 때는 단축키를 먹지 않는다: 글 입력, 세그먼트 편집(contentEditable), 재생 위치 막대(range, 방향키를 직접 쓴다). */
@@ -422,6 +425,77 @@ export function recReduce(s: RecState, ev: RecEvent): RecState {
       return { ...s, phase: "error", error: stderrTail(ev.stderr, `녹음 헬퍼가 종료되었습니다 (코드 ${ev.code})`) };
   }
 }
+
+// ── 실시간 자막 (Phase 7.2, docs/desktop.md §2.8). 미리보기일 뿐 저장하지 않는다: 녹음이 끝나면 정식 전사가 다시 만든다 ──
+
+export type LiveEvent =
+  | { event: "stage"; stage: string }
+  | { event: "live"; kind: "partial" | "final"; id: string; start: number; end: number; text: string }
+  | { event: "warning"; code: string; message: string }
+  | { event: "error"; message: string }
+  | { event: "done" }
+  | { event: "exit"; code: number | null; stderr: string };
+
+export interface LiveLine {
+  id: string;
+  start: number;
+  end: number;
+  text: string;
+}
+
+/** off: 프로세스가 없다 (설정이 꺼져 있거나 아직 녹음 전). stopped: 정지 명령으로 끝남(done + exit 0). failed: 그 밖의 종료 */
+export type LiveStatus = "off" | "loading" | "on" | "stopped" | "failed";
+
+export interface LiveState {
+  status: LiveStatus;
+  finals: LiveLine[];
+  /** 말하는 중인 발화. 같은 id의 다음 partial·final이 바꾼다 */
+  partial: LiveLine | null;
+  done: boolean;
+  warnings: { code: string; message: string }[];
+  error: string | null;
+}
+
+export const IDLE_LIVE: LiveState = { status: "off", finals: [], partial: null, done: false, warnings: [], error: null };
+
+/** 화면에 남기는 확정 줄 수. 긴 회의에서 DOM이 끝없이 커지지 않게 (정식 전사는 녹음이 끝난 뒤에 따로 만든다) */
+export const LIVE_CAP = 500;
+
+const liveLine = ({ id, start, end, text }: LiveLine): LiveLine => ({ id, start, end, text });
+
+export function liveReduce(s: LiveState, ev: LiveEvent): LiveState {
+  switch (ev.event) {
+    case "stage":
+      return { ...s, status: ev.stage === "live" ? "on" : "loading" };
+    case "live": {
+      const line = liveLine(ev);
+      if (ev.kind === "partial") return s.finals.some((f) => f.id === ev.id) ? s : { ...s, partial: line }; // 이미 확정된 발화의 늦은 partial
+      // 빈 final은 "그 id의 줄을 지워라"다 (docs/desktop.md §2.8)
+      const kept = s.finals.filter((f) => f.id !== ev.id);
+      const finals = ev.text ? [...kept, line].sort((a, b) => a.start - b.start).slice(-LIVE_CAP) : kept;
+      return { ...s, finals, partial: s.partial?.id === ev.id ? null : s.partial };
+    }
+    case "warning":
+      return s.warnings.some((w) => w.code === ev.code) ? s : { ...s, warnings: [...s.warnings, { code: ev.code, message: ev.message }] };
+    case "error":
+      return { ...s, error: ev.message };
+    case "done":
+      return { ...s, done: true };
+    case "exit": {
+      // 확정되지 않은 partial은 버린다
+      const ok = ev.code === 0 && s.done;
+      // code null = 신호로 끝남 (kill -9, 메모리 부족으로 OS가 정리). stderr가 비면 코드 대신 사람이 읽을 말을 쓴다
+      const fallback = ev.code === null ? "자막 프로세스가 종료되었습니다" : `종료 코드 ${ev.code}`;
+      return { ...s, status: ok ? "stopped" : "failed", partial: null, error: ok ? s.error : (s.error ?? stderrTail(ev.stderr, fallback)) };
+    }
+    default:
+      return s;
+  }
+}
+
+/** "실시간 자막이 멈췄습니다" 안내를 띄울지. 앱은 녹음 단계를 벗어난 뒤에야 stop을 보내므로,
+ *  녹음 중의 종료는 정상 종료(SIGTERM → done + exit 0)라도 예상 밖이다 */
+export const liveHalted = (s: LiveState, recording: boolean) => recording && (s.status === "failed" || s.status === "stopped");
 
 // ── Phase 5: 재생 컨트롤·편집·찾기·가져오기·내보내기 (docs/roadmap.md §2) ──
 

@@ -1,0 +1,44 @@
+{"event": "stage", "stage": "live_load"}
+{"event": "stage", "stage": "live"}
+{"event": "live", "kind": "partial", "id": "l0001", "start": 0.83, "end": 2.08, "text": "안녕하세요.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0001", "start": 0.83, "end": 5.02, "text": "안녕하세요 오늘 회의는 다음 분기 예산 검토입니다.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0001", "start": 0.83, "end": 7.33, "text": "안녕하세요 오늘 회의는 다음 분기 예산 검토입니다. 먼저 인건비부터 보겠습니다.", "speaker": null}
+{"event": "live", "kind": "final", "id": "l0001", "start": 0.83, "end": 7.33, "text": "안녕하세요 오늘 회의는 다음 분기 예산 검토입니다. 먼저 인건비부터 보겠습니다.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0002", "start": 7.71, "end": 10.72, "text": "네, 이건 뒤는 작년보다 5퍼센트.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0002", "start": 7.71, "end": 12.03, "text": "네, 이건 뒤는 작년보다 5% 늘었습니다.", "speaker": null}
+{"event": "live", "kind": "final", "id": "l0002", "start": 7.71, "end": 12.03, "text": "네, 이건 뒤는 작년보다 5% 늘었습니다.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0003", "start": 12.19, "end": 15.2, "text": "CPU、CPU。", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0003", "start": 12.19, "end": 15.62, "text": "시기우 재현 두 명이 반영됐습니다.", "speaker": null}
+{"event": "live", "kind": "final", "id": "l0003", "start": 12.19, "end": 15.62, "text": "시기우 재현 두 명이 반영됐습니다.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0004", "start": 16.38, "end": 17.54, "text": "좋습니다.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0004", "start": 16.38, "end": 20.45, "text": "좋습니다. 그러면 장비 구매 비용은 어떻게 되나요?", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0004", "start": 16.38, "end": 22.82, "text": "좋습니다. 그러면 장비 구매 비용은 어떻게 되나요? 서버 교체 일정도 알려주세요.", "speaker": null}
+{"event": "live", "kind": "final", "id": "l0004", "start": 16.38, "end": 22.82, "text": "좋습니다. 그러면 장비 구매 비용은 어떻게 되나요? 서버 교체 일정도 알려주세요.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0005", "start": 23.1, "end": 25.95, "text": "서건은 11월에 교체합니다.", "speaker": null}
+{"event": "live", "kind": "final", "id": "l0005", "start": 23.1, "end": 25.95, "text": "서건은 11월에 교체합니다.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0006", "start": 26.14, "end": 29.15, "text": "장비 비용은 지난 분기와 거의 같습니다.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0006", "start": 26.14, "end": 30.08, "text": "장비 비용은 지난 분기와 거의 같습니다.", "speaker": null}
+{"event": "live", "kind": "final", "id": "l0006", "start": 26.14, "end": 30.08, "text": "장비 비용은 지난 분기와 거의 같습니다.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0007", "start": 31.17, "end": 33.6, "text": "클라우드 사용료는 어떻습니까?", "speaker": null}
+{"event": "live", "kind": "final", "id": "l0007", "start": 31.17, "end": 33.6, "text": "클라우드 사용료는 어떻습니까?", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0008", "start": 34.05, "end": 37.06, "text": "두 번의 지수 귤러수저를 줄여서 매달.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0008", "start": 34.05, "end": 39.84, "text": "구본의 지수 글로스처를 줄여서 매달 300만 원 정도 아꼈습니다.", "speaker": null}
+{"event": "live", "kind": "final", "id": "l0008", "start": 34.05, "end": 39.84, "text": "구본의 지수 글로스처를 줄여서 매달 300만 원 정도 아꼈습니다.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0009", "start": 39.97, "end": 42.98, "text": "나만 사음 달구쳐 트랙픽이 늘어날 거.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0009", "start": 39.97, "end": 45.98, "text": "다만 좌우 잘 붙어 트랙 피기 늘어날 것으로 보여서 노드를 두 개에서 늘리는 방.", "speaker": null}
+{"event": "live", "kind": "final", "id": "l0009", "start": 39.97, "end": 47.26, "text": "다만 다음 달부터 트레피기 눌어날 것으로 보여서 노드를 두 개서 눌리는 방안을 검토하고.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0010", "start": 47.26, "end": 48.35, "text": "있어 있다", "speaker": null}
+{"event": "live", "kind": "final", "id": "l0010", "start": 47.26, "end": 48.35, "text": "있어 있다", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0011", "start": 48.93, "end": 50.18, "text": "알겠습니다.", "speaker": null}
+{"event": "live", "kind": "final", "id": "l0011", "start": 48.93, "end": 50.18, "text": "알겠습니다.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0012", "start": 50.37, "end": 52.42, "text": "마지막으로 교육 예산은요.", "speaker": null}
+{"event": "live", "kind": "final", "id": "l0012", "start": 50.37, "end": 52.42, "text": "마지막으로 교육 예산은요.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0013", "start": 52.86, "end": 55.87, "text": "교육 예산은 그대로 유지하고 쌍방.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0013", "start": 52.86, "end": 58.88, "text": "교육 예산은 그대로 유지하고 삼방기의 모든 금액은 아방기 외부 교육.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0013", "start": 52.86, "end": 60.64, "text": "교육 예산은 그대로 유지하고 삼방기의 모든 금액은 아방기 외부 교육으로 돌리겠습니다.", "speaker": null}
+{"event": "live", "kind": "final", "id": "l0013", "start": 52.86, "end": 60.64, "text": "교육 예산은 그대로 유지하고 삼방기의 모든 금액은 아방기 외부 교육으로 돌리겠습니다.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0014", "start": 61.5, "end": 62.62, "text": "좋습니다.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0014", "start": 61.5, "end": 65.06, "text": "좋습니다 오늘 회의는 여기까지 하겠습니다.", "speaker": null}
+{"event": "live", "kind": "partial", "id": "l0014", "start": 61.5, "end": 66.43, "text": "좋습니다 오늘 회의는 여기까지 하겠습니다 수고하셨습니다.", "speaker": null}
+{"event": "live", "kind": "final", "id": "l0014", "start": 61.5, "end": 66.43, "text": "좋습니다 오늘 회의는 여기까지 하겠습니다 수고하셨습니다.", "speaker": null}
+{"event": "done", "stats": {"audio_sec": 68.19, "asr_sec": 9.4, "asr_rtf": 0.138, "asr_calls": 28, "finals": 14, "partials": 27, "skipped_partials": 0, "peak_memory_gb": 1.68}}

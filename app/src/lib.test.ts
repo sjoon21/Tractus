@@ -1,10 +1,16 @@
 import { describe, expect, test } from "vitest";
+import liveSay from "./fixtures/live_say.jsonl?raw"; // bench/live_sim.py 가상 대화로 실제 `tractus live`가 낸 이벤트
 import {
   IDLE_JOB,
   IDLE_REC,
+  IDLE_LIVE,
+  LIVE_CAP,
   jobReduce,
+  liveHalted,
+  liveReduce,
   recReduce,
   type JobEvent,
+  type LiveEvent,
   type RecEvent,
   dayParts,
   evidenceStart,
@@ -674,5 +680,98 @@ describe("목소리 제안 (7.1)", () => {
       ["유나", null],
       ["S2", null],
     ]);
+  });
+});
+
+describe("liveReduce", () => {
+  const run = (events: LiveEvent[]) => events.reduce(liveReduce, IDLE_LIVE);
+  const live = (kind: "partial" | "final", id: string, start: number, text: string): LiveEvent => ({ event: "live", kind, id, start, end: start + 1, text });
+
+  test("stages: loading then on", () => {
+    expect(run([{ event: "stage", stage: "live_load" }]).status).toBe("loading");
+    expect(run([{ event: "stage", stage: "live_load" }, { event: "stage", stage: "live" }]).status).toBe("on");
+  });
+
+  test("partial is replaced by a later partial, then by the final with the same id", () => {
+    const s1 = run([live("partial", "l0001", 0, "안녕"), live("partial", "l0001", 0, "안녕하세요 여러")]);
+    expect(s1.partial?.text).toBe("안녕하세요 여러");
+    expect(s1.finals).toEqual([]);
+    const s2 = liveReduce(s1, live("final", "l0001", 0, "안녕하세요 여러분"));
+    expect(s2.partial).toBeNull();
+    expect(s2.finals).toEqual([{ id: "l0001", start: 0, end: 1, text: "안녕하세요 여러분" }]);
+    // 확정된 발화의 늦은 partial은 무시한다
+    expect(liveReduce(s2, live("partial", "l0001", 0, "안녕"))).toBe(s2);
+  });
+
+  test("final of another id keeps the current partial; finals stay ordered by start", () => {
+    const s = run([live("final", "l0002", 5, "둘"), live("partial", "l0003", 9, "셋"), live("final", "l0001", 1, "하나")]);
+    expect(s.finals.map((f) => f.id)).toEqual(["l0001", "l0002"]);
+    expect(s.partial?.id).toBe("l0003");
+    expect(liveReduce(s, live("final", "l0002", 5, "둘 고침")).finals.map((f) => f.text)).toEqual(["하나", "둘 고침"]);
+  });
+
+  test("an empty final removes that id's partial and adds no line", () => {
+    const s = run([live("final", "l0001", 0, "하나"), live("partial", "l0002", 2, "음")]);
+    const s2 = liveReduce(s, live("final", "l0002", 2, ""));
+    expect(s2.partial).toBeNull();
+    expect(s2.finals.map((f) => f.id)).toEqual(["l0001"]);
+  });
+
+  test("real `tractus live` JSONL (synthetic say dialogue) reduces to its finals, in order, with no partial left", () => {
+    const events = liveSay.trim().split("\n").map((l) => JSON.parse(l) as LiveEvent);
+    const finals = events.filter((e): e is Extract<LiveEvent, { event: "live" }> => e.event === "live" && e.kind === "final");
+    const s = run([...events, { event: "exit", code: 0, stderr: "" }]);
+    expect(s.status).toBe("stopped");
+    expect(s.partial).toBeNull();
+    expect(s.finals.map((f) => f.id)).toEqual(finals.map((f) => f.id));
+    expect(s.finals.every((f, i, a) => i === 0 || a[i - 1].start <= f.start)).toBe(true);
+    // 진행 중에는 partial이 보이다가 같은 id의 final이 그 자리를 바꾼다
+    const mid = run(events.slice(0, events.findIndex((e) => e.event === "live" && e.kind === "final")));
+    expect(mid.partial?.id).toBe(finals[0].id);
+  });
+
+  test("keeps only the last LIVE_CAP finals", () => {
+    const events = Array.from({ length: LIVE_CAP + 20 }, (_, i) => live("final", `l${String(i + 1).padStart(4, "0")}`, i, `줄 ${i}`));
+    const s = run(events);
+    expect(s.finals).toHaveLength(LIVE_CAP);
+    expect(s.finals[0].id).toBe("l0021");
+    expect(s.finals.at(-1)?.text).toBe(`줄 ${LIVE_CAP + 19}`);
+  });
+
+  test("done + exit 0 is a clean stop and drops the unfinished partial", () => {
+    const s = run([{ event: "stage", stage: "live" }, live("final", "l0001", 0, "끝"), live("partial", "l0002", 2, "미완"), { event: "done" }, { event: "exit", code: 0, stderr: "" }]);
+    expect(s.status).toBe("stopped");
+    expect(s.partial).toBeNull();
+    expect(s.finals).toHaveLength(1);
+    expect(s.error).toBeNull();
+  });
+
+  test("exit without done is a failure with the error message or stderr tail", () => {
+    expect(run([{ event: "error", message: "메모리가 부족합니다" }, { event: "exit", code: 1, stderr: "x" }])).toMatchObject({ status: "failed", error: "메모리가 부족합니다" });
+    expect(run([{ event: "stage", stage: "live" }, { event: "exit", code: null, stderr: "a\nb\nc\nTraceback" }])).toMatchObject({ status: "failed", error: "b\nc\nTraceback" });
+  });
+
+  test("a signal exit with empty stderr reads as a stopped process, not '종료 코드 null'", () => {
+    expect(run([{ event: "stage", stage: "live" }, { event: "exit", code: null, stderr: "" }])).toMatchObject({ status: "failed", error: "자막 프로세스가 종료되었습니다" });
+    expect(run([{ event: "exit", code: 2, stderr: "" }]).error).toBe("종료 코드 2");
+  });
+
+  test("liveHalted: any exit while still recording shows the notice, even a clean SIGTERM stop", () => {
+    const clean = run([{ event: "stage", stage: "live" }, live("final", "l0001", 0, "끝"), { event: "done" }, { event: "exit", code: 0, stderr: "" }]);
+    const crashed = run([{ event: "stage", stage: "live" }, { event: "exit", code: null, stderr: "" }]);
+    expect(liveHalted(clean, true)).toBe(true);
+    expect(liveHalted(crashed, true)).toBe(true);
+    // 사용자가 정지한 뒤(녹음 단계를 벗어남)의 종료와 실행 중인 자막은 안내하지 않는다
+    expect(liveHalted(clean, false)).toBe(false);
+    expect(liveHalted(crashed, false)).toBe(false);
+    expect(liveHalted(run([{ event: "stage", stage: "live" }]), true)).toBe(false);
+    expect(liveHalted(IDLE_LIVE, true)).toBe(false);
+  });
+
+  test("warnings are shown once per code; unknown events are ignored", () => {
+    const lag: LiveEvent = { event: "warning", code: "live_lagging", message: "늦어지고 있습니다" };
+    expect(run([lag, lag]).warnings).toHaveLength(1);
+    const s = run([{ event: "stage", stage: "live" }]);
+    expect(liveReduce(s, { event: "progress" } as unknown as LiveEvent)).toBe(s);
   });
 });

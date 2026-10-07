@@ -61,3 +61,24 @@ def test_real_diarizer_separates_two_synthetic_voices(tmp_path):
     for s, e, spk in chunks:  # 청크마다 대부분을 차지하는 음성의 화자가 붙는다 (Yuna=S1, Grandpa=S2)
         overlap = [max(0, min(e, b) - max(s, a)) for a, b in bounds]
         assert spk == ("S1" if overlap.index(max(overlap)) % 2 == 0 else "S2")
+
+
+@pytest.mark.slow
+def test_real_live_captions_follow_a_growing_recording():
+    """bench/live_sim.py로 가상 대화를 녹음처럼(48k, 헤더 0.25초마다 갱신) 2배속으로 쓰면서 `tractus live`를 돌린다."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("live_sim", Path(__file__).resolve().parent.parent / "bench" / "live_sim.py")
+    sim_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sim_mod)
+    pcm, utts = sim_mod.synth(LINES[:3], (1.0,))
+    sim = sim_mod.simulate(pcm, speed=2.0)
+    events = [e for _, e in sim["events"]]
+    assert sim["exit_code"] == 0 and sim["stop_exit_sec"] < 2.0
+    assert [e.get("stage") for e in events[:2]] == ["live_load", "live"] and events[-1]["event"] == "done"
+    finals = [e for e in events if e["event"] == "live" and e["kind"] == "final"]
+    hyp = " ".join(f["text"] for f in finals)
+    assert len(finals) >= 3 and "예산" in hyp and "서버" in hyp
+    assert sim_mod.cer(" ".join(u[2] for u in utts), hyp) < 0.35
+    assert all(f["speaker"] is None for f in finals)  # 화자는 --speakers일 때만
+    assert not [e for e in events if e["event"] == "warning"]
