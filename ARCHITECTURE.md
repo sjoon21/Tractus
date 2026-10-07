@@ -9,6 +9,7 @@
 
 | 날짜 | 버전 | 변경 |
 | --- | --- | --- |
+| 2026-10-07 | v3.15 | **Phase 7.3 9명 이상 화자 — 두 번째 화자 분리 엔진.** Swift 헬퍼 `tractus-diar`(recorder/ 패키지, FluidAudio v0.17.5 = 커밋 `0b1f462`, Apache-2.0)가 `OfflineDiarizerManager`(pyannote community-1을 Core ML로 옮긴 것, 모델 `FluidInference/speaker-diarization-coreml` revision `df2625ac…`, CC-BY-4.0)를 오프라인으로 돌린다. `transcribe --diarizer auto|nemotron|fluid`(기본 auto): auto는 Nemotron을 돌리고 8채널을 모두 썼을 때만 fluid로 다시 돌린다. 헬퍼·모델이 없으면 `diarizer_cap`(auto)·`fluid_missing`(fluid) 경고 후 Nemotron 결과를 쓴다. `diarization.engine`, `--max-speakers` 상한 해제. AI Hub 17명 세션 confusion **28.5% → 6.9%**(같은 채점기로 Nemotron turn 직접 채점), 7명 세션 195는 3.2 → 3.8%(auto는 7명이라 다시 돌리지 않음). 앱 화자 색 슬롯 8 → 16(9번째부터 같은 잉크에 속 빈 점·빗금 막대). §2.4 |
 | 2026-10-07 | v3.14 | **Phase 7.2 실시간 자막 core (옵트인, 미리보기).** `tractus live --recording <dir> [--progress-json] [--speakers] [--force]`: 녹음 중인 트랙 WAV를 꼬리부터 읽어 표본 위치로 섞고(amix normalize=0과 같음), 48k → 16k 상태 있는 FIR로 줄여 Silero `feed()`에 넣는다. 0.5초 무음이나 8초 상한에서 확정하고 3초마다 미리보기를 낸다. ASR은 Qwen3-ASR 0.6B 8bit만 쓴다. 아무것도 저장하지 않으며, 정지하면 이 워커가 먼저 끝나고 배치 전사가 정식 전사를 만든다. 가상 대화 68초 실시간 실측: 확정 지연 p50 0.60초·p95 0.72–0.76초, footprint 최대 1.8GB, GPU 사용률은 시스템 전체 29%에서 기준값을 뺀 약 12%p(프로세스 몫은 sudo가 필요해 재지 못함), 정지 → 종료 0.13–0.19초. 계약: `docs/desktop.md` §2.8, 설계: §2.6 |
 | 2026-10-07 | v3.13 | **Phase 7.1 목소리 프로필 core.** onnxruntime 1.30(MIT, CPU)과 kaldi-native-fbank(Apache-2.0)로 3D-Speaker CAM++ zh_en advanced(192차원, Apache-2.0, sha256 고정)를 직접 돌려 화자 임베딩을 만든다. sherpa-onnx는 휠에 espeak-ng(GPL-3)가 정적 링크돼 있어 쓰지 않는다. `transcribe`는 화자 분리 뒤 등록된 목소리와 맞춰 `voices` 단계에서 이름을 **제안**한다(`speakers.S1.suggested`, 확정은 사용자). 매칭은 사람 중심 벡터와 코사인 + 헝가리안 1:1 + 임계값 + 2위와 차이 0.08. `tractus voices list\|enroll --consent\|forget\|match`, `tractus speakers <회의> dismiss`. 프로필은 `$TRACTUS_HOME/voices.json`(0600)에만 두고 회의 폴더·MCP·LLM·색인·내보내기로 보내지 않는다(§2.5). 계약: `docs/desktop.md` §2.7 |
 | 2026-10-06 | v3.12 | **Phase 6.1 단어 타임스탬프 core.** Qwen3-ForcedAligner-0.6B-8bit(Apache-2.0, revision 고정)로 `segment.words`를 채운다. `transcribe`는 ASR 모델을 내린 뒤 `align` 단계를 돌린다(`--no-align`으로 끔, 모델이 없으면 `aligner_missing` 경고 후 words null). 기존 회의는 `tractus align <회의> [--force]`. 단어 = 표시 텍스트의 공백 토큰(1:1 불변식). mlx-audio의 한국어 토크나이저는 soynlp(LGPL-3)를 불러오므로 공백 토크나이저로 바꿔 끼운다. 텍스트를 고치면 difflib으로 시각을 옮기고 새 단어에 `approx`. 실제 대면 회의 44.7분(세그먼트 295개): 정렬 66초, 294개 성공·1개 실패, 불변식 위반 0. 계약: `docs/desktop.md` §2.6 |
@@ -34,7 +35,7 @@
 | --- | --- | --- |
 | D1 | LLM·임베딩 접근은 **OpenAI 호환 API**(`chat/completions`, `embeddings`)로 통일. **ASR은 mlx-audio를 프로세스 안에서 호출**한다(2026-10-02 변경) | 로컬·상용 교체가 설정 변경만으로 가능. ASR은 `mlx_audio.server`의 `/v1/audio/transcriptions`가 `hotwords`를 모델까지 전달하지 않아 용어집을 못 쓰므로 직접 호출한다. 클라우드 ASR이 필요해지면 같은 `Transcriber` 인터페이스 뒤에 HTTP 구현을 추가한다 |
 | D2 | **ASR은 로컬 필수 실행, macOS(Apple Silicon) 우선.** 투트랙: **기본 = Qwen3-ASR-1.7B MLX 8bit**, **저사양 = Qwen3-ASR-0.6B MLX 8bit**. Windows/Linux는 후순위(GGUF 경로 예약) | Apache-2.0, Fleurs-ko CER 2.57% / 3.72%, 두 트랙이 같은 모델 계열이라 파이프라인·프롬프트가 동일 (§2) |
-| D3 | **화자 분리: 로컬 Nemotron 3 Diarization**, ASR 전에 회의 전체로 1회 (2026-10-04 변경, 이전: 제외) | 주 사용 사례인 대면 회의(마이크 1개)에서 "누가 말했나"는 음성 기반 화자 분리로만 얻는다. 새 의존성·torch 없이 ASR과 같은 mlx-audio에서 돈다. AI Hub 실측 confusion 2.9% (§2.4) |
+| D3 | **화자 분리: 로컬 Nemotron 3 Diarization**, ASR 전에 회의 전체로 1회 (2026-10-04 변경, 이전: 제외) | 주 사용 사례인 대면 회의(마이크 1개)에서 "누가 말했나"는 음성 기반 화자 분리로만 얻는다. 새 의존성·torch 없이 ASR과 같은 mlx-audio에서 돈다. AI Hub 실측 confusion 2.9% (§2.4). 9명 이상은 FluidAudio community-1로 다시 돌린다 (v3.15, §2.4.1) |
 | D4 | LLM 공급자: **로컬 Gemma 4 31B, OpenAI(Codex 포함), Claude, Gemini, Upstage Solar** | 전부 OpenAI 호환 엔드포인트 보유 (차이점은 §3.3) |
 | D5 | **데이터는 로컬 파일이 원본**, SQLite는 재생성 가능한 인덱스 | 메모·전사가 기기를 떠나지 않음. 사용자가 다른 도구(Obsidian, 에이전트 CLI)로 직접 열람 가능 |
 | D6 | 임베딩 기본값 **로컬 Qwen3-Embedding-0.6B** (공식 가중치 bf16, mlx-lm으로 실행), 상용 API는 선택 | 메모를 로컬에 두려는 원칙과 일치. M3에서 약 11문단/초, 질의 1건 약 50ms (§4.2) |
@@ -178,7 +179,7 @@
 
 ### 2.4 화자 분리 — Nemotron 3 Diarization (2026-10-04 결정)
 
-**결정: `mlx-community/Nemotron-3-Diarization`(revision `59ed2dbf…` 고정, 가중치 OpenMDW-1.1, 코드 mlx-audio MIT)을 프로세스 안에서 실행한다.** 이미 설치된 mlx-audio 0.5.7이 지원하므로 새 의존성·torch가 없다. 출력 채널이 8개라 **화자는 최대 8명**이다(9번째부터는 기존 라벨에 합쳐짐).
+**결정: `mlx-community/Nemotron-3-Diarization`(revision `59ed2dbf…` 고정, 가중치 OpenMDW-1.1, 코드 mlx-audio MIT)을 프로세스 안에서 실행한다.** 이미 설치된 mlx-audio 0.5.7이 지원하므로 새 의존성·torch가 없다. 출력 채널이 8개라 **Nemotron은 화자가 최대 8명**이다(9번째부터는 기존 라벨에 합쳐짐). 9명 이상은 §2.4.1의 fluid로 다시 돌린다.
 
 | 측정 (M3·16GB) | 결과 |
 | --- | --- |
@@ -193,10 +194,49 @@
 - **청크 분할 (`diarize.split_chunks`):** 화자가 바뀌면 앞 turn 끝과 다음 turn 시작의 중간에서 자른다. 1초 미만 조각은 같은 청크의 이웃 조각에 붙인다. 청크 안에서만 자르므로 30초를 넘지 않는다. 어느 turn과도 겹치지 않는 청크는 화자 `null`.
 - **`--max-speakers N`:** 말한 시간이 많은 N명만 남기고, 나머지 프레임은 남은 화자 중 확률이 가장 높은 쪽에 붙인다.
 - **모델이 없거나 실패하면** 화자 없이 전사하고 알린다(`warning` 이벤트 + stderr). 임베딩 모델이 없을 때와 같은 방식이다.
-- **엔진 교체 비용:** `Diarizer.diarize(pcm) → [(시작 초, 끝 초, "S1"), …]` 하나만 맞추면 된다. **백업은 FluidAudio community-1**(Swift, Apache-2.0 / CC-BY-4.0). AI Hub confusion 4.5%로 숫자는 더 좋지만 Swift 헬퍼·subprocess가 필요하다. 실제 대면 회의 녹음에서 Nemotron이 부족할 때만 바꾼다.
+- **엔진 교체 비용:** `Diarizer.diarize(pcm) → [(시작 초, 끝 초, "S1"), …]` 하나만 맞추면 된다. 두 번째 엔진 FluidAudio community-1은 v3.15에서 9명 이상 회의용으로 붙였다(§2.4.1).
 - **탈락:** Sortformer v1(CC-BY-NC), v2.1(4명 상한), pyannote 원본(게이트, torch), sherpa-onnx CAM++(AI Hub confusion 7.4%, 17명 세션에서 화자 수 폭주).
 - **미검증:** ① 실제 대면 회의(마이크 1개) 녹음. ② 청크가 짧아질 때 ASR CER 변화. ③ 같은 TTS 엔진 음성끼리는 한 화자로 합쳐진다(macOS Grandpa·Grandma). 가상 음성은 순위 근거로 쓰지 않는다.
 - 엔진·파라미터를 바꾸면 AI Hub(로컬, 지표만)와 가상 음성 **둘 다**에서 DER·confusion을 다시 잰다.
+
+#### 2.4.1 9명 이상 — FluidAudio community-1 (2026-10-07, v3.15)
+
+**결정: 기본은 Nemotron 그대로 두고, Nemotron이 8채널을 모두 썼을 때만 Swift 헬퍼 `tractus-diar`로 다시 돌린다(`--diarizer auto`).** 8채널을 다 쓰면 9명 이상이거나 한 사람이 둘로 갈렸을 수 있는데, 두 경우 모두 fluid가 더 낫다(아래 표 190·196). 7명 이하 회의는 Nemotron만 돈다.
+
+- **헬퍼:** `recorder/`의 두 번째 실행 파일. FluidAudio v0.17.5(커밋 `0b1f46289fe2`, Apache-2.0, `Package.resolved` 고정)의 `OfflineDiarizerManager`: pyannote 분할 → WeSpeaker 임베딩 → PLDA·VBx 군집, 화자 수 상한 없음. 설정은 FluidAudio 기본(community-1, 임계값 0.6, Fa 0.07, Fb 0.8)이다. NeMo 텍스트 정규화(Rust 바이너리)는 패키지 `traits: []`로 링크하지 않는다. 의존 그래프에 GPL·LGPL·AGPL 없음(fastcluster BSD-2, vbx Apache-2.0).
+- **모델:** `FluidInference/speaker-diarization-coreml` revision `df2625ac79a7ac6b65ad868fee6d80f320da4232`(FluidAudio가 고정), 21MB, `models/speaker-diarization`(FluidAudio가 정한 폴더 이름). 저장소의 CC-BY-4.0 범위 파일만 받는다(레거시 `wespeaker*` 등 제외). 출처 표기는 `NOTICE` 8번. 받기는 `tractus-diar download --models models/speaker-diarization` 한 번, 실행은 `ModelHub.offlineMode = true`로 네트워크를 쓰지 않는다.
+- **연결:** `diarize.FluidDiarizer`가 회의 전체를 임시 16kHz WAV로 써서 `tractus-diar run --audio … --models … [--max-speakers N]`을 인수 배열로 부른다. 헬퍼는 WAV를 메모리로 읽는다(90분 ≈ 345 MB). FluidAudio 디스크 소스는 임시 폴더에 float32 사본을 쓰고 정상 종료 때만 지워서, 시간 초과(SIGKILL)면 회의 오디오가 남기 때문이다. 시간 제한 120초 + 0.2 × 길이. 결과 turn에는 `smooth`의 turn 단위 정리(`_tidy`: 1초 이하 무음 메움 → 1초 미만 turn 제거 → 다시 메움 → S1… 다시 붙임)만 한다. 헬퍼 위치: `$TRACTUS_DIAR_BIN`, 없으면 `<저장소>/recorder/.build/release/tractus-diar`.
+- **실패 처리:** auto에서 헬퍼·모델이 없으면 `diarizer_cap`, 실패하면 `diarizer_failed` 경고 후 Nemotron 결과(8명)를 쓴다. `--diarizer fluid`인데 없으면 `fluid_missing`, 실패하면 `diarizer_failed` 경고 후 Nemotron으로 돌린다. 쓴 엔진은 `diarization.engine`과 `.job.json`에 남고, 이어하기는 다시 돌리지 않는다.
+- **8채널 판정:** 평활한 뒤 남은 라벨 수로 센다. 아주 잠깐 쓰인 채널은 평활에서 지워지므로 그 회의는 다시 돌리지 않는다. `--max-speakers`가 8 이하면 다시 돌리지 않는다.
+
+AI Hub 4세션 실측(2026-10-07, M3 16GB, 로컬 전용·지표만, `bench/diar_eval.py der`). 화자 분리기 출력 turn을 그대로 채점했다: 10ms 프레임, collar ±0.25초, 겹침 포함, 헝가리안 1:1. AI Hub 라벨은 회의를 빈틈없이 덮어 오경보는 0이고, 혼동(confusion)을 본다. RTF는 모델 로드 포함.
+
+| 세션 (길이, 참조 화자) | Nemotron DER / 놓침 / 혼동 | 화자 수 | fluid DER / 놓침 / 혼동 | 화자 수 | auto가 쓰는 엔진 |
+| --- | --- | --- | --- | --- | --- |
+| 190 (89.8분, 17명) | 37.0 / 8.5 / **28.5%** | 8 | 11.9 / 5.0 / **6.9%** | 12 | fluid (8채널) |
+| 195 (83.6분, 7명) | 4.1 / 0.9 / **3.2%** | 7 | 5.9 / 2.1 / **3.8%** | 7 | Nemotron |
+| 196 (65.9분, 7명) | 17.2 / 5.9 / 11.3% | 8 | 4.5 / 2.3 / 2.2% | 7 | fluid (8채널) |
+| 201 (72.2분, 9명) | 6.3 / 1.0 / 5.3% | 8 | 6.5 / 1.2 / 5.4% | 8 | fluid (8채널) |
+| 4세션 합 (311.5분) | 16.8 / 4.1 / 12.6% | 오차 평균 2.75명 | 7.5 / 2.7 / 4.7% | 오차 평균 1.5명 | |
+| 속도 (RTF) | 0.0030 (90분 17.7초) | | 0.0039 (90분 22.0초) | | |
+
+- **완료 기준 충족:** 17명 세션 confusion 6.9% < 26.5%. 26.5%는 v3.9 때 전사 세그먼트 화자로 잰 Nemotron 값이고, 같은 회의를 turn으로 직접 재면 28.5%다. 17명 중 12명을 찾는다(남은 5명은 다른 화자에 합쳐짐).
+- **세션 195(7명)** 는 fluid가 혼동 +0.7%p, DER +1.8%p로 조금 나쁘다. auto는 이 회의에서 Nemotron이 7채널만 써서 다시 돌리지 않으므로 결과가 그대로다. 그래서 기본을 fluid로 바꾸지 않았다.
+- 파라미터는 조정하지 않았다(FluidAudio 기본값). 위 세션으로 맞추면 평가가 아니게 된다.
+- **헬퍼 단독:** 90분 세션 피크 footprint 0.90GB(RSS 0.71GB). Nemotron을 내린 뒤 별도 프로세스로 돈다. 첫 실행은 Core ML 컴파일로 약 4초 더 걸린다.
+
+가상 음성(`say`, `bench/diar_synth.py`로 만들어 `bench/diar_eval.py der --set`으로 채점, 지표만):
+
+| 세트 | Nemotron 혼동 (화자 수) | fluid 혼동 (화자 수) |
+| --- | --- | --- |
+| Yuna + Grandpa, 2명·8발화 29초 | 0.0% (2) | 12.0% (3) |
+| Yuna + Grandpa + Flo, 3명·12발화 46초 | 0.0%, 놓침 34.8% (2) | 26.3% (2) |
+| Yuna + Eloquence 8개, 9명·36발화 143초 | 34.6% (3) | 66.7% (3) |
+| `pytest -m slow` Yuna + Grandpa 4발화 | 2/2명, 청크 화자 일치 | 2/2명, 청크 화자 일치 |
+
+- 가상 음성은 짧고, Grandpa·Grandma·Eddy·Flo 같은 Eloquence 음성은 같은 엔진이라 서로 잘 합쳐진다. 두 엔진 모두 9명 가상 회의를 3명으로 본다. **순위 근거로 쓰지 않는다.** 2명 30초 가상 대화에서 fluid가 한 사람을 둘로 가른 것은 auto가 7채널 이하에서 fluid를 쓰지 않는 근거 중 하나다.
+- 실제 E2E(`tractus transcribe`): `--diarizer fluid`로 가상 3명 → `diarization.engine: fluid`(2명으로 봄, 위 표와 같음). AI Hub 196 auto → `diarize(nemotron)` 다음 `diarize(fluid)` 단계가 나오고 7명. 헬퍼가 없을 때 `fluid_missing` 경고 후 Nemotron. fluid로 시작해 중간에 죽인 작업을 `--diarizer nemotron`으로 이어도 화자 분리를 다시 하지 않고 engine은 fluid.
+- **미검증:** 실제 대면 회의(마이크 1개)에서 9명 이상.
 
 ### 2.5 목소리 프로필 — 화자 이름 제안 (2026-10-07, v3.13)
 
@@ -500,6 +540,7 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
     "S3": { "name": null, "suggested": { "person_id": "01K…", "name": "홍길동", "score": 0.82 } }  // 목소리 제안 (v3.13, §2.5). 이름이 없을 때만
   },
   "diarization": {              // 화자 분리를 안 했거나 모델이 없었으면 null
+    "engine": "nemotron",       // v3.15: nemotron | fluid. fluid면 model FluidInference/speaker-diarization-coreml, params는 min_turn_s·fill_gap_s·min_piece_s·max_speakers만. 예전 회의에는 없다(= nemotron)
     "model": "mlx-community/Nemotron-3-Diarization",
     "revision": "59ed2dbfc1346dcea9d423c71306a3a2499c568f",
     "params": { "threshold": 0.5, "median_frames": 11, "min_turn_s": 1.0, "fill_gap_s": 1.0, "min_piece_s": 1.0, "max_speakers": null }

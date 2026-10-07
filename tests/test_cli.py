@@ -27,6 +27,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)  # 저장소 루트의 .env / .env.local을 읽지 않게 한다
     monkeypatch.setenv("TRACTUS_HOME", str(home))
     monkeypatch.delenv("TRACTUS_MODELS_DIR", raising=False)
+    monkeypatch.setenv("TRACTUS_DIAR_BIN", str(tmp_path / "no-tractus-diar"))  # 저장소에 빌드된 헬퍼를 쓰지 않게
     monkeypatch.setattr(cli, "find_chunks", lambda pcm, vad_dir: CHUNKS)
 
     wav = tmp_path / "주간회의.wav"
@@ -313,8 +314,144 @@ def test_diarization_failure_warns_and_continues(env, fake_asr, monkeypatch):
 
 def test_max_speakers_is_validated(env, fake_asr, fake_diar):
     _, wav = env
-    assert run(wav, "--max-speakers", "9").exit_code != 0
     assert run(wav, "--max-speakers", "0").exit_code != 0
+    assert run(wav, "--diarizer", "pyannote").exit_code != 0
+    assert run(wav, "--max-speakers", "12").exit_code == 0  # 9명 이상은 fluid가 받는다
+    assert fake_diar.calls == [12]
+
+
+# ── 두 번째 엔진 (fluid, v3.15) ─────────────────────────────────────
+
+
+EIGHT = [(float(i), i + 0.9, f"S{i + 1}") for i in range(8)]  # Nemotron 8채널을 모두 씀
+
+
+class FakeFluid:
+    calls: list = []
+    fail = False
+    info = {"engine": "fluid", "model": "fluid-fake", "revision": "r", "params": {}}
+
+    def diarize(self, pcm, max_speakers=None):
+        FakeFluid.calls.append(max_speakers)
+        if FakeFluid.fail:
+            raise RuntimeError("helper boom")
+        return [(0.0, 2.5, "S1"), (2.5, 5.5, "S2"), (5.5, 8.0, "S3")]
+
+
+@pytest.fixture
+def fake_fluid(monkeypatch):
+    FakeFluid.calls, FakeFluid.fail = [], False
+    monkeypatch.setattr(cli, "load_fluid", lambda models: FakeFluid())
+    return FakeFluid
+
+
+def nemotron_turns(monkeypatch, turns):
+    monkeypatch.setattr(FakeDiarizer, "diarize", lambda self, pcm, max_speakers=None: FakeDiarizer.calls.append(max_speakers) or turns)
+
+
+def transcribe_json(*args):
+    result = CliRunner().invoke(cli.app, ["transcribe", *map(str, args), "--progress-json"])
+    assert result.exit_code == 0, result.output
+    evs = events(result.stdout)
+    return evs, [e for e in evs if e["event"] == "stage" and e["stage"] == "diarize"], [e["code"] for e in evs if e["event"] == "warning"]
+
+
+def diarization(home):
+    (d,) = (home / "meetings").iterdir()
+    return json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+
+
+def test_auto_reruns_with_fluid_when_all_eight_channels_used(env, fake_asr, fake_diar, fake_fluid, monkeypatch):
+    home, wav = env
+    nemotron_turns(monkeypatch, EIGHT)
+    _, diar, warns = transcribe_json(wav)
+    assert [e["engine"] for e in diar] == ["nemotron", "fluid"] and fake_fluid.calls == [None]
+    t = diarization(home)
+    assert t["diarization"]["engine"] == "fluid" and [s["speaker"] for s in t["segments"]] == ["S1", "S2", "S3"]
+    assert "diarizer_cap" not in warns
+
+
+def test_auto_keeps_nemotron_below_cap(env, fake_asr, fake_diar, fake_fluid, monkeypatch):
+    home, wav = env
+    nemotron_turns(monkeypatch, EIGHT[:7])
+    _, diar, _ = transcribe_json(wav)
+    assert [e["engine"] for e in diar] == ["nemotron"] and fake_fluid.calls == []
+    assert diarization(home)["diarization"]["model"] == "fake"
+
+
+def test_auto_respects_user_cap_of_eight_or_less(env, fake_asr, fake_diar, fake_fluid, monkeypatch):
+    _, wav = env
+    nemotron_turns(monkeypatch, EIGHT)
+    transcribe_json(wav, "--max-speakers", "8")
+    assert fake_fluid.calls == []
+
+
+def test_auto_passes_large_cap_to_fluid(env, fake_asr, fake_diar, fake_fluid, monkeypatch):
+    _, wav = env
+    nemotron_turns(monkeypatch, EIGHT)
+    transcribe_json(wav, "--max-speakers", "12")
+    assert fake_diar.calls == [12] and fake_fluid.calls == [12]
+
+
+def test_auto_cap_without_fluid_warns_and_keeps_nemotron(env, fake_asr, fake_diar, monkeypatch):
+    home, wav = env
+    nemotron_turns(monkeypatch, EIGHT)
+    monkeypatch.setattr(cli, "load_fluid", lambda models: None)
+    evs, diar, warns = transcribe_json(wav)
+    assert [e["engine"] for e in diar] == ["nemotron"] and warns[0] == "diarizer_cap"
+    msg = next(e["message"] for e in evs if e["event"] == "warning")
+    assert "swift build" in msg and "download" in msg
+    assert diarization(home)["diarization"]["model"] == "fake"
+
+
+def test_auto_fluid_failure_keeps_nemotron(env, fake_asr, fake_diar, fake_fluid, monkeypatch):
+    home, wav = env
+    nemotron_turns(monkeypatch, EIGHT)
+    fake_fluid.fail = True
+    _, _, warns = transcribe_json(wav)
+    assert warns[0] == "diarizer_failed"
+    t = diarization(home)
+    assert t["diarization"]["model"] == "fake" and len(t["speakers"]) == 3  # 청크 3개에 Nemotron 라벨
+
+
+def test_explicit_fluid_skips_nemotron(env, fake_asr, fake_diar, fake_fluid):
+    home, wav = env
+    _, diar, _ = transcribe_json(wav, "--diarizer", "fluid", "--max-speakers", "3")
+    assert [e["engine"] for e in diar] == ["fluid"] and fake_diar.calls == [] and fake_fluid.calls == [3]
+    assert diarization(home)["diarization"]["engine"] == "fluid"
+
+
+def test_explicit_fluid_missing_falls_back_to_nemotron(env, fake_asr, fake_diar, monkeypatch):
+    home, wav = env
+    monkeypatch.setattr(cli, "load_fluid", lambda models: None)
+    _, diar, warns = transcribe_json(wav, "--diarizer", "fluid")
+    assert warns[0] == "fluid_missing" and [e["engine"] for e in diar] == ["nemotron"]
+    assert diarization(home)["diarization"]["model"] == "fake"
+
+
+def test_explicit_fluid_failure_falls_back_to_nemotron(env, fake_asr, fake_diar, fake_fluid):
+    home, wav = env
+    fake_fluid.fail = True
+    _, diar, warns = transcribe_json(wav, "--diarizer", "fluid")
+    assert warns[0] == "diarizer_failed" and [e["engine"] for e in diar] == ["fluid", "nemotron"]
+    assert diarization(home)["diarization"]["model"] == "fake"
+
+
+def test_explicit_nemotron_never_runs_fluid(env, fake_asr, fake_diar, fake_fluid, monkeypatch):
+    _, wav = env
+    nemotron_turns(monkeypatch, EIGHT)
+    _, diar, _ = transcribe_json(wav, "--diarizer", "nemotron")
+    assert [e["engine"] for e in diar] == ["nemotron"] and fake_fluid.calls == []
+
+
+def test_resume_keeps_fluid_engine(env, fake_asr, fake_diar, fake_fluid):
+    home, wav = env
+    fake_asr.fail_at = 1
+    assert run(wav, "--diarizer", "fluid").exit_code == 130
+    fake_asr.fail_at = None
+    _, diar, _ = transcribe_json(wav)  # 이어하기: 기본값(auto)이어도 화자 분리를 다시 돌리지 않는다
+    assert diar == [] and fake_fluid.calls == [None] and fake_diar.calls == []
+    assert diarization(home)["diarization"]["engine"] == "fluid"
 
 
 def speakers(*args):

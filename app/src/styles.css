@@ -1,6 +1,6 @@
 /* Tractus — 스위스 타이포그래피 + 종이 원고. 색은 의미로만 쓴다:
    인주(accent) = 지금·녹음·재생 위치, 황토(memo) = 사람이 남긴 메모·북마크, 파랑(focus) = 키보드 초점,
-   화자 잉크(spk-0…7) = 누가 말했는지. 화자 색은 인주·황토와 겹치지 않는 탁한 잉크이고, 두 테마 모두 종이 위 대비 3.9:1 이상. */
+   화자 잉크(spk-0…7) = 누가 말했는지. 9번째 화자부터는 같은 잉크에 속 빈 점·빗금 막대(Speakers.spkStyle). 화자 색은 인주·황토와 겹치지 않는 탁한 잉크이고, 두 테마 모두 종이 위 대비 3.9:1 이상. */
 
 :root {
   --paper: #f3f0e8;
@@ -721,7 +721,8 @@ mark {
   height: 8px;
   flex: none;
   border-radius: 50%;
-  background: var(--spk);
+  background: var(--spk-fill, var(--spk));
+  box-shadow: inset 0 0 0 1.5px var(--spk); /* 슬롯 8..15: 속 빈 점 */
 }
 
 .is-label {
@@ -773,7 +774,7 @@ mark {
 }
 
 .spk-chip.is-turn .spk-dot {
-  box-shadow: 0 0 0 3px var(--paper);
+  box-shadow: inset 0 0 0 1.5px var(--spk), 0 0 0 3px var(--paper);
 }
 
 .spk-chip.is-turn:hover {
@@ -800,7 +801,7 @@ mark {
 .spk-chip.is-cont .spk-dot {
   width: 6px;
   height: 6px;
-  box-shadow: 0 0 0 2px var(--paper);
+  box-shadow: inset 0 0 0 1.5px var(--spk), 0 0 0 2px var(--paper);
   transition: transform var(--fast) var(--ease);
 }
 
@@ -840,7 +841,7 @@ mark {
   flex: 1 1 0;
   min-width: 3px;
   border-radius: 2px;
-  background: var(--spk);
+  background: var(--spk-bar, var(--spk));
   transition: opacity var(--normal) var(--ease);
 }
 

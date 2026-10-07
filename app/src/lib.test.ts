@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import liveSay from "./fixtures/live_say.jsonl?raw"; // bench/live_sim.py 가상 대화로 실제 `tractus live`가 낸 이벤트
+import { spkStyle } from "./Speakers";
 import {
   IDLE_JOB,
   IDLE_REC,
@@ -283,8 +284,21 @@ describe("화자", () => {
     const slots = (labels: string[]) => speakerStats([], Object.fromEntries(labels.map((l) => [l, { name: null }]))).map((s) => s.slot);
     expect(slots(["S1", "S2", "S3"])).toEqual([0, 1, 2]);
     expect(slots(["S1", "S3", "S9"])).toEqual([0, 2, 1]);
-    // 9명이면 겹침은 피할 수 없다 → 라벨 번호대로
-    expect(slots(["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9"])).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 0]);
+    // 9명 이상(fluid 화자 분리): 잉크 8개를 다 쓰면 두 번째 표시(속 빈 점·빗금) 슬롯 8..15
+    const nine = ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9"];
+    expect(slots(nine)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    const seventeen = Array.from({ length: 17 }, (_, i) => `S${i + 1}`);
+    expect(slots(seventeen)).toEqual([...Array(16).keys(), 0]); // 16명이 넘으면 겹친다
+  });
+
+  test("화자 스타일: 슬롯 8..15는 같은 잉크에 속 빈 점·빗금 막대, 미상은 무채색", () => {
+    const st = (slot: number | undefined) => spkStyle(slot) as Record<string, string>;
+    expect(st(1)).toEqual({ "--spk": "var(--spk-1)", "--spk-fill": "var(--spk-1)", "--spk-bar": "var(--spk-1)" });
+    expect(st(9)["--spk"]).toBe("var(--spk-1)");
+    expect(st(9)["--spk-fill"]).toBe("transparent");
+    expect(st(9)["--spk-bar"]).toContain("repeating-linear-gradient");
+    expect(st(-1)["--spk"]).toBe("var(--ink-3)");
+    expect(st(undefined)["--spk-fill"]).toBe("var(--ink-3)");
   });
 
   test("말한 시간 비율, 라벨 번호 순 (S10은 S2 뒤)", () => {

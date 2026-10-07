@@ -35,9 +35,9 @@ LINES = (
 )
 
 
-@pytest.mark.slow
-def test_real_diarizer_separates_two_synthetic_voices(tmp_path):
-    from tractus.diarize import SR, load_diarizer, split_chunks
+def two_voice_meeting(tmp_path):
+    """LINES를 VOICES로 번갈아 읽힌 PCM과 발화별 (시작, 끝) 표본."""
+    from tractus.diarize import SR
 
     parts = []
     for i, line in enumerate(LINES):
@@ -50,17 +50,58 @@ def test_real_diarizer_separates_two_synthetic_voices(tmp_path):
     for p in parts:
         bounds.append((t, t + len(p)))
         t += len(p) + len(gap)
+    return pcm, bounds
 
-    diarizer = load_diarizer(MODELS)
-    assert diarizer is not None, f"{MODELS}/nemotron-3-diarization 필요"
+
+@pytest.mark.slow
+@pytest.mark.parametrize("engine", ["nemotron", "fluid"])
+def test_real_diarizer_separates_two_synthetic_voices(tmp_path, engine):
+    from tractus.diarize import FLUID_DIR, MODEL_DIR, fluid_hint, load_diarizer, load_fluid, split_chunks
+
+    if engine == "nemotron":
+        diarizer = load_diarizer(MODELS)
+        assert diarizer is not None, f"{MODELS}/{MODEL_DIR} 필요"
+    else:
+        diarizer = load_fluid(MODELS)
+        if diarizer is None:
+            pytest.skip(f"tractus-diar 헬퍼와 {MODELS}/{FLUID_DIR} 필요:\n{fluid_hint(MODELS)}")
+    pcm, bounds = two_voice_meeting(tmp_path)
     turns = diarizer.diarize(pcm)
     assert {spk for _, _, spk in turns} == {"S1", "S2"}
+    assert diarizer.info["engine"] == engine
 
     chunks = split_chunks(find_chunks(pcm, MODELS / "silero-vad-v6"), turns)
     assert {c[2] for c in chunks} == {"S1", "S2"}
     for s, e, spk in chunks:  # 청크마다 대부분을 차지하는 음성의 화자가 붙는다 (Yuna=S1, Grandpa=S2)
         overlap = [max(0, min(e, b) - max(s, a)) for a, b in bounds]
         assert spk == ("S1" if overlap.index(max(overlap)) % 2 == 0 else "S2")
+
+
+@pytest.mark.slow
+def test_fluid_helper_killed_mid_run_leaves_no_audio_copy_in_temp(tmp_path):
+    """시간 초과(SIGKILL)로 죽어도 회의 오디오 사본이 사용자 임시 폴더에 남지 않는다 (FluidAudio 디스크 소스는 defer로만 지웠다)."""
+    from tractus.diarize import FLUID_DIR, _write_wav, fluid_hint, load_fluid
+
+    diarizer = load_fluid(MODELS)
+    if diarizer is None:
+        pytest.skip(f"tractus-diar 헬퍼와 {MODELS}/{FLUID_DIR} 필요:\n{fluid_hint(MODELS)}")
+    pcm, _ = two_voice_meeting(tmp_path)
+    wav = tmp_path / "audio.wav"
+    _write_wav(wav, pcm)
+    # FileManager.temporaryDirectory는 TMPDIR을 무시하고 이 폴더를 쓴다
+    temp = Path(subprocess.run(["getconf", "DARWIN_USER_TEMP_DIR"], capture_output=True, text=True, check=True).stdout.strip())
+    before = set(temp.glob("fluidaudio-streaming-*"))
+    cmd = [str(diarizer.binary), "run", "--audio", str(wav), "--models", str(diarizer.model_dir)]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    try:
+        progressed = any('"progress"' in line for line in p.stdout)  # 첫 progress 직후 멈춘다
+    finally:
+        p.kill()
+        p.wait()
+    leaked = set(temp.glob("fluidaudio-streaming-*")) - before
+    for f in leaked:
+        f.unlink()
+    assert progressed and not leaked
 
 
 @pytest.mark.slow

@@ -18,11 +18,15 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 | 모델 | revision | 로컬 경로 | 라이선스 |
 | --- | --- | --- | --- |
 | `mlx-community/Nemotron-3-Diarization` | `59ed2dbfc1346dcea9d423c71306a3a2499c568f` | `models/nemotron-3-diarization` | OpenMDW-1.1 |
+| `FluidInference/speaker-diarization-coreml` (fluid, 9명 이상, 2026-10-07) | `df2625ac79a7ac6b65ad868fee6d80f320da4232` (FluidAudio 0.17.5가 고정) | `models/speaker-diarization` (폴더 이름은 FluidAudio가 정함) | CC-BY-4.0 (NOTICE 9번에 출처 표기) |
 
 - `mlx_audio.vad.load`로 프로세스 안에서 돈다. ASR 전에 회의 전체로 1회 돌리고, 화자가 바뀌는 지점에서 VAD 청크를 나눈다. 최대 8명.
+- **9명 이상은 fluid**(`transcribe --diarizer auto|nemotron|fluid`, 기본 auto): Swift 헬퍼 `tractus-diar`(`recorder/`, FluidAudio v0.17.5 = `0b1f462`, Apache-2.0)를 subprocess(인수 배열)로 부른다. auto는 Nemotron이 평활 뒤 8라벨을 모두 썼을 때만 다시 돌린다. 기본 엔진을 fluid로 바꾸지 않는다(7명 세션 195에서 조금 나쁨, ARCHITECTURE §2.4.1).
+- 헬퍼 위치: `$TRACTUS_DIAR_BIN`, 없으면 `<저장소>/recorder/.build/release/tractus-diar`. 실행은 오프라인(`ModelHub.offlineMode`)이고, 모델은 `tractus-diar download --models models/speaker-diarization`으로 한 번 받는다. 없으면 `diarizer_cap`(auto)·`fluid_missing`(fluid) 경고 후 Nemotron. 쓴 엔진은 `diarization.engine`.
+- FluidAudio 패키지는 `traits: []`로 NeMo 텍스트 정규화(Rust)를 빼고, 실행 파일 옆 `FluidAudio_FluidAudio.bundle`(espeak-ng에서 만든 TTS 사전)은 배포하지 않는다. `Package.resolved`의 새 의존성은 라이선스를 확인한다.
 - 화자 분리 모델은 ASR 모델을 올리기 전에 내린다(`del` + `mx.clear_cache()`).
 - 모델이 없거나 실패하면 화자 없이 전사하고 `warning` 이벤트 + stderr로 알린다. 이어하기는 화자 분리를 다시 돌리지 않는다.
-- **화자 분리 엔진·평활 파라미터를 바꾸면 AI Hub(로컬, 지표만)와 가상 음성(macOS `say`) 둘 다에서 DER·confusion을 다시 잰다.** 백업 엔진은 FluidAudio community-1이고, `Diarizer.diarize(pcm) → [(시작, 끝, "S1"), …]`만 맞추면 된다.
+- **화자 분리 엔진·평활 파라미터를 바꾸면 AI Hub(로컬, 지표만)와 가상 음성(macOS `say`) 둘 다에서 DER·confusion을 다시 잰다**: `uv run python bench/diar_eval.py der --engine nemotron fluid [--set <가상 음성 폴더>]`(가상 음성은 `bench/diar_synth.py <폴더>`로 만든다) → `bench/results/diar_summary.json`(지표만). 엔진은 `diarize(pcm, max_speakers) → [(시작, 끝, "S1"), …]`과 `.info`(engine 포함)만 맞추면 된다. AI Hub 세션으로 파라미터를 맞추지 않는다.
 - 가상 음성은 `say -v Yuna`와 `say -v "Grandpa (한국어(한국))"`처럼 **엔진이 다른** 음성을 쓴다. 그냥 `Eddy`처럼 쓰면 영어 음성이 골라져 한국어가 거의 빈 오디오가 된다. Grandpa·Grandma처럼 같은 엔진 음성은 한 화자로 합쳐질 수 있다.
 
 ## 단어 정렬 모델 (2026-10-06)
@@ -78,7 +82,7 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 | --- | --- |
 | `audio.py` | FFmpeg 외부 호출(디코딩, Opus 보관), SHA-256 |
 | `vad.py` | VAD 발화 구간 → 30초 이하 청크 |
-| `diarize.py` | 화자 분리(Nemotron 3), 단일 화자 평활(`smooth`), 화자 경계로 청크 나누기(`split_chunks`) |
+| `diarize.py` | 화자 분리(Nemotron 3 `Diarizer`, fluid `FluidDiarizer` = `tractus-diar` 헬퍼), 단일 화자 평활(`smooth`), turn 정리(`_tidy`), 화자 경계로 청크 나누기(`split_chunks`) |
 | `asr.py` | `Transcriber`: 청크 전사, 토큰 상한, 반복 루프 재시도·보정 |
 | `align.py` | 단어 정렬(Qwen3-ForcedAligner): `tokenize`(soynlp 대체), `Aligner.align`, `align_segments`, 편집 뒤 시각 옮기기 `remap_words` |
 | `store.py` | 회의 폴더, `.job.json`·`.chunks.jsonl`(이어하기, 목소리 제안 포함), transcript.json/md/vtt (schema_version 2: 화자), `apply_speaker_edit`(rename·set·merge·dismiss), `apply_suggestions`, `apply_text_edits`(words도 옮김), `seg_text`(표시 텍스트 = `corrected_text` 우선), `add_glossary_terms` |
@@ -133,7 +137,9 @@ uv run tractus glossary add 쿠버네티스 "Project Atlas"  # 용어집 추가 
 uv run tractus export <meeting_id> --format docx --out 회의.docx [--force]   # txt|md|srt|vtt|csv|docx|bundle → {"path": …}
 uv run python bench/search_eval.py                  # 검색 평가 (가상)
 uv run python bench/ask_eval.py                     # 질의 평가 (가상 회의만 원격 LLM으로)
-uv run tractus transcribe <파일> [--no-align]       # 전사 (+ 단어 타이밍)
+uv run tractus transcribe <파일> [--no-align] [--diarizer auto|nemotron|fluid]   # 전사 (+ 단어 타이밍)
+(cd recorder && swift build -c release && swift test)                # tractus-rec, tractus-diar (Swift 6.2+)
+uv run python bench/diar_eval.py der --engine nemotron fluid         # 화자 분리 DER (AI Hub 로컬 전용, 지표만)
 uv run tractus align <meeting_id> [--force]         # 단어 타이밍 채우기 → {"aligned": N, "failed": M, "skipped": K}
 echo stop | uv run tractus live --recording <녹음 폴더> --progress-json   # 녹음 중 실시간 자막 (stdin stop/EOF로 끝, 저장 안 함)
 uv run python bench/live_sim.py                     # 실시간 자막 시뮬레이션 (가상 대화, 실시간 약 75초)

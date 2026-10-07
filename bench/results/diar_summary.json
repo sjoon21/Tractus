@@ -1,0 +1,280 @@
+{
+ "aihub/nemotron": {
+  "model": "mlx-community/Nemotron-3-Diarization",
+  "revision": "59ed2dbfc1346dcea9d423c71306a3a2499c568f",
+  "params": {
+   "threshold": 0.5,
+   "median_frames": 11,
+   "min_turn_s": 1.0,
+   "fill_gap_s": 1.0,
+   "min_piece_s": 1.0,
+   "max_speakers": null
+  },
+  "collar_s": 0.25,
+  "frame_s": 0.01,
+  "sessions": [
+   {
+    "session": "DGBAH21000190",
+    "min": 89.8,
+    "n_ref": 17,
+    "n_hyp": 8,
+    "spk_err": -9,
+    "der": 36.99,
+    "miss": 8.46,
+    "fa": 0.0,
+    "conf": 28.54,
+    "sec": 17.7,
+    "rtf": 0.0033
+   },
+   {
+    "session": "DGBAH21000195",
+    "min": 83.6,
+    "n_ref": 7,
+    "n_hyp": 7,
+    "spk_err": 0,
+    "der": 4.1,
+    "miss": 0.94,
+    "fa": 0.0,
+    "conf": 3.16,
+    "sec": 14.7,
+    "rtf": 0.0029
+   },
+   {
+    "session": "DGBAH21000196",
+    "min": 65.9,
+    "n_ref": 7,
+    "n_hyp": 8,
+    "spk_err": 1,
+    "der": 17.17,
+    "miss": 5.86,
+    "fa": 0.0,
+    "conf": 11.3,
+    "sec": 11.5,
+    "rtf": 0.0029
+   },
+   {
+    "session": "DGBAH21000201",
+    "min": 72.2,
+    "n_ref": 9,
+    "n_hyp": 8,
+    "spk_err": -1,
+    "der": 6.31,
+    "miss": 0.99,
+    "fa": 0.0,
+    "conf": 5.31,
+    "sec": 12.6,
+    "rtf": 0.0029
+   }
+  ],
+  "total_last_run": {
+   "der": 16.76,
+   "miss": 4.14,
+   "fa": 0.0,
+   "conf": 12.61,
+   "spk_count_mae": 2.75,
+   "rtf": 0.003,
+   "audio_min": 311.5
+  }
+ },
+ "aihub/fluid": {
+  "model": "FluidInference/speaker-diarization-coreml",
+  "revision": "df2625ac79a7ac6b65ad868fee6d80f320da4232",
+  "params": {
+   "min_turn_s": 1.0,
+   "fill_gap_s": 1.0,
+   "min_piece_s": 1.0,
+   "max_speakers": null
+  },
+  "collar_s": 0.25,
+  "frame_s": 0.01,
+  "sessions": [
+   {
+    "session": "DGBAH21000190",
+    "min": 89.8,
+    "n_ref": 17,
+    "n_hyp": 12,
+    "spk_err": -5,
+    "der": 11.89,
+    "miss": 4.99,
+    "fa": 0.0,
+    "conf": 6.9,
+    "sec": 22.0,
+    "rtf": 0.0041
+   },
+   {
+    "session": "DGBAH21000195",
+    "min": 83.6,
+    "n_ref": 7,
+    "n_hyp": 7,
+    "spk_err": 0,
+    "der": 5.91,
+    "miss": 2.07,
+    "fa": 0.0,
+    "conf": 3.84,
+    "sec": 19.4,
+    "rtf": 0.0039
+   },
+   {
+    "session": "DGBAH21000196",
+    "min": 65.9,
+    "n_ref": 7,
+    "n_hyp": 7,
+    "spk_err": 0,
+    "der": 4.51,
+    "miss": 2.31,
+    "fa": 0.0,
+    "conf": 2.2,
+    "sec": 14.6,
+    "rtf": 0.0037
+   },
+   {
+    "session": "DGBAH21000201",
+    "min": 72.2,
+    "n_ref": 9,
+    "n_hyp": 8,
+    "spk_err": -1,
+    "der": 6.53,
+    "miss": 1.18,
+    "fa": 0.0,
+    "conf": 5.35,
+    "sec": 17.7,
+    "rtf": 0.0041
+   }
+  ],
+  "total_last_run": {
+   "der": 7.45,
+   "miss": 2.74,
+   "fa": 0.0,
+   "conf": 4.71,
+   "spk_count_mae": 1.5,
+   "rtf": 0.0039,
+   "audio_min": 311.5
+  }
+ },
+ "synth/nemotron": {
+  "model": "mlx-community/Nemotron-3-Diarization",
+  "revision": "59ed2dbfc1346dcea9d423c71306a3a2499c568f",
+  "params": {
+   "threshold": 0.5,
+   "median_frames": 11,
+   "min_turn_s": 1.0,
+   "fill_gap_s": 1.0,
+   "min_piece_s": 1.0,
+   "max_speakers": null
+  },
+  "collar_s": 0.25,
+  "frame_s": 0.01,
+  "sessions": [
+   {
+    "session": "say2",
+    "min": 0.5,
+    "n_ref": 2,
+    "n_hyp": 2,
+    "spk_err": 0,
+    "der": 1.46,
+    "miss": 0.0,
+    "fa": 1.46,
+    "conf": 0.0,
+    "sec": 2.1,
+    "rtf": 0.0725
+   },
+   {
+    "session": "say3",
+    "min": 0.8,
+    "n_ref": 3,
+    "n_hyp": 2,
+    "spk_err": -1,
+    "der": 35.75,
+    "miss": 34.83,
+    "fa": 0.92,
+    "conf": 0.0,
+    "sec": 0.1,
+    "rtf": 0.0029
+   },
+   {
+    "session": "say9",
+    "min": 2.4,
+    "n_ref": 9,
+    "n_hyp": 3,
+    "spk_err": -6,
+    "der": 68.94,
+    "miss": 33.66,
+    "fa": 0.69,
+    "conf": 34.59,
+    "sec": 0.4,
+    "rtf": 0.0031
+   }
+  ],
+  "total_last_run": {
+   "der": 53.16,
+   "miss": 29.48,
+   "fa": 0.84,
+   "conf": 22.84,
+   "spk_count_mae": 2.33,
+   "rtf": 0.0117,
+   "audio_min": 3.7
+  }
+ },
+ "synth/fluid": {
+  "model": "FluidInference/speaker-diarization-coreml",
+  "revision": "df2625ac79a7ac6b65ad868fee6d80f320da4232",
+  "params": {
+   "min_turn_s": 1.0,
+   "fill_gap_s": 1.0,
+   "min_piece_s": 1.0,
+   "max_speakers": null
+  },
+  "collar_s": 0.25,
+  "frame_s": 0.01,
+  "sessions": [
+   {
+    "session": "say2",
+    "min": 0.5,
+    "n_ref": 2,
+    "n_hyp": 3,
+    "spk_err": 1,
+    "der": 13.61,
+    "miss": 0.15,
+    "fa": 1.46,
+    "conf": 12.0,
+    "sec": 0.4,
+    "rtf": 0.0148
+   },
+   {
+    "session": "say3",
+    "min": 0.8,
+    "n_ref": 3,
+    "n_hyp": 2,
+    "spk_err": -1,
+    "der": 28.71,
+    "miss": 0.0,
+    "fa": 2.46,
+    "conf": 26.25,
+    "sec": 0.4,
+    "rtf": 0.0098
+   },
+   {
+    "session": "say9",
+    "min": 2.4,
+    "n_ref": 9,
+    "n_hyp": 3,
+    "spk_err": -6,
+    "der": 68.53,
+    "miss": 0.42,
+    "fa": 1.37,
+    "conf": 66.74,
+    "sec": 1.0,
+    "rtf": 0.0072
+   }
+  ],
+  "total_last_run": {
+   "der": 53.02,
+   "miss": 0.29,
+   "fa": 1.61,
+   "conf": 51.12,
+   "spk_count_mae": 2.67,
+   "rtf": 0.0081,
+   "audio_min": 3.7
+  }
+ }
+}

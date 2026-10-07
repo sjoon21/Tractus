@@ -11,7 +11,7 @@ Tauri 2 + React + TypeScript + Vite로 만든 앱이다. 구성 요소 사이의
 ```bash
 cd app
 pnpm install
-pnpm test                                   # vitest: 시각 → 세그먼트 찾기, 시간 형식, 메모 끼워 넣기, MCP 응답 해석, 속도·무음 건너뛰기·찾아 바꾸기·되돌리기·가져오기·내보내기 이름, 질의 이벤트·인용 파싱·대화 기록 자르기·전송 안내(ask.test.ts), PDF 인쇄 문서(print.test.ts), 단어 찾기·단어 타이밍 검사·단어 클릭 시각(Phase 6.1·6.2), 목소리 제안 표시·기억하기 동의 검사(Phase 7.1), 실시간 자막 상태(`liveReduce`, Phase 7.2)
+pnpm test                                   # vitest: 시각 → 세그먼트 찾기, 시간 형식, 메모 끼워 넣기, MCP 응답 해석, 속도·무음 건너뛰기·찾아 바꾸기·되돌리기·가져오기·내보내기 이름, 질의 이벤트·인용 파싱·대화 기록 자르기·전송 안내(ask.test.ts), PDF 인쇄 문서(print.test.ts), 단어 찾기·단어 타이밍 검사·단어 클릭 시각(Phase 6.1·6.2), 목소리 제안 표시·기억하기 동의 검사(Phase 7.1), 실시간 자막 상태(`liveReduce`, Phase 7.2), 화자 9명 이상 색 슬롯·속 빈 점 스타일(Phase 7.3)
 pnpm build                                  # tsc + vite → dist/
 pnpm tauri dev                              # 개발 실행 (Vite 1420 포트)
 pnpm tauri build --debug --bundles app      # → src-tauri/target/debug/bundle/macos/Tractus.app
@@ -41,6 +41,8 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 | `fake_recorder` | `false` | 개발용. `record --fake`로 띄워 권한 없이 녹음 흐름을 시험한다 |
 | `rec_mode` | `in_person` | 마지막으로 고른 녹음 방식. 사이드바 녹음 버튼 아래 스위치로 바꾸고, 바꿀 때마다 이 값만 저장한다(다른 값은 설정 화면에서 저장할 때만 파일에 쓴다) |
 | `live_captions` | `false` | 녹음 중 실시간 자막(미리보기, Phase 7.2). 녹음을 시작할 때의 값을 쓴다 |
+
+9명 이상 화자 분리 헬퍼 `tractus-diar`(Phase 7.3)는 앱 설정이 없다. 앱은 `--diarizer`를 넘기지 않아 코어 기본값 auto가 쓰이고, 코어가 `$TRACTUS_DIAR_BIN` 또는 `<저장소>/recorder/.build/release/tractus-diar`에서 헬퍼를 찾는다. 헬퍼나 모델이 없으면 8명까지로 전사하고 `diarizer_cap` 경고(빌드·받기 명령 포함)를 알림으로 보여 준다. 화자 색은 잉크 8개이고, 9–16번째 화자는 같은 잉크에 속 빈 점·빗금 막대로 구분한다.
 
 ## 실시간 자막 (Phase 7.2)
 

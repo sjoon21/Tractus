@@ -113,13 +113,15 @@ export function speakerName(label: string | null | undefined, speakers: Speakers
   return speakers[label]?.name?.trim() || label;
 }
 
-export const SPEAKER_SLOTS = 8;
+/** 화자 잉크(--spk-0…7) 수. 슬롯 8..15는 같은 잉크에 두 번째 표시(속 빈 점·빗금 막대)를 쓴다 (fluid 화자 분리는 9명 이상) */
+export const SPEAKER_INKS = 8;
+export const SPEAKER_SLOTS = SPEAKER_INKS * 2;
 const labelNum = (label: string) => Number(/^S(\d+)$/.exec(label)?.[1] ?? NaN);
 
 /** 색 슬롯 0..7. 라벨 번호로 정하므로 이름을 바꾸거나 다른 화자를 합쳐도 남은 화자의 색은 그대로다. 라벨이 아니면 -1(무채색). */
 export function speakerSlot(label: string | null | undefined): number {
   const n = labelNum(label ?? "");
-  return Number.isNaN(n) ? -1 : (((n - 1) % SPEAKER_SLOTS) + SPEAKER_SLOTS) % SPEAKER_SLOTS;
+  return Number.isNaN(n) ? -1 : (((n - 1) % SPEAKER_INKS) + SPEAKER_INKS) % SPEAKER_INKS;
 }
 
 export interface SpeakerStat {
@@ -129,7 +131,7 @@ export interface SpeakerStat {
   talkSec: number;
   /** 화자가 붙은 발화 시간 전체에 대한 비율 0..1 */
   share: number;
-  /** 색 슬롯. 라벨 번호대로(speakerSlot) 두되, 이미 쓰인 슬롯이면 빈 슬롯을 쓴다 (8명이 넘으면 겹친다) */
+  /** 색 슬롯 0..15. 라벨 번호대로(speakerSlot) 두되, 이미 쓰인 슬롯이면 빈 슬롯(잉크 0..7 먼저, 다음 8..15)을 쓴다 (16명이 넘으면 겹친다) */
   slot: number;
   /** 목소리 제안. 이름을 붙인 화자는 null */
   suggested: Suggestion | null;

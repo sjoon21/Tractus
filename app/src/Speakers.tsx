@@ -1,9 +1,18 @@
 // 화자 표시·편집 (docs/desktop.md §2.1). 편집은 전부 코어(`tractus speakers`)가 하고 앱은 고친 회의를 다시 받는다.
 import { memo, useLayoutEffect, useRef, useState } from "react";
-import { fmtTime, renameRequest, suggestionText, type Segment, type SpeakerStat } from "./lib";
+import { fmtTime, renameRequest, SPEAKER_INKS, suggestionText, type Segment, type SpeakerStat } from "./lib";
 
-/** 화자 색 (SpeakerStat.slot). 화자 미상이면 무채색 */
-export const spkStyle = (slot: number | undefined) => ({ "--spk": slot === undefined || slot < 0 ? "var(--ink-3)" : `var(--spk-${slot})` }) as React.CSSProperties;
+/** 화자 색 (SpeakerStat.slot). 화자 미상이면 무채색. 슬롯 8..15는 같은 잉크에 속 빈 점(--spk-fill)·빗금 막대(--spk-bar).
+ *  세 변수를 늘 함께 정한다: 중첩된 요소가 바깥 화자의 표시를 물려받지 않게 */
+export const spkStyle = (slot: number | undefined) => {
+  const ink = slot === undefined || slot < 0 ? "var(--ink-3)" : `var(--spk-${slot % SPEAKER_INKS})`;
+  const second = slot !== undefined && slot >= SPEAKER_INKS;
+  return {
+    "--spk": ink,
+    "--spk-fill": second ? "transparent" : ink,
+    "--spk-bar": second ? `repeating-linear-gradient(135deg, ${ink} 0 2px, transparent 2px 4px)` : ink,
+  } as React.CSSProperties;
+};
 
 export type MenuTarget = { kind: "seg"; seg: Segment; anchor: HTMLElement } | { kind: "speaker"; label: string; anchor: HTMLElement };
 export type MergeAsk = { from: string; into: string };

@@ -30,8 +30,8 @@ from tractus.paths import home_dir, models_dir  # noqa: E402
 from tractus.align import MODEL_DIR as ALIGNER_DIR, MODEL_REPO as ALIGNER_REPO, MODEL_REVISION as ALIGNER_REVISION  # noqa: E402
 from tractus.align import align_segments, load_aligner  # noqa: E402
 from tractus.asr import SR, Transcriber  # noqa: E402
-from tractus.diarize import MAX_SPEAKERS, MODEL_DIR as DIARIZER_DIR, MODEL_REPO as DIARIZER_REPO, MODEL_REVISION as DIARIZER_REVISION  # noqa: E402
-from tractus.diarize import load_diarizer, split_chunks  # noqa: E402
+from tractus.diarize import FLUID, MAX_SPEAKERS, NEMOTRON, MODEL_DIR as DIARIZER_DIR, MODEL_REPO as DIARIZER_REPO, MODEL_REVISION as DIARIZER_REVISION  # noqa: E402
+from tractus.diarize import fluid_hint, load_diarizer, load_fluid, split_chunks  # noqa: E402
 from tractus.export import FORMATS as EXPORT_FORMATS, render_export, write_bytes_atomic  # noqa: E402
 from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_suggestions, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
 from tractus.store import load_glossary, meeting_dir_name, new_ulid, save_transcript, seg_text, speaker_name, write_transcript  # noqa: E402
@@ -45,6 +45,12 @@ console = Console(stderr=True, soft_wrap=True)  # 파이프(앱)에서 80칸 줄
 class Track(str, Enum):
     standard = "standard"
     lite = "lite"
+
+
+class DiarizerEngine(str, Enum):
+    auto = "auto"
+    nemotron = NEMOTRON
+    fluid = FLUID
 
 
 class Language(str, Enum):
@@ -137,7 +143,10 @@ def transcribe(
     term: list[str] = typer.Option([], "--term", "-t", help="이 회의의 용어 (참석자 이름·제품명). 여러 번 지정 가능"),
     keep_tracks: bool = typer.Option(False, "--keep-tracks", help="녹음 원본 트랙을 지우지 않고 회의 폴더의 tracks/로 옮긴다"),
     no_diarize: bool = typer.Option(False, "--no-diarize", help="화자 분리를 하지 않는다 (segment.speaker = null)"),
-    max_speakers: int = typer.Option(None, "--max-speakers", min=1, max=MAX_SPEAKERS, help=f"화자 수 상한 (1–{MAX_SPEAKERS}). 말한 시간이 많은 N명만 남기고 나머지는 가까운 화자에 붙인다"),
+    max_speakers: int = typer.Option(None, "--max-speakers", min=1, help=f"화자 수 상한. 말한 시간이 많은 N명만 남기고 나머지는 가까운 화자에 붙인다 (nemotron은 {MAX_SPEAKERS}명이 한계)"),
+    diarizer: DiarizerEngine = typer.Option(
+        DiarizerEngine.auto, "--diarizer",
+        help=f"auto(권장): nemotron으로 돌리고 {MAX_SPEAKERS}명을 모두 쓰면 fluid로 다시 돌린다 | nemotron | fluid(Swift 헬퍼 tractus-diar, 9명 이상)"),
     no_align: bool = typer.Option(False, "--no-align", help="단어 타이밍을 만들지 않는다 (segment.words = null, 나중에 `tractus align`)"),
     progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
 ) -> None:
@@ -147,7 +156,7 @@ def transcribe(
         raise typer.BadParameter("녹음 파일 또는 --recording 폴더 중 하나만 지정하세요")
     try:
         source = _source_from_file(file) if file else _source_from_recording(recording)
-        _transcribe(source, title, track, language, term, keep_tracks, not no_diarize, max_speakers, not no_align)
+        _transcribe(source, title, track, language, term, keep_tracks, not no_diarize, max_speakers, not no_align, diarizer)
     except audio.FFmpegError as e:
         Events.emit("error", message=str(e))
         console.print(f"[red]오디오 처리 실패:[/red] {escape(str(e))}")
@@ -159,7 +168,7 @@ def transcribe(
 
 def _transcribe(
     source: Source, title: str | None, track: Track | None, language: Language, term: list[str], keep_tracks: bool, diarize: bool, max_speakers: int | None,
-    align: bool = True,
+    align: bool = True, engine: DiarizerEngine = DiarizerEngine.auto,
 ) -> None:
     audio.require_ffmpeg()
     meetings = home_dir() / "meetings"
@@ -179,7 +188,7 @@ def _transcribe(
         console.print(f"이어서 진행합니다: {job.dir.name} ({len(job.done())}/{len(job.chunks)} 청크 완료)")
         pcm = audio.decode(source.paths)
     else:
-        job, pcm = _new_job(source, meetings, digest, title, track or recommended_track(), language, term, diarize, max_speakers)
+        job, pcm = _new_job(source, meetings, digest, title, track or recommended_track(), language, term, diarize, max_speakers, engine)
 
     _run(job, pcm, source, keep_tracks, align)
 
@@ -199,19 +208,51 @@ def _free_mlx() -> None:
     mx.clear_cache()
 
 
-def _diarize(pcm, max_speakers: int | None) -> tuple[list, dict | None]:
-    """회의 전체 화자 분리 → (turn 목록, transcript.json의 diarization). 모델이 없거나 실패하면 화자 없이 진행한다."""
+def _run_diarizer(engine: str, diarizer, pcm, max_speakers: int | None, fallback: str) -> tuple[list, dict] | None:
+    """→ (turn 목록, diarization). 실패하면 경고하고 None. fallback: 실패 뒤 어떻게 하는지 (경고 문구)."""
     try:
-        diarizer = load_diarizer(models_dir())
-        if diarizer is None:
-            path = models_dir() / DIARIZER_DIR
-            _warn("diarizer_missing", f"화자 분리 모델이 없어 화자 분리 없이 전사합니다: {path}\n  hf download {DIARIZER_REPO} --revision {DIARIZER_REVISION} --local-dir {path}")
-            return [], None
-        Events.emit("stage", stage="diarize")
+        Events.emit("stage", stage="diarize", engine=engine)
         return diarizer.diarize(pcm, max_speakers), diarizer.info
     except Exception as e:  # noqa: BLE001 — 화자 분리 실패가 전사를 막지 않는다
-        _warn("diarizer_failed", f"화자 분리에 실패해 화자 분리 없이 전사합니다: {e}")
+        _warn("diarizer_failed", f"화자 분리({engine})에 실패해 {fallback}: {e}")
+        return None
+
+
+def _diarize(pcm, max_speakers: int | None, engine: DiarizerEngine = DiarizerEngine.auto) -> tuple[list, dict | None]:
+    """회의 전체 화자 분리 → (turn 목록, transcript.json의 diarization). 모델이 없거나 실패하면 화자 없이 진행한다.
+
+    auto: Nemotron을 돌리고 8채널을 모두 썼으면(9명 이상일 수 있음) fluid로 다시 돌린다. --max-speakers가 8 이하면 그대로.
+    fluid: 헬퍼·모델이 없거나 실패하면 Nemotron으로 돌린다."""
+    models = models_dir()
+    if engine is DiarizerEngine.fluid:
+        fluid = load_fluid(models)
+        if fluid is None:
+            _warn("fluid_missing", f"fluid 화자 분리 헬퍼나 모델이 없어 Nemotron으로 화자 분리합니다:\n{fluid_hint(models)}")
+        elif res := _run_diarizer(FLUID, fluid, pcm, max_speakers, "Nemotron으로 다시 합니다"):
+            return res
+
+    try:
+        nemotron = load_diarizer(models)
+    except Exception as e:  # noqa: BLE001
+        _warn("diarizer_failed", f"화자 분리 모델을 올리지 못해 화자 분리 없이 전사합니다: {e}")
         return [], None
+    if nemotron is None:
+        path = models / DIARIZER_DIR
+        _warn("diarizer_missing", f"화자 분리 모델이 없어 화자 분리 없이 전사합니다: {path}\n  hf download {DIARIZER_REPO} --revision {DIARIZER_REVISION} --local-dir {path}")
+        return [], None
+    res = _run_diarizer(NEMOTRON, nemotron, pcm, max_speakers, "화자 분리 없이 전사합니다")
+    if res is None:
+        return [], None
+    capped = len({spk for _, _, spk in res[0]}) >= MAX_SPEAKERS and (max_speakers is None or max_speakers > MAX_SPEAKERS)
+    if engine is not DiarizerEngine.auto or not capped:
+        return res
+    nemotron = None
+    _free_mlx()  # Nemotron을 내린 뒤 헬퍼(CoreML, 별도 프로세스)를 돌린다
+    fluid = load_fluid(models)
+    if fluid is None:
+        _warn("diarizer_cap", f"화자가 {MAX_SPEAKERS}명을 넘을 수 있지만 fluid 헬퍼나 모델이 없어 {MAX_SPEAKERS}명으로 나눕니다:\n{fluid_hint(models)}")
+        return res
+    return _run_diarizer(FLUID, fluid, pcm, max_speakers, f"Nemotron 결과({MAX_SPEAKERS}명)를 씁니다") or res
 
 
 def _suggest_voices(pcm, turns: list[dict]) -> dict:
@@ -288,14 +329,15 @@ def _align(d: Path, t: dict, pcm) -> None:
 
 
 def _new_job(
-    source: Source, meetings: Path, digest: str, title: str | None, track: Track, language: Language, terms: list[str], diarize: bool, max_speakers: int | None
+    source: Source, meetings: Path, digest: str, title: str | None, track: Track, language: Language, terms: list[str], diarize: bool, max_speakers: int | None,
+    engine: DiarizerEngine = DiarizerEngine.auto,
 ):
     vad_dir, _ = local_model(VAD_MODEL), local_model(MODELS[track])  # 오래 걸리는 작업 전에 모델부터 확인
     with console.status("오디오 디코딩·VAD·화자 분리 중…"):
         pcm = audio.decode(source.paths)
         Events.emit("stage", stage="vad")
         chunks = find_chunks(pcm, vad_dir)
-        turns, diarization = _diarize(pcm, max_speakers) if diarize else ([], None)
+        turns, diarization = _diarize(pcm, max_speakers, engine) if diarize else ([], None)
         _free_mlx()  # 화자 분리 모델을 내린 뒤 ASR 모델을 올린다
         chunks = split_chunks(chunks, turns)
         suggestions = _suggest_voices(pcm, [{"start": s, "end": e, "speaker": spk} for s, e, spk in turns])

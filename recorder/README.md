@@ -7,14 +7,16 @@
 | `mic.wav` | `AVAudioEngine` 입력 노드 tap |
 | `system.wav` | Core Audio process tap(`CATapDescription` + `AudioHardwareCreateProcessTap`) → private aggregate device → IOProc |
 
-요구 사항: macOS 14.4 이상, Apple Silicon, Xcode(Swift 5.10 이상).
+요구 사항: macOS 14.4 이상, Apple Silicon, Xcode(Swift 6.2 이상. 패키지 traits를 쓴다). 소스는 Swift 5 언어 모드로 빌드한다.
+
+같은 패키지에 화자 분리 헬퍼 `tractus-diar`도 있다. 아래 [tractus-diar](#tractus-diar--9명-이상-화자-분리-헬퍼) 절을 본다.
 
 ## 빌드
 
 ```bash
 cd recorder
-swift build -c release     # → recorder/.build/release/tractus-rec
-swift test                 # 단위 테스트 + --fake E2E (권한 불필요)
+swift build -c release     # → recorder/.build/release/tractus-rec, tractus-diar
+swift test                 # 단위 테스트 + --fake E2E (권한 불필요) + tractus-diar (모델이 없으면 실제 모델 테스트만 건너뜀)
 ```
 
 `Info.plist`(`NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`)는 링커 옵션 `-sectcreate __TEXT __info_plist`로 실행 파일 안에 들어간다. 확인 방법은 다음과 같다.
@@ -124,6 +126,57 @@ tractus-rec check
    - USB 마이크나 집계(aggregate) 장치를 입력으로 골라 `--echo-cancel`로 시작해 본다. 음성 처리가 실패하더라도 `echo_cancel_failed` 경고만 나오고 `tracks`에 `mic`이 남아야 한다.
 10. 대면 회의를 `--no-system`으로 녹음한다. 여러 명이 Mac 주위에 앉아 30분 이상 이야기하고, 멀리 앉은 사람 목소리까지 `mic.wav`에 들어가는지 확인한다.
 11. 실제 화상회의 1시간을 녹음해 끊김과 두 트랙의 싱크를 확인한다(`docs/desktop.md` §4 판정 기준).
+
+## tractus-diar — 9명 이상 화자 분리 헬퍼
+
+Nemotron 3 Diarization은 화자 8명이 상한이다. `tractus-diar`는 [FluidAudio](https://github.com/FluidInference/FluidAudio) v0.17.5(커밋 `0b1f462`)의 `OfflineDiarizerManager`(pyannote community-1 파이프라인을 Core ML로 옮긴 것: 분할 → WeSpeaker 임베딩 → PLDA·VBx 군집)를 돌린다. 화자 수 상한이 없다. Python 코어가 `transcribe --diarizer auto|fluid`일 때 하위 프로세스로 부른다.
+
+| 항목 | 값 |
+| --- | --- |
+| 코드 | FluidAudio Apache-2.0 (`Package.resolved`로 고정). NeMo 텍스트 정규화 바이너리는 `traits: []`로 빼서 링크하지 않는다 |
+| 모델 | `FluidInference/speaker-diarization-coreml` revision `df2625ac79a7ac6b65ad868fee6d80f320da4232` (FluidAudio가 고정), 21MB |
+| 모델 라이선스 | CC-BY-4.0 (pyannote community-1, WeSpeaker, BUT Speech@FIT PLDA, Fluid Inference 변환). 출처 표기는 저장소 `NOTICE` |
+| 로컬 경로 | `models/speaker-diarization` (FluidAudio가 정한 폴더 이름) |
+
+### 모델 받기 (한 번)
+
+```bash
+.build/release/tractus-diar download --models ../models/speaker-diarization
+```
+
+- 라이선스 범위(CC-BY-4.0) 안의 파일만 받는다: `Segmentation`·`FBank`·`Embedding`·`PldaRho.mlmodelc`, `plda-parameters.json`, `xvector-transform.json`, `provenance.json`(SHA-256 목록). 같은 저장소의 레거시 파일(`pyannote_segmentation`, `wespeaker*`)은 받지 않는다.
+- revision은 `.fluidaudio-revision`에 적힌다. 다시 실행하면 받지 않고 열어 보기만 한다.
+- `--models`에는 `speaker-diarization` 폴더 자체나 그 부모를 준다. 어느 쪽이든 `<부모>/speaker-diarization`에 둔다.
+
+### 실행
+
+```bash
+.build/release/tractus-diar run --audio <16kHz mono wav> --models ../models/speaker-diarization [--max-speakers N]
+```
+
+- **네트워크를 쓰지 않는다**(`ModelHub.offlineMode = true`). 모델이 없거나 revision이 다르거나 깨졌으면 받지 않고 `error`로 끝난다.
+- stdout에는 JSON Lines만 나온다. 로그는 stderr로 간다.
+
+  ```json
+  {"event":"progress","done":120,"total":2694}
+  {"event":"result","turns":[[0,7.67,"S1"],[7.67,12.33,"S2"]],"speakers":2,"engine":"fluid","model":"FluidInference/speaker-diarization-coreml@df2625ac79a7ac6b65ad868fee6d80f320da4232","elapsed":0.57}
+  ```
+
+  - `progress`는 분할 청크 기준으로 약 5%마다 낸다.
+  - `turns`는 겹치지 않는 `[시작 초, 끝 초, 화자]`이고 시작 순이다. 라벨은 처음 말한 순서대로 `S1`, `S2`, …다.
+  - `elapsed`는 프로세스 시작부터 잰 초(모델 로드 포함)다.
+  - 실패하면 `{"event":"error","message":…}` 하나를 내고 종료 코드 1로 끝난다.
+- 설정은 FluidAudio 기본값(`OfflineDiarizerConfig.default`, community-1 설정: 군집 임계값 0.6, Fa 0.07, Fb 0.8, 창 10초, step 0.2)이다. `--max-speakers`만 `withSpeakers(max:)`로 넘긴다.
+- 실행 파일 옆의 `FluidAudio_FluidAudio.bundle`(TTS 발음 사전)은 화자 분리에 쓰지 않는다. 헬퍼만 복사해도 동작한다.
+
+### 실측 (2026-10-07, M3 16GB, release)
+
+| 입력 | 결과 | 시간 |
+| --- | --- | --- |
+| 가상 대화 43초 (`say` Yuna·Grandpa 번갈아 6발화) | 2명, 경계 오차 0.4초 이내 | 첫 실행 4.3초(Core ML 컴파일), 이후 0.57초 |
+| AI Hub 90분 세션(화자 17명, 로컬 전용) | 11명 | 32.3초 (RTF 0.006), 최대 RSS 0.71GB, peak footprint 0.90GB |
+
+정확도(DER·confusion)는 `bench/diar_eval.py der`가 잰다. AI Hub 17명 세션 confusion 6.9%(Nemotron 28.5%), 4세션 합 4.7%(Nemotron 12.6%). 표는 ARCHITECTURE.md §2.4.1. 실행 시 네트워크 차단(`sandbox-exec … (deny network*)`)에서도 위와 같이 끝났다.
 
 ## 참고
 

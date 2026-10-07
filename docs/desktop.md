@@ -96,7 +96,7 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 | `memos.json` | 녹음 중 메모·북마크 `[{"t": 초, "kind": "memo"\|"bookmark", "text": str\|null}]`. `transcript.md`에도 시각 순으로 끼워 넣는다 |
 | `tractus transcribe --recording <dir>` | `recording.json`의 트랙들을 FFmpeg `amix`로 섞어 전사한다. `marks`는 `memos.json`으로 옮긴다. 성공하면 녹음 폴더를 지운다(`--keep-tracks`면 회의 폴더의 `tracks/`로 옮김). 회의 시각은 `started_at` |
 | `--progress-json` | `transcribe`·`summarize`가 stdout에 JSON Lines를 출력한다. 사람용 출력은 원래대로 stderr로 보낸다 |
-| 화자 분리 (2026-10-04) | `transcribe`가 VAD 다음에 화자 분리를 한다(기본 켜짐, `--no-diarize`로 끔, `--max-speakers N`으로 상한 1–8). `transcript.json` schema_version 2: `segments[].speaker`(`"S1"`… 또는 null), 최상위 `speakers: {"S1": {"name": null}}`, `diarization`(끄거나 모델이 없으면 null). 표시 이름 = `name`, 없으면 라벨, `speaker`가 null이면 md·vtt에 표시 안 함(앱은 화자 있는 회의에서 "화자 미상" 칩으로 보여 주고 화자를 고를 수 있게 한다). schema_version 1 회의는 `speakers`가 없다 (ARCHITECTURE.md §6) |
+| 화자 분리 (2026-10-04) | `transcribe`가 VAD 다음에 화자 분리를 한다(기본 켜짐, `--no-diarize`로 끔, `--max-speakers N`으로 상한. v3.15부터 상한 없음, Nemotron은 8명까지). 엔진은 `--diarizer auto|nemotron|fluid`(기본 auto: Nemotron이 8명을 모두 쓰면 Swift 헬퍼 `tractus-diar`로 다시 나눈다. 앱은 넘기지 않으므로 auto). 라벨은 `S1`…`Sn`이고 n은 8을 넘을 수 있다(앱 화자 색은 16칸: 잉크 8개, 9번째 슬롯부터 같은 잉크에 속 빈 점·빗금 막대, 16명이 넘으면 겹친다). `transcript.json` schema_version 2: `segments[].speaker`(`"S1"`… 또는 null), 최상위 `speakers: {"S1": {"name": null}}`, `diarization`(끄거나 모델이 없으면 null). 표시 이름 = `name`, 없으면 라벨, `speaker`가 null이면 md·vtt에 표시 안 함(앱은 화자 있는 회의에서 "화자 미상" 칩으로 보여 주고 화자를 고를 수 있게 한다). schema_version 1 회의는 `speakers`가 없다 (ARCHITECTURE.md §6) |
 | `tractus speakers` | 화자 편집. transcript.json을 고치고 md·vtt를 다시 쓴 뒤 검색 색인을 갱신한다. 오디오는 건드리지 않는다. 아래 §2.1 |
 | 표시 텍스트 (Phase 5) | 어디서나 `corrected_text`가 null이 아니면 그것, 아니면 `text`(코어 `store.seg_text`). md·vtt·요약 프롬프트·MCP·색인·CLI 검색·내보내기가 모두 따른다. 앱도 같은 규칙으로 표시한다 |
 | `tractus segments` | 텍스트 편집. 아래 §2.2 |
@@ -113,7 +113,10 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 ```jsonc
 {"event":"stage","stage":"decode"}            // decode | vad | diarize | voices | encode | load_model | transcribe | align | index | summarize
 {"event":"progress","done":37,"total":145}
-{"event":"warning","code":"diarizer_missing","message":"…"}   // 화자 분리 모델이 없음 → 화자 없이 계속 (diarizer_failed: 실패 → 화자 없이 계속)
+{"event":"stage","stage":"diarize","engine":"nemotron"}       // engine: nemotron | fluid. auto가 다시 나누면 diarize가 두 번 (nemotron → fluid)
+{"event":"warning","code":"diarizer_missing","message":"…"}   // 화자 분리 모델이 없음 → 화자 없이 계속 (diarizer_failed: 실패 → 화자 없이 계속. fluid가 실패했으면 Nemotron 결과로 계속)
+{"event":"warning","code":"diarizer_cap","message":"…"}       // auto: 8명을 모두 썼지만 tractus-diar 헬퍼나 모델이 없음 → Nemotron 결과(8명)로 계속. message에 빌드·받기 명령
+{"event":"warning","code":"fluid_missing","message":"…"}      // --diarizer fluid인데 헬퍼나 모델이 없음 → Nemotron으로 계속
 {"event":"warning","code":"aligner_missing","message":"…"}    // 단어 정렬 모델이 없음 → words null로 완료 (aligner_failed: 실패 → words null로 완료)
 {"event":"warning","code":"voices_model_missing","message":"…"} // 등록된 목소리가 있는데 모델이 없음 → 제안 없이 계속 (voices_failed: 실패 → 제안 없이 계속)
 {"event":"warning","code":"duplicate","message":"…"}           // 이미 전사된 파일 → 바로 기존 회의의 done이 이어진다 (종료 코드 0)
@@ -121,7 +124,7 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 {"event":"error","message":"…"}               // 종료 코드 1
 ```
 
-- `diarize` 단계는 모델이 있을 때만 나온다(84분 회의 약 14초). 이어하기에서는 다시 하지 않는다.
+- `diarize` 단계는 모델이 있을 때만 나온다(84분 회의 약 14초, fluid는 90분 약 22초). auto가 fluid로 다시 나누면 `engine`만 다른 `diarize`가 한 번 더 나온다. 이어하기에서는 다시 하지 않는다(처음 쓴 엔진이 `.job.json`에 남는다).
 - `voices` 단계는 등록된 목소리가 있고 화자 분리를 했을 때만 나온다(화자당 구간 3개 임베딩, onnxruntime CPU). 등록된 사람이 없으면 단계도 경고도 없다. 이어하기에서는 다시 하지 않는다.
 - `align` 단계는 `transcribe` 다음, `index` 전에 나온다(모델이 있고 `--no-align`이 아닐 때). `progress`는 세그먼트 단위다(`done`/`total`). 44.7분 회의 약 66초.
 - `align` 중에 중단하면 전사는 이미 저장돼 있다. `error` 메시지에 `tractus align <id>` 안내가 있고 종료 코드는 130이다.
@@ -149,7 +152,7 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 {"meeting_id":"01K6X3…","speakers":[
   {"label":"S1","name":"김민수","display":"김민수","suggested":null,"segments":31,"talk_sec":812.4},
   {"label":"S2","name":null,"display":"S2","suggested":{"person_id":"01K…","name":"홍길동","score":0.82},"segments":18,"talk_sec":402.0}],
- "diarization":{"model":"mlx-community/Nemotron-3-Diarization","revision":"59ed2dbf…","params":{…}}}   // 화자 분리 안 했으면 speakers [], diarization null
+ "diarization":{"engine":"nemotron","model":"mlx-community/Nemotron-3-Diarization","revision":"59ed2dbf…","params":{…}}}   // 화자 분리 안 했으면 speakers [], diarization null. engine: nemotron | fluid(model FluidInference/speaker-diarization-coreml, revision df2625ac…). 예전 회의에는 engine이 없다
 ```
 
 ### 2.2 `tractus segments <회의> edit` (텍스트 편집)
