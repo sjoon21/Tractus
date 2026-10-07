@@ -25,6 +25,17 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 - **화자 분리 엔진·평활 파라미터를 바꾸면 AI Hub(로컬, 지표만)와 가상 음성(macOS `say`) 둘 다에서 DER·confusion을 다시 잰다.** 백업 엔진은 FluidAudio community-1이고, `Diarizer.diarize(pcm) → [(시작, 끝, "S1"), …]`만 맞추면 된다.
 - 가상 음성은 `say -v Yuna`와 `say -v "Grandpa (한국어(한국))"`처럼 **엔진이 다른** 음성을 쓴다. 그냥 `Eddy`처럼 쓰면 영어 음성이 골라져 한국어가 거의 빈 오디오가 된다. Grandpa·Grandma처럼 같은 엔진 음성은 한 화자로 합쳐질 수 있다.
 
+## 단어 정렬 모델 (2026-10-06)
+
+| 모델 | revision | 로컬 경로 | 라이선스 |
+| --- | --- | --- | --- |
+| `mlx-community/Qwen3-ForcedAligner-0.6B-8bit` | `0e1a68e91d815300c7c9754b2a7639378b23db15` | `models/qwen3-forcedaligner-0.6b-8bit` | Apache-2.0 |
+
+- `mlx_audio.stt.utils.load`로 프로세스 안에서 돈다. ASR 모델을 내린 뒤(`_free_mlx`) 세그먼트마다 1회 돌리고, 끝나면 내린 뒤 색인한다.
+- **soynlp(LGPL-3) 금지.** mlx-audio의 `tokenize_korean`이 soynlp를 불러오므로 `align.Aligner`가 `aligner_processor.tokenize_korean`을 `align.tokenize`(공백 토큰마다 하나)로 바꿔 끼우고 `language="Korean"`으로 부른다. `tokenize_space_lang`은 한자를 글자마다 나눠 단어 수가 어긋나므로 쓰지 않는다.
+- **불변식:** `words`가 null이 아니면 `words[k]["text"] == seg_text(s).split()[k]`이다. 텍스트를 바꾸는 코드는 `align.remap_words`로 `words`를 함께 옮긴다(`store.apply_text_edits`).
+- 모델이 없거나 실패하면 `words`는 null이고 `aligner_missing`/`aligner_failed` 경고만 낸다. `tractus align <회의>`가 나중에 채운다.
+
 ## ASR 파이프라인 기본값 (Phase 0 근거)
 
 - **언어는 자동 감지(`language=None`)가 기본이다.** `Korean`으로 고정하면 영어 위주 발화를 한국어로 번역하거나 반복 루프에 빠진다.
@@ -48,7 +59,8 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 | `vad.py` | VAD 발화 구간 → 30초 이하 청크 |
 | `diarize.py` | 화자 분리(Nemotron 3), 단일 화자 평활(`smooth`), 화자 경계로 청크 나누기(`split_chunks`) |
 | `asr.py` | `Transcriber`: 청크 전사, 토큰 상한, 반복 루프 재시도·보정 |
-| `store.py` | 회의 폴더, `.job.json`·`.chunks.jsonl`(이어하기), transcript.json/md/vtt (schema_version 2: 화자), `apply_speaker_edit`, `apply_text_edits`, `seg_text`(표시 텍스트 = `corrected_text` 우선), `add_glossary_terms` |
+| `align.py` | 단어 정렬(Qwen3-ForcedAligner): `tokenize`(soynlp 대체), `Aligner.align`, `align_segments`, 편집 뒤 시각 옮기기 `remap_words` |
+| `store.py` | 회의 폴더, `.job.json`·`.chunks.jsonl`(이어하기), transcript.json/md/vtt (schema_version 2: 화자), `apply_speaker_edit`, `apply_text_edits`(words도 옮김), `seg_text`(표시 텍스트 = `corrected_text` 우선), `add_glossary_terms` |
 | `export.py` | 내보내기 txt·md·srt·vtt·csv(utf-8-sig)·docx(python-docx, `w:eastAsia`)·bundle(zip) |
 | `llm.py` | 공급자 표(`PROVIDERS`), `complete_json`: strict JSON + Pydantic 검증 + 1회 재요청, `stream_chat`: 평문 스트리밍 |
 | `summarize.py` | 요약 스키마, segment_ids 검증, summary.md/json |
@@ -58,7 +70,7 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 | `embed.py` | Qwen3-Embedding-0.6B (공식 가중치 bf16, mlx-lm), `LazyEmbedder` |
 | `index.py` | SQLite FTS5 음절 bigram + sqlite-vec, 증분 동기화, strict 우선 + 가중 RRF |
 | `mcp_server.py` | MCP 서버 7개 도구 (`build_server(home, embedder)`) |
-| `cli.py` | `tractus transcribe`, `summarize`, `ask`, `index`, `search`, `speakers`, `segments`, `glossary`, `export`, `mcp` |
+| `cli.py` | `tractus transcribe`, `align`, `summarize`, `ask`, `index`, `search`, `speakers`, `segments`, `glossary`, `export`, `mcp` |
 
 환경변수는 `.env.example`에 모두 있다. 개발 중에는 저장소 루트의 `.env`(기본값)와 `.env.local`(API 키)을 CLI가 읽는다. 우선순위는 셸 > `.env.local` > `.env`.
 
@@ -97,7 +109,8 @@ uv run tractus glossary add 쿠버네티스 "Project Atlas"  # 용어집 추가 
 uv run tractus export <meeting_id> --format docx --out 회의.docx [--force]   # txt|md|srt|vtt|csv|docx|bundle → {"path": …}
 uv run python bench/search_eval.py                  # 검색 평가 (가상)
 uv run python bench/ask_eval.py                     # 질의 평가 (가상 회의만 원격 LLM으로)
-uv run tractus transcribe <파일>                    # 전사
+uv run tractus transcribe <파일> [--no-align]       # 전사 (+ 단어 타이밍)
+uv run tractus align <meeting_id> [--force]         # 단어 타이밍 채우기 → {"aligned": N, "failed": M, "skipped": K}
 
 cd bench && uv sync                                 # 벤치마크 의존성
 uv run python run.py qwen3-1.7b hike --lang auto    # 실험 1회 (모델 × 데이터셋 × 조건)

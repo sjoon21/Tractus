@@ -55,7 +55,7 @@ UPSTAGE_API_KEY=up_...
 
 ### 모델 받기
 
-ASR 모델 하나(트랙에 맞게), VAD 모델, 화자 분리 모델을 받습니다. `hf`는 `huggingface_hub` CLI입니다(`uv tool install "huggingface_hub[cli]"`).
+ASR 모델 하나(트랙에 맞게), VAD 모델, 화자 분리 모델, 단어 정렬 모델을 받습니다. `hf`는 `huggingface_hub` CLI입니다(`uv tool install "huggingface_hub[cli]"`).
 
 ```bash
 export TRACTUS_MODELS_DIR=$PWD/models   # 모델 위치. 생략하면 ~/Tractus/models
@@ -68,6 +68,8 @@ hf download mlx-community/Qwen3-ASR-0.6B-8bit --local-dir $TRACTUS_MODELS_DIR/qw
 hf download mlx-community/silero-vad-v6 --local-dir $TRACTUS_MODELS_DIR/silero-vad-v6
 # 화자 분리 (199 MB, 선택 — 없으면 화자 없이 전사함). revision을 고정해서 받습니다
 hf download mlx-community/Nemotron-3-Diarization --revision 59ed2dbfc1346dcea9d423c71306a3a2499c568f --local-dir $TRACTUS_MODELS_DIR/nemotron-3-diarization
+# 단어 타이밍 (1.2 GB, 선택 — 없으면 세그먼트 단위로만 이동). revision을 고정해서 받습니다
+hf download mlx-community/Qwen3-ForcedAligner-0.6B-8bit --revision 0e1a68e91d815300c7c9754b2a7639378b23db15 --local-dir $TRACTUS_MODELS_DIR/qwen3-forcedaligner-0.6b-8bit
 # 검색용 임베딩 (1.1 GB, 선택 — 없으면 키워드 검색만 함). revision을 고정해서 받습니다
 hf download Qwen/Qwen3-Embedding-0.6B --revision 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3 --local-dir $TRACTUS_MODELS_DIR/qwen3-embedding-0.6b
 ```
@@ -76,6 +78,7 @@ hf download Qwen/Qwen3-Embedding-0.6B --revision 97b0c614be4d77ee51c0cef4e5f07c0
 | --- | --- | --- |
 | [mlx-community/silero-vad-v6](https://huggingface.co/mlx-community/silero-vad-v6) | 무음 기준 청크 분할 (Silero VAD v6의 MLX 포팅) | MIT |
 | [mlx-community/Nemotron-3-Diarization](https://huggingface.co/mlx-community/Nemotron-3-Diarization) | 화자 분리 (최대 8명, mlx-audio로 실행) | [OpenMDW-1.1](https://openmdw.ai/license/1-1/) |
+| [mlx-community/Qwen3-ForcedAligner-0.6B-8bit](https://huggingface.co/mlx-community/Qwen3-ForcedAligner-0.6B-8bit) | 단어 타이밍 (재생 중 단어 강조, 단어 클릭 이동) | Apache-2.0 |
 | [Qwen/Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) | 의미 검색 (공식 가중치를 mlx-lm으로 실행) | Apache-2.0 |
 
 모델 라이선스 고지는 [NOTICE](NOTICE)에 있습니다.
@@ -112,11 +115,13 @@ FFmpeg가 읽는 형식은 모두 받습니다: 오디오(m4a, mp3, wav, aac, fl
 | `--recording <폴더>` | 데스크톱 녹음기(`tractus-rec`)가 만든 녹음 폴더를 전사 (마이크·시스템 트랙을 섞음). 끝나면 녹음 폴더를 정리하고, `--keep-tracks`면 원본 트랙을 `tracks/`에 보관 |
 | `--no-diarize` | 화자 분리를 하지 않습니다 (모델이 없으면 자동으로 이렇게 됩니다) |
 | `--max-speakers N` | 화자 수 상한(1–8). 말한 시간이 많은 N명만 남기고 나머지는 가까운 화자에 붙입니다 |
+| `--no-align` | 단어 타이밍을 만들지 않습니다 (모델이 없으면 자동으로 이렇게 됩니다) |
 | `--progress-json` | 진행 상황을 stdout에 JSON Lines로 출력 (데스크톱 앱용, `docs/desktop.md`) |
 
 - **용어집:** `~/Tractus/glossary.md`에 `- 용어` 형식으로 적어 두면 모든 회의에 적용됩니다. `-t`로 준 용어와 합쳐서 전달됩니다.
 - **이어하기:** 중간에 Ctrl+C로 멈추거나 종료돼도 같은 명령을 다시 실행하면 끝난 청크 다음부터 이어서 진행합니다.
 - **중복 방지:** 이미 전사한 파일(같은 SHA-256)은 다시 전사하지 않습니다. 다시 하려면 회의 폴더를 지우세요.
+- **단어 타이밍:** 전사가 끝나면 세그먼트 텍스트를 오디오에 맞춰 단어마다 시각을 붙입니다(`transcript.json`의 `words`, 1시간 회의 약 1.5분). 앱은 이것으로 재생 중인 단어를 강조하고, 단어를 클릭하면 그 단어부터 재생합니다. 예전 회의는 `uv run tractus align 01K6X3`으로 채웁니다(`--force`: 이미 있는 것도 다시).
 - **화자 분리:** 전사 전에 회의 전체에서 목소리로 화자를 나눠 `S1`, `S2` …로 붙입니다(최대 8명). 자동 추정이라 틀릴 수 있으니 아래 명령으로 이름을 붙이고 고칩니다.
 
 ### 화자 이름 붙이기·고치기

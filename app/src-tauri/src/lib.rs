@@ -234,25 +234,31 @@ fn rec_send(state: State<'_, AppState>, cmd: String, text: Option<String>) -> Re
     stdin.write_all(line.as_bytes()).and_then(|_| stdin.flush()).map_err(|e| format!("녹음 헬퍼에 보낼 수 없습니다: {e}"))
 }
 
-/// 전사·요약 작업. 이벤트는 "job"으로 보내고 {job, kind}를 덧붙인다. job은 프론트엔드가 만든 ID.
+/// 작업 종류 → tractus 인수. 대상은 종류마다 검사한다
+fn job_args(home: &Path, kind: &str, target: &str) -> Result<Vec<String>, String> {
+    let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect();
+    match kind {
+        "transcribe" => {
+            // 녹음 폴더만 받는다 (임의 경로 전사 방지. 성공하면 코어가 이 폴더를 지운다)
+            if !meetings::is_recording_dir(home, Path::new(target)) {
+                return Err(format!("녹음 폴더가 아닙니다: {target}"));
+            }
+            Ok(args(&["transcribe", "--recording", target, "--progress-json"]))
+        }
+        "summarize" if is_meeting_id(target) => Ok(args(&["summarize", target, "--progress-json"])),
+        // 단어 타이밍 (Phase 6.1). words가 없는 세그먼트만 맞춘다. 정렬하는 동안 앱에서 고친 문장은 코어가 덮어쓰지 않는다
+        "align" if is_meeting_id(target) => Ok(args(&["align", target, "--progress-json"])),
+        // 파일 가져오기 (Phase 5.5). 원본 파일은 건드리지 않는다. 이미 전사한 파일이면 코어가 duplicate 경고 + done
+        "import" => import_args(Path::new(target)),
+        _ => Err(format!("잘못된 작업: {kind} {target}")),
+    }
+}
+
+/// 전사·요약·단어 타이밍 작업. 이벤트는 "job"으로 보내고 {job, kind}를 덧붙인다. job은 프론트엔드가 만든 ID.
 #[tauri::command]
 fn job_start(app: AppHandle, state: State<'_, AppState>, kind: String, target: String, job: String) -> Result<(), String> {
     let s = state.settings();
-    let cmd = match kind.as_str() {
-        "transcribe" => {
-            // 녹음 폴더만 받는다 (임의 경로 전사 방지. 성공하면 코어가 이 폴더를 지운다)
-            if !meetings::is_recording_dir(&s.home(), Path::new(&target)) {
-                return Err(format!("녹음 폴더가 아닙니다: {target}"));
-            }
-            s.tractus(&["transcribe", "--recording", &target, "--progress-json"])
-        }
-        "summarize" if is_meeting_id(&target) => {
-            s.tractus(&["summarize", &target, "--progress-json"])
-        }
-        // 파일 가져오기 (Phase 5.5). 원본 파일은 건드리지 않는다. 이미 전사한 파일이면 코어가 duplicate 경고 + done
-        "import" => s.tractus(&import_args(Path::new(&target))?),
-        _ => return Err(format!("잘못된 작업: {kind} {target}")),
-    };
+    let cmd = s.tractus(&job_args(&s.home(), &kind, &target)?);
     let tag = json!({"job": job, "kind": kind}).as_object().unwrap().clone();
     // stdin은 쓰지 않으므로 바로 닫는다
     drop(procs::spawn_streaming(cmd, tag, move |ev| {
@@ -613,6 +619,17 @@ mod tests {
         std::fs::write(dir.join(".m4a"), b"x").unwrap();
         assert!(import_args(&dir.join(".m4a")).is_err()); // 확장자가 아니라 숨김 파일 이름
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn job_command_args() {
+        let home = Path::new("/h");
+        assert_eq!(job_args(home, "align", "01ABC").unwrap(), ["align", "01ABC", "--progress-json"]);
+        assert_eq!(job_args(home, "summarize", "01ABC").unwrap(), ["summarize", "01ABC", "--progress-json"]);
+        assert_eq!(job_args(home, "transcribe", "/h/recordings/01REC").unwrap(), ["transcribe", "--recording", "/h/recordings/01REC", "--progress-json"]);
+        for (kind, target) in [("align", "../x"), ("align", ""), ("align", "01ABC --force"), ("summarize", "a/b"), ("transcribe", "/etc"), ("rm", "01ABC")] {
+            assert!(job_args(home, kind, target).is_err(), "{kind} {target}");
+        }
     }
 
     #[test]

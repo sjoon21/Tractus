@@ -40,11 +40,22 @@
 
 | 항목 | 접근 | 참고 코드 | 일수 | 완료 기준 |
 | --- | --- | --- | --- | --- |
-| **6.1 단어 타임스탬프** | `_run`에서 ASR 다음, `_free_mlx()` 뒤에 `align` 단계를 넣는다. 모델은 Qwen3-ForcedAligner-0.6B-8bit(Apache-2.0, revision 고정)이다. `tokenize_korean`을 `tokenize_space_lang`으로 바꿔 **soynlp(LGPL-3.0)를 피한다.** 입력은 60초에서 자른다. 단어 수가 맞지 않으면 `words`를 null로 둔다. 텍스트를 편집하면 difflib으로 시간을 옮기고 `approx`로 표시한다. `tractus align`으로 기존 회의를 채우고 `--no-align`으로 끌 수 있게 한다 | mlx-audio(MIT, 7994★) `qwen3_forced_aligner.py` L96-145, L637-760 (설치본 0.5.7). bbc/react-transcript-editor `stt-align-node.js` L102-185 (아이디어. 그대로 쓰면 한글이 지워진다) | 2.5 | 실제 대면 회의 30분으로 검증한다. 1시간 회의 정렬 시간이 90초 이하다(실측 RTF 0.02) |
+| **6.1 단어 타임스탬프** | `_run`에서 ASR 다음, `_free_mlx()` 뒤에 `align` 단계를 넣는다. 모델은 Qwen3-ForcedAligner-0.6B-8bit(Apache-2.0, revision 고정)이다. `tokenize_korean`을 공백 토크나이저로 바꿔 **soynlp(LGPL-3.0)를 피한다**(`tokenize_space_lang`은 한자를 글자마다 나눠 단어 수가 어긋난다). 입력은 60초에서 자른다. 단어 수가 맞지 않으면 `words`를 null로 둔다. 텍스트를 편집하면 difflib으로 시간을 옮기고 `approx`로 표시한다. `tractus align`으로 기존 회의를 채우고 `--no-align`으로 끌 수 있게 한다 | mlx-audio(MIT, 7994★) `qwen3_forced_aligner.py` L96-145, L637-760 (설치본 0.5.7). bbc/react-transcript-editor `stt-align-node.js` L102-185 (아이디어. 그대로 쓰면 한글이 지워진다) | 2.5 | 실제 대면 회의 30분으로 검증한다. 1시간 회의 정렬 시간이 90초 이하다(실측 RTF 0.02) |
 | **6.2 가라오케·단어 탐색** | rAF 루프와 이진 탐색으로 현재 단어를 찾고 `CSS.highlights`로 강조한다. 단어마다 span을 만들지 않는다. 클릭하면 `caretRangeFromPoint` → 해당 단어로 `seekTo`. `approx` 단어는 세그먼트 시작으로 이동한다 | Scriberr `useKaraokeHighlight.ts` L19-117, `TranscriptView.tsx` L7-19 @a353078f | 1.5 | 1시간 회의에서 프레임 저하가 없다. macOS 14.4에서 동작한다 |
 | **6.3 회의 질의(Ask)** | `tractus ask --progress-json`: stdin으로 질문을 받고 `sources`, `delta`, `done` 이벤트를 낸다. 회의 범위 질문은 `build_prompt`를 재사용한다. 전체 범위 질문은 상주 MCP `search_meetings` 결과에 이웃 3개 세그먼트를 붙인다. `[s0012]` 인용은 프롬프트에 없던 id를 버리고 TimeChip으로 표시한다. 대화는 `chat.json`에 6턴·12k자까지 저장한다. `TRACTUS_LOCAL_ONLY`를 따르고, 전송될 공급자를 표시한다 | stenolabs/stenoai(MIT, 1327★) `src/chat_query.py` L12-155 @48b9412f. Scriberr `internal/api/chat_handlers.go` L432-560. open-webui(비OSI, **아이디어만**) 인라인 인용 UI | 4.5 | 한국어 질문 20~30개로 평가 세트를 만든다. 인용을 클릭하면 해당 오디오로 이동한다. 근거가 없으면 '출처 없음'을 표시한다 |
 | **6.4 음성 강조 필터** | Web Audio 체인: highpass 100Hz → peaking 3kHz +4dB → compressor → gain. `crossOrigin`은 설정하지 않는다 | wavesurfer.js `examples/webaudio.js` L19-50 @302fd210 | 1 | Ogg/Opus에서 1.5x 재생과 함께 동작한다 |
 | **6.5 PDF** | print CSS와 `Webview::print()`로 macOS 'PDF로 저장'을 쓴다. Typst(Apache-2.0)는 CLI에서 PDF가 필요해질 때 도입한다 | tauri `crates/tauri/src/webview/mod.rs` L1622-1628 @79d35376. anarlog `crates/export-core/src/typst/` (업그레이드 경로) | 1 | 사이드바와 플레이어가 숨겨지고 한글이 선택 가능하다 |
+
+**6.1 상태 (2026-10-06, core 완료):** `align.py`, `transcribe`의 `align` 단계, `tractus align`, 편집 뒤 `remap_words`. 실측(M3·16GB, Qwen3-ForcedAligner-0.6B-8bit):
+
+| 회의 | 세그먼트 | 정렬 시간 | 성공 / 실패 | 불변식 위반 | 길이 0 단어 |
+| --- | --- | --- | --- | --- | --- |
+| 실제 대면 회의 29.4분 (스모크, `tokenize_space_lang`) | 176 | 37.6초 (RTF 0.021) | 단어 수 불일치 2 | — | 일부 |
+| 실제 대면 회의 44.7분 (`tractus align`, 공백 토크나이저) | 295 | 66.1초 (RTF 0.025), 명령 전체 74초 | 294 / 1 | 0 | 321 / 5,328 (6%) |
+
+1시간 회의로 환산하면 정렬 약 89초로 완료 기준(90초)의 경계다. 실패한 1개는 한 단어짜리 세그먼트에서 모델이 길이 0을 낸 경우다.
+
+**6.2 상태 (2026-10-06, 구현 완료):** Highlight API 가라오케(재생 중에만 rAF, 단어 span 없음), `caretRangeFromPoint` 단어 클릭 이동(`approx` 단어는 세그먼트 시작), 기존 회의용 '단어 타이밍 만들기' 버튼. 실제 회의 295개 세그먼트에서 294개가 쓰인다(`usableWords`). **WKWebView에서 칠하기·클릭 이동은 사람이 확인해야 한다**(`app/README.md` 점검 목록).
 
 요약 템플릿 선택(`~/Tractus/templates/*.md`)은 요청이 오면 추가한다.
 

@@ -102,20 +102,24 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 | `tractus glossary add` | 용어집 추가. 아래 §2.3 |
 | `tractus export` | 내보내기. 아래 §2.4 |
 | `tractus ask` (Phase 6) | 회의 질의. 아래 §2.5 |
+| 단어 타이밍 (Phase 6) | `transcribe`가 전사 뒤 `segments[].words`를 채운다(`--no-align`으로 끔). 기존 회의는 `tractus align`. 아래 §2.6 |
 | 가져오기 (Phase 5) | 앱 job kind `import` = `tractus transcribe <파일> --progress-json` (다른 작업과 같은 환경변수). ffmpeg가 읽는 모든 형식을 받는다(m4a, mp3, wav, webm, mp4, mov …). 동영상은 소리만 쓴다(`-vn`) |
 
 진행 이벤트:
 
 ```jsonc
-{"event":"stage","stage":"decode"}            // decode | vad | diarize | encode | load_model | transcribe | index | summarize
+{"event":"stage","stage":"decode"}            // decode | vad | diarize | encode | load_model | transcribe | align | index | summarize
 {"event":"progress","done":37,"total":145}
 {"event":"warning","code":"diarizer_missing","message":"…"}   // 화자 분리 모델이 없음 → 화자 없이 계속 (diarizer_failed: 실패 → 화자 없이 계속)
+{"event":"warning","code":"aligner_missing","message":"…"}    // 단어 정렬 모델이 없음 → words null로 완료 (aligner_failed: 실패 → words null로 완료)
 {"event":"warning","code":"duplicate","message":"…"}           // 이미 전사된 파일 → 바로 기존 회의의 done이 이어진다 (종료 코드 0)
 {"event":"done","meeting_id":"01K…","meeting_dir":"/…/meetings/2026-10-02_…"}
 {"event":"error","message":"…"}               // 종료 코드 1
 ```
 
 - `diarize` 단계는 모델이 있을 때만 나온다(84분 회의 약 14초). 이어하기에서는 다시 하지 않는다.
+- `align` 단계는 `transcribe` 다음, `index` 전에 나온다(모델이 있고 `--no-align`이 아닐 때). `progress`는 세그먼트 단위다(`done`/`total`). 44.7분 회의 약 66초.
+- `align` 중에 중단하면 전사는 이미 저장돼 있다. `error` 메시지에 `tractus align <id>` 안내가 있고 종료 코드는 130이다.
 - `warning`은 종료가 아니다. 앱은 `message`를 알림으로 보여 주고 진행을 계속 표시한다.
 - `transcribe`는 첫 이벤트로 `{"event":"stage","stage":"decode"}`를 낸다. 큰 파일의 SHA-256 계산(중복 확인)보다 먼저 나온다.
 - 이미 전사된 파일이면 `stage(decode)` → `warning(duplicate)` → `done`(기존 회의의 `meeting_id`·`meeting_dir`) 순서다. 앱은 화면을 바꾸지 않고 "이미 전사한 파일입니다" 알림에 **열기**를 붙인다(고치던 문장을 잃지 않게).
@@ -153,7 +157,8 @@ stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없
 {"changed":2}
 ```
 
-- 각 편집의 `text`는 앞뒤 공백을 지우고 연속 공백·줄바꿈을 한 칸으로 줄인다. 그 값이 원문 `text`와 같으면 `corrected_text = null`(교정 해제), 다르면 `corrected_text = 그 값`이다. 원문 `text`와 `words`는 그대로 둔다.
+- 각 편집의 `text`는 앞뒤 공백을 지우고 연속 공백·줄바꿈을 한 칸으로 줄인다. 그 값이 원문 `text`와 같으면 `corrected_text = null`(교정 해제), 다르면 `corrected_text = 그 값`이다. 원문 `text`는 그대로 둔다.
+- 바뀐 세그먼트에 `words`가 있으면 새 표시 텍스트에 맞게 옮긴다(§2.6). 같은 단어는 시각을 그대로 두고, 바뀌거나 새로 생긴 단어에는 `approx: true`가 붙는다.
 - `changed`는 `corrected_text`가 실제로 바뀐 세그먼트 수다. 0이면 파일을 쓰지 않는다.
 - 없는 id, 빈 텍스트, 형식 오류(JSON 아님, `edits`가 목록이 아님, `id`·`text`가 문자열이 아님)가 하나라도 있으면 아무것도 쓰지 않고 stderr에 이유를 쓴 뒤 종료 코드 1이다.
 - 저장은 화자 편집과 같다. transcript.md·vtt를 먼저, transcript.json을 마지막에 원자적으로 쓴다. 색인은 `sync(embed=False)`로 갱신한다. 본문이 바뀐 청크는 다음 임베딩 동기화(`tractus index`, 전사·요약 뒤)까지 키워드로만 찾힌다.
@@ -224,6 +229,33 @@ stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없
 ```
 
 `--progress-json` 없이 실행하면 정리된 답을 stdout에 출력하고, 인용이 있으면 빈 줄 뒤에 `근거:`와 `[s0012 00:02:56]` 줄을 붙인다.
+
+### 2.6 `tractus align <회의> [--force] [--progress-json]` (단어 타이밍, Phase 6)
+
+`audio.ogg`를 디코딩해 `words`가 null인 세그먼트를 정렬하고 transcript.json·md·vtt를 다시 쓴다. `--force`면 모든 세그먼트를 다시 맞춘다. 단어는 색인하지 않으므로 색인은 갱신하지 않는다.
+
+```jsonc
+// stdout (--progress-json 없을 때, 한 줄). aligned + failed + skipped = 세그먼트 수
+{"aligned":294,"failed":1,"skipped":0}
+// --progress-json: stage(decode) → stage(align) → progress* → done (같은 숫자를 done에 싣는다)
+{"event":"done","meeting_id":"01K…","meeting_dir":"/…","aligned":294,"failed":1,"skipped":0}
+```
+
+- 정렬할 세그먼트가 없으면 모델을 올리지 않고 바로 끝난다(`skipped` = 세그먼트 수).
+- 모델이 없으면 `error`(메시지에 `hf download … --revision … --local-dir …`), 종료 코드 1.
+- **정렬하는 동안 앱에서 고친 세그먼트는 덮어쓰지 않는다.** 저장 직전에 transcript.json을 다시 읽고, 표시 텍스트가 정렬을 시작할 때와 같은 세그먼트에만 `words`를 쓴다. 나머지는 `skipped`로 센다. `transcribe`의 align 단계도 같은 방식으로 저장한다(transcript.json이 생긴 뒤라 그 사이에 회의를 편집할 수 있다).
+- `failed`는 정렬에 실패한 세그먼트다(60초 초과, 모델 단어 수 불일치, 모두 길이 0). `words`는 null로 남고 앱은 세그먼트 단위로 이동한다.
+
+`words` 스키마 (ARCHITECTURE.md §6):
+
+```jsonc
+"words": null   // 정렬 안 했거나 실패
+"words": [{"text": "예산은", "start": 12.34, "end": 12.80}, {"text": "사억", "start": 12.80, "end": 13.20, "approx": true}]
+```
+
+- **불변식:** `words`가 null이 아니면 `words.length`가 표시 텍스트의 공백 토큰 수(Python `str.split()`, 앱은 `/\S+/g`)와 같고 `words[k].text`는 k번째 토큰과 같다. 드문 공백 문자(U+FEFF 등)에서 둘이 어긋나면 앱은 그 세그먼트를 세그먼트 단위로만 다룬다. 표시 텍스트 = `corrected_text ?? text`. 앱은 어긋나면(낙관적 편집 직후 등) 그 세그먼트의 `words`를 쓰지 않는다.
+- 시각은 회의 기준 초(소수 둘째 자리)다. 세그먼트 `[start, end]` 안에 있고, 앞 단어보다 줄지 않으며, `start <= end`다. 길이 0인 단어가 있다(문장부호만 있는 토큰, 모델 출력). 실측 회의에서 6%다.
+- `approx: true`는 텍스트 편집 뒤 시각을 추정한 단어에만 있다. 앱은 이런 단어를 클릭하면 세그먼트 시작으로 이동한다.
 
 ## 3. Tauri 앱 (app/)
 

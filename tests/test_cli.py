@@ -307,7 +307,7 @@ def test_diarization_failure_warns_and_continues(env, fake_asr, monkeypatch):
     monkeypatch.setattr(cli, "load_diarizer", lambda models: Broken())
     result = CliRunner().invoke(cli.app, ["transcribe", str(wav), "--progress-json"])
     assert result.exit_code == 0, result.output
-    assert [e["code"] for e in events(result.stdout) if e["event"] == "warning"] == ["diarizer_failed"]
+    assert [e["code"] for e in events(result.stdout) if e["event"] == "warning"] == ["diarizer_failed", "aligner_missing"]
 
 
 def test_max_speakers_is_validated(env, fake_asr, fake_diar):

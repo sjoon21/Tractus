@@ -8,6 +8,16 @@ export interface Segment {
   corrected_text?: string | null;
   /** "S1"… schema_version 1이나 화자 분리를 끈 회의는 없거나 null */
   speaker?: string | null;
+  /** 단어 타이밍 (Phase 6.1, `tractus align`). 표시 텍스트의 공백 토큰과 1:1. 없거나 정렬 전이면 null */
+  words?: Word[] | null;
+}
+
+/** 시각은 회의 기준 절대 초. approx: 문장을 고친 뒤 보간한 시각 */
+export interface Word {
+  text: string;
+  start: number;
+  end: number;
+  approx?: boolean;
 }
 
 export interface Memo {
@@ -33,7 +43,7 @@ export function parseHms(hms: string): number {
 }
 
 /** t초에 재생 중인 세그먼트: start <= t인 마지막 세그먼트(발화 사이 공백에서도 직전 세그먼트를 유지). 첫 세그먼트 전이면 -1. */
-export function segmentIndexAt(segments: Segment[], t: number): number {
+export function segmentIndexAt(segments: { start: number }[], t: number): number {
   let lo = 0;
   let hi = segments.length - 1;
   let found = -1;
@@ -47,6 +57,28 @@ export function segmentIndexAt(segments: Segment[], t: number): number {
     }
   }
   return found;
+}
+
+/** t초의 단어: start <= t인 마지막 단어. 첫 단어 전이면 -1 */
+export const wordIndexAt: (words: Word[], t: number) => number = segmentIndexAt;
+
+/** 공백으로 나눈 토큰의 글자 위치 (코어 seg_text(s).split()과 같은 토큰). 가라오케 Range와 단어 클릭에 쓴다 */
+export const tokenOffsets = (text: string): { start: number; end: number }[] => [...text.matchAll(/\S+/g)].map((m) => ({ start: m.index, end: m.index + m[0].length }));
+
+/** 표시 텍스트와 단어 수·글자가 맞을 때만 단어 타이밍을 쓴다. 저장 중인 편집(낙관적 반영)이면 어긋나므로 세그먼트 단위로 돌아간다 */
+export function usableWords(seg: Segment): Word[] | null {
+  const words = seg.words;
+  if (!Array.isArray(words) || !words.length) return null;
+  const tokens = segText(seg).match(/\S+/g) ?? [];
+  return words.length === tokens.length && words.every((w, i) => w.text === tokens[i]) ? words : null;
+}
+
+/** 문장의 offset번째 글자를 눌렀을 때 이동할 시각: 그 단어의 시작. 단어 타이밍이 없거나, 단어 밖이거나, 보간한 단어면 세그먼트 시작 */
+export function clickSeekTime(seg: Segment, offset: number | null): number {
+  const words = offset === null ? null : usableWords(seg);
+  if (!words || offset === null) return seg.start;
+  const k = tokenOffsets(segText(seg)).findLastIndex((o) => o.start <= offset);
+  return k < 0 || words[k].approx ? seg.start : words[k].start;
 }
 
 export type Row = { kind: "seg"; seg: Segment; index: number; turnStart?: boolean } | { kind: "memo"; memo: Memo };
@@ -203,6 +235,7 @@ export const STAGE_LABEL: Record<string, string> = {
   encode: "오디오 보관 중",
   load_model: "모델 불러오는 중",
   transcribe: "전사 중",
+  align: "단어 타이밍 맞추는 중",
   index: "검색 색인 중",
   summarize: "요약 중",
   // 앱 안 상태: 녹음 전사가 파일 가져오기가 끝나길 기다린다 (App.tsx waitDir)
@@ -258,6 +291,9 @@ export function jobReduce(s: JobState, ev: JobEvent): JobState {
       const ok = ev.code === 0 && s.meetingId !== null;
       return { ...s, running: false, error: ok ? null : (s.error ?? stderrTail(ev.stderr, `종료 코드 ${ev.code}`)) };
     }
+    default:
+      // event 없는 줄(`tractus align`의 {"aligned": N, …} 결과)과 모르는 이벤트는 무시한다
+      return s;
   }
 }
 

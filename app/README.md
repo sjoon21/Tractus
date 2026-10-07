@@ -4,20 +4,20 @@ Tauri 2 + React + TypeScript + Vite로 만든 앱이다. 구성 요소 사이의
 
 - 회의 목록, 전사, 요약, 메모는 Rust가 `$TRACTUS_HOME/meetings/*`에서 직접 읽는다.
 - 검색만 상주하는 `tractus mcp`(stdio JSON-RPC)의 `search_meetings`로 한다.
-- 녹음은 `tractus-rec record`로, 전사와 요약은 `tractus transcribe|summarize --progress-json`으로 한다. 셋 다 하위 프로세스로 띄우고, stdout의 JSON 이벤트를 화면에 그대로 전달한다.
+- 녹음은 `tractus-rec record`로, 전사·요약·단어 타이밍은 `tractus transcribe|summarize|align --progress-json`으로 한다. 셋 다 하위 프로세스로 띄우고, stdout의 JSON 이벤트를 화면에 그대로 전달한다.
 
 ## 개발 명령
 
 ```bash
 cd app
 pnpm install
-pnpm test                                   # vitest: 시각 → 세그먼트 찾기, 시간 형식, 메모 끼워 넣기, MCP 응답 해석, 속도·무음 건너뛰기·찾아 바꾸기·되돌리기·가져오기·내보내기 이름, 질의 이벤트·인용 파싱·대화 기록 자르기·전송 안내(ask.test.ts), PDF 인쇄 문서(print.test.ts)
+pnpm test                                   # vitest: 시각 → 세그먼트 찾기, 시간 형식, 메모 끼워 넣기, MCP 응답 해석, 속도·무음 건너뛰기·찾아 바꾸기·되돌리기·가져오기·내보내기 이름, 질의 이벤트·인용 파싱·대화 기록 자르기·전송 안내(ask.test.ts), PDF 인쇄 문서(print.test.ts), 단어 찾기·단어 타이밍 검사·단어 클릭 시각(Phase 6.1·6.2)
 pnpm build                                  # tsc + vite → dist/
 pnpm tauri dev                              # 개발 실행 (Vite 1420 포트)
 pnpm tauri build --debug --bundles app      # → src-tauri/target/debug/bundle/macos/Tractus.app
 
 cd src-tauri
-cargo test      # transcript/summary/memos 읽기, media 스킴 Range 응답, MCP 줄 단위 송수신(가짜 서버), 하위 프로세스 이벤트 전달·kill, ask 인수·stdin, chat.json, LLM 설정 읽기
+cargo test      # transcript/summary/memos 읽기, media 스킴 Range 응답, MCP 줄 단위 송수신(가짜 서버), 하위 프로세스 이벤트 전달·kill, ask 인수·stdin, chat.json, LLM 설정 읽기, words 너그럽게 읽기, 작업 인수(align 포함)
 TRACTUS_TEST_HOME=<합성 홈> cargo test meetings   # 다른 회의 폴더로 읽기 테스트 (기본: ../../tests/fixtures/eval)
 ```
 
@@ -64,6 +64,11 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 | 멈추기 | 질문 중 '멈추기' 또는 회의 화면을 떠나면 프로세스를 kill한다. 코어는 `done` 직전에 chat.json을 쓰므로, 멈춘 뒤에 `done`이 도착하면 그 답을 받아 화면과 기록을 맞춘다 | — |
 | 목소리 강조 | 플레이어 토글. highpass 100 Hz → peaking 3 kHz +4 dB → 압축 → gain(`voice.ts`). 처음 켤 때 요소마다 한 번 Web Audio 체인을 만든다. 속도·피치 유지는 그대로 | — |
 | PDF | '내보내기' → PDF → macOS 인쇄 대화상자의 'PDF로 저장'. 인쇄용 문서(제목, 날짜, 길이, 화자, 요약, 시각·화자 붙은 전사)를 body 아래에 두고 `@media print`로 앱을 숨긴다 | — |
+| 가라오케 | 재생 중인 단어를 인주색 배경으로 칠한다. 단어마다 span을 만들지 않고 세그먼트 글자 노드 위 Range 하나를 CSS Highlight `karaoke`로 바꾼다. 재생 중에만 rAF로 돌고 (세그먼트, 단어)가 바뀔 때만 Range를 바꾼다. 찾기 강조가 위에 보인다(우선순위 −1). 고치는 중인 세그먼트는 칠하지 않는다 | transcript.json `words` (docs/desktop.md §2.6) |
+| 단어 클릭 | 문장을 한 번 누르면 `caretRangeFromPoint`로 누른 단어를 찾아 그 단어 시작으로 이동한다. 보간한 단어(`approx`)·시간 칸·키보드·단어 타이밍 없는 세그먼트는 세그먼트 시작. 드래그로 글을 고르면 이동하지 않는다. 두 번 누르기·Enter 편집은 그대로 | — |
+| 단어 타이밍 만들기 | 단어 타이밍이 하나도 없는 예전 회의의 머리말 버튼. 진행률을 버튼에 보이고, 끝나면 회의를 다시 읽는다 | `tractus align <id> --progress-json` (`job_start` kind `align`) |
+
+**단어 타이밍을 쓰는 조건:** `words`의 수와 글자가 표시 텍스트(`corrected_text ?? text`)의 공백 토큰과 같을 때만 쓴다(`lib.ts usableWords`). 문장을 고치면 저장하는 동안(낙관적 반영)은 어긋나서 세그먼트 단위로 돌아가고, 저장이 끝나면 코어가 다시 맞춘 `words`가 담긴 회의를 받아 다시 단어 단위가 된다. Rust는 `words`가 이상하면 null로 읽는다(회의 전체를 못 읽지 않게).
 
 **`media://` + Web Audio:** WKWebView에서 커스텀 스킴 오디오도 `crossOrigin` 없이 `MediaElementAudioSourceNode`로 소리가 난다(macOS 26.6, 페이지 오리진 `tauri://localhost`·`http://localhost:1420` 둘 다 실측, Ogg Opus 1.5배속). `crossOrigin="anonymous"`를 붙이면 CORS 헤더가 없는 지금 응답은 재생이 막힌다(`NotSupportedError`). 그래서 붙이지 않는다.
 
@@ -97,7 +102,7 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 | `src-tauri/src/mcp.rs` | 상주 MCP 클라이언트. initialize(`2025-11-25`) → initialized 순서로 연결하고, 하위 프로세스가 죽으면 다시 띄운다 |
 | `src-tauri/src/procs.rs` | 하위 프로세스 stdout JSON Lines를 이벤트로 전달하고, 종료할 때 `exit` 이벤트(stderr 끝부분 포함)를 보낸다 |
 | `src-tauri/src/media.rs` | 회의 오디오 전용 `media://` 스킴(아래 참고) |
-| `src/lib.ts` | 순수 로직: 시간·세그먼트 계산, 녹음·작업 이벤트 → 화면 상태(`recReduce`, `jobReduce`) (`lib.test.ts`) |
+| `src/lib.ts` | 순수 로직: 시간·세그먼트·단어 계산, 녹음·작업 이벤트 → 화면 상태(`recReduce`, `jobReduce`) (`lib.test.ts`) |
 | `src-tauri/Entitlements.plist` | 마이크 entitlement (서명하면 hardened runtime이 켜져서 필요하다) |
 | `src/api.ts` | 명령·이벤트 연결, `useJob`, `useRecorder` |
 | `src/TranscriptTools.tsx` | 문장 편집기, 찾기·바꾸기 막대, 내보내기 메뉴 (Phase 5) |
@@ -157,5 +162,7 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 - [ ] 라이트·다크 테마를 전환하고, Tab으로 이동할 때 초점 표시가 보이는지 확인한다.
 - [ ] **목소리 강조 (귀로):** 실제 회의 오디오에서 토글을 켜고 끄며 듣는다. 말소리가 또렷해지고 웅웅거림이 줄어야 한다. 소리가 끊기거나 무음이 되면 안 된다. 1.5배속에서도 피치가 그대로여야 한다. 켠 채로 잠자기 뒤 재생해도 소리가 나야 한다.
 - [ ] **PDF:** '내보내기' → PDF → 인쇄 대화상자 왼쪽 아래 'PDF' → 'PDF로 저장'. 사이드바·플레이어가 없고, 한글을 선택·복사할 수 있고, 세그먼트가 페이지 경계에서 잘리지 않아야 한다. 다크 테마에서도 흰 종이여야 한다.
+- [ ] **가라오케·단어 클릭:** `tractus align`을 마친 회의를 재생한다. 단어 강조가 소리와 맞게 움직이고, 일시정지·스크러버 이동 뒤에도 맞는 단어에 멈춰야 한다. 찾기(⌘F) 강조가 단어 강조 위에 보여야 한다. 문장 중간 단어를 한 번 누르면 그 단어부터, 두 번 누르면 편집이 열려야 한다. 글을 드래그해 고르면 이동하지 않아야 한다. 문장을 고친 뒤 저장이 끝나면 그 문장도 다시 단어 단위로 강조돼야 한다. 1시간 회의에서 재생 중 스크롤이 끊기지 않아야 한다.
+- [ ] **단어 타이밍 만들기:** 예전 회의(words 없음)에서 버튼을 누른다. 진행률이 버튼에 보이고, 끝나면 버튼이 사라지고 단어 강조가 시작된다. 정렬 중에 문장을 하나 고쳐도 그 수정이 남아야 한다.
 - [ ] **질문 (회의):** '질문' 탭에서 한글로 묻고, 조합 중 Enter는 보내지 않는지, Shift+Enter는 줄바꿈인지 본다. 답이 흘러나오고 시각 칩을 누르면 이동한다. 회의를 다시 열면 지난 질문이 보인다. '멈추기'로 멈춘다.
 - [ ] **질문 (전체):** ⌘J로 열고 묻는다. 칩을 누르면 그 회의가 그 시각으로 열린다. Esc로 닫고 ⌘J로 다시 열면 대화가 남아 있다. 전송 안내 문구가 설정한 공급자와 맞는지 본다.

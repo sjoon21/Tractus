@@ -130,7 +130,7 @@ export const api = {
 
 export const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-// ── 작업 (transcribe / summarize / import) ──
+// ── 작업 (transcribe / summarize / import / align) ──
 
 type Warning = JobState["warnings"][number];
 
@@ -155,7 +155,7 @@ export function useJob(onDone: (meetingId: string, warnings: Warning[]) => void)
     return () => void un.then((f) => f());
   }, []);
 
-  const start = useCallback(async (kind: "transcribe" | "summarize" | "import", target: string) => {
+  const start = useCallback(async (kind: "transcribe" | "summarize" | "import" | "align", target: string) => {
     setState({ ...IDLE_JOB, running: true });
     doneId.current = null;
     warnings.current = [];

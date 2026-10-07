@@ -290,6 +290,7 @@ def seg_text(s: dict) -> str:
 
 def apply_text_edits(t: dict, edits: list) -> tuple[dict, int]:
     """세그먼트 텍스트 교정 [{id, text}]. 원문 text는 그대로 두고 corrected_text만 바꾼 새 전사와 바뀐 세그먼트 수를 돌려준다.
+    단어 시각(words)이 있으면 바뀐 텍스트에 맞게 옮긴다(align.remap_words, 새 단어는 approx).
     원문과 같아지면 교정을 지운다(null). 공백·줄바꿈은 한 칸으로 줄이고 제어 문자는 뺀다(one_line).
     없는 id·빈 텍스트·잘못된 형식이 하나라도 있으면 아무것도 바꾸지 않고 ValueError."""
     t = copy.deepcopy(t)
@@ -304,11 +305,14 @@ def apply_text_edits(t: dict, edits: list) -> tuple[dict, int]:
         if not text:
             raise ValueError(f"빈 텍스트로 바꿀 수 없습니다: {e['id']}")
         plan.append((by_id[e["id"]], text))
+    from tractus.align import remap_words  # align이 store를 불러오므로 여기서 불러온다
+
     changed = set()
     for seg, text in plan:
         new = None if text == one_line(seg["text"]) else text
         if seg.get("corrected_text") != new:
             seg["corrected_text"] = new
+            seg["words"] = remap_words(seg.get("words"), seg_text(seg), seg["start"], seg["end"])  # 단어 = 표시 텍스트 공백 토큰 (불변식)
             changed.add(seg["id"])
     return t, len(changed)
 

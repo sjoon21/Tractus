@@ -40,9 +40,19 @@ Each one is covered by its own license.
    If you redistribute these weights, keep the OpenMDW-1.1 license text
    and the notices that come with the model.
 
+5. Qwen3-ForcedAligner-0.6B (word timestamps; optional)
+   Original: https://huggingface.co/Qwen/Qwen3-ForcedAligner-0.6B
+   MLX 8-bit conversion used by Tractus:
+             https://huggingface.co/mlx-community/Qwen3-ForcedAligner-0.6B-8bit
+             (revision 0e1a68e91d815300c7c9754b2a7639378b23db15)
+   License: Apache License 2.0
+   Tractus does not use the soynlp (LGPL-3.0) Korean tokenizer that
+   mlx-audio calls for this model; it replaces it with its own
+   whitespace tokenizer.
+
 Bundled in the desktop app (app/)
 ---------------------------------
 
-5. Pretendard (UI font, variable subset)
+6. Pretendard (UI font, variable subset)
    https://github.com/orioncactus/pretendard
    License: SIL Open Font License 1.1 (OFL-1.1)

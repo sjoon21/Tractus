@@ -662,6 +662,9 @@ mark {
 .seg-text {
   font-size: var(--fs-read);
   line-height: 1.78;
+  /* 버튼 안이라도 글을 고를 수 있게 (단어 클릭 위치도 이것으로 찾는다) */
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .seg.is-active .seg-button {
@@ -1722,6 +1725,12 @@ pre.inline-error {
   outline: none;
   white-space: pre-wrap;
   caret-color: var(--accent);
+}
+
+/* 가라오케: 지금 말하는 단어 (6.2). 인주 = 지금. 찾기 강조가 위에 그려진다(우선순위 -1).
+   보간한 단어(approx)도 같게 칠한다. Highlight API가 없으면 세그먼트 강조만 */
+::highlight(karaoke) {
+  background-color: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 /* 찾기 강조. Highlight API가 없으면 행 테두리(is-find)만 */

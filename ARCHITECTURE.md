@@ -9,6 +9,7 @@
 
 | 날짜 | 버전 | 변경 |
 | --- | --- | --- |
+| 2026-10-06 | v3.12 | **Phase 6.1 단어 타임스탬프 core.** Qwen3-ForcedAligner-0.6B-8bit(Apache-2.0, revision 고정)로 `segment.words`를 채운다. `transcribe`는 ASR 모델을 내린 뒤 `align` 단계를 돌린다(`--no-align`으로 끔, 모델이 없으면 `aligner_missing` 경고 후 words null). 기존 회의는 `tractus align <회의> [--force]`. 단어 = 표시 텍스트의 공백 토큰(1:1 불변식). mlx-audio의 한국어 토크나이저는 soynlp(LGPL-3)를 불러오므로 공백 토크나이저로 바꿔 끼운다. 텍스트를 고치면 difflib으로 시각을 옮기고 새 단어에 `approx`. 실제 대면 회의 44.7분(세그먼트 295개): 정렬 66초, 294개 성공·1개 실패, 불변식 위반 0. 계약: `docs/desktop.md` §2.6 |
 | 2026-10-06 | v3.11 | **Phase 6.3 회의 질의 core.** `tractus ask [--meeting] [--from/--to] [--save] --progress-json`: stdin JSON(질문 + history), 이벤트 `stage(retrieve)` → `sources` → `stage(answer)` → `delta`* → `done{answer, citations, provider, model}`. 회의 범위는 전사 전체, 전체 범위는 색인 검색 8개 + 앞뒤 세그먼트. 인용은 근거와 대조해 없는 ID를 지운다. 근거가 없으면 LLM을 부르지 않는다. `--save`는 회의 폴더 `chat.json`(최근 50개). `llm.stream_chat`, `Index.meeting_dir`. 평가 세트 `tests/fixtures/eval/ask_questions.jsonl`(28개)·`bench/ask_eval.py`. 계약: `docs/desktop.md` §2.5 |
 | 2026-10-06 | v3.10 | **Phase 5 core.** 표시 텍스트 `seg_text`(= `corrected_text` 우선)를 md·vtt·요약 프롬프트·MCP·색인·CLI 검색·내보내기에 적용. `tractus segments <회의> edit`(stdin JSON 묶음, 원문과 같으면 교정 해제, 색인은 `embed=False`), `tractus glossary add`, `tractus export --format txt\|md\|srt\|vtt\|csv\|docx\|bundle`(python-docx MIT 추가). 가져오기: 해시 전에 `decode` 단계, 중복이면 `duplicate` 경고 후 `done`, 동영상(mp4·mov)은 `-vn`, 오디오 없는 동영상은 오류. 계약: `docs/desktop.md` §2.2–2.4 |
 | 2026-10-04 | v3.9 | **화자 분리 도입 (D3 변경).** Nemotron 3 Diarization(mlx-audio, 가중치 OpenMDW-1.1, revision 고정)을 ASR 전에 회의 전체로 1회 실행하고, 화자가 바뀌는 지점에서 VAD 청크를 나눈다. AI Hub 84분·7명 세션: 7/7명, confusion 2.9%, DER 7.6%, 14초. 백업은 FluidAudio community-1. `transcript.json` schema_version 2(`segment.speaker`, `speakers`, `diarization`), `tractus speakers` 편집 명령, `--no-diarize`·`--max-speakers`, MCP·요약 프롬프트에 화자 표시, 색인 스키마 3. `NOTICE`에 모델 라이선스 |
@@ -156,9 +157,16 @@
   → 세그먼트 = 청크 텍스트 + 청크 시작/끝 시각 + 청크 화자
   → 청크마다 .chunks.jsonl에 기록 (중단 후 같은 명령으로 이어하기. 청크 경계·화자는 .job.json에 있어 VAD·화자 분리를 다시 돌리지 않음)
   → 끝나면 transcript.json + transcript.md + transcript.vtt 저장
+  → ASR 모델 해제 후 단어 정렬 (Qwen3-ForcedAligner-0.6B, 세그먼트마다 1회) → segment.words 채워 다시 저장
+  → 정렬 모델 해제 후 검색 색인
 ```
 
-- **타임스탬프:** 화자 경계는 청크 분할로 처리하므로 단어 단위 타임스탬프는 1차 범위에서 제외한다. VAD 청크 경계가 곧 세그먼트 타임스탬프이며, "문장 클릭 → 해당 위치 재생" UX에는 이것으로 충분하다. 단어 단위가 필요해지면 **Qwen3-ForcedAligner-0.6B**(Apache-2.0, 한국어 포함 11개 언어, 5분 단위)를 후처리로 추가한다.
+- **타임스탬프 (v3.12):** 세그먼트 시각은 VAD 청크 경계다. 단어 시각은 **Qwen3-ForcedAligner-0.6B-8bit**(Apache-2.0)가 후처리로 채운다(`align.py`).
+  - 단어 = 표시 텍스트(`seg_text`)의 공백 토큰이다. `words`가 null이 아니면 `len(words) == len(seg_text(s).split())`이고 `words[k].text`는 k번째 토큰과 같다.
+  - mlx-audio의 `tokenize_korean`은 soynlp(LGPL-3)를 불러온다. 이를 공백 토크나이저로 바꿔 끼우고 `language="Korean"`으로 부른다. `tokenize_space_lang`은 한자를 글자마다 나눠 단어 수가 어긋나므로 쓰지 않는다.
+  - 문장부호만 있는 토큰은 모델에 보내지 않고 앞 단어 끝에 길이 0으로 둔다. 시각은 세그먼트 안으로 자르고 줄지 않게 맞춘다.
+  - 60초 넘는 세그먼트, 모델 단어 수 불일치, 모든 단어 길이 0이면 그 세그먼트의 `words`는 null이다(세그먼트 단위로만 이동). 8bit 모델은 110~140초를 넘으면 시간이 틀어지는데, 세그먼트는 30초 이하다.
+  - 정렬 실패는 전사를 막지 않는다. 모델이 없거나 예외가 나면 경고만 내고 `words`는 null로 둔다. 나중에 `tractus align`으로 채운다.
 - **용어집 주입:** 참석자 이름·제품명·약어를 프롬프트로 전달해 ASR 단계에서 고유명사 오류를 줄인다. 모델별 지원 방식이 달라 어댑터에서 처리한다. Qwen3-ASR은 `hotwords`로 넣는다(Phase 0: 용어 재현율 72% → 84%).
 - **언어:** 청크별 자동 감지가 기본이다. `ko`로 고정하면 영어 위주 발화를 번역하거나 반복 루프에 빠진다(Phase 0). 고정은 사용자 설정으로만 연다.
 - **청크 크기:** 최대 30초. Phase 0에서 15·30·60초의 CER 차이는 0.3%p 안이었다.
@@ -417,7 +425,10 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
       "lang": "ko",
       "speaker": "S1",          // speakers의 라벨. 모르면 null
       "corrected_text": null,   // 사용자 교정 (tractus segments edit). 표시 텍스트 = corrected_text ?? text. 원문 text는 보존
-      "words": null             // ForcedAligner 도입 시 채움
+      "words": [                // 단어 시각 (v3.12). 정렬 안 했거나 실패하면 null
+        { "text": "다음", "start": 12.34, "end": 12.71 },
+        { "text": "분기", "start": 12.71, "end": 13.10, "approx": true }   // approx: 텍스트 편집 뒤 시각을 추정한 단어
+      ]
     }
   ]
 }
@@ -428,6 +439,7 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
   - 이름에서 `` []<>*_`\ `` 문자는 뺀다(md 굵게·VTT `<v>`·MCP 줄 `[s0012 00:05:31 이름]`이 깨지지 않게). `S2`처럼 라벨 모양인 이름은 거부한다.
   - 화자 편집은 청크 본문을 바꾸지 않으므로 색인은 기존 벡터를 그대로 옮겨 쓰고 임베딩 모델을 올리지 않는다(`sync(embed=False)`). 본문이 바뀐 청크만 다음 임베딩 동기화에서 다시 임베딩한다.
 - **텍스트 편집** (`tractus segments <회의> edit`)은 `corrected_text`만 바꾸고 원문 `text`는 그대로 둔다. 원문과 같게 고치면 null로 돌린다. md·vtt·요약·검색·MCP·내보내기는 모두 `corrected_text ?? text`를 쓴다. 화자 편집처럼 md·vtt를 다시 쓰고 `sync(embed=False)`로 색인한다(본문이 바뀐 청크는 다음 임베딩 동기화까지 키워드로만 찾힌다).
+- **단어 시각** `words[k]`는 `seg_text(s).split()[k]`와 1:1이다. 시각은 회의 기준 초(소수 둘째 자리), 세그먼트 안, 줄지 않음, `start <= end`. 텍스트를 고치면 `align.remap_words`가 difflib으로 같은 단어의 시각은 그대로 두고, 바뀌거나 새로 생긴 단어는 앞뒤 단어 사이에 고르게 펴서 `approx: true`를 붙인다. 원문으로 되돌려도 불변식은 지켜지지만 추정한 시각은 남는다(`tractus align --force`로 다시 맞춘다). 단어는 색인하지 않는다.
 - **이어하기 파일** `.job.json`의 `chunks`는 `[시작 표본, 끝 표본, 화자]`이고, `diarizer`에 위 `diarization` 값을 둔다. 예전 `[시작, 끝]`도 읽는다(화자 null).
 
 ---
@@ -442,6 +454,7 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 | ASR 런타임 (macOS) | mlx-audio (라이브러리로 직접 호출) | MIT | `hotwords` 때문에 서버 대신 프로세스 안에서 호출 (D1). Windows 대비용은 llama.cpp `llama-server` |
 | VAD | Silero VAD v6 (mlx-audio MLX 포팅) | MIT | torch 불필요 |
 | 화자 분리 | Nemotron 3 Diarization (mlx-audio `mlx_audio.vad`) | 코드 MIT / 가중치 OpenMDW-1.1 | 최대 8명, revision 고정 (§2.4) |
+| 단어 정렬 | Qwen3-ForcedAligner-0.6B-8bit (mlx-audio `mlx_audio.stt`) | 코드 MIT / 가중치 Apache-2.0 | revision 고정, soynlp 대신 자체 공백 토크나이저 (§2.3) |
 | 오디오 변환 | FFmpeg (**외부 바이너리로 호출**) | LGPL/GPL | 번들하지 않음 → Apache-2.0 배포물과 분리 |
 | 저장·검색 | SQLite FTS5 + sqlite-vec 0.1.9 (고정) | Public Domain / MIT·Apache | pre-1.0이라 업그레이드 시 테스트 재실행 |
 | 임베딩 런타임 | mlx-lm (Qwen3Model) | MIT | mlx-embeddings는 GPL-3이라 제외 |
@@ -463,7 +476,7 @@ Claude Code, Codex CLI, Antigravity CLI(agy)가 Tractus를 도구로 쓰도록 *
 | **3. 검색 + MCP** ✅ 2026-10-02 | 임베딩, FTS5 bigram, RRF, MCP 서버, 3개 CLI 등록 가이드 | Claude Code·Codex·Gemini CLI에서 과거 회의 질의 성공 → Gemini CLI 대신 agy. **세 CLI 모두 질의(정답 세그먼트 인용)와 요약 저장 성공** (§5) |
 | **4. UI + 녹음** 🔶 진행 중 | B안(Tauri 앱) 우선, D안(메뉴바 녹음기 + Obsidian 플러그인) 백업. 공용: 녹음 헬퍼 `tractus-rec`, 코어 변경(audio.ogg, transcript.vtt, memos.json, `--recording`, `--progress-json`). 계약: `docs/desktop.md` | `docs/desktop.md` §4 판정 기준으로 B안을 평가해 확정 |
 | **5. 품질 격차 해소** 🔶 진행 중 | 클로바노트 대비 실제 격차: 재생 컨트롤(배속·점프·무음 건너뛰기), 전사 텍스트 편집·찾아 바꾸기, 파일 가져오기(동영상 포함), 내보내기(txt·md·srt·csv·docx·묶음). 상세: `docs/roadmap.md` | 각 항목의 완료 기준 (`docs/roadmap.md` §2) |
-| 6. 차별화 | 단어 타임스탬프(Qwen3-ForcedAligner) + 가라오케·단어 탐색, 회의 질의(Ask, 인용 포함), 음성 강조 필터, PDF | `docs/roadmap.md` §3 |
+| **6. 차별화** 🔶 진행 중 | 단어 타임스탬프(Qwen3-ForcedAligner) + 가라오케·단어 탐색, 회의 질의(Ask, 인용 포함), 음성 강조 필터, PDF | `docs/roadmap.md` §3 |
 | 7. 사람과 실시간 | 목소리 프로필(로컬 화자 임베딩), 실시간 전사(옵트인), 9명 이상 화자 엔진 | `docs/roadmap.md` §4 |
 | 이후 | **Windows 지원(llama.cpp GGUF 경로)** | 필요가 확인될 때 |
 

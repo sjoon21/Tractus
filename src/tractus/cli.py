@@ -25,6 +25,8 @@ from tractus import summarize as summ  # noqa: E402
 from tractus.env import load_env_all  # noqa: E402
 from tractus.llm import LLMError, make_client, resolve_provider  # noqa: E402
 from tractus.paths import home_dir, models_dir  # noqa: E402
+from tractus.align import MODEL_DIR as ALIGNER_DIR, MODEL_REPO as ALIGNER_REPO, MODEL_REVISION as ALIGNER_REVISION  # noqa: E402
+from tractus.align import align_segments, load_aligner  # noqa: E402
 from tractus.asr import SR, Transcriber  # noqa: E402
 from tractus.diarize import MAX_SPEAKERS, MODEL_DIR as DIARIZER_DIR, MODEL_REPO as DIARIZER_REPO, MODEL_REVISION as DIARIZER_REVISION  # noqa: E402
 from tractus.diarize import load_diarizer, split_chunks  # noqa: E402
@@ -131,6 +133,7 @@ def transcribe(
     keep_tracks: bool = typer.Option(False, "--keep-tracks", help="녹음 원본 트랙을 지우지 않고 회의 폴더의 tracks/로 옮긴다"),
     no_diarize: bool = typer.Option(False, "--no-diarize", help="화자 분리를 하지 않는다 (segment.speaker = null)"),
     max_speakers: int = typer.Option(None, "--max-speakers", min=1, max=MAX_SPEAKERS, help=f"화자 수 상한 (1–{MAX_SPEAKERS}). 말한 시간이 많은 N명만 남기고 나머지는 가까운 화자에 붙인다"),
+    no_align: bool = typer.Option(False, "--no-align", help="단어 타이밍을 만들지 않는다 (segment.words = null, 나중에 `tractus align`)"),
     progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
 ) -> None:
     """녹음을 전사해 회의 폴더(audio.ogg, transcript.json/md/vtt)를 만든다. 중단돼도 같은 명령으로 이어서 진행한다."""
@@ -139,7 +142,7 @@ def transcribe(
         raise typer.BadParameter("녹음 파일 또는 --recording 폴더 중 하나만 지정하세요")
     try:
         source = _source_from_file(file) if file else _source_from_recording(recording)
-        _transcribe(source, title, track, language, term, keep_tracks, not no_diarize, max_speakers)
+        _transcribe(source, title, track, language, term, keep_tracks, not no_diarize, max_speakers, not no_align)
     except audio.FFmpegError as e:
         Events.emit("error", message=str(e))
         console.print(f"[red]오디오 처리 실패:[/red] {escape(str(e))}")
@@ -150,7 +153,8 @@ def transcribe(
 
 
 def _transcribe(
-    source: Source, title: str | None, track: Track | None, language: Language, term: list[str], keep_tracks: bool, diarize: bool, max_speakers: int | None
+    source: Source, title: str | None, track: Track | None, language: Language, term: list[str], keep_tracks: bool, diarize: bool, max_speakers: int | None,
+    align: bool = True,
 ) -> None:
     audio.require_ffmpeg()
     meetings = home_dir() / "meetings"
@@ -172,7 +176,7 @@ def _transcribe(
     else:
         job, pcm = _new_job(source, meetings, digest, title, track or recommended_track(), language, term, diarize, max_speakers)
 
-    _run(job, pcm, source, keep_tracks)
+    _run(job, pcm, source, keep_tracks, align)
 
 
 def _warn(code: str, message: str) -> None:
@@ -203,6 +207,61 @@ def _diarize(pcm, max_speakers: int | None) -> tuple[list, dict | None]:
     except Exception as e:  # noqa: BLE001 — 화자 분리 실패가 전사를 막지 않는다
         _warn("diarizer_failed", f"화자 분리에 실패해 화자 분리 없이 전사합니다: {e}")
         return [], None
+
+
+def _aligner_hint() -> str:
+    path = models_dir() / ALIGNER_DIR
+    return f"{path}\n  hf download {ALIGNER_REPO} --revision {ALIGNER_REVISION} --local-dir {path}"
+
+
+def _align_progress() -> Progress:
+    return Progress(TextColumn("단어 타이밍"), BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(), console=console)
+
+
+def _save_words(d: Path, segments: list[dict], ids: set[str]) -> dict:
+    """정렬한 words를 transcript.json에 쓴다. transcript.json이 있으면 앱이 이미 편집할 수 있으므로 정렬하는 동안 고친
+    세그먼트·화자를 덮어쓰지 않게, 다시 읽고 표시 텍스트가 그대로인 세그먼트에만 words를 쓴다 (나머지 필드는 다시 읽은 쪽).
+    → {"aligned", "failed", "skipped"}"""
+    # ponytail: 다시 읽기와 쓰기 사이(수 ms)의 편집은 잃을 수 있다. 잠금이 필요하면 store에 파일 잠금을 둔다
+    new = {s["id"]: s for s in segments if s["id"] in ids}
+    cur = _read_transcript(d)
+    counts = {"aligned": 0, "failed": 0}
+    merged = []
+    for s in cur["segments"]:
+        a = new.get(s["id"])
+        if a is not None and seg_text(a) == seg_text(s):
+            merged.append({**s, "words": a["words"]})
+            counts["aligned" if a["words"] is not None else "failed"] += 1
+        else:
+            merged.append(s)
+    save_transcript(d, {**cur, "segments": merged})
+    return {**counts, "skipped": len(merged) - counts["aligned"] - counts["failed"]}
+
+
+def _align(d: Path, t: dict, pcm) -> None:
+    """전사 뒤 단어 타이밍을 채워 다시 저장한다. 모델이 없거나 실패하면 words = null로 두고 경고만 한다 (`tractus align`으로 나중에)."""
+    if not t["segments"]:
+        return
+    try:
+        aligner = load_aligner(models_dir())
+        if aligner is None:
+            _warn("aligner_missing", f"단어 타이밍 모델이 없어 단어 타이밍 없이 저장합니다: {_aligner_hint()}")
+            return
+        Events.emit("stage", stage="align")
+        with _align_progress() as progress:
+            bar = progress.add_task("", total=len(t["segments"]))
+
+            def tick(n: int, total: int) -> None:
+                progress.advance(bar)
+                Events.emit("progress", done=n, total=total)
+
+            segments, _, _ = align_segments(aligner, pcm, t["segments"], on_progress=tick)
+    except Exception as e:  # noqa: BLE001 — 단어 타이밍 실패가 전사를 막지 않는다
+        _warn("aligner_failed", f"단어 타이밍을 만들지 못했습니다 (`tractus align {t['meeting_id']}`로 다시 시도): {e}")
+        return
+    failed = _save_words(d, segments, {s["id"] for s in t["segments"]})["failed"]
+    if failed:
+        console.print(f"[yellow]단어 타이밍을 맞추지 못한 세그먼트 {failed}개 (세그먼트 단위로만 이동)[/yellow]")
 
 
 def _new_job(
@@ -257,7 +316,7 @@ def _finish_recording(source: Source, meeting_dir: Path, keep_tracks: bool) -> N
     d.rmdir()
 
 
-def _run(job: Job, pcm, source: Source, keep_tracks: bool) -> None:
+def _run(job: Job, pcm, source: Source, keep_tracks: bool, align: bool = True) -> None:
     Events.emit("stage", stage="load_model")
     transcriber = Transcriber.load(local_model(job.model))
     lang = None if job.language == "auto" else job.language
@@ -287,7 +346,16 @@ def _run(job: Job, pcm, source: Source, keep_tracks: bool) -> None:
     # ASR 모델을 내린 뒤 색인한다: 1.7B(3.6GB)와 임베딩 모델(1.4GB)이 통합 메모리에 함께 올라가지 않게
     del transcriber
     _free_mlx()
-    _finish_recording(source, job.dir, keep_tracks)
+    _finish_recording(source, job.dir, keep_tracks)  # 전사는 저장됐다. 정렬 중에 끊겨도 녹음 폴더가 남지 않게 먼저 정리한다
+    if align:
+        try:
+            _align(job.dir, t, pcm)
+        except KeyboardInterrupt:
+            message = f"단어 타이밍 중에 중단했습니다. 전사는 저장됐고, `tractus align {job.meeting_id}`로 단어 타이밍을 나중에 채울 수 있습니다."
+            console.print(f"\n{message}")
+            Events.emit("error", message=message)
+            raise typer.Exit(130)
+        _free_mlx()  # 정렬 모델을 내린 뒤 임베딩 모델을 올린다
     Events.emit("stage", stage="index")
     _sync_index_quietly()
     rtf = f" (RTF {elapsed / job.duration_sec:.3f})" if not done and job.duration_sec else ""  # 이어하기면 일부만 처리해 RTF가 의미 없음
@@ -296,6 +364,57 @@ def _run(job: Job, pcm, source: Source, keep_tracks: bool) -> None:
         f"{job.dir / 'transcript.md'}"
     )
     Events.emit("done", meeting_id=job.meeting_id, meeting_dir=str(job.dir))
+
+
+@app.command("align")
+def align_cmd(
+    meeting: str = typer.Argument(..., help="회의 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
+    force: bool = typer.Option(False, "--force", help="이미 단어 타이밍이 있는 세그먼트도 다시 맞춘다"),
+    progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
+) -> None:
+    """기존 회의의 단어 타이밍(segment.words)을 채운다. 기본은 words가 없는 세그먼트만.
+    stdout: {"aligned": N, "failed": M, "skipped": K} (--progress-json이면 같은 값이 done 이벤트에 들어간다)"""
+    Events.enabled = progress_json
+
+    def fail(message: str) -> NoReturn:
+        Events.emit("error", message=message)
+        console.print(f"[red]{escape(message)}[/red]")
+        raise typer.Exit(1)
+
+    try:
+        d = resolve_meeting(meeting)
+    except typer.BadParameter as e:
+        Events.emit("error", message=str(e))
+        raise
+    t = _read_transcript(d)
+    todo = {s["id"] for s in t["segments"] if force or s.get("words") is None}
+    counts = {"aligned": 0, "failed": 0, "skipped": len(t["segments"])}
+    if todo:
+        aligner = load_aligner(models_dir())
+        if aligner is None:
+            fail(f"단어 타이밍 모델이 없습니다: {_aligner_hint()}")
+        try:
+            audio.require_ffmpeg()
+            Events.emit("stage", stage="decode")
+            pcm = audio.decode(d / t["audio"]["file"])
+        except audio.FFmpegError as e:
+            fail(f"오디오 처리 실패: {e}")
+        Events.emit("stage", stage="align")
+        t0 = time.perf_counter()
+        with _align_progress() as progress:
+            bar = progress.add_task("", total=len(todo))
+
+            def tick(n: int, total: int) -> None:
+                progress.advance(bar)
+                Events.emit("progress", done=n, total=total)
+
+            segments, _, _ = align_segments(aligner, pcm, t["segments"], on_progress=tick, only=todo)
+        counts = _save_words(d, segments, todo)
+        console.print(f"단어 타이밍: 성공 {counts['aligned']}, 실패 {counts['failed']}, 건너뜀 {counts['skipped']} ({time.perf_counter() - t0:.1f}초)")
+    if progress_json:
+        Events.emit("done", meeting_id=t["meeting_id"], meeting_dir=str(d), **counts)
+    else:
+        print(json.dumps(counts))
 
 
 def resolve_meeting(ref: str) -> Path:

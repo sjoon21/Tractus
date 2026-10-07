@@ -513,3 +513,65 @@ describe("내보내기 (5.6)", () => {
     );
   });
 });
+
+// ── Phase 6.1·6.2: 단어 타이밍, 가라오케, 단어 클릭 ──
+
+import { clickSeekTime, tokenOffsets, usableWords, wordIndexAt, type Word } from "./lib";
+
+describe("단어 타이밍", () => {
+  const words: Word[] = [
+    { text: "예산은", start: 10, end: 10.4 },
+    { text: "3억", start: 10.5, end: 10.9 },
+    { text: "원입니다.", start: 11, end: 11.6, approx: true },
+  ];
+  const seg: Segment = { id: "s0001", start: 9.8, end: 12, text: "예산은  3억 원입니다.", words };
+
+  test("wordIndexAt: start <= t인 마지막 단어, 첫 단어 전이면 -1", () => {
+    expect(wordIndexAt(words, 9.9)).toBe(-1);
+    expect(wordIndexAt(words, 10)).toBe(0);
+    expect(wordIndexAt(words, 10.45)).toBe(0); // 단어 사이 공백은 직전 단어
+    expect(wordIndexAt(words, 10.5)).toBe(1);
+    expect(wordIndexAt(words, 99)).toBe(2);
+    expect(wordIndexAt([], 1)).toBe(-1);
+  });
+
+  test("tokenOffsets: 공백 토큰의 글자 위치 (연속 공백·앞뒤 공백)", () => {
+    expect(tokenOffsets(" 예산은  3억 원입니다.")).toEqual([
+      { start: 1, end: 4 },
+      { start: 6, end: 8 },
+      { start: 9, end: 14 },
+    ]);
+    expect(tokenOffsets("")).toEqual([]);
+  });
+
+  test("usableWords: 표시 텍스트(corrected_text 우선)와 수·글자가 맞을 때만", () => {
+    expect(usableWords(seg)).toBe(words);
+    expect(usableWords({ ...seg, words: null })).toBeNull();
+    expect(usableWords({ ...seg, words: undefined })).toBeNull();
+    expect(usableWords({ ...seg, words: [] })).toBeNull();
+    // 저장 중인 편집(낙관적 반영): 단어 수가 달라졌다
+    expect(usableWords({ ...seg, corrected_text: "예산은 3억 원입니다. 맞죠" })).toBeNull();
+    // 수는 같지만 글자가 다르다
+    expect(usableWords({ ...seg, corrected_text: "예산은 4억 원입니다." })).toBeNull();
+    // 코어가 다시 맞춘 단어(교정문 기준)는 쓴다
+    const fixed = [...words.slice(0, 1), { text: "4억", start: 10.5, end: 10.9, approx: true }, words[2]];
+    expect(usableWords({ ...seg, corrected_text: "예산은 4억 원입니다.", words: fixed })).toBe(fixed);
+  });
+
+  test("clickSeekTime: 누른 단어의 시작, 보간한 단어·단어 밖·타이밍 없음은 세그먼트 시작", () => {
+    expect(clickSeekTime(seg, 0)).toBe(10); // "예"
+    expect(clickSeekTime(seg, 3)).toBe(10); // 단어 끝(오른쪽 반)
+    expect(clickSeekTime(seg, 4)).toBe(10); // 사이 공백은 앞 단어
+    expect(clickSeekTime(seg, 5)).toBe(10.5);
+    expect(clickSeekTime(seg, 10)).toBe(9.8); // approx
+    expect(clickSeekTime(seg, null)).toBe(9.8); // 키보드·시간 칸
+    expect(clickSeekTime({ ...seg, words: null }, 6)).toBe(9.8);
+    expect(clickSeekTime({ ...seg, text: " 예산은 3억 원입니다.", words }, 0)).toBe(9.8); // 첫 단어 앞
+  });
+});
+
+test("jobReduce: event 없는 결과 줄({\"aligned\": N})과 모르는 이벤트는 무시한다", () => {
+  const s = { ...IDLE_JOB, running: true, stage: "align" };
+  expect(jobReduce(s, { job: "j", aligned: 3, failed: 0, skipped: 1 } as unknown as JobEvent)).toBe(s);
+  expect(jobReduce(s, { job: "j", event: "later" } as unknown as JobEvent)).toBe(s);
+});

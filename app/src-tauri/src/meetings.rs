@@ -17,6 +17,24 @@ pub struct Segment {
     /// "S1"… schema_version 1이나 화자 분리를 끈 회의는 없거나 null
     #[serde(default)]
     pub speaker: Option<String>,
+    /// 단어 타이밍 (Phase 6.1, `tractus align`). 정렬 전이거나 값이 이상하면 null
+    #[serde(default, deserialize_with = "lenient_words")]
+    pub words: Option<Vec<Word>>,
+}
+
+/// 공백 토큰 하나. 시각은 회의 기준 절대 초. approx: 문장을 고친 뒤 보간한 시각
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct Word {
+    pub text: String,
+    pub start: f64,
+    pub end: f64,
+    #[serde(default)]
+    pub approx: bool,
+}
+
+/// words가 이상해도 회의 전체를 못 읽지 않게 null로 본다 (단어 강조만 빠지고 세그먼트 단위로 돈다)
+fn lenient_words<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Vec<Word>>, D::Error> {
+    Ok(serde_json::from_value(serde_json::Value::deserialize(d)?).ok())
 }
 
 /// transcript.json `speakers` 값. 이름은 사용자가 붙인다 (`tractus speakers rename`)
@@ -406,6 +424,32 @@ mod tests {
         assert_eq!(list(&home).len(), 5); // 목록에서 빠지지 않는다
         // 프론트엔드는 speakers를 항상 객체로 받는다
         assert_eq!(serde_json::to_value(&v1).unwrap()["speakers"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn reads_words_leniently() {
+        let home = temp_home("words");
+        let dir = home.join("meetings/2026-10-06_w_01WORDS");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("transcript.json"),
+            r#"{"schema_version":2,"meeting_id":"01WORDS","segments":[
+                {"id":"s0001","start":0,"end":2,"text":"안녕 하세요","words":[{"text":"안녕","start":0.1,"end":0.5},{"text":"하세요","start":0.6,"end":1.2,"approx":true}]},
+                {"id":"s0002","start":2,"end":3,"text":"a","words":null},
+                {"id":"s0003","start":3,"end":4,"text":"b"},
+                {"id":"s0004","start":4,"end":5,"text":"c","words":[{"text":"c","start":"x"}]},
+                {"id":"s0005","start":5,"end":6,"text":"d","words":"깨짐"}]}"#,
+        )
+        .unwrap();
+        let d = load(&home, "01WORDS").unwrap();
+        let w = d.segments[0].words.as_ref().unwrap();
+        assert_eq!((w[0].text.as_str(), w[0].start, w[0].approx), ("안녕", 0.1, false));
+        assert!(w[1].approx);
+        assert!(d.segments[1..].iter().all(|s| s.words.is_none()), "null·없음·이상한 값은 None");
+        assert_eq!(list(&home).len(), 1); // 목록에서 빠지지 않는다
+        let v = serde_json::to_value(&d.segments).unwrap();
+        assert_eq!(v[0]["words"][1], serde_json::json!({"text": "하세요", "start": 0.6, "end": 1.2, "approx": true}));
+        assert!(v[1]["words"].is_null());
     }
 
     #[test]

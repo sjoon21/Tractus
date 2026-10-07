@@ -6,6 +6,7 @@ import type { Notify, Seek } from "./App";
 import {
   applyEdits,
   baseName,
+  clickSeekTime,
   evidenceStart,
   exportFilename,
   findMatches,
@@ -27,7 +28,10 @@ import {
   STAGE_LABEL,
   stepRate,
   summaryMarkdown,
+  tokenOffsets,
   transcriptRows,
+  usableWords,
+  wordIndexAt,
   type EXPORT_FORMATS,
   type Match,
   type Memo,
@@ -98,6 +102,15 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
   };
 
   const segments = detail?.segments ?? [];
+  // 단어 타이밍 (6.1): 예전 회의는 words가 없다 → '단어 타이밍 만들기'. 코어는 정렬하는 동안 고친 문장을 덮어쓰지 않는다
+  const hasWords = segments.some((s) => !!s.words?.length);
+  const align = useJob(() => {
+    void load();
+    notify({ text: "단어 타이밍을 만들었습니다. 문장의 단어를 누르면 그 단어부터 재생합니다" });
+  });
+  useEffect(() => {
+    if (!align.job.running && align.job.error) notify({ text: `단어 타이밍을 만들지 못했습니다: ${align.job.error}`, error: true });
+  }, [align.job.running, align.job.error, notify]);
   const speakers = detail?.speakers ?? {};
   const stats = useMemo(() => speakerStats(segments, speakers), [detail]);
   const diarized = stats.length > 0;
@@ -336,6 +349,47 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
       CSS.highlights.delete("find-current");
     };
   }, [matches, curMatch, rows, editingId]);
+  // 가라오케 (6.2): 재생 중인 단어 하나를 Highlight API로 칠한다 (단어마다 span을 만들지 않는다).
+  // 재생 중에만 rAF로 돌고, 멈춘 동안은 이동할 때 한 번 칠한다. (세그먼트, 단어)가 바뀔 때만 Range를 바꾼다.
+  // 찾기 강조가 위에 보이게 우선순위를 낮추고, 등록은 한 번만 한다(같은 우선순위면 나중에 등록한 것이 위)
+  const karaoke = useRef<Highlight | null>(null);
+  const usable = useMemo(() => new Map(segments.map((s) => [s.id, usableWords(s)])), [detail]);
+  const pausedT = playing ? -1 : t;
+  useEffect(() => {
+    if (!("highlights" in CSS)) return;
+    const h = (karaoke.current ??= Object.assign(new Highlight(), { priority: -1 }));
+    if (!CSS.highlights.has("karaoke")) CSS.highlights.set("karaoke", h);
+    let last: string | null = null;
+    let raf = 0;
+    const paint = () => {
+      const now = audio.current?.currentTime ?? t;
+      const seg = segments[segmentIndexAt(segments, now)];
+      // 발화가 끝난 뒤의 공백과 고치는 중인 세그먼트는 칠하지 않는다
+      const words = seg && seg.id !== editingId && now <= seg.end ? usable.get(seg.id) : null;
+      const k = words ? wordIndexAt(words, now) : -1;
+      const key = k < 0 ? "" : `${seg.id}:${k}`;
+      if (key !== last) {
+        last = key;
+        h.clear();
+        const node = k < 0 ? null : list.current?.querySelector(`[data-seg-id="${seg.id}"] .seg-text:not(.seg-editor)`)?.firstChild;
+        const o = node ? tokenOffsets(segText(seg))[k] : undefined;
+        if (node && o) {
+          try {
+            const r = new Range();
+            r.setStart(node, o.start);
+            r.setEnd(node, o.end);
+            h.add(r);
+          } catch {
+            // 글자 노드가 방금 바뀌었다. 다음 갱신에 다시 칠한다
+          }
+        }
+      }
+      if (playing) raf = requestAnimationFrame(paint);
+    };
+    paint();
+    return () => cancelAnimationFrame(raf);
+  }, [playing, pausedT, usable, rows, editingId]);
+  useEffect(() => () => void ("highlights" in CSS && CSS.highlights.delete("karaoke")), []);
   useEffect(() => {
     if (!curMatch) return;
     setFollow(false);
@@ -446,6 +500,18 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
               {created?.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
             </p>
             <div className="head-actions">
+              {segments.length > 0 && !hasWords && detail.audio_path && (
+                <button
+                  className="ghost-button head-button"
+                  disabled={align.job.running}
+                  onClick={() => void align.startJob("align", id)}
+                  title="오디오와 문장을 단어 단위로 맞춥니다. 재생 중인 단어가 강조되고, 단어를 누르면 그 단어부터 재생합니다"
+                >
+                  {align.job.running
+                    ? `${STAGE_LABEL[align.job.stage ?? ""] ?? "시작하는 중…"}${align.job.total ? ` ${Math.round((align.job.done / align.job.total) * 100)}%` : ""}`
+                    : "단어 타이밍 만들기"}
+                </button>
+              )}
               <button className="ghost-button head-button" onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
                 찾아 바꾸기
               </button>
@@ -745,7 +811,12 @@ const SegmentRow = memo(function SegmentRow({
         <button
           ref={button}
           className="seg-button"
-          onClick={() => onSeek(seg.start)}
+          onClick={(e) => {
+            // 드래그로 글을 골랐으면 이동하지 않는다. 키보드(detail 0)·시간 칸은 세그먼트 시작, 단어 타이밍이 있으면 누른 단어
+            const sel = window.getSelection();
+            if (sel && !sel.isCollapsed && e.currentTarget.contains(sel.anchorNode)) return;
+            onSeek(clickSeekTime(seg, e.detail ? caretOffset(e.currentTarget, e.clientX, e.clientY) : null));
+          }}
           onDoubleClick={() => onEdit(seg)}
           onKeyDown={(e) => {
             if (e.key !== "Enter" || e.metaKey || isImeKey(e.nativeEvent)) return;
@@ -770,6 +841,13 @@ const SegmentRow = memo(function SegmentRow({
     </li>
   );
 });
+
+/** 누른 지점이 문장 글자 노드의 몇 번째 글자인지. 문장 밖(시간 칸)이거나 지원하지 않으면 null */
+function caretOffset(button: HTMLElement, x: number, y: number): number | null {
+  const node = button.querySelector(".seg-text")?.firstChild;
+  const r = node ? document.caretRangeFromPoint?.(x, y) : null;
+  return r && r.startContainer === node ? r.startOffset : null;
+}
 
 function MemoRow({ memo: m, onSeek }: { memo: Memo; onSeek: (t: number) => void }) {
   const isBookmark = m.kind === "bookmark";
