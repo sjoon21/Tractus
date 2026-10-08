@@ -3,6 +3,7 @@
 import json
 import re
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -215,6 +216,8 @@ def test_transcribe_recording_with_progress_json(env, fake_asr, tmp_path):
     assert d.name.startswith("2026-10-02_") and (d / "audio.ogg").exists() and not rec.exists()
     t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
     assert t["audio"]["file"] == "audio.ogg" and t["created_at"].startswith("2026-10-02T14:00:00")
+    hhmm = datetime.fromisoformat("2026-10-02T14:00:00+09:00").astimezone().strftime("%H:%M")
+    assert t["title"] == f"녹음 {hhmm}" and d.name.startswith(f"2026-10-02_녹음_{hhmm.replace(':', '_')}_")
     assert json.loads((d / "memos.json").read_text(encoding="utf-8"))[0] == {"t": 3.5, "kind": "memo", "text": "예산 다시 확인"}
     md = (d / "transcript.md").read_text(encoding="utf-8")
     assert "[00:00:03] (메모) 예산 다시 확인" in md and "[00:00:06] (북마크)" in md

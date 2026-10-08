@@ -1,7 +1,7 @@
 [project]
 name = "tractus"
 version = "0.1.0"
-description = "Local-first 회의 전사·회의록 도구"
+description = "Local-first 노트·녹음 도구"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"

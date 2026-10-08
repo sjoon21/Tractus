@@ -13,7 +13,7 @@
   precision       답의 인용 중 정답(gold) 또는 허용(ok) 세그먼트 비율 (답이 있는 질문, micro)
   recall          정답 세그먼트 중 답에 인용된 비율 (micro)
   hit             정답 세그먼트를 하나 이상 인용한 질문 비율
-  refused         답이 있는데 NO_EVIDENCE('회의 내용에서 답을 찾지 못했습니다')로 답한 비율
+  refused         답이 있는데 NO_EVIDENCE('노트 내용에서 답을 찾지 못했습니다')로 답한 비율
   no_evidence     답이 없는 질문에서 NO_EVIDENCE + 인용 0개로 답한 비율
   latency         첫 delta까지(TTFT)와 전체 시간의 p50 / 최대 (초)
 """

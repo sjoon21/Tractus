@@ -241,18 +241,18 @@ pub fn pending_recordings(home: &Path) -> Vec<PendingRecording> {
     out
 }
 
-fn find_dir(home: &Path, id: &str) -> Result<PathBuf, String> {
+pub fn find_dir(home: &Path, id: &str) -> Result<PathBuf, String> {
     if id.is_empty() || id.contains(['/', '\\']) || id.contains("..") {
-        return Err(format!("잘못된 회의 ID: {id}"));
+        return Err(format!("잘못된 노트 ID: {id}"));
     }
     // 폴더 이름은 <날짜>_<제목>_<meeting_id> (store.meeting_dir_name)
     let suffix = format!("_{id}");
     fs::read_dir(home.join("meetings"))
-        .map_err(|e| format!("회의 폴더를 읽을 수 없습니다: {e}"))?
+        .map_err(|e| format!("노트 폴더를 읽을 수 없습니다: {e}"))?
         .flatten()
         .map(|e| e.path())
         .find(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with(&suffix)))
-        .ok_or_else(|| "회의를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.".to_string())
+        .ok_or_else(|| "노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.".to_string())
 }
 
 pub fn load(home: &Path, id: &str) -> Result<MeetingDetail, String> {

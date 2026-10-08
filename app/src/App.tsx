@@ -1,13 +1,15 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open } from "@tauri-apps/plugin-dialog";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { api, errText, useJob, useRecorder, type MeetingInfo, type PendingRecording } from "./api";
 import { AskPanel } from "./AskPanel";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorDetail } from "./ErrorDetail";
 import { baseName, dayParts, errorView, IDLE_JOB, JOB_ERROR, fmtTime, groupByDay, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, STAGE_FALLBACK, STAGE_LABEL, warningText, type RecMode } from "./lib";
 import { MeetingView } from "./MeetingView";
 import { RecordView } from "./RecordView";
+import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, recordingLabel, type DeleteTarget } from "./remove";
 import { SearchView } from "./SearchView";
 import { SettingsView } from "./SettingsView";
 
@@ -62,6 +64,8 @@ export function App() {
       setListError(errText(e));
     }
   }, []);
+  // 삭제(휴지통으로 이동): 확인 대화상자 상태. 노트 화면과 사이드바의 남은 녹음이 같이 쓴다
+  const [del, dispatchDel] = useReducer(deleteReduce, IDLE_DELETE);
   const openMeeting = useCallback((id: string, seek?: Omit<Seek, "nonce">) => {
     setView({ kind: "meeting", id, seek: seek && { ...seek, nonce: Date.now() } });
   }, []);
@@ -78,6 +82,29 @@ export function App() {
     transcribeDir.current = dir;
     setWaitDir(dir);
   }, []);
+  const confirmDelete = async () => {
+    const t = del.target;
+    if (!t || del.busy) return;
+    dispatchDel({ type: "start" });
+    try {
+      if (t.kind === "note") {
+        await api.deleteMeeting(t.id);
+        // 열려 있던 노트는 닫는다: 지워진 폴더를 다시 읽지 않게 목록 갱신보다 먼저
+        setView((v) => (v.kind === "meeting" && v.id === t.id ? { kind: "home" } : v));
+      } else {
+        await api.deleteRecording(t.dir);
+        if (transcribeDir.current === t.dir) transcribeDir.current = null;
+      }
+      notify({ text: deletedText(t) });
+    } catch (e) {
+      const f = deleteFailure(t, errText(e));
+      notify({ text: f.text, detail: f.detail, error: true });
+    } finally {
+      dispatchDel({ type: "finish" });
+      void refresh();
+    }
+  };
+  const askDelete = useCallback((target: DeleteTarget) => dispatchDel({ type: "ask", target }), []);
   const { rec, live, startRec, sendRec, resetRec } = useRecorder(startTranscribe);
   const recording = rec.phase === "recording" || rec.phase === "starting" || rec.phase === "stopping";
 
@@ -199,6 +226,7 @@ export function App() {
     setView({ kind: "record" });
   };
 
+  const dialogText = del.target && deleteDialogText(del.target);
   const activeId = view.kind === "meeting" ? view.id : null;
   const groups = groupByDay(meetings);
 
@@ -207,7 +235,7 @@ export function App() {
       <aside className="sidebar">
         <header className="brand">
           <span className="wordmark">Tractus</span>
-          <span className="brand-sub">회의 기록</span>
+          <span className="brand-sub">노트와 녹음</span>
         </header>
 
         <button className={`rec-button ${recording ? "is-live" : ""}`} onClick={onRecordButton} aria-current={view.kind === "record"}>
@@ -271,7 +299,7 @@ export function App() {
             if (q) setView({ kind: "search", q });
           }}
         >
-          <input ref={searchRef} type="search" placeholder="회의 검색" aria-label="회의 검색" />
+          <input ref={searchRef} type="search" placeholder="노트 검색" aria-label="노트 검색" />
           <kbd aria-hidden>⌘K</kbd>
         </form>
         <button
@@ -280,22 +308,22 @@ export function App() {
           aria-expanded={askOpen}
           aria-controls="ask-drawer"
           aria-keyshortcuts="Meta+J"
-          aria-label="AI 어시스턴트에게 질문 (모든 회의 대상)"
-          title="AI 어시스턴트에게 질문 (모든 회의 대상)"
+          aria-label="AI 어시스턴트에게 질문 (모든 노트 대상)"
+          title="AI 어시스턴트에게 질문 (모든 노트 대상)"
           onClick={() => setAskOpen((o) => !o)}
         >
           <span>AI 어시스턴트에게 질문</span>
           <kbd aria-hidden>⌘J</kbd>
         </button>
 
-        <nav className="meeting-nav" aria-label="회의 목록">
+        <nav className="meeting-nav" aria-label="노트 목록">
           {listError && <p className="nav-note is-error">{listError}</p>}
           {leftover.length > 0 && (
             <section className="day-group">
               <h2 className="month-label">변환 대기 중인 녹음</h2>
               <ul className="pending-list">
                 {leftover.map((p) => (
-                  <li key={p.dir}>
+                  <li key={p.dir} className="pending-item">
                     <button
                       className="meeting-link"
                       disabled={transcribing}
@@ -304,20 +332,27 @@ export function App() {
                         setView({ kind: "record" });
                       }}
                     >
-                      <span className="meeting-link-title tnum">
-                        녹음 {p.started_at.slice(0, 10)} {p.started_at.slice(11, 16)}
-                      </span>
+                      <span className="meeting-link-title tnum">{recordingLabel(p.started_at)}</span>
                       <span className="meeting-link-meta tnum">
                         {p.duration === null ? "끊긴 녹음" : fmtTime(p.duration)}
                         <span className="badge">변환하기</span>
                       </span>
+                    </button>
+                    <button
+                      className="row-delete"
+                      disabled={transcribing}
+                      aria-label={`${recordingLabel(p.started_at)} 삭제`}
+                      title="삭제 (휴지통으로 이동)"
+                      onClick={() => askDelete({ kind: "recording", dir: p.dir, startedAt: p.started_at })}
+                    >
+                      삭제
                     </button>
                   </li>
                 ))}
               </ul>
             </section>
           )}
-          {!listError && meetings.length === 0 && leftover.length === 0 && <p className="nav-note">아직 회의가 없습니다. 녹음을 시작하거나 설정에서 데이터 위치를 확인하세요.</p>}
+          {!listError && meetings.length === 0 && leftover.length === 0 && <p className="nav-note">아직 노트가 없습니다. 녹음을 시작하거나 설정에서 데이터 위치를 확인하세요.</p>}
           {groups.map((g, i) => {
             const p = dayParts(g.day);
             const newMonth = i === 0 || dayParts(groups[i - 1].day).month !== p.month;
@@ -352,13 +387,13 @@ export function App() {
           <button className="text-button" onClick={() => setView({ kind: "settings" })} aria-current={view.kind === "settings"}>
             설정
           </button>
-          <span className="foot-note">{meetings.length}개 회의</span>
+          <span className="foot-note">노트 {meetings.length}개</span>
         </footer>
       </aside>
 
       <main className="main">
         {view.kind === "home" && <Welcome count={meetings.length} />}
-        {view.kind === "meeting" && <MeetingView key={view.id} id={view.id} seek={view.seek} onChanged={refresh} notify={notify} />}
+        {view.kind === "meeting" && <MeetingView key={view.id} id={view.id} seek={view.seek} onChanged={refresh} notify={notify} onDelete={askDelete} />}
         {view.kind === "search" && <SearchView key={view.q} query={view.q} onOpen={openMeeting} />}
         {view.kind === "record" && <RecordView rec={rec} captions={live} job={waitDir ? { ...IDLE_JOB, running: true, stage: "wait_import" } : transcribe.job} send={sendRec} retry={() => transcribeDir.current && startTranscribe(transcribeDir.current)} />}
         {view.kind === "settings" && <SettingsView onSaved={refresh} />}
@@ -379,7 +414,7 @@ export function App() {
       >
         <header className="ask-drawer-head">
           <h2 id="ask-drawer-title" className="eyebrow">
-            AI 어시스턴트에게 질문 (모든 회의 대상)
+            AI 어시스턴트에게 질문 (모든 노트 대상)
           </h2>
           <button className="toast-close" aria-label="닫기 (Esc)" onClick={closeAsk}>
             ×
@@ -388,6 +423,17 @@ export function App() {
         <AskPanel scope={GLOBAL} inputRef={askInput} onCite={(meetingId, segId, t) => openMeeting(meetingId, { segId, t })} />
       </aside>
 
+      {del.target && dialogText && (
+        <ConfirmDialog
+          title={dialogText.title}
+          body={dialogText.body}
+          cancelLabel={dialogText.cancel}
+          confirmLabel={del.busy ? dialogText.busy : dialogText.confirm}
+          busy={del.busy}
+          onCancel={() => dispatchDel({ type: "cancel" })}
+          onConfirm={() => void confirmDelete()}
+        />
+      )}
       {dropping && (
         <div className="drop-overlay" aria-hidden>
           <p>파일을 놓으면 텍스트로 변환합니다</p>
@@ -438,14 +484,9 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
 function Welcome({ count }: { count: number }) {
   return (
     <section className="welcome">
-      <p className="eyebrow">Tractus</p>
-      <h1>
-        말은 흘러가도
-        <br />
-        기록은 남습니다.
-      </h1>
+      <h1 className="sr-only">Tractus</h1>
       <p className="welcome-lead">
-        {count > 0 ? `회의 ${count}개가 이 Mac에 있습니다. 왼쪽에서 하나를 고르세요.` : "녹음은 이 Mac에서 텍스트로 변환되고, 파일로 남습니다."}
+        {count > 0 ? `노트 ${count}개가 이 Mac에 있습니다. 왼쪽에서 하나를 고르세요.` : "녹음은 이 Mac에서 텍스트로 변환되고, 파일로 남습니다."}
       </p>
       <dl className="shortcuts">
         <div>

@@ -27,7 +27,7 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 
 | 모드 | 앱이 넘기는 인자 | 내용 |
 | --- | --- | --- |
-| **대면 회의 (기본)** | `--no-system` | 마이크 하나로 방 안의 모든 사람을 녹음한다. 시스템 오디오가 없으니 에코 문제도 없다. 음성 처리(AGC·잡음 제거)를 켜지 않아 원음에 가깝게 녹음한다 |
+| **대면 녹음 (기본)** | `--no-system` | 마이크 하나로 방 안의 모든 사람을 녹음한다. 시스템 오디오가 없으니 에코 문제도 없다. 음성 처리(AGC·잡음 제거)를 켜지 않아 원음에 가깝게 녹음한다 |
 | 화상·하이브리드 | `--echo-cancel` | 마이크 + 시스템 오디오. 스피커로 들어도 되도록 마이크 입력에 macOS 내장 에코 제거(AVAudioEngine voice processing)를 켜고, 다른 소리를 줄이는 ducking은 최소로 둔다 |
 
 ### `tractus-rec record --out <dir> [--no-mic] [--no-system] [--echo-cancel] [--fake]`
@@ -245,7 +245,7 @@ stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없
 ```
 
 - **앱은 `done`의 `answer`로 스트리밍 텍스트를 바꿔 표시한다.** `done`에서 인용을 정리한다: 근거(`sources`)에 있는 ID만 `[s0012]` / `[<meeting_id>#s0012]` 하나씩으로 다시 쓰고(`[s0012, s0013]` → `[s0012][s0013]`), 근거에 없는 ID는 답에서 지운다. `citations`는 답에 남은 인용을 처음 나온 순서로 중복 없이 모은 것이다.
-- 근거에 답이 없으면 답은 `회의 내용에서 답을 찾지 못했습니다.`(질문이 한국어가 아니면 같은 뜻의 질문 언어)이고 `citations`는 비어 있다. 전체 범위에서 검색 결과가 하나도 없으면 LLM을 부르지 않고 `sources: []` 다음에 바로 이 답으로 `done`을 낸다(`stage answer`·`delta` 없음).
+- 근거에 답이 없으면 답은 `노트 내용에서 답을 찾지 못했습니다.`(질문이 한국어가 아니면 같은 뜻의 질문 언어)이고 `citations`는 비어 있다. 전체 범위에서 검색 결과가 하나도 없으면 LLM을 부르지 않고 `sources: []` 다음에 바로 이 답으로 `done`을 낸다(`stage answer`·`delta` 없음).
 - 공급자 해석은 `summarize`와 같다(`--provider` > `TRACTUS_LLM_PROVIDER`, `TRACTUS_LOCAL_ONLY`, 키 없음 오류 메시지 동일). 이런 오류는 첫 이벤트로 `error`가 나온다. 앱은 보내기 전에 설정된 `TRACTUS_LLM_PROVIDER`로 "질문과 관련 대화 일부가 Upstage(solar-pro4)로 전송됩니다"를 표시한다. 실제로 답한 곳(`done`의 `provider`·`model`)은 각 답 아래에 적는다. 근거가 없어 LLM을 부르지 않은 `done`은 `provider`·`model`이 `null`이다(아무것도 보내지 않았으므로 전송 안내에 쓰지 않는다).
 - **원격 공급자로는 질문, history, `sources`의 텍스트만 보낸다.** 오디오, 요약, 다른 회의 전사는 보내지 않는다.
 - 취소: 앱은 자식 프로세스를 종료한다. `chat.json`은 `done`을 내보내기 직전에 원자적으로 쓰므로, 답 도중에 끊으면 기록이 바뀌지 않고 `done`을 받았다면 이미 저장돼 있다.
@@ -306,7 +306,7 @@ transcript.json의 제안 (ARCHITECTURE.md §6):
 
 - `name`은 언제나 **사용자가 확정한 이름**이다. 제안은 이름이 없는 화자에만 있다. 앱은 배지 "홍길동 님인가요? (일치율 82%)"(`score` × 100, 반올림)와 **맞음**(→ `speakers rename S2 홍길동`)·**다름**(→ `speakers dismiss S2`)을 보여 준다.
 - 표시 이름은 제안을 쓰지 않는다(`S2`). md·vtt·요약·MCP·색인·내보내기도 같다. `bundle`의 transcript.json에는 `suggested`가 없다.
-- 등록은 앱의 이름 바꾸기 대화상자에서 '이 참석자 목소리 등록 (다음 회의에서 자동 인식)'과 동의 확인("본인이거나 녹음·등록에 동의를 받은 사람입니다")을 둘 다 체크했을 때만 `voices enroll --consent`로 한다(이름 바꾸기도 같이 된다).
+- 등록은 앱의 이름 바꾸기 대화상자에서 '이 참석자 목소리 등록 (다음 녹음에서 자동 인식)'과 동의 확인("본인이거나 녹음·등록에 동의를 받은 사람입니다")을 둘 다 체크했을 때만 `voices enroll --consent`로 한다(이름 바꾸기도 같이 된다).
 - 모델 파일: `$TRACTUS_MODELS_DIR/3dspeaker-campplus-zh-en/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx`. sha256이 다르면 오류(다른 모델의 벡터와 비교하지 않게).
 
 ### 2.8 `tractus live` (실시간 자막, Phase 7.2)
@@ -343,22 +343,43 @@ tractus live --recording <녹음 폴더> [--progress-json] [--speakers] [--force
 - `warning`은 종료가 아니다. 이 밖에 `--speakers`에서만 `diarizer_missing`·`diarizer_failed`가 나올 수 있다(화자 없이 계속).
 - `done.stats`는 측정용이다. 앱은 쓰지 않아도 된다. 키는 늘어날 수 있다.
 
+### 2.9 노트·녹음 삭제 (앱 전용, 코어 변경 없음)
+
+삭제는 **앱만** 한다. `tractus delete`도, MCP 삭제 도구도 만들지 않았다. 이유:
+
+- 검색 색인은 이미 폴더가 사라지면 스스로 정리한다(`Index.sync`: 없어진 노트의 청크·키워드 색인(`chunks_fts`)·벡터(`chunks_vec`)를 지운다, 임베더는 올리지 않는다. `tests/test_index.py::test_deleted_note_leaves_no_rows_or_vectors_without_loading_the_embedder`). `tractus index`·`search`·`ask`·MCP 모두 동기화부터 하므로 지워진 노트는 검색·질문에 나오지 않는다.
+- 에이전트(MCP·CLI)가 사용자의 노트를 지우게 할 이유가 없다. 지우는 일은 확인 대화상자를 거치는 사람의 동작이다.
+
+Tauri 명령 (`src-tauri/src/removal.rs`, `lib.rs`):
+
+| 명령 | 인수 | 하는 일 |
+| --- | --- | --- |
+| `delete_meeting` | `id` (meeting_id) | `$TRACTUS_HOME/meetings/<폴더>`를 macOS 휴지통으로 옮긴다. 반환값 없음 |
+| `delete_recording` | `dir` (녹음 폴더 절대 경로) | 변환 전 녹음 `$TRACTUS_HOME/recordings/<ULID>`를 휴지통으로 옮긴다 |
+
+- **휴지통:** `trash` 크레이트(MIT) + `NSFileManager trashItemAtURL`. Finder 자동화 권한이 필요 없고 entitlement도 필요 없다(앱은 샌드박스가 아니다). 일부 시스템에서는 'Put Back'이 보이지 않을 수 있으므로 앱 안내는 "휴지통에서 폴더를 꺼내 원래 폴더에 다시 넣으세요"라고 쓴다. 영구 삭제는 하지 않는다.
+- **검사(전부 통과해야 옮긴다):** ID는 영숫자만(`..`·`/`·`\` 거절) → `find_dir`로 폴더를 찾고(없으면 "노트를 찾을 수 없습니다") → 폴더가 `meetings/` 바로 아래의 진짜 폴더여야 한다(`symlink_metadata`로 링크 거절, 정규화한 부모가 정규화한 `meetings/`와 같아야 한다. `meetings/` 자체가 다른 곳으로 연결돼 있어도 그 아래 폴더는 허용) → `.job.json`이 있으면 거절(변환이 끝나지 않은 노트) → 그 노트를 쓰는 작업이 있으면 거절 → `transcript.json`의 `meeting_id`가 같아야 한다. 녹음은 `is_recording_dir`(ULID, `recordings/` 바로 아래) + 같은 폴더 검사 + 녹음·변환 중이면 거절.
+- **쓰는 중 표시(`AppState.busy`):** `job_start`(`summarize`·`align`은 노트 ID, `transcribe`는 녹음 폴더), `ask_start`(`--meeting`이 있는 질문은 그 노트), `rec_start`(녹음 폴더)가 프로세스 시작 때 대상을 올리고 `exit` 이벤트에서 내린다. 전체 질문(`--meeting` 없음)과 몇 초 안에 끝나는 편집·내보내기는 표시하지 않는다.
+- **색인 정리:** 성공하면 백그라운드로 MCP `status`를 부른다(= `sync(embed=False)`). 실패해도 삭제는 성공이다(검색·질문이 먼저 동기화하므로 지워진 노트는 나오지 않는다).
+- **오류 문자열:** 첫 줄이 화면 문장, 둘째 줄부터가 원래 오류(앱이 `자세히`로 접는다).
+- **건드리지 않는 것:** 목소리 프로필(`voices.json`)과 자주 쓰는 단어(`glossary.md`)는 노트 데이터가 아니다. 노트를 지워도 그대로다.
+
 ## 3. Tauri 앱 (app/)
 
 - **스택:** Tauri 2 + React + TypeScript + Vite. 오디오는 자체 `media://` URI 스킴(`convertFileSrc(path, "media")`, MIME `audio/ogg`, HTTP Range 지원, `TRACTUS_HOME` 밖 경로 거부)으로 `<audio>`에 연결한다. Tauri 기본 asset protocol은 `.ogg`/`.opus`의 MIME과 Range 처리가 맞지 않아 쓰지 않는다(`app/README.md`).
 - **남은 녹음:** `recordings/<ULID>/recording.json`이 남아 있는 폴더는 "변환 대기 중인 녹음"으로 보여 준다. 코어는 전사에 **성공했을 때만** 녹음 폴더를 지운다(앱이 강제 종료되거나 전사가 실패해도 녹음은 남는다).
 - **API 키·모델 위치:** 코어는 현재 폴더에 이어 `$TRACTUS_HOME/.env` / `.env.local`도 읽는다. 저장소 밖에 설치한 앱은 `$TRACTUS_HOME/.env.local`에 `UPSTAGE_API_KEY`, `TRACTUS_MODELS_DIR` 등을 둔다.
 - **설정:** `TRACTUS_HOME`(기본 `~/Tractus`), `TRACTUS_MODELS_DIR`, `tractus` 실행 파일 경로(기본: 저장소 `.venv/bin/tractus`), `tractus-rec` 경로. GUI 앱은 셸 PATH를 물려받지 않으므로 절대 경로로 둔다.
-- **데이터:** 회의 목록·전사·요약·메모는 Rust에서 파일을 직접 읽는다. 검색만 상주 `tractus mcp`의 `search_meetings`로 한다(색인·임베딩 모델을 매번 올리지 않으려고).
+- **데이터:** 노트 목록·전사·요약·메모는 Rust에서 파일을 직접 읽는다. 검색만 상주 `tractus mcp`의 `search_meetings`로 한다(색인·임베딩 모델을 매번 올리지 않으려고).
 
 ### v1 화면
 
 | 화면 | 기능 |
 | --- | --- |
-| 사이드바 | 회의 목록(날짜별), 검색 입력, 녹음 시작 버튼 |
+| 사이드바 | 노트 목록(날짜별), 검색 입력, 녹음 시작 버튼 |
 | 녹음 | 경과 시간, 트랙별 레벨미터, 북마크(단축키), 메모 입력(Enter → 경과 시각과 함께 저장), 정지 → 전사 진행률 |
-| 회의 상세 | 오디오 플레이어. 전사 세그먼트를 클릭하면 그 위치로 이동하고, 재생 중인 세그먼트를 강조·자동 스크롤. 메모·북마크를 시각 순으로 함께 표시. 요약 패널(결정 사항·할 일, 항목의 시각을 클릭하면 이동). 요약이 없으면 "요약 만들기" |
-| 검색 결과 | 세그먼트 단위 결과. 클릭하면 회의 상세의 해당 시각으로 이동 |
+| 노트 상세 | 머리의 '삭제'(휴지통으로 이동, §2.9). 오디오 플레이어. 전사 세그먼트를 클릭하면 그 위치로 이동하고, 재생 중인 세그먼트를 강조·자동 스크롤. 메모·북마크를 시각 순으로 함께 표시. 요약 패널(결정 사항·할 일, 항목의 시각을 클릭하면 이동). 요약이 없으면 "요약 만들기" |
+| 검색 결과 | 세그먼트 단위 결과. 클릭하면 노트 상세의 해당 시각으로 이동 |
 
 ### 제외 (v1)
 

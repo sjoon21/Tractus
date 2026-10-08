@@ -1,6 +1,6 @@
 # Tractus
 
-회의 녹음을 **내 Mac 안에서** 전사하고, 요약·검색만 LLM API로 처리하는 회의록 도구입니다.
+메모·노트와 녹음을 **내 Mac 안에서** 텍스트로 바꾸고, 요약·검색·AI 질문만 LLM API로 처리하는 로컬 우선 노트 도구입니다. 녹음은 노트를 만드는 한 가지 방법입니다.
 오디오와 전사본은 기기를 떠나지 않습니다. LLM은 로컬(Gemma)이든 상용(Claude·OpenAI·Gemini·Upstage)이든 OpenAI 호환 API 하나로 호출합니다.
 
 - 라이선스: [Apache-2.0](LICENSE)
@@ -104,7 +104,7 @@ uv run tractus transcribe 화면녹화.mp4                   # 동영상은 소�
 
 FFmpeg가 읽는 형식은 모두 받습니다: 오디오(m4a, mp3, wav, aac, flac, ogg, webm …)와 동영상(mp4, mov, mkv …). 오디오 트랙이 없는 동영상은 오류로 끝납니다.
 
-전사가 끝나면 `~/Tractus/meetings/` 아래에 회의 폴더가 생깁니다. 위치는 `TRACTUS_HOME` 환경변수로 바꿀 수 있습니다.
+전사가 끝나면 `~/Tractus/meetings/` 아래에 노트 폴더가 생깁니다. 위치는 `TRACTUS_HOME` 환경변수로 바꿀 수 있습니다.
 
 ```text
 ~/Tractus/meetings/2026-10-02_3분기_예산_회의_01K6.../
@@ -119,8 +119,8 @@ FFmpeg가 읽는 형식은 모두 받습니다: 오디오(m4a, mp3, wav, aac, fl
 | --- | --- |
 | `--track standard\|lite` | 생략하면 메모리 16GB 이상이면 `standard`(1.7B), 아니면 `lite`(0.6B) |
 | `--language auto\|ko\|en` | 기본 `auto`. `ko`로 고정하면 영어 위주 발화를 번역할 수 있어 권장하지 않습니다 |
-| `-t`, `--term` | 이 회의의 용어(참석자 이름, 제품명). 여러 번 지정할 수 있습니다 |
-| `--title` | 회의 제목. 생략하면 파일 이름 |
+| `-t`, `--term` | 이 노트의 용어(참석자 이름, 제품명). 여러 번 지정할 수 있습니다 |
+| `--title` | 노트 제목. 생략하면 파일 이름 |
 | `--recording <폴더>` | 데스크톱 녹음기(`tractus-rec`)가 만든 녹음 폴더를 전사 (마이크·시스템 트랙을 섞음). 끝나면 녹음 폴더를 정리하고, `--keep-tracks`면 원본 트랙을 `tracks/`에 보관 |
 | `--no-diarize` | 화자 분리를 하지 않습니다 (모델이 없으면 자동으로 이렇게 됩니다) |
 | `--max-speakers N` | 화자 수 상한. 말한 시간이 많은 N명만 남기고 나머지는 가까운 화자에 붙입니다 (Nemotron은 8명이 한계) |
@@ -128,11 +128,11 @@ FFmpeg가 읽는 형식은 모두 받습니다: 오디오(m4a, mp3, wav, aac, fl
 | `--no-align` | 단어 타이밍을 만들지 않습니다 (모델이 없으면 자동으로 이렇게 됩니다) |
 | `--progress-json` | 진행 상황을 stdout에 JSON Lines로 출력 (데스크톱 앱용, `docs/desktop.md`) |
 
-- **자주 쓰는 단어(용어집):** `~/Tractus/glossary.md`에 `- 단어` 형식으로 적어 두면 모든 회의에 적용됩니다. 앱에서는 "자주 쓰는 단어"라고 부릅니다. `-t`로 준 용어와 합쳐서 전달됩니다.
+- **자주 쓰는 단어(용어집):** `~/Tractus/glossary.md`에 `- 단어` 형식으로 적어 두면 모든 노트에 적용됩니다. 앱에서는 "자주 쓰는 단어"라고 부릅니다. `-t`로 준 용어와 합쳐서 전달됩니다.
 - **이어하기:** 중간에 Ctrl+C로 멈추거나 종료돼도 같은 명령을 다시 실행하면 끝난 청크 다음부터 이어서 진행합니다.
-- **중복 방지:** 이미 전사한 파일(같은 SHA-256)은 다시 전사하지 않습니다. 다시 하려면 회의 폴더를 지우세요.
-- **단어 타이밍:** 전사가 끝나면 세그먼트 텍스트를 오디오에 맞춰 단어마다 시각을 붙입니다(`transcript.json`의 `words`, 1시간 회의 약 1.5분). 앱은 이것으로 재생 중인 단어를 강조하고, 단어를 클릭하면 그 단어부터 재생합니다. 예전 회의는 `uv run tractus align 01K6X3`으로 채웁니다(`--force`: 이미 있는 것도 다시).
-- **화자 분리:** 전사 전에 회의 전체에서 목소리로 화자를 나눠 `S1`, `S2` …로 붙입니다. Nemotron은 8명까지이고, 9명 이상 회의는 `tractus-diar` 헬퍼를 빌드하고 모델을 받아 두면 자동으로 그쪽으로 다시 나눕니다(AI Hub 17명 회의 혼동 28.5% → 6.9%). 자동 추정이라 틀릴 수 있으니 아래 명령으로 이름을 붙이고 고칩니다. 앱과 내보낸 문서(md·vtt·txt·srt·csv·docx·PDF)는 이름 없는 `S3`을 `참석자 3`으로 보여 줍니다. CLI·MCP·JSON은 라벨(`S3`)을 그대로 씁니다.
+- **중복 방지:** 이미 전사한 파일(같은 SHA-256)은 다시 전사하지 않습니다. 다시 하려면 노트 폴더를 지우세요.
+- **단어 타이밍:** 전사가 끝나면 세그먼트 텍스트를 오디오에 맞춰 단어마다 시각을 붙입니다(`transcript.json`의 `words`, 1시간 회의 약 1.5분). 앱은 이것으로 재생 중인 단어를 강조하고, 단어를 클릭하면 그 단어부터 재생합니다. 예전 노트는 `uv run tractus align 01K6X3`으로 채웁니다(`--force`: 이미 있는 것도 다시).
+- **화자 분리:** 전사 전에 녹음 전체에서 목소리로 화자를 나눠 `S1`, `S2` …로 붙입니다. Nemotron은 8명까지이고, 9명 이상 회의는 `tractus-diar` 헬퍼를 빌드하고 모델을 받아 두면 자동으로 그쪽으로 다시 나눕니다(AI Hub 17명 회의 혼동 28.5% → 6.9%). 자동 추정이라 틀릴 수 있으니 아래 명령으로 이름을 붙이고 고칩니다. 앱과 내보낸 문서(md·vtt·txt·srt·csv·docx·PDF)는 이름 없는 `S3`을 `참석자 3`으로 보여 줍니다. CLI·MCP·JSON은 라벨(`S3`)을 그대로 씁니다.
 
 ### 화자 이름 붙이기·고치기
 
@@ -150,9 +150,9 @@ uv run tractus speakers 01K6X3 merge S3 S1          # S3을 S1에 합치기
 ```bash
 uv run tractus voices enroll 01K6X3 S1 --name "홍길동" --consent   # S1을 홍길동으로 확정하고 목소리 등록
 uv run tractus voices list                                          # 등록된 사람 (--json: 앱용)
-uv run tractus voices match 01K6X3                                  # 기존 회의에 이름 제안 다시 계산
+uv run tractus voices match 01K6X3                                  # 기존 노트에 이름 제안 다시 계산
 uv run tractus speakers 01K6X3 dismiss S2                           # 틀린 제안 지우기 (맞으면 그 이름으로 rename)
-uv run tractus voices forget "홍길동"                               # 등록 삭제 (회의에 남은 제안도 지움)
+uv run tractus voices forget "홍길동"                               # 등록 삭제 (노트에 남은 제안도 지움)
 ```
 
 목소리를 등록하면 다음 전사부터 비슷한 목소리의 화자에 "홍길동 님인가요? (일치율 82%)" 같은 **제안**이 붙습니다. 제안은 앱에만 보이고, 확정하기 전에는 md·vtt·요약·검색·MCP·내보내기에 이름으로 쓰이지 않습니다.
@@ -187,11 +187,11 @@ uv run tractus export 01K6X3 --format bundle --out 주간회의.zip --force   # 
 ### 요약·결정 사항·할 일
 
 ```bash
-uv run tractus summarize 01K6X3          # meeting_id 일부 또는 회의 폴더 경로
+uv run tractus summarize 01K6X3          # meeting_id 일부 또는 노트 폴더 경로
 uv run tractus summarize 01K6X3 --provider upstage --model solar-pro4
 ```
 
-회의 폴더에 `summary.md`(사람용)와 `summary.json`(기계용)이 생깁니다. 모든 주제·결정·할 일에는 근거 세그먼트와 타임스탬프가 붙습니다. **LLM 공급자에는 전사 텍스트만 전송되고 오디오는 전송되지 않습니다.**
+노트 폴더에 `summary.md`(사람용)와 `summary.json`(기계용)이 생깁니다. 모든 주제·결정·할 일에는 근거 세그먼트와 타임스탬프가 붙습니다. **LLM 공급자에는 전사 텍스트만 전송되고 오디오는 전송되지 않습니다.**
 
 | 공급자 (`--provider`) | 키 | 기본 모델 | 상태 |
 | --- | --- | --- | --- |
@@ -211,19 +211,19 @@ uv run tractus index --rebuild           # 처음부터 다시
 uv run tractus search "GPU 서버 구매" --from 2026-07-01 --to 2026-09-30
 ```
 
-키워드(한국어 음절 bigram)와 의미(로컬 임베딩)를 함께 씁니다. 색인은 `~/Tractus/.tractus/index.sqlite`에 있고, 지워도 회의 폴더에서 다시 만들어집니다.
+키워드(한국어 음절 bigram)와 의미(로컬 임베딩)를 함께 씁니다. 색인은 `~/Tractus/.tractus/index.sqlite`에 있고, 지워도 노트 폴더에서 다시 만들어집니다.
 
-### 회의에 질문하기
+### 노트에 질문하기
 
 ```bash
-echo "GPU 서버 구매는 어떻게 하기로 했어?" | uv run tractus ask --meeting 01K6X3          # 이 회의 전사 전체로 답
-echo "검색 latency 목표는?" | uv run tractus ask --from 2026-07-01 --to 2026-09-30      # 모든 회의에서 검색해 답
+echo "GPU 서버 구매는 어떻게 하기로 했어?" | uv run tractus ask --meeting 01K6X3          # 이 노트 전사 전체로 답
+echo "검색 latency 목표는?" | uv run tractus ask --from 2026-07-01 --to 2026-09-30      # 모든 노트에서 검색해 답
 echo '{"question":"담당자는?","history":[{"role":"user","content":"Redis 캐시 얘기야"}]}' | uv run tractus ask --meeting 01K6X3 --save
 ```
 
-답의 문장마다 근거 세그먼트가 `[s0012]`(회의 범위) 또는 `[meeting_id#s0012]`(전체 범위)로 붙고, 끝에 근거 시각을 모아 보여 줍니다. 근거에 없는 ID는 지웁니다. 기록에 답이 없으면 "회의 내용에서 답을 찾지 못했습니다."라고 답합니다. `--save`는 질문과 답을 회의 폴더의 `chat.json`에 남깁니다(최근 50개).
+답의 문장마다 근거 세그먼트가 `[s0012]`(노트 범위) 또는 `[meeting_id#s0012]`(전체 범위)로 붙고, 끝에 근거 시각을 모아 보여 줍니다. 근거에 없는 ID는 지웁니다. 기록에 답이 없으면 "노트 내용에서 답을 찾지 못했습니다."라고 답합니다. `--save`는 질문과 답을 노트 폴더의 `chat.json`에 남깁니다(최근 50개).
 
-**공급자에는 질문, 최근 대화(6개 메시지), 근거 세그먼트만 전송됩니다.** 회의 범위는 그 회의 전사 전체(10만 자가 넘으면 회의 안에서 검색한 부분), 전체 범위는 검색 상위 8개 결과와 앞뒤 세그먼트입니다. 전체 범위에서 검색 결과가 없으면 LLM을 부르지 않습니다. 공급자 선택과 `TRACTUS_LOCAL_ONLY`는 요약과 같습니다. 앱 연동 계약은 `docs/desktop.md` §2.5에 있습니다.
+**공급자에는 질문, 최근 대화(6개 메시지), 근거 세그먼트만 전송됩니다.** 노트 범위는 그 노트 전사 전체(10만 자가 넘으면 노트 안에서 검색한 부분), 전체 범위는 검색 상위 8개 결과와 앞뒤 세그먼트입니다. 전체 범위에서 검색 결과가 없으면 LLM을 부르지 않습니다. 공급자 선택과 `TRACTUS_LOCAL_ONLY`는 요약과 같습니다. 앱 연동 계약은 `docs/desktop.md` §2.5에 있습니다.
 
 ### 녹음 중 실시간 텍스트 변환 (미리보기)
 
@@ -240,7 +240,7 @@ uv run tractus live --recording ~/Tractus/recordings/01K… --progress-json   # 
 
 ## MCP 연동 (Claude Code · Codex · Antigravity)
 
-에이전트 CLI가 Tractus를 도구로 써서 과거 회의를 검색합니다. 근거를 `[meeting_id#s0012 00:05:31]` 형식으로 인용하고, 요약을 직접 써서 저장할 수도 있습니다. **MCP 서버는 LLM을 호출하지 않습니다.** 추론은 각 CLI가 자기 구독·키로 합니다.
+에이전트 CLI가 Tractus를 도구로 써서 과거 노트를 검색합니다. 근거를 `[meeting_id#s0012 00:05:31]` 형식으로 인용하고, 요약을 직접 써서 저장할 수도 있습니다. **MCP 서버는 LLM을 호출하지 않습니다.** 추론은 각 CLI가 자기 구독·키로 합니다.
 
 먼저 한 번 색인합니다(벡터는 CLI 쪽에서 만듭니다): `uv run tractus index`
 
@@ -276,13 +276,13 @@ agy mcp add --env TRACTUS_HOME=$HOME/Tractus --env TRACTUS_MODELS_DIR=/path/to/T
 | 도구 | 기능 |
 | --- | --- |
 | `status` | 데이터 위치, 색인 상태 (결과가 비어 보이면 먼저 확인) |
-| `search_meetings` | 하이브리드 검색, 날짜·회의 필터, 세그먼트별 인용 표기 |
-| `list_meetings` | 기간별 회의 목록 |
+| `search_meetings` | 하이브리드 검색, 날짜·노트 필터, 세그먼트별 인용 표기 |
+| `list_meetings` | 기간별 노트 목록 |
 | `get_transcript` | 전사 원문 (페이지 단위) |
 | `get_summary` / `list_action_items` | 요약, 할 일 |
 | `save_summary` | 에이전트가 쓴 요약을 검증해서 저장 (유일한 쓰기 도구) |
 
-예: `claude -p "지난 분기 GPU 서버 구매 결정이 어떻게 바뀌었는지 내 회의 기록에서 찾아서 근거와 함께 알려줘"`
+예: `claude -p "지난 분기 GPU 서버 구매 결정이 어떻게 바뀌었는지 내 노트에서 찾아서 근거와 함께 알려줘"`
 
 ### 개발
 
@@ -292,7 +292,7 @@ uv run pytest -m slow    # 실제 모델로 짧은 음성 전사·가상 2화자
 uv run python bench/diar_eval.py der --engine nemotron fluid   # 화자 분리 DER (AI Hub, 로컬 전용·지표만. --set DIR: 가상 음성)
 uv run pytest -m llm     # 실제 LLM API 스모크 테스트 (키가 있는 공급자만, 가상 회의 전사 사용)
 uv run python bench/search_eval.py   # 검색 평가 (가상 회의 5건, 질의 30개)
-uv run python bench/ask_eval.py      # 회의 질의 평가 (가상 회의 5건, 질문 28개, 설정된 LLM 공급자 호출)
+uv run python bench/ask_eval.py      # 노트 질의 평가 (가상 노트 5건, 질문 28개, 설정된 LLM 공급자 호출)
 ```
 
 ## 저장소 구조

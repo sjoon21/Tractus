@@ -19,7 +19,7 @@ const base = {
 };
 
 describe("PDF 인쇄 문서", () => {
-  test("머리말: 제목·날짜(회의 현지 시각)·길이·화자", () => {
+  test("머리말: 제목·날짜(노트 현지 시각)·길이·화자", () => {
     const d = printDoc(base);
     expect(d.title).toBe("주간 개발 회의");
     expect(d.date).toBe("2026년 10월 2일 (금) 14:05");

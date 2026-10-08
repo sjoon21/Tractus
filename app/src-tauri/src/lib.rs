@@ -5,6 +5,7 @@ mod mcp;
 mod media;
 mod meetings;
 mod procs;
+mod removal;
 mod voices;
 
 use serde::{Deserialize, Serialize};
@@ -115,6 +116,26 @@ struct AppState {
     asks: Arc<Mutex<HashMap<String, Arc<Mutex<Child>>>>>,
     /// 녹음 중 실시간 자막 프로세스. 녹음이 끝나면(stopped·exit) 정식 전사보다 먼저 끝낸다
     live: LiveSlot,
+    /// 지금 쓰는 중인 대상 (작업·질문·녹음 ID → 노트 ID 또는 녹음 폴더). 삭제가 이 대상을 거절한다
+    busy: Busy,
+}
+
+type Busy = Arc<Mutex<HashMap<String, String>>>;
+
+/// 대상이 지금 쓰이는 중인지
+fn is_busy(busy: &Busy, target: &str) -> bool {
+    busy.lock().unwrap().values().any(|t| t == target)
+}
+
+/// 대상을 쓰는 중으로 표시하고 풀 때 쓸 키를 돌려준다 (프로세스가 끝나는 exit 이벤트나 시작 실패 때 `release`)
+fn hold(busy: &Busy, target: &str) -> String {
+    let key = ulid::Ulid::new().to_string();
+    busy.lock().unwrap().insert(key.clone(), target.to_string());
+    key
+}
+
+fn release(busy: &Busy, key: &str) {
+    busy.lock().unwrap().remove(key);
 }
 
 type LiveSlot = Arc<Mutex<Option<procs::Stoppable>>>;
@@ -267,9 +288,11 @@ fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>) -> 
         cmd.arg("--fake");
     }
     let (slot, live, live_dir) = (state.rec.clone(), state.live.clone(), dir.clone());
+    let (busy, busy_key) = (state.busy.clone(), hold(&state.busy, &dir.to_string_lossy()));
+    let release_key = busy_key.clone();
     // 실시간 자막은 녹음 헬퍼가 트랙 파일을 만든 뒤(started)에 띄운다. 설정은 녹음을 시작할 때의 값을 쓴다
     let live_settings = s.live_captions.then(|| s.clone());
-    let (stdin, _) = procs::spawn_streaming(cmd, serde_json::Map::new(), move |ev| {
+    let started = procs::spawn_streaming(cmd, serde_json::Map::new(), move |ev| {
         match (ev["event"].as_str(), &live_settings) {
             (Some("started"), Some(ls)) => start_live(&app, ls, &live_dir, &live),
             // stopped를 화면에 보내기 전에 자막 프로세스를 끝낸다: 프론트엔드는 stopped를 받고 정식 전사를 시작하므로
@@ -279,9 +302,17 @@ fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>) -> 
         }
         if ev["event"] == "exit" {
             slot.lock().unwrap().take();
+            release(&busy, &busy_key);
         }
         let _ = app.emit("rec", ev);
-    })?;
+    });
+    let (stdin, _) = match started {
+        Ok(s) => s,
+        Err(e) => {
+            release(&state.busy, &release_key);
+            return Err(e);
+        }
+    };
     *rec = Some(stdin);
     Ok(dir.to_string_lossy().into_owned())
 }
@@ -327,11 +358,25 @@ fn job_start(app: AppHandle, state: State<'_, AppState>, kind: String, target: S
     let s = state.settings();
     let cmd = s.tractus(&job_args(&s.home(), &kind, &target)?);
     let tag = json!({"job": job, "kind": kind}).as_object().unwrap().clone();
+    // 노트·녹음을 쓰는 동안은 삭제를 거절한다 (가져오기는 대상이 아직 없다)
+    let key = (kind != "import").then(|| (state.busy.clone(), hold(&state.busy, &target)));
+    let slot = key.clone();
     // stdin은 쓰지 않으므로 바로 닫는다
-    drop(procs::spawn_streaming(cmd, tag, move |ev| {
+    let started = procs::spawn_streaming(cmd, tag, move |ev| {
+        if let (true, Some((busy, k))) = (ev["event"] == "exit", &slot) {
+            release(busy, k);
+        }
         let _ = app.emit("job", ev);
-    })?);
-    Ok(())
+    });
+    match (started, key) {
+        (Ok(_), _) => Ok(()),
+        (Err(e), key) => {
+            if let Some((busy, k)) = key {
+                release(&busy, &k);
+            }
+            Err(e)
+        }
+    }
 }
 
 /// 회의 질의 (Phase 6.3). 이벤트는 "ask"로 보내고 {job}을 덧붙인다. meeting이 있으면 그 회의만 보고 chat.json에 남긴다
@@ -352,14 +397,29 @@ fn ask_start(
     let cmd = state.settings().tractus(&args);
     let tag = json!({ "job": job }).as_object().unwrap().clone();
     let (asks, key) = (state.asks.clone(), job.clone());
+    // 한 노트에 묻는 동안은 그 노트 삭제를 거절한다
+    let held = meeting.as_deref().map(|m| (state.busy.clone(), hold(&state.busy, m)));
+    let slot = held.clone();
     // 넣기 전에 잠가 둔다: 바로 끝나는 프로세스의 exit가 넣기보다 먼저 지우지 않게
     let mut running = state.asks.lock().unwrap();
-    let (mut stdin, child) = procs::spawn_streaming(cmd, tag, move |ev| {
+    let spawned = procs::spawn_streaming(cmd, tag, move |ev| {
         if ev["event"] == "exit" {
             asks.lock().unwrap().remove(&key);
+            if let Some((busy, k)) = &slot {
+                release(busy, k);
+            }
         }
         let _ = app.emit("ask", ev);
-    })?;
+    });
+    let (mut stdin, child) = match spawned {
+        Ok(p) => p,
+        Err(e) => {
+            if let Some((busy, k)) = &held {
+                release(busy, k);
+            }
+            return Err(e);
+        }
+    };
     running.insert(job, child);
     // 코어는 stdin을 끝까지 읽고 시작한다. 파이썬이 뜨는 동안 UI 스레드가 파이프에 막히지 않게 따로 쓰고 닫는다
     std::thread::spawn(move || {
@@ -384,6 +444,32 @@ fn ask_cancel(state: State<'_, AppState>, job: String) {
 async fn load_chat(state: State<'_, AppState>, id: String) -> Result<Vec<meetings::ChatEntry>, String> {
     let home = state.settings().home();
     blocking(move || meetings::load_chat(&home, &id)).await
+}
+
+/// 노트를 휴지통으로 옮긴다 (docs/desktop.md §2.8). 처리 중인 노트·변환이 끝나지 않은 노트·폴더 밖은 거절한다.
+/// 검색 색인은 사라진 폴더를 스스로 지운다: 백그라운드로 MCP `status`(= `sync(embed=False)`)를 불러 바로 맞춘다
+/// (실패해도 검색·질문이 매번 먼저 동기화하므로 지워진 노트는 나오지 않는다)
+#[tauri::command]
+async fn delete_meeting(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let (home, busy, mcp) = (state.settings().home(), state.busy.clone(), state.mcp.clone());
+    blocking(move || removal::trash_note(&home, &id, |k| is_busy(&busy, k), removal::to_trash)).await?;
+    sync_index_later(mcp);
+    Ok(())
+}
+
+/// 변환하지 않은 녹음을 휴지통으로 옮긴다. 녹음 중이거나 변환 중인 폴더는 거절한다
+#[tauri::command]
+async fn delete_recording(state: State<'_, AppState>, dir: String) -> Result<(), String> {
+    let (home, busy) = (state.settings().home(), state.busy.clone());
+    blocking(move || removal::trash_recording(&home, Path::new(&dir), |k| is_busy(&busy, k), removal::to_trash)).await
+}
+
+fn sync_index_later(mcp: Arc<mcp::McpClient>) {
+    std::thread::spawn(move || {
+        if let Err(e) = mcp.call_tool("status", json!({})) {
+            eprintln!("검색 색인 정리 실패: {e}");
+        }
+    });
 }
 
 /// 질문을 보내기 전 '어디로 전송되는지' 안내에 쓸 공급자·모델 (API 키는 읽지 않는다)
@@ -417,7 +503,7 @@ enum SpeakerEdit {
 fn speakers_args(id: &str, edit: &SpeakerEdit) -> Result<Vec<String>, String> {
     let bad = || "잘못된 참석자 편집입니다".to_string();
     if !is_meeting_id(id) {
-        return Err(format!("잘못된 회의 ID: {id}"));
+        return Err(format!("잘못된 노트 ID: {id}"));
     }
     let (op, rest) = match edit {
         SpeakerEdit::Rename { label, name } if is_tagged(label, 'S') && !name.contains(['\n', '\r']) => ("rename", vec![label.as_str(), name.trim()]),
@@ -491,7 +577,7 @@ struct TextEdit {
 /// `tractus segments <회의> edit` 인수와 stdin JSON. 문장은 인수가 아니라 stdin으로 넘긴다(길이·특수 문자 걱정 없이)
 fn segments_edit(id: &str, edits: &[TextEdit]) -> Result<(Vec<String>, String), String> {
     if !is_meeting_id(id) {
-        return Err(format!("잘못된 회의 ID: {id}"));
+        return Err(format!("잘못된 노트 ID: {id}"));
     }
     if edits.is_empty() || edits.iter().any(|e| !is_tagged(&e.id, 's') || e.text.trim().is_empty()) {
         return Err("빈 내용은 저장할 수 없습니다".into());
@@ -600,7 +686,7 @@ pub fn run() {
                     eprintln!("MCP 예열 실패: {e}");
                 }
             });
-            app.manage(AppState { settings: Mutex::new(settings), config_path, mcp, rec: Arc::default(), asks: Arc::default(), live: Arc::default() });
+            app.manage(AppState { settings: Mutex::new(settings), config_path, mcp, rec: Arc::default(), asks: Arc::default(), live: Arc::default(), busy: Arc::default() });
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -622,6 +708,8 @@ pub fn run() {
             ask_start,
             ask_cancel,
             load_chat,
+            delete_meeting,
+            delete_recording,
             llm_config,
             voices::voices_list,
             voices::voices_enroll,
@@ -815,6 +903,19 @@ mod tests {
     }
 
     #[test]
+    fn busy_target_is_held_until_released() {
+        let busy = Busy::default();
+        let a = hold(&busy, "01AAA");
+        let b = hold(&busy, "01AAA"); // 같은 노트를 쓰는 작업이 둘이면 둘 다 끝나야 풀린다
+        assert!(is_busy(&busy, "01AAA") && !is_busy(&busy, "01BBB"));
+        release(&busy, &a);
+        assert!(is_busy(&busy, "01AAA"));
+        release(&busy, &b);
+        release(&busy, &b); // 두 번 풀어도 무해하다
+        assert!(!is_busy(&busy, "01AAA"));
+    }
+
+    #[test]
     fn last_json_line() {
         assert_eq!(stdout_json("log\n{\"path\": \"/a b.txt\"}\n\n").unwrap()["path"], "/a b.txt");
         assert!(stdout_json("").is_err());
@@ -847,8 +948,8 @@ mod tests {
         assert_eq!(last_error_line("Error: 이름을 입력하세요.").as_deref(), Some("이름을 입력하세요."));
         // resolve_meeting의 실제 출력 (TYPER_USE_RICH=0, param_hint="MEETING"이라 따옴표 없음)
         assert_eq!(
-            last_error_line("Try 'tractus speakers --help' for help.\n\nError: Invalid value for MEETING: ‘x’에 해당하는 회의가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.\n").as_deref(),
-            Some("‘x’에 해당하는 회의가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.")
+            last_error_line("Try 'tractus speakers --help' for help.\n\nError: Invalid value for MEETING: ‘x’에 해당하는 노트가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.\n").as_deref(),
+            Some("‘x’에 해당하는 노트가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.")
         );
         assert_eq!(last_error_line("Error: Invalid value for '--recording': 녹음된 소리가 없습니다").as_deref(), Some("녹음된 소리가 없습니다"));
         assert_eq!(last_error_line(" \n"), None);

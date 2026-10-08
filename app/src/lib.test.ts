@@ -131,11 +131,11 @@ describe("parseToolResult", () => {
       expect((e as DetailedError).detail).toBe("'x'에 맞는 전사된 회의가 없습니다");
     }
   });
-  test("스마트 검색 상태 줄: 청크·벡터 수 대신 회의 수", () => {
+  test("스마트 검색 상태 줄: 청크·벡터 수 대신 노트 수", () => {
     const st = { meetings: 12, indexed_chunks: 300, vectors: 300, vector_search: true };
-    expect(statusLine(st)).toBe("스마트 검색 준비 완료 (회의 12개)");
-    expect(statusLine({ ...st, vectors: 10 })).toMatch(/^일부 회의가 아직 스마트 검색에 포함되지 않았습니다\. 터미널에서 tractus index를 실행하세요 \(회의 12개\)$/);
-    expect(statusLine({ ...st, vector_search: false })).toMatch(/단어 일치로만 찾습니다 \(회의 12개\)$/);
+    expect(statusLine(st)).toBe("스마트 검색 준비 완료 (노트 12개)");
+    expect(statusLine({ ...st, vectors: 10 })).toMatch(/^일부 노트가 아직 스마트 검색에 포함되지 않았습니다\. 터미널에서 tractus index를 실행하세요 \(노트 12개\)$/);
+    expect(statusLine({ ...st, vector_search: false })).toMatch(/단어 일치로만 찾습니다 \(노트 12개\)$/);
   });
   test("결과가 비면 예외", () => {
     expect(() => parseToolResult(null)).toThrow();
@@ -208,8 +208,8 @@ describe("jobReduce", () => {
   });
 
   test("stderrTail은 typer 접두어를 뗀다 (resolve_meeting은 param_hint가 따옴표 없는 MEETING)", () => {
-    const real = "Try 'tractus speakers --help' for help.\n\nError: Invalid value for MEETING: ‘x’에 해당하는 회의가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.";
-    expect(stderrTail(real, "").split("\n").at(-1)).toBe("‘x’에 해당하는 회의가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.");
+    const real = "Try 'tractus speakers --help' for help.\n\nError: Invalid value for MEETING: ‘x’에 해당하는 노트가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.";
+    expect(stderrTail(real, "").split("\n").at(-1)).toBe("‘x’에 해당하는 노트가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.");
     expect(stderrTail("Error: Invalid value for '--recording': 녹음된 소리가 없습니다", "")).toBe("녹음된 소리가 없습니다");
   });
 
@@ -259,11 +259,11 @@ describe("recReduce", () => {
 });
 
 describe("녹음 방식", () => {
-  test("대면 회의는 마이크만, 화상·하이브리드는 시스템 오디오 + 에코 제거", () => {
+  test("대면 녹음는 마이크만, 화상·하이브리드는 시스템 오디오 + 에코 제거", () => {
     expect(recFlags("in_person")).toEqual(["--no-system"]);
     expect(recFlags("hybrid")).toEqual(["--echo-cancel"]);
   });
-  test("저장된 값이 없거나 모르는 값이면 대면 회의", () => {
+  test("저장된 값이 없거나 모르는 값이면 대면 녹음", () => {
     expect(recMode("hybrid")).toBe("hybrid");
     expect(recMode("in_person")).toBe("in_person");
     expect(recMode(undefined)).toBe("in_person");
@@ -557,7 +557,7 @@ describe("내보내기 (5.6)", () => {
   test("기본 파일 이름은 <날짜>_<제목>.<확장자>", () => {
     expect(exportFilename("2026-10-02T14:00:00+09:00", "주간회의", "docx")).toBe("2026-10-02_주간회의.docx");
     expect(exportFilename("2026-10-02T14:00:00+09:00", " a/b: c? ", "txt")).toBe("2026-10-02_a b c.txt");
-    expect(exportFilename("", "", "srt")).toBe("회의_제목 없음.srt");
+    expect(exportFilename("", "", "srt")).toBe("노트_제목 없음.srt");
   });
   test("형식 목록: bundle은 zip", () => {
     expect(EXPORT_FORMATS.map((f) => f.format)).toEqual(["txt", "md", "srt", "vtt", "csv", "docx", "bundle"]);

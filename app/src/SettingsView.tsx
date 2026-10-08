@@ -121,7 +121,7 @@ function VoicesSection({ home }: { home: string }) {
     <section className="voices" aria-labelledby="voices-title">
       <h2 id="voices-title">참석자 목소리 프로필</h2>
       <p className="field-hint">
-        회의 화면에서 참석자 이름을 바꿀 때 ‘이 참석자 목소리 등록’을 고르면 등록됩니다. 다음 회의부터 비슷한 목소리에 이름을 <b>제안</b>만 하고, 맞는지는 직접 고릅니다.
+        노트에서 참석자 이름을 바꿀 때 ‘이 참석자 목소리 등록’을 고르면 등록됩니다. 다음 녹음부터 비슷한 목소리에 이름을 <b>제안</b>만 하고, 맞는지는 직접 고릅니다.
         목소리는 생체정보라 <code>{home.replace(/\/$/, "")}/voices.json</code>(이 Mac, 나만 읽을 수 있는 권한)에만 저장하고 이 Mac 밖으로 보내지 않습니다. 검색·요약·AI 질문에도 쓰지
         않습니다.
       </p>
@@ -149,7 +149,7 @@ function VoicesSection({ home }: { home: string }) {
       {asking && (
         <div className="speakers-confirm" role="alertdialog" aria-label="목소리 삭제">
           <p>
-            <b>{asking.name}</b>의 목소리 표본 {asking.samples}개를 지웁니다. 회의에 붙인 이름은 그대로 남고, 다음 회의부터 이 사람을 제안하지 않습니다.
+            <b>{asking.name}</b>의 목소리 표본 {asking.samples}개를 지웁니다. 노트에 붙인 이름은 그대로 남고, 다음 녹음부터 이 사람을 제안하지 않습니다.
           </p>
           <button className="primary-button" onClick={() => void forget(asking)} disabled={busy} autoFocus>
             지우기

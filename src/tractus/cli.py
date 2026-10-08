@@ -38,7 +38,7 @@ from tractus.store import IncompleteError, load_glossary, meeting_dir_name, new_
 from tractus.store import _hms  # noqa: E402
 from tractus.vad import find_chunks  # noqa: E402
 
-app = typer.Typer(add_completion=False, help="Local-first 회의 전사·회의록 도구")
+app = typer.Typer(add_completion=False, help="Local-first 노트·녹음 도구")
 console = Console(stderr=True, soft_wrap=True)  # 파이프(앱)에서 80칸 줄바꿈 금지: 앱은 stderr 마지막 줄만 보여 준다
 
 
@@ -144,7 +144,7 @@ def _source_from_recording(d: Path) -> Source:
     if not tracks:
         raise typer.BadParameter(f"{d}에 녹음된 소리가 없습니다", param_hint="--recording")
     marks = [m for m in rec.get("marks") or [] if isinstance(m, dict) and isinstance(m.get("t"), (int, float))]
-    return Source(paths=tracks, name=d.name, title=f"회의 {started:%H:%M}", recorded=started, marks=marks, recording_dir=d)
+    return Source(paths=tracks, name=d.name, title=f"녹음 {started:%H:%M}", recorded=started, marks=marks, recording_dir=d)
 
 
 def _source_from_file(file: Path) -> Source:
@@ -153,13 +153,13 @@ def _source_from_file(file: Path) -> Source:
 
 @app.command()
 def transcribe(
-    file: Path = typer.Argument(None, exists=True, dir_okay=False, help="회의 녹음·동영상 파일 (m4a, mp3, wav, webm, mp4, mov … ffmpeg가 읽는 형식)"),
+    file: Path = typer.Argument(None, exists=True, dir_okay=False, help="녹음·동영상 파일 (m4a, mp3, wav, webm, mp4, mov … ffmpeg가 읽는 형식)"),
     recording: Path = typer.Option(None, "--recording", exists=True, file_okay=False, help="tractus-rec 녹음 폴더 (마이크·시스템 트랙을 섞어 전사)"),
-    title: str = typer.Option(None, "--title", help="회의 제목. 생략하면 파일 이름 (녹음이면 '회의 HH:MM')"),
+    title: str = typer.Option(None, "--title", help="노트 제목. 생략하면 파일 이름 (녹음이면 '녹음 HH:MM')"),
     track: Track = typer.Option(None, "--track", help="standard(1.7B) | lite(0.6B). 생략하면 메모리 16GB 이상이면 standard"),
     language: Language = typer.Option(Language.auto, "--language", help="auto 권장. ko로 고정하면 영어 발화를 번역할 수 있음"),
-    term: list[str] = typer.Option([], "--term", "-t", help="이 회의의 용어 (참석자 이름·제품명). 여러 번 지정 가능"),
-    keep_tracks: bool = typer.Option(False, "--keep-tracks", help="녹음 원본 트랙을 지우지 않고 회의 폴더의 tracks/로 옮긴다"),
+    term: list[str] = typer.Option([], "--term", "-t", help="이 노트의 용어 (참석자 이름·제품명). 여러 번 지정 가능"),
+    keep_tracks: bool = typer.Option(False, "--keep-tracks", help="녹음 원본 트랙을 지우지 않고 노트 폴더의 tracks/로 옮긴다"),
     no_diarize: bool = typer.Option(False, "--no-diarize", help="화자 분리를 하지 않는다 (segment.speaker = null)"),
     max_speakers: int = typer.Option(None, "--max-speakers", min=1, help=f"화자 수 상한. 말한 시간이 많은 N명만 남기고 나머지는 가까운 화자에 붙인다 (nemotron은 {MAX_SPEAKERS}명이 한계)"),
     diarizer: DiarizerEngine = typer.Option(
@@ -168,7 +168,7 @@ def transcribe(
     no_align: bool = typer.Option(False, "--no-align", help="단어 타이밍을 만들지 않는다 (segment.words = null, 나중에 `tractus align`)"),
     progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
 ) -> None:
-    """녹음을 전사해 회의 폴더(audio.ogg, transcript.json/md/vtt)를 만든다. 중단돼도 같은 명령으로 이어서 진행한다."""
+    """녹음을 전사해 노트 폴더(audio.ogg, transcript.json/md/vtt)를 만든다. 중단돼도 같은 명령으로 이어서 진행한다."""
     Events.enabled = progress_json
     if (file is None) == (recording is None):
         raise typer.BadParameter("녹음 파일 또는 --recording 폴더 중 하나만 지정하세요")
@@ -239,7 +239,7 @@ def _run_diarizer(engine: str, diarizer, pcm, max_speakers: int | None, fallback
 
 
 def _diarize(pcm, max_speakers: int | None, engine: DiarizerEngine = DiarizerEngine.auto) -> tuple[list, dict | None]:
-    """회의 전체 화자 분리 → (turn 목록, transcript.json의 diarization). 모델이 없거나 실패하면 화자 없이 진행한다.
+    """노트 전체 화자 분리 → (turn 목록, transcript.json의 diarization). 모델이 없거나 실패하면 화자 없이 진행한다.
 
     auto: Nemotron을 돌리고 8채널을 모두 썼으면(9명 이상일 수 있음) fluid로 다시 돌린다. --max-speakers가 8 이하면 그대로.
     fluid: 헬퍼·모델이 없거나 실패하면 Nemotron으로 돌린다."""
@@ -289,7 +289,7 @@ def _suggest_voices(pcm, turns: list[dict]) -> dict:
         Events.emit("stage", stage="voices")
         return voices.suggest(embedder, pcm, turns, people, sorted({t["speaker"] for t in turns}))
     except Exception as e:  # noqa: BLE001 — 목소리 제안 실패가 전사를 막지 않는다
-        _warn("voices_failed", f"등록된 목소리를 맞춰 보지 못했습니다 (`tractus voices match <회의>`로 다시 시도): {e}")
+        _warn("voices_failed", f"등록된 목소리를 맞춰 보지 못했습니다 (`tractus voices match <노트>`로 다시 시도): {e}")
         return {}
 
 
@@ -382,7 +382,7 @@ def _new_job(
     )
     job.save()
     n_spk = len({c[2] for c in chunks} - {None})
-    console.print(f"회의 폴더: {d}\n트랙 {track.value} ({MODELS[track]}), 청크 {len(chunks)}개, 화자 {n_spk}명(추정), 용어 {len(hotwords)}개")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+    console.print(f"노트 폴더: {d}\n트랙 {track.value} ({MODELS[track]}), 청크 {len(chunks)}개, 화자 {n_spk}명(추정), 용어 {len(hotwords)}개")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
     return job, pcm
 
 
@@ -494,11 +494,11 @@ def live_cmd(
 
 @app.command("align")
 def align_cmd(
-    meeting: str = typer.Argument(..., help="회의 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
+    meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
     force: bool = typer.Option(False, "--force", help="이미 단어 타이밍이 있는 세그먼트도 다시 맞춘다"),
     progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
 ) -> None:
-    """기존 회의의 단어 타이밍(segment.words)을 채운다. 기본은 words가 없는 세그먼트만.
+    """기존 노트의 단어 타이밍(segment.words)을 채운다. 기본은 words가 없는 세그먼트만.
     stdout: {"aligned": N, "failed": M, "skipped": K} (--progress-json이면 같은 값이 done 이벤트에 들어간다)"""
     Events.enabled = progress_json
 
@@ -574,7 +574,7 @@ def _sync_index_quietly(embed: bool = True) -> None:
 
 @app.command()
 def summarize(
-    meeting: str = typer.Argument(..., help="회의 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
+    meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
     provider: str = typer.Option(None, "--provider", help="upstage | openai | claude | gemini | gemma-local. 생략하면 TRACTUS_LLM_PROVIDER"),
     model: str = typer.Option(None, "--model", help="모델 ID. 생략하면 TRACTUS_LLM_MODEL 또는 공급자 기본값"),
     progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
@@ -625,15 +625,15 @@ def _save_chat(d: Path, question: str, done: dict) -> None:
 
 @app.command()
 def ask(
-    meeting: str = typer.Option(None, "--meeting", help="이 회의 전사 전체로 답한다 (meeting_id 일부 또는 폴더). 생략하면 모든 회의에서 검색"),
+    meeting: str = typer.Option(None, "--meeting", help="이 노트 전사 전체로 답한다 (meeting_id 일부 또는 폴더). 생략하면 모든 노트에서 검색"),
     date_from: str = typer.Option(None, "--from", help="YYYY-MM-DD (전체 범위 검색에만)", callback=lambda v: _iso_date(v, "--from")),
     date_to: str = typer.Option(None, "--to", help="YYYY-MM-DD (전체 범위 검색에만)", callback=lambda v: _iso_date(v, "--to")),
     provider: str = typer.Option(None, "--provider", help="upstage | openai | claude | gemini | gemma-local. 생략하면 TRACTUS_LLM_PROVIDER"),
     model: str = typer.Option(None, "--model", help="모델 ID. 생략하면 TRACTUS_LLM_MODEL 또는 공급자 기본값"),
-    save: bool = typer.Option(False, "--save", help="질문·답을 회의 폴더 chat.json에 덧붙인다 (--meeting과 함께)"),
+    save: bool = typer.Option(False, "--save", help="질문·답을 노트 폴더 chat.json에 덧붙인다 (--meeting과 함께)"),
     progress_json: bool = typer.Option(False, "--progress-json", help="이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
 ) -> None:
-    """회의 기록에 질문한다. stdin: {"question": "…", "history": [{"role", "content"}]} 또는 질문 평문.
+    """노트에 질문한다. stdin: {"question": "…", "history": [{"role", "content"}]} 또는 질문 평문.
     공급자에는 질문, 최근 대화, 근거 세그먼트만 보낸다. 답의 문장마다 [s0012] 인용이 붙는다."""
     from openai import APIError
 
@@ -646,7 +646,7 @@ def ask(
     except ValueError as e:
         _fail(str(e))
     if save and not meeting:
-        _fail("--save는 --meeting과 함께만 쓸 수 있습니다 (회의 폴더의 chat.json에 저장)")
+        _fail("--save는 --meeting과 함께만 쓸 수 있습니다 (노트 폴더의 chat.json에 저장)")
     try:
         d = resolve_meeting(meeting) if meeting else None
     except typer.BadParameter as e:
@@ -658,7 +658,7 @@ def ask(
 
         idx = Index(home_dir(), embedder=load_embedder(models_dir()))  # 질의 임베딩 때만 모델을 올린다 (LazyEmbedder)
         try:
-            idx.sync(embed=False)  # 새 벡터는 만들지 않는다: 회의가 많으면 몇 분 걸린다. 벡터 없는 청크는 키워드로 찾힌다
+            idx.sync(embed=False)  # 새 벡터는 만들지 않는다: 노트가 많으면 몇 분 걸린다. 벡터 없는 청크는 키워드로 찾힌다
             return qa.search_sources(idx, question, **kw)
         finally:
             idx.close()
@@ -694,7 +694,7 @@ def ask(
 
 @app.command()
 def index(rebuild: bool = typer.Option(False, "--rebuild", help="색인 파일을 지우고 처음부터 다시 만든다")) -> None:
-    """회의 폴더를 검색 색인(~/Tractus/.tractus/index.sqlite)에 반영한다. 바뀐 회의만 처리한다."""
+    """노트 폴더를 검색 색인(~/Tractus/.tractus/index.sqlite)에 반영한다. 바뀐 노트만 처리한다."""
     t0 = time.perf_counter()
     with console.status("색인 중… (처음에는 임베딩 모델을 올리느라 몇 초 걸립니다)"):
         idx = _open_index()
@@ -705,7 +705,7 @@ def index(rebuild: bool = typer.Option(False, "--rebuild", help="색인 파일�
         finally:
             idx.close()
     console.print(
-        f"회의 {st['meetings']}개, 청크 {st['chunks']}개, 벡터 {st['vectors']}개 "
+        f"노트 {st['meetings']}개, 청크 {st['chunks']}개, 벡터 {st['vectors']}개 "
         f"(추가 {r.added}, 갱신 {r.updated}, 삭제 {r.removed}, 임베딩 {r.embedded}, {time.perf_counter() - t0:.1f}초)"
     )
     if not has_embedder:
@@ -723,7 +723,7 @@ def search(
     date_from: str = typer.Option(None, "--from", help="YYYY-MM-DD", callback=lambda v: _iso_date(v, "--from")),
     date_to: str = typer.Option(None, "--to", help="YYYY-MM-DD", callback=lambda v: _iso_date(v, "--to")),
 ) -> None:
-    """과거 회의를 하이브리드(키워드 + 의미) 검색한다."""
+    """과거 노트를 하이브리드(키워드 + 의미) 검색한다."""
     idx = _open_index()
     try:
         idx.sync()
@@ -748,12 +748,12 @@ def _iso_date(value: str | None, name: str) -> str | None:
         raise typer.BadParameter(f"{name}는 YYYY-MM-DD 형식이어야 합니다: {value!r}") from e
 
 
-speakers_app = typer.Typer(help="회의의 화자 보기·이름 짓기·고치기. transcript.json과 md·vtt를 다시 쓰고 검색 색인을 갱신한다 (오디오는 건드리지 않음)")
+speakers_app = typer.Typer(help="노트의 화자 보기·이름 짓기·고치기. transcript.json과 md·vtt를 다시 쓰고 검색 색인을 갱신한다 (오디오는 건드리지 않음)")
 app.add_typer(speakers_app, name="speakers")
 
 
 @speakers_app.callback()
-def speakers_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="회의 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
+def speakers_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
     ctx.obj = resolve_meeting(meeting)
 
 
@@ -775,7 +775,7 @@ def speakers_list(ctx: typer.Context, as_json: bool = typer.Option(False, "--jso
         print(json.dumps({"meeting_id": t["meeting_id"], "speakers": rows, "diarization": t.get("diarization")}, ensure_ascii=False))
         return
     if not rows:
-        print("화자 정보가 없습니다 (화자 분리 없이 전사됨). `tractus speakers <회의> set <세그먼트> new`로 직접 붙일 수 있습니다")
+        print("화자 정보가 없습니다 (화자 분리 없이 전사됨). `tractus speakers <노트> set <세그먼트> new`로 직접 붙일 수 있습니다")
     for r in rows:
         hint = f"\t{r['suggested']['name']}? (자동 인식 {r['suggested']['score']:.0%})" if r["suggested"] else ""
         print(f"{r['label']}\t{r['name'] or '-'}\t세그먼트 {r['segments']}개\t{_hms(r['talk_sec'])}{hint}")
@@ -816,7 +816,7 @@ def speakers_dismiss(ctx: typer.Context, label: str = typer.Argument(..., help="
     _edit_speakers(ctx.obj, "dismiss", label)
 
 
-voices_app = typer.Typer(help="목소리 프로필($TRACTUS_HOME/voices.json, 권한 0600). 등록한 사람의 목소리로 새 회의 화자에 이름을 제안한다. 이 Mac 밖으로 보내지 않는다")
+voices_app = typer.Typer(help="목소리 프로필($TRACTUS_HOME/voices.json, 권한 0600). 등록한 사람의 목소리로 새 노트 화자에 이름을 제안한다. 이 Mac 밖으로 보내지 않는다")
 app.add_typer(voices_app, name="voices")
 
 CONSENT_MESSAGE = (
@@ -870,14 +870,14 @@ def voices_list(as_json: bool = typer.Option(False, "--json", help="JSON으로 s
     if reenroll:
         console.print("[yellow]목소리 모델이 바뀌어 등록된 목소리를 쓸 수 없습니다. 다시 등록하세요 (`tractus voices enroll`).[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
     if not rows:
-        print("등록된 목소리가 없습니다. `tractus voices enroll <회의> S1 --name 이름 --consent`로 등록합니다")
+        print("등록된 목소리가 없습니다. `tractus voices enroll <노트> S1 --name 이름 --consent`로 등록합니다")
     for r in rows:
         print(f"{r['name']}\t표본 {r['samples']}개\t{(r['created_at'] or '')[:10]}\t{r['id']}")
 
 
 @voices_app.command("enroll")
 def voices_enroll(
-    meeting: str = typer.Argument(..., help="회의 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
+    meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
     label: str = typer.Argument(..., help="S1 등"),
     name: str = typer.Option(..., "--name", help="이 화자의 이름. 같은 이름이 있으면 그 사람에 표본을 더한다 (최대 5개)"),
     consent: bool = typer.Option(False, "--consent", help="본인이거나 녹음·등록에 동의를 받았음 (필수)"),
@@ -909,12 +909,12 @@ def voices_enroll(
 
 @voices_app.command("forget")
 def voices_forget(ref: str = typer.Argument(..., help="이름 또는 id")) -> None:
-    """등록한 사람을 지운다. 회의에 남은 그 사람의 목소리 제안도 지운다 (확정한 이름은 그대로). stdout: {"forgotten": N}"""
+    """등록한 사람을 지운다. 노트에 남은 그 사람의 목소리 제안도 지운다 (확정한 이름은 그대로). stdout: {"forgotten": N}"""
     data, gone = voices.forget(_profiles(), ref)
     if gone:
         voices.save_profiles(home_dir(), data)
         for p in sorted((home_dir() / "meetings").glob("*/transcript.json")):
-            # ponytail: 회의 폴더 전체를 훑는다. 수천 개가 되면 제안이 있는 회의 목록을 따로 둔다
+            # ponytail: 노트 폴더 전체를 훑는다. 수천 개가 되면 제안이 있는 노트 목록을 따로 둔다
             try:
                 t = _read_transcript(p.parent)
             except (OSError, ValueError):
@@ -928,10 +928,10 @@ def voices_forget(ref: str = typer.Argument(..., help="이름 또는 id")) -> No
 
 @voices_app.command("match")
 def voices_match(
-    meeting: str = typer.Argument(..., help="회의 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
+    meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
     progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
 ) -> None:
-    """기존 회의의 목소리 제안을 다시 계산한다. 이름을 확정한 화자와 그 이름의 사람은 건너뛴다.
+    """기존 노트의 목소리 제안을 다시 계산한다. 이름을 확정한 화자와 그 이름의 사람은 건너뛴다.
     stdout: {"suggested": N} (--progress-json이면 같은 값이 done 이벤트에 들어간다)"""
     Events.enabled = progress_json
     try:
@@ -959,12 +959,12 @@ def voices_match(
         print(json.dumps({"suggested": len(suggestions)}))
 
 
-segments_app = typer.Typer(help="회의 전사 텍스트 고치기. 원문(text)은 두고 corrected_text에 쓴 뒤 md·vtt를 다시 쓰고 검색 색인을 갱신한다")
+segments_app = typer.Typer(help="노트 전사 텍스트 고치기. 원문(text)은 두고 corrected_text에 쓴 뒤 md·vtt를 다시 쓰고 검색 색인을 갱신한다")
 app.add_typer(segments_app, name="segments")
 
 
 @segments_app.callback()
-def segments_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="회의 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
+def segments_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
     ctx.obj = resolve_meeting(meeting)
 
 
@@ -1009,12 +1009,12 @@ ExportFormat = Enum("ExportFormat", {f: f for f in EXPORT_FORMATS}, type=str)
 
 @app.command("export")
 def export_cmd(
-    meeting: str = typer.Argument(..., help="회의 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
-    fmt: ExportFormat = typer.Option(..., "--format", help="txt | md | srt | vtt | csv | docx | bundle(회의 폴더 zip)"),
+    meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
+    fmt: ExportFormat = typer.Option(..., "--format", help="txt | md | srt | vtt | csv | docx | bundle(노트 폴더 zip)"),
     out: Path = typer.Option(..., "--out", help="저장할 파일 경로"),
     force: bool = typer.Option(False, "--force", help="--out 파일이 있으면 덮어쓴다"),
 ) -> None:
-    """회의를 파일로 내보낸다. 화자는 표시 이름, 본문은 교정본(corrected_text) 우선. stdout: {"path": "<절대 경로>"}"""
+    """노트를 파일로 내보낸다. 화자는 표시 이름, 본문은 교정본(corrected_text) 우선. stdout: {"path": "<절대 경로>"}"""
     d = resolve_meeting(meeting)
     if out.exists() and not force:
         console.print(f"[red]이미 있는 파일입니다 (덮어쓰려면 --force):[/red] {escape(str(out))}")

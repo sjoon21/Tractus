@@ -306,5 +306,5 @@ def test_find_meeting_dir_errors_read_as_sentences(tmp_path):
 
     from tractus.store import find_meeting_dir
 
-    with pytest.raises(LookupError, match="^‘없는회의’에 해당하는 회의가 없습니다"):
+    with pytest.raises(LookupError, match="^‘없는회의’에 해당하는 노트가 없습니다"):
         find_meeting_dir(tmp_path, "없는회의")

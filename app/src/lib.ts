@@ -256,9 +256,9 @@ export function parseToolResult<T>(result: unknown): T {
 
 /** 스마트 검색 상태 줄 (WORDS.md §4.6). MCP status.hint는 에이전트용이라 보이지 않고, 필드로 문장을 고른다 */
 export function statusLine(st: { meetings: number; indexed_chunks: number; vectors: number; vector_search: boolean }): string {
-  const n = `(회의 ${st.meetings}개)`;
+  const n = `(노트 ${st.meetings}개)`;
   if (!st.vector_search) return `스마트 검색 엔진(qwen3-embedding-0.6b)이 변환 엔진 위치에 없어 단어 일치로만 찾습니다 ${n}`;
-  if (st.vectors < st.indexed_chunks) return `일부 회의가 아직 스마트 검색에 포함되지 않았습니다. 터미널에서 tractus index를 실행하세요 ${n}`;
+  if (st.vectors < st.indexed_chunks) return `일부 노트가 아직 스마트 검색에 포함되지 않았습니다. 터미널에서 tractus index를 실행하세요 ${n}`;
   return `스마트 검색 준비 완료 ${n}`;
 }
 
@@ -359,14 +359,14 @@ const JOB_EXIT = "작업이 예기치 않게 끝났습니다";
 export const WARNING_TEXT: Record<string, string> = {
   duplicate: "이미 텍스트로 변환한 파일입니다.",
   diarizer_missing: "참석자 구분에 필요한 파일이 없어 참석자 구분 없이 변환했습니다.",
-  diarizer_failed: "말하는 사람을 구분하지 못해 참석자 구분 없이 변환했습니다. 회의 화면에서 참석자를 직접 지정할 수 있습니다.",
+  diarizer_failed: "말하는 사람을 구분하지 못해 참석자 구분 없이 변환했습니다. 노트에서 참석자를 직접 지정할 수 있습니다.",
   diarizer_cap_failed: "참석자가 많아 정밀하게 구분하지 못했습니다. 최대 8명까지만 구분했습니다.",
   diarizer_cap: "참석자가 8명을 넘을 수 있지만 최대 8명까지만 구분했습니다.",
   fluid_missing: "참석자가 8명을 넘을 수 있지만 최대 8명까지만 구분했습니다.",
   voices_model_missing: "목소리 인식에 필요한 파일이 없어 등록된 참석자를 확인하지 않았습니다.",
-  voices_failed: "등록된 참석자 목소리를 확인하지 못했습니다. 참석자 이름은 회의 화면에서 직접 지정할 수 있습니다.",
+  voices_failed: "등록된 참석자 목소리를 확인하지 못했습니다. 참석자 이름은 노트에서 직접 지정할 수 있습니다.",
   aligner_missing: "단어 싱크에 필요한 파일이 없어 단어 싱크 없이 저장했습니다.",
-  aligner_failed: "단어 싱크를 맞추지 못했습니다. 회의 화면의 ‘단어 싱크 맞추기’로 다시 시도할 수 있습니다.",
+  aligner_failed: "단어 싱크를 맞추지 못했습니다. 노트의 ‘단어 싱크 맞추기’로 다시 시도할 수 있습니다.",
   chat_save_failed: "질문 기록을 저장하지 못했습니다. 답변은 그대로 볼 수 있습니다.",
   live_lagging: "실시간 텍스트 변환이 녹음을 따라가지 못해 일부 구간을 건너뜁니다. 녹음과 녹음 종료 후 변환에는 영향이 없습니다.",
   system_zero: "상대방 소리(시스템 오디오)가 5초 동안 들리지 않습니다. 시스템 설정 > 개인정보 보호 및 보안 > 화면 및 시스템 오디오 녹음 권한을 확인하세요.",
@@ -379,7 +379,7 @@ export const ERROR_TEXT: Record<string, string> = {
   recording_missing: "녹음된 소리가 없습니다. 마이크 권한과 입력 장치를 확인하세요.",
   interrupted: "변환을 중단했습니다. 다시 변환하면 멈춘 곳부터 이어서 진행합니다.",
   incomplete: "변환이 끝나지 않은 구간이 있습니다. 다시 변환하면 멈춘 곳부터 이어서 진행합니다.",
-  align_interrupted: "단어 싱크를 맞추다가 중단했습니다. 대화 내용은 저장했고, 회의 화면의 ‘단어 싱크 맞추기’로 나중에 맞출 수 있습니다.",
+  align_interrupted: "단어 싱크를 맞추다가 중단했습니다. 대화 내용은 저장했고, 노트의 ‘단어 싱크 맞추기’로 나중에 맞출 수 있습니다.",
   no_segments: "인식된 대화가 없어 요약할 수 없습니다.",
   llm_config: "AI 서비스 설정이 없거나 잘못되었습니다. .env.local의 TRACTUS_LLM_PROVIDER, TRACTUS_LLM_MODEL과 API 키를 확인하세요.",
   llm_local_only: "로컬 전용 모드에서는 외부 AI 서비스를 쓸 수 없습니다.",
@@ -476,7 +476,7 @@ export type RecEvent =
 export type RecMode = "in_person" | "hybrid";
 
 export const REC_MODES: { mode: RecMode; label: string; note: string }[] = [
-  { mode: "in_person", label: "대면 회의", note: "마이크 하나로 방 안의 모든 사람을 녹음합니다. 노트북을 테이블 가운데에 두세요." },
+  { mode: "in_person", label: "대면 녹음", note: "마이크 하나로 방 안의 모든 사람을 녹음합니다. 노트북을 테이블 가운데에 두세요." },
   { mode: "hybrid", label: "화상·하이브리드", note: "상대방 소리(시스템 오디오)와 내 마이크를 함께 녹음합니다. 스피커로 들어도 에코를 제거합니다." },
 ];
 
@@ -728,7 +728,7 @@ export const EXPORT_FORMATS: { format: string; ext: string; label: string; note:
 
 /** 저장 대화상자 기본 이름: <날짜>_<제목>.<확장자>. 파일 이름에 못 쓰는 문자는 공백으로. */
 export function exportFilename(createdAt: string, title: string, ext: string): string {
-  const day = /^\d{4}-\d{2}-\d{2}/.exec(createdAt)?.[0] ?? "회의";
+  const day = /^\d{4}-\d{2}-\d{2}/.exec(createdAt)?.[0] ?? "노트";
   const clean = title.replace(/[/\\:*?"<>|\x00-\x1f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
   return `${day}_${clean || "제목 없음"}.${ext}`;
 }

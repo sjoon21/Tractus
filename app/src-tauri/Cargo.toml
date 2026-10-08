@@ -18,5 +18,7 @@ percent-encoding = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ulid = "1"
+# 휴지통으로 옮기기 (MIT). macOS는 NSFileManager를 쓴다: Finder 자동화 권한이 필요 없다
+trash = { version = "5", default-features = false }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"

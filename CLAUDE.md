@@ -1,12 +1,14 @@
 # Tractus — 에이전트 작업 지침
 
-Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고, LLM만 OpenAI 호환 API로 호출한다. 설계 결정은 `ARCHITECTURE.md`가 원본이다. 바꾸려면 그 문서부터 고친다.
+Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍스트 변환·요약·AI 질문·검색으로 확장하는 기능이다). ASR·저장·검색은 사용자 Mac에서 하고, LLM만 OpenAI 호환 API로 호출한다. 설계 결정은 `ARCHITECTURE.md`가 원본이다. 바꾸려면 그 문서부터 고친다.
 
 ## UI 문구·용어
 
 - 사용자에게 보이는 문구(앱 UI·`aria-label`·토스트, 내보낸 문서, 앱이 보여 주는 코어 경고·오류·답변)를 쓰거나 고치기 전에 [WORDS.md](WORDS.md)를 읽고, 커밋 전에 그 문서 §5의 금지어 검사를 돌린다. 출력이 없어야 한다.
+- 앱의 대상은 `노트`다. `회의`는 `대면 회의`처럼 현실의 상황을 말할 때만 쓰고(WORDS.md §2 `노트와 회의`), 화면에 남기면 줄 끝에 `words-ok`를 붙인다. 코드의 `meeting`은 그대로다.
 - 화면에는 `대화 내용`·`텍스트로 변환`·`참석자`·`단어 싱크`·`자주 쓰는 단어`·`스마트 검색`을 쓰고, `전사`·`세그먼트`·`화자`·`색인`·`s0012`·`S1`은 보이지 않는다.
-- 코드 식별자, CLI 명령·옵션, JSON 키, 이벤트·단계 키, MCP 출력, 개발 문서는 기술 용어를 그대로 쓴다.
+- 코드 식별자(`meeting_id`, `meetings/`, `--meeting`), CLI 명령·옵션, JSON 키, 이벤트·단계 키, MCP 출력, 개발 문서는 기술 용어를 그대로 쓴다.
+- 제목이 없는 녹음의 기본 제목은 `녹음 HH:MM`이다(`cli._source_from_recording`).
 
 ## ASR 모델 (Phase 0 확정, 2026-10-02)
 
@@ -116,6 +118,7 @@ Local-first 회의록 도구. ASR·저장·검색은 사용자 Mac에서 하고,
 - `mlx-embeddings`(GPL-3), Kiwi(LGPL-3) 같은 copyleft 의존성을 넣지 않는다.
 - MCP 도구는 async로 쓴다(sqlite·MLX는 스레드에 묶임). 예상된 실패는 `ToolError`로 던진다. stdout에는 아무것도 출력하지 않는다.
 - MCP 서버는 임베딩하지 않는다(`sync(embed=False)`). 벡터는 CLI가 만든다.
+- **노트 삭제는 앱 전용이다.** 앱이 폴더를 macOS 휴지통으로 옮기고(`app/src-tauri/src/removal.rs`), 색인은 `Index.sync`가 사라진 폴더를 지운다. `tractus delete`나 MCP 삭제 도구를 만들지 않는다. 목소리 프로필·자주 쓰는 단어는 지우지 않는다.
 - 에이전트 CLI 인수 테스트에는 `tests/fixtures/eval`(가상 회의)만 쓴다. AI Hub 전사가 들어 있는 홈을 MCP에 연결하지 않는다.
 
 ## LLM 규칙

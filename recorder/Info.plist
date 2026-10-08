@@ -7,8 +7,8 @@
 	<key>CFBundleName</key>
 	<string>tractus-rec</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>회의 중 내 목소리를 녹음해 로컬에서 전사합니다.</string>
+	<string>녹음 중 내 목소리를 로컬에서 텍스트로 변환합니다.</string>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>화상회의 상대방 소리(시스템 오디오)를 녹음해 로컬에서 전사합니다.</string>
+	<string>화상 통화 상대방 소리(시스템 오디오)를 녹음해 로컬에서 텍스트로 변환합니다.</string>
 </dict>
 </plist>

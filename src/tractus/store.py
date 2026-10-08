@@ -1,4 +1,4 @@
-"""회의 폴더(§4.1 레이아웃), 진행 상태(이어하기), transcript.json/md/vtt 저장, 화자·텍스트 편집, 용어집.
+"""노트 폴더(§4.1 레이아웃), 진행 상태(이어하기), transcript.json/md/vtt 저장, 화자·텍스트 편집, 용어집.
 
 화자 맵 speakers: {"S1": {"name": 사용자가 확정한 이름 | null, "suggested"?: {person_id, name, score}}}.
 suggested는 목소리 프로필이 맞춘 **제안**이다(voices.py). 이름이 없는 화자에만 있고, 표시 이름·md·vtt·요약·MCP·내보내기에 쓰지 않는다."""
@@ -154,9 +154,9 @@ def find_meeting_dir(meetings: Path, ref: str) -> Path:
     ref = ref.strip()
     hits = [d for d in sorted(meetings.glob("*")) if ref and ref in d.name and (d / "transcript.json").is_file()] if ref else []
     if not hits:
-        raise LookupError(f"‘{ref}’에 해당하는 회의가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.")
+        raise LookupError(f"‘{ref}’에 해당하는 노트가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.")
     if len(hits) > 1:
-        raise LookupError(f"‘{ref}’에 해당하는 회의가 {len(hits)}개입니다: " + ", ".join(d.name for d in hits[:5]))
+        raise LookupError(f"‘{ref}’에 해당하는 노트가 {len(hits)}개입니다: " + ", ".join(d.name for d in hits[:5]))
     return hits[0]
 
 
@@ -280,7 +280,7 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
 
     def known(label: str) -> str:
         if label not in speakers:
-            raise ValueError("참석자를 찾지 못했습니다. 회의를 다시 열어 주세요.")
+            raise ValueError("참석자를 찾지 못했습니다. 노트를 다시 열어 주세요.")
         return label
 
     if op == "rename" and len(args) == 2:
@@ -291,7 +291,7 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
     elif op == "set" and len(args) == 2:
         seg = next((s for s in t["segments"] if s["id"] == args[0]), None)
         if seg is None:
-            raise ValueError("해당 대화를 찾지 못했습니다. 회의를 다시 열어 주세요.")
+            raise ValueError("해당 대화를 찾지 못했습니다. 노트를 다시 열어 주세요.")
         if args[1] == "new":
             used = [_label_key(k)[0] for k in [*speakers, *(s.get("speaker") or "" for s in t["segments"])] if k[1:].isdigit()]
             label = f"S{max(used, default=0) + 1}"
@@ -335,7 +335,7 @@ def apply_text_edits(t: dict, edits: list) -> tuple[dict, int]:
         if not isinstance(e, dict) or not isinstance(e.get("id"), str) or not isinstance(e.get("text"), str):
             raise ValueError(f"편집 형식은 {{\"id\": \"s0012\", \"text\": \"…\"}}입니다: {str(e)[:80]}")  # words-ok: 앱 계약 오류
         if e["id"] not in by_id:
-            raise ValueError("해당 대화를 찾지 못했습니다. 회의를 다시 열어 주세요.")
+            raise ValueError("해당 대화를 찾지 못했습니다. 노트를 다시 열어 주세요.")
         text = one_line(e["text"])
         if not text:
             raise ValueError("대화 내용을 비워 둘 수 없습니다.")

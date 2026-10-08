@@ -100,7 +100,7 @@ export function RenameForm({
             setError(null);
           }}
         />
-        이 참석자 목소리 등록 (다음 회의에서 자동 인식)
+        이 참석자 목소리 등록 (다음 녹음에서 자동 인식)
       </label>
       {remember && (
         <label className="spk-check is-consent">

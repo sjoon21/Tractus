@@ -97,7 +97,7 @@ def test_segments_edit_rejects_bad_input_and_writes_nothing(meeting, monkeypatch
 
 def test_segments_edit_unknown_id_names_it(meeting):
     r = invoke("segments", MID, "edit", input='{"edits": [{"id": "s9999", "text": "y"}]}')
-    assert r.exit_code == 1 and r.stderr.strip().splitlines()[-1] == "해당 대화를 찾지 못했습니다. 회의를 다시 열어 주세요."
+    assert r.exit_code == 1 and r.stderr.strip().splitlines()[-1] == "해당 대화를 찾지 못했습니다. 노트를 다시 열어 주세요."
 
 
 # ── glossary add ────────────────────────────────────────────────────

@@ -21,12 +21,12 @@ fn is_date(d: &str) -> bool {
 pub fn ask_args(meeting: Option<&str>, from: Option<&str>, to: Option<&str>) -> Result<Vec<String>, String> {
     let (from, to) = (from.filter(|d| !d.is_empty()), to.filter(|d| !d.is_empty()));
     if meeting.is_some() && (from.is_some() || to.is_some()) {
-        return Err("기간은 전체 회의 질문에서만 고를 수 있습니다".into());
+        return Err("기간은 전체 노트 질문에서만 고를 수 있습니다".into());
     }
     let mut args = vec!["ask".to_string()];
     if let Some(id) = meeting {
         if !crate::is_meeting_id(id) {
-            return Err(format!("잘못된 회의 ID: {id}"));
+            return Err(format!("잘못된 노트 ID: {id}"));
         }
         args.extend(["--meeting".into(), id.into(), "--save".into()]);
     }

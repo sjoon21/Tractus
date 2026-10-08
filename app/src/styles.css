@@ -1,6 +1,6 @@
 /* Tractus — 스위스 타이포그래피 + 종이 원고. 색은 의미로만 쓴다:
    인주(accent) = 지금·녹음·재생 위치, 황토(memo) = 사람이 남긴 메모·북마크, 파랑(focus) = 키보드 초점,
-   화자 잉크(spk-0…7) = 누가 말했는지. 9번째 화자부터는 같은 잉크에 속 빈 점·빗금 막대(Speakers.spkStyle). 화자 색은 인주·황토와 겹치지 않는 탁한 잉크이고, 두 테마 모두 종이 위 대비 3.9:1 이상. */
+   위험(danger) = 되돌리기 어려운 동작(삭제) 하나, 화자 잉크(spk-0…7) = 누가 말했는지. 9번째 화자부터는 같은 잉크에 속 빈 점·빗금 막대(Speakers.spkStyle). 화자 색은 인주·황토와 겹치지 않는 탁한 잉크이고, 두 테마 모두 종이 위 대비 3.9:1 이상. */
 
 :root {
   --paper: #f3f0e8;
@@ -16,6 +16,8 @@
   --memo: #9c6210;
   --memo-wash: rgba(156, 98, 16, 0.08);
   --focus: #1f5bd8;
+  --danger: #b3261e;
+  --danger-on: #ffffff;
   --on-ink: #f3f0e8;
   --spk-0: #1f7a74;
   --spk-1: #6e4fa8;
@@ -33,7 +35,6 @@
   --fs-base: 0.9375rem;
   --fs-read: 1.0625rem;
   --fs-h1: clamp(2rem, 1.2rem + 2.2vw, 3.1rem);
-  --fs-hero: clamp(3rem, 1.4rem + 4.4vw, 5.6rem);
   --fs-clock: clamp(5rem, 2.6rem + 7vw, 9.5rem);
 
   --gutter: clamp(28px, 2vw + 16px, 64px);
@@ -62,6 +63,8 @@
     --memo: #e0a445;
     --memo-wash: rgba(224, 164, 69, 0.09);
     --focus: #7fa6ff;
+    --danger: #ff8f85;
+    --danger-on: #2a0b08;
     --on-ink: #141412;
     --spk-0: #5cc2b8;
     --spk-1: #a98be0;
@@ -437,6 +440,37 @@ mark {
   padding: 4px 12px 4px 22px;
 }
 
+/* 변환 대기 중인 녹음 줄의 삭제: 가리키거나 초점이 갈 때만 보인다 */
+.pending-item {
+  position: relative;
+}
+
+.row-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--paper-3);
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity var(--fast), color var(--fast), border-color var(--fast);
+}
+
+.pending-item:hover .row-delete,
+.pending-item:focus-within .row-delete {
+  opacity: 1;
+}
+
+.row-delete:hover:not(:disabled),
+.row-delete:focus-visible {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .meeting-link-title {
   display: block;
   font-weight: 560;
@@ -484,6 +518,7 @@ mark {
 
 .primary-button,
 .ghost-button,
+.danger-button,
 .stop-button {
   display: inline-flex;
   align-items: center;
@@ -509,8 +544,19 @@ mark {
   border-color: var(--ink);
 }
 
+.danger-button {
+  border: 0;
+  background: var(--danger);
+  color: var(--danger-on);
+}
+
+.danger-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 88%, var(--ink));
+}
+
 .primary-button:active:not(:disabled),
 .ghost-button:active:not(:disabled),
+.danger-button:active:not(:disabled),
 .stop-button:active:not(:disabled) {
   transform: scale(0.98);
 }
@@ -525,13 +571,16 @@ mark {
   padding: var(--gutter) var(--gutter) calc(var(--gutter) * 1.6);
 }
 
-.welcome h1 {
-  margin: 0;
-  font-size: var(--fs-hero);
-  font-weight: 760;
-  line-height: 1.06;
-  letter-spacing: -0.05em;
-  animation: rise 700ms var(--ease) both;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .welcome-lead {
@@ -1921,6 +1970,18 @@ pre.inline-error {
   font-size: var(--fs-sm);
 }
 
+/* 삭제는 다른 머리 버튼과 떨어뜨려 둔다. 평소엔 조용하고 가리킬 때만 위험 색 */
+.ghost-button.head-button.is-danger {
+  margin-left: 14px;
+  color: var(--ink-2);
+}
+
+.ghost-button.head-button.is-danger:hover:not(:disabled),
+.ghost-button.head-button.is-danger:focus-visible {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .edit-hint {
   color: var(--ink-3);
 }
@@ -2694,6 +2755,45 @@ pre.inline-error {
 [hidden] {
   display: none !important;
 }
+
+/* 확인 대화상자 (ConfirmDialog.tsx, 네이티브 모달 <dialog>) */
+.confirm {
+  width: min(460px, calc(100vw - 48px));
+  padding: 26px 28px 22px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 12px;
+  background: var(--paper-3);
+  color: var(--ink);
+  box-shadow: 0 32px 72px -24px rgba(0, 0, 0, 0.55), 0 2px 8px -2px rgba(0, 0, 0, 0.15);
+}
+
+.confirm[open] {
+  animation: pop 180ms var(--ease) both;
+}
+
+.confirm::backdrop {
+  background: rgba(20, 20, 18, 0.45);
+}
+
+.confirm h2 {
+  margin: 0 0 10px;
+  font-size: 1.125rem;
+  line-height: 1.35;
+}
+
+.confirm p {
+  margin: 0;
+  color: var(--ink-2);
+  line-height: 1.6;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
 
 /* 오류의 원래 문구 (WORDS.md §4.7): 접힌 '자세히' */
 .error-detail {

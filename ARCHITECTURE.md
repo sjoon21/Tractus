@@ -2,6 +2,8 @@
 
 > **라이선스: Apache-2.0** · **원칙: Local-first + LLM은 API로 접근**
 >
+> **제품 정체성(2026-10-08): 메모·노트 앱이다. 녹음은 노트를 텍스트 변환·요약·AI 질문·검색으로 확장하는 기능이다.** 화면에서는 `노트`라고 부르고, 코드·CLI·JSON의 `meeting`(`meetings/`, `meeting_id`)은 그대로 둔다(WORDS.md §2).
+>
 > v2(서버형·엔터프라이즈 중심)에서 방향을 바꿨다. 사용자의 기기에서 녹음·전사·저장·검색이 끝나고, LLM만 OpenAI 호환 API로 호출한다.
 > LLM이 로컬 Gemma 4 31B이든 Claude·OpenAI·Gemini·Upstage이든 **앱 입장에서는 전부 `base_url` + `model`만 다른 같은 API**다.
 
@@ -9,6 +11,7 @@
 
 | 날짜 | 버전 | 변경 |
 | --- | --- | --- |
+| 2026-10-08 | v3.16 | **노트 삭제 (앱 전용).** 노트 화면 머리의 '삭제'와 사이드바 '변환 대기 중인 녹음'의 '삭제'가 앱 안 확인 대화상자(네이티브 모달 `<dialog>`, 초점은 '취소')를 거쳐 폴더를 **macOS 휴지통으로 옮긴다**(`trash` 크레이트 MIT, `NSFileManager`). 영구 삭제 없음. Rust 명령 `delete_meeting`·`delete_recording`이 ID·폴더 위치(심볼릭 링크 거절)·`.job.json`·쓰는 중인 작업(`AppState.busy`)을 검사한다. 검색 색인은 `Index.sync`가 사라진 폴더의 청크·키워드 색인·벡터를 지우므로(테스트 추가) **코어 명령을 더하지 않았고, MCP에 삭제 도구를 두지 않았다**. 목소리 프로필·자주 쓰는 단어는 건드리지 않는다. `docs/desktop.md` §2.9 |
 | 2026-10-07 | v3.15 | **Phase 7.3 9명 이상 화자 — 두 번째 화자 분리 엔진.** Swift 헬퍼 `tractus-diar`(recorder/ 패키지, FluidAudio v0.17.5 = 커밋 `0b1f462`, Apache-2.0)가 `OfflineDiarizerManager`(pyannote community-1을 Core ML로 옮긴 것, 모델 `FluidInference/speaker-diarization-coreml` revision `df2625ac…`, CC-BY-4.0)를 오프라인으로 돌린다. `transcribe --diarizer auto|nemotron|fluid`(기본 auto): auto는 Nemotron을 돌리고 8채널을 모두 썼을 때만 fluid로 다시 돌린다. 헬퍼·모델이 없으면 `diarizer_cap`(auto)·`fluid_missing`(fluid) 경고 후 Nemotron 결과를 쓴다. `diarization.engine`, `--max-speakers` 상한 해제. AI Hub 17명 세션 confusion **28.5% → 6.9%**(같은 채점기로 Nemotron turn 직접 채점), 7명 세션 195는 3.2 → 3.8%(auto는 7명이라 다시 돌리지 않음). 앱 화자 색 슬롯 8 → 16(9번째부터 같은 잉크에 속 빈 점·빗금 막대). §2.4 |
 | 2026-10-07 | v3.14 | **Phase 7.2 실시간 자막 core (옵트인, 미리보기).** `tractus live --recording <dir> [--progress-json] [--speakers] [--force]`: 녹음 중인 트랙 WAV를 꼬리부터 읽어 표본 위치로 섞고(amix normalize=0과 같음), 48k → 16k 상태 있는 FIR로 줄여 Silero `feed()`에 넣는다. 0.5초 무음이나 8초 상한에서 확정하고 3초마다 미리보기를 낸다. ASR은 Qwen3-ASR 0.6B 8bit만 쓴다. 아무것도 저장하지 않으며, 정지하면 이 워커가 먼저 끝나고 배치 전사가 정식 전사를 만든다. 가상 대화 68초 실시간 실측: 확정 지연 p50 0.60초·p95 0.72–0.76초, footprint 최대 1.8GB, GPU 사용률은 시스템 전체 29%에서 기준값을 뺀 약 12%p(프로세스 몫은 sudo가 필요해 재지 못함), 정지 → 종료 0.13–0.19초. 계약: `docs/desktop.md` §2.8, 설계: §2.6 |
 | 2026-10-07 | v3.13 | **Phase 7.1 목소리 프로필 core.** onnxruntime 1.30(MIT, CPU)과 kaldi-native-fbank(Apache-2.0)로 3D-Speaker CAM++ zh_en advanced(192차원, Apache-2.0, sha256 고정)를 직접 돌려 화자 임베딩을 만든다. sherpa-onnx는 휠에 espeak-ng(GPL-3)가 정적 링크돼 있어 쓰지 않는다. `transcribe`는 화자 분리 뒤 등록된 목소리와 맞춰 `voices` 단계에서 이름을 **제안**한다(`speakers.S1.suggested`, 확정은 사용자). 매칭은 사람 중심 벡터와 코사인 + 헝가리안 1:1 + 임계값 + 2위와 차이 0.08. `tractus voices list\|enroll --consent\|forget\|match`, `tractus speakers <회의> dismiss`. 프로필은 `$TRACTUS_HOME/voices.json`(0600)에만 두고 회의 폴더·MCP·LLM·색인·내보내기로 보내지 않는다(§2.5). 계약: `docs/desktop.md` §2.7 |
@@ -399,7 +402,7 @@ Anthropic은 OpenAI 호환 레이어를 "테스트·비교용이며 장기 운�
 | --- | --- | --- |
 | 전사 교정 (선택) | 세그먼트 배열 `[{id, text}]` + 용어집 | `[{id, corrected_text}]` — 원문은 보존하고 diff로 표시 |
 | 요약 | 전사 전체 (1시간 ≈ 2–3만 토큰, 한 번에 입력) | `{title, summary, topics[{title, segment_ids[]}], decisions[{text, segment_ids[]}], action_items[{task, owner\|null, due\|null, segment_ids[]}]}`. 주제 시간 범위는 segment_ids에서 계산한다 |
-| Q&A (`tractus ask`, v3.11) | 질문 + 최근 대화(6개 메시지·12k자) + 근거: 회의 범위는 전사 전체(10만 자 초과 시 회의 안 검색), 전체 범위는 하이브리드 검색 상위 8개 청크 + 앞뒤 세그먼트 1개(§4.3, 날짜 필터) | 구조화 출력 대신 **평문 스트리밍**(`stream=True`) + 인라인 인용 `[s0012]` / `[meeting_id#s0012]`. 코어가 근거와 대조해 `{answer, citations[{meeting_id, segment_id, start}]}`를 만든다(없는 ID는 답에서 삭제). 근거가 없으면 "회의 내용에서 답을 찾지 못했습니다." |
+| Q&A (`tractus ask`, v3.11) | 질문 + 최근 대화(6개 메시지·12k자) + 근거: 회의 범위는 전사 전체(10만 자 초과 시 회의 안 검색), 전체 범위는 하이브리드 검색 상위 8개 청크 + 앞뒤 세그먼트 1개(§4.3, 날짜 필터) | 구조화 출력 대신 **평문 스트리밍**(`stream=True`) + 인라인 인용 `[s0012]` / `[meeting_id#s0012]`. 코어가 근거와 대조해 `{answer, citations[{meeting_id, segment_id, start}]}`를 만든다(없는 ID는 답에서 삭제). 근거가 없으면 "노트 내용에서 답을 찾지 못했습니다." |
 
 - 모든 추출 항목에 **근거 `segment_ids`를 필수**로 둔다. UI에서 클릭하면 해당 오디오 위치로 이동하고, 환각 여부를 검증하는 데도 쓴다. 전사에 없는 ID나 빈 근거는 검증 실패로 보고 1회 재요청한다.
 - 전사 줄에는 화자 표시 이름이 붙는다(`[s0012 00:05:31 김민수] …`, 이름이 없으면 `S1`). 화자는 자동 추정이라 owner는 사용자가 이름을 붙인 화자만 쓸 수 있고, `S1` 같은 라벨은 쓰지 않는다. 그 밖에 "제가 하겠습니다"처럼 말한 사람만 가리키면 owner는 null로 둔다.

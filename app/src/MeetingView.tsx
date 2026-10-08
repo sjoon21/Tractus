@@ -45,6 +45,7 @@ import { providerLabel } from "./ask";
 import { AskPanel } from "./AskPanel";
 import { ErrorDetail } from "./ErrorDetail";
 import { printDoc } from "./print";
+import type { DeleteTarget } from "./remove";
 import { PrintSheet } from "./PrintSheet";
 import { SpeakerChip, SpeakerMenu, SpeakersBar, spkStyle, type MenuTarget, type MergeAsk } from "./Speakers";
 import { ExportMenu, FindBar, SegmentEditor, type FindState } from "./TranscriptTools";
@@ -59,7 +60,7 @@ const readRate = () => {
   }
 };
 
-export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?: Seek; onChanged: () => void; notify: Notify }) {
+export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: string; seek?: Seek; onChanged: () => void; notify: Notify; onDelete: (t: DeleteTarget) => void }) {
   // base: 코어가 확인한 회의. pending: 저장 중인 문장 편집 묶음(낙관적 반영). 화면은 둘을 겹친 것
   const [base, setBase] = useState<MeetingDetail | null>(null);
   // 코어가 마지막으로 확인한 회의 (렌더를 기다리지 않는다). 되돌리기 묶음은 이것으로 만든다
@@ -170,7 +171,7 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
           () => api.editSpeakers(id, { op: "rename", label, name }),
         );
         if ("meeting" in r) commit(r.meeting);
-        if ("samples" in r) notify({ text: `‘${name}’ 님의 목소리를 등록했습니다 (표본 ${r.samples}개). 다음 회의부터 자동으로 알아봅니다` });
+        if ("samples" in r) notify({ text: `‘${name}’ 님의 목소리를 등록했습니다 (표본 ${r.samples}개). 다음 녹음부터 자동으로 알아봅니다` });
         else if ("renameError" in r) setEditError(`이름을 바꾸지 못했습니다: ${errText(r.renameError)} (목소리: ${errText(r.voiceError)})`);
         else setEditError(`이름은 ‘${name}’(으)로 바꿨지만 목소리는 등록하지 못했습니다: ${errText(r.voiceError)}`);
       });
@@ -539,11 +540,19 @@ export function MeetingView({ id, seek, onChanged, notify }: { id: string; seek?
                 찾아 바꾸기
               </button>
               <ExportMenu onPick={(f) => void exportAs(f)} onPrint={() => setPrintNonce((n) => n + 1)} />
+              <button
+                className="ghost-button head-button is-danger"
+                disabled={align.job.running || summarize.job.running}
+                title={align.job.running || summarize.job.running ? "작업이 끝난 뒤에 삭제할 수 있습니다" : "노트를 휴지통으로 옮깁니다"}
+                onClick={() => onDelete({ kind: "note", id, title: info.title, dir: info.dir })}
+              >
+                삭제
+              </button>
             </div>
           </div>
           <h1>{info.title || "제목 없음"}</h1>
           <p className="meeting-stats tnum">
-            {fmtTime(info.duration_sec)} · 대화 {info.segments}개{detail.memos.length > 0 && ` · 메모 ${detail.memos.length}개`}
+            {fmtTime(info.duration_sec)} · 대화 {info.segments}개{detail.memos.length > 0 && ` · 녹음 중 메모 ${detail.memos.length}개`}
             <span className="edit-hint"> · 대화를 두 번 누르거나 Enter를 눌러 내용을 수정합니다</span>
           </p>
           {diarized && (

@@ -96,8 +96,8 @@ export function AskPanel({ scope, onCite, inputRef }: { scope: AskScope; onCite:
         <div className="ask-empty">
           <p>
             {meetingId
-              ? "이 회의 내용을 바탕으로 AI가 답변합니다. 답변 속 시각을 누르면 그 부분으로 이동합니다."
-              : "모든 회의 내용을 바탕으로 AI가 답변합니다. 시각을 누르면 그 회의의 해당 부분을 엽니다."}
+              ? "이 노트 내용을 바탕으로 AI가 답변합니다. 답변 속 시각을 누르면 그 부분으로 이동합니다."
+              : "모든 노트 내용을 바탕으로 AI가 답변합니다. 시각을 누르면 그 노트의 해당 부분을 엽니다."}
           </p>
         </div>
       )}
@@ -130,8 +130,8 @@ export function AskPanel({ scope, onCite, inputRef }: { scope: AskScope; onCite:
           rows={2}
           maxLength={2000}
           value={draft}
-          placeholder={meetingId ? "예: 예산은 얼마로 정했나요?" : "예: 지난주 회의들에서 정한 출시일은?"}
-          aria-label={meetingId ? "이 회의에 대해 AI에게 질문" : "AI 어시스턴트에게 질문 (모든 회의 대상)"}
+          placeholder={meetingId ? "예: 예산은 얼마로 정했나요?" : "예: 지난주 노트들에서 정한 출시일은?"}
+          aria-label={meetingId ? "이 노트에 대해 AI에게 질문" : "AI 어시스턴트에게 질문 (모든 노트 대상)"}
           aria-description="Enter 보내기, Shift+Enter 줄바꿈"
           onChange={(e) => setDraft(e.target.value)}
           onCompositionStart={() => (composing.current = true)}

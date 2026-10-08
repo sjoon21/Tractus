@@ -85,6 +85,31 @@ def test_sync_is_incremental(home):
     assert idx.stats()["meetings"] == 4
 
 
+def test_deleted_note_leaves_no_rows_or_vectors_without_loading_the_embedder(home):
+    """앱이 노트 폴더를 휴지통으로 옮기면(폴더가 사라짐) 다음 동기화가 그 노트의 청크·키워드 색인·벡터를 모두 지운다.
+    지우는 데는 임베더가 필요 없다 (embed=False)."""
+    emb = FakeEmbedder()
+    idx = Index(home, embedder=emb)
+    idx.sync()
+    (d,) = [p for p in (home / "meetings").iterdir() if "01M1JFX" in p.name]
+    mid = "01M1JFX480KZE86SXAN94C6Y0E"
+    count = lambda sql: idx.db.execute(sql, (mid,)).fetchone()[0]  # noqa: E731
+    assert count("SELECT count(*) FROM chunks WHERE meeting_id=?") > 0 and count("SELECT count(*) FROM chunks_vec WHERE meeting_id=?") > 0
+
+    trash = home / "fake-trash"
+    trash.mkdir()
+    shutil.move(str(d), str(trash / d.name))  # 휴지통으로 이동: 원래 자리에서는 사라진다
+    calls = emb.calls
+    assert idx.sync(embed=False).removed == 1
+    assert emb.calls == calls
+    assert count("SELECT count(*) FROM chunks WHERE meeting_id=?") == 0
+    assert count("SELECT count(*) FROM chunks_vec WHERE meeting_id=?") == 0
+    assert idx.db.execute("SELECT count(*) FROM chunks_fts WHERE rowid NOT IN (SELECT chunk_id FROM chunks)").fetchone()[0] == 0
+    assert idx.db.execute("SELECT count(*) FROM chunks_vec WHERE chunk_id NOT IN (SELECT chunk_id FROM chunks)").fetchone()[0] == 0
+    assert idx.stats()["meetings"] == 4
+    assert all(h.meeting_id != mid for h in idx.search("예산", limit=50).hits)
+
+
 def test_embedding_model_change_rebuilds_vectors(home):
     Index(home, embedder=FakeEmbedder()).sync()
 

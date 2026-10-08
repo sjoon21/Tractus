@@ -138,6 +138,10 @@ export const api = {
   glossaryAdd: (terms: string[]) => invoke<number>("glossary_add", { terms }),
   /** `tractus export` 후 Finder에서 보여 준다. 저장한 절대 경로 */
   exportMeeting: (id: string, format: string, out: string) => invoke<string>("export_meeting", { id, format, out }),
+  /** 노트 폴더를 휴지통으로 옮긴다 (되돌릴 수 있다). 처리 중이거나 변환이 끝나지 않은 노트는 거절한다. 검색 색인은 백그라운드로 정리 */
+  deleteMeeting: (id: string) => invoke<void>("delete_meeting", { id }),
+  /** 변환하지 않은 녹음 폴더를 휴지통으로 옮긴다 */
+  deleteRecording: (dir: string) => invoke<void>("delete_recording", { dir }),
   /** `tractus ask --progress-json` (Phase 6.3). 이벤트는 "ask" */
   askStart: (args: AskArgs) => invoke<void>("ask_start", { ...args }),
   /** 질문 멈추기 (프로세스 kill) */
