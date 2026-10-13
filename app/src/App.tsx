@@ -1,11 +1,14 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open } from "@tauri-apps/plugin-dialog";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { api, errText, useJob, useRecorder, type MeetingInfo, type PendingRecording } from "./api";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { attachAlignJobs } from "./alignJobs";
+import { api, errDetail, errFull, errText, useJob, useRecorder, type MeetingInfo, type PendingRecording } from "./api";
 import { AskPanel } from "./AskPanel";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
+import { bindIndexer } from "./indexer";
 import { baseName, dayParts, errorView, IDLE_JOB, JOB_ERROR, fmtTime, groupByDay, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, STAGE_FALLBACK, STAGE_LABEL, warningText, type RecMode } from "./lib";
 import { MeetingView } from "./MeetingView";
 import { RecordView } from "./RecordView";
@@ -32,7 +35,9 @@ const TOAST_MAX = 4; // ponytail: 넘치면 가장 오래된 것부터 버린다
 export function App() {
   const [meetings, setMeetings] = useState<MeetingInfo[]>([]);
   const [pending, setPending] = useState<PendingRecording[]>([]);
-  const [listError, setListError] = useState<string | null>(null);
+  const [listError, setListError] = useState<{ text: string; detail: string | null } | null>(null);
+  // 노트 목록을 한 번이라도 읽었는지: 읽기 전에는 '삭제된 노트'를 판단하지 않는다 (AI 질문의 인용 칩)
+  const [listLoaded, setListLoaded] = useState(false);
   const [view, setView] = useState<View>({ kind: "home" });
   const searchRef = useRef<HTMLInputElement>(null);
   // 전체 회의에 질문 (6.3): 오른쪽 서랍. 닫아도 대화는 남는다(앱을 끄기 전까지)
@@ -60,8 +65,9 @@ export function App() {
       setMeetings(m);
       setPending(p);
       setListError(null);
+      setListLoaded(true);
     } catch (e) {
-      setListError(errText(e));
+      setListError({ text: errText(e), detail: errDetail(e) });
     }
   }, []);
   // 삭제(휴지통으로 이동): 확인 대화상자 상태. 노트 화면과 사이드바의 남은 녹음이 같이 쓴다
@@ -88,7 +94,8 @@ export function App() {
     dispatchDel({ type: "start" });
     try {
       if (t.kind === "note") {
-        await api.deleteMeeting(t.id);
+        // 저장 중인 수정(문장·참석자·목소리 등록·내보내기)이 끝난 뒤에 지운다. 그동안 이 노트의 새 수정은 받지 않는다 (editQueue)
+        await editQueue.exclusive(t.id, () => api.deleteMeeting(t.id));
         // 열려 있던 노트는 닫는다: 지워진 폴더를 다시 읽지 않게 목록 갱신보다 먼저
         setView((v) => (v.kind === "meeting" && v.id === t.id ? { kind: "home" } : v));
       } else {
@@ -97,7 +104,7 @@ export function App() {
       }
       notify({ text: deletedText(t) });
     } catch (e) {
-      const f = deleteFailure(t, errText(e));
+      const f = deleteFailure(t, errFull(e));
       notify({ text: f.text, detail: f.detail, error: true });
     } finally {
       dispatchDel({ type: "finish" });
@@ -116,7 +123,7 @@ export function App() {
   }, []);
   const chooseMode = (m: RecMode) => {
     setMode(m);
-    api.setRecMode(m).catch((e) => setListError(`녹음 방식을 저장하지 못했습니다: ${errText(e)}`));
+    api.setRecMode(m).catch((e) => setListError({ text: `녹음 방식을 저장하지 못했습니다: ${errText(e)}`, detail: errDetail(e) }));
   };
 
   // 파일 가져오기 (Phase 5.5): 끌어 놓거나 고른 파일을 큐에 넣고 한 번에 하나씩 전사한다
@@ -192,6 +199,37 @@ export function App() {
     return () => void un.then((f) => f());
   }, []);
 
+  // 단어 싱크는 노트를 닫아도 계속 돈다: 끝나면 열려 있는 노트와 상관없이 알린다 (alignJobs.ts)
+  useEffect(
+    () =>
+      attachAlignJobs(({ ok, state }) => {
+        if (ok) notify({ text: "단어 싱크를 맞췄습니다. 단어를 누르면 그 단어부터 재생합니다" });
+        else if (state.error) notify({ ...errorView(state.error, state.errorCode, JOB_ERROR.align), error: true });
+      }),
+    [notify],
+  );
+  // 문장을 고친 뒤 검색에 반영하는 조용한 갱신은 앱이 한가할 때만 (녹음·변환·가져오기 중이면 미룬다. 요약·단어 싱크 등은 Rust가 비켜 간다)
+  const idleBlockers = useRef(false);
+  idleBlockers.current = recording || transcribing || imp.job.running || queue.length > 0;
+  useEffect(
+    () =>
+      bindIndexer({
+        isBusy: () => idleBlockers.current,
+        onError: (e) => notify({ text: "스마트 검색 정보를 갱신하지 못했습니다", detail: errDetail(e) ?? errFull(e), error: true }), // 코어·Rust가 한 줄만 주면 그 줄이 원인이다
+      }),
+    [notify],
+  );
+
+  // 앱 밖(터미널 `tractus transcribe` 등)에서 만든 노트도 질문 답의 인용 칩이 '삭제됨'으로 보이지 않게: 창으로 돌아올 때와 질문 창을 열 때 목록을 다시 읽는다
+  useEffect(() => {
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refresh]);
+  useEffect(() => {
+    if (askOpen) void refresh();
+  }, [askOpen, refresh]);
+
   // 처음, 그리고 전사가 끝날 때마다(성공·실패) 목록과 남은 녹음을 다시 읽는다
   useEffect(() => {
     if (!transcribe.job.running) void refresh();
@@ -229,6 +267,7 @@ export function App() {
   const dialogText = del.target && deleteDialogText(del.target);
   const activeId = view.kind === "meeting" ? view.id : null;
   const groups = groupByDay(meetings);
+  const knownNotes = useMemo(() => (listLoaded ? new Set(meetings.map((m) => m.id)) : null), [listLoaded, meetings]);
 
   return (
     <div className="shell">
@@ -317,7 +356,12 @@ export function App() {
         </button>
 
         <nav className="meeting-nav" aria-label="노트 목록">
-          {listError && <p className="nav-note is-error">{listError}</p>}
+          {listError && (
+            <div className="nav-note is-error">
+              <p>{listError.text}</p>
+              <ErrorDetail detail={listError.detail} />
+            </div>
+          )}
           {leftover.length > 0 && (
             <section className="day-group">
               <h2 className="month-label">변환 대기 중인 녹음</h2>
@@ -420,7 +464,7 @@ export function App() {
             ×
           </button>
         </header>
-        <AskPanel scope={GLOBAL} inputRef={askInput} onCite={(meetingId, segId, t) => openMeeting(meetingId, { segId, t })} />
+        <AskPanel scope={GLOBAL} inputRef={askInput} notes={knownNotes} onCite={(meetingId, segId, t) => openMeeting(meetingId, { segId, t })} />
       </aside>
 
       {del.target && dialogText && (

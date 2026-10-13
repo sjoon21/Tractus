@@ -4,8 +4,10 @@ ARCHITECTURE.md §2.5. 임베딩은 생체정보다(개인정보보호법 제23�
 회의 폴더·MCP·LLM 프롬프트·색인·내보내기·로그로 내보내지 않는다. 모델은 onnxruntime(CPU)과 kaldi-native-fbank로 돌린다.
 """
 
+import fcntl
 import json
 import os
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -94,6 +96,16 @@ def model_hint(models_dir: Path) -> str:
     return f"{p}\n  mkdir -p {p.parent} && curl -L -o {p} {MODEL_URL}\n  (sha256 {MODEL_SHA256})"
 
 
+def model_present(models_dir: Path) -> bool:
+    """목소리 인식 파일이 있고 올바른 파일이다 (load_embedder가 쓸 수 있다). 읽을 수 없으면 False."""
+    import hashlib
+
+    try:
+        return hashlib.sha256(model_path(models_dir).read_bytes()).hexdigest() == MODEL_SHA256
+    except OSError:
+        return False
+
+
 def load_embedder(models_dir: Path) -> VoiceEmbedder | None:
     """모델 파일이 없으면 None. 다른 파일이면(sha256 불일치) RuntimeError: 벡터 공간이 달라 등록한 목소리와 비교할 수 없다."""
     import hashlib
@@ -122,15 +134,16 @@ def speaker_embedding(embedder, pcm: np.ndarray, segments: list[dict], label: st
     return _unit(np.mean(embs, axis=0)) if embs else None
 
 
-def suggest(embedder, pcm: np.ndarray, segments: list[dict], people: list[dict], labels: list[str]) -> dict:
-    """labels 화자들을 등록된 사람과 맞춘 제안 {label: {person_id, name, score}}."""
+def suggest(embedder, pcm: np.ndarray, segments: list[dict], people: list[dict], labels: list[str], dismissed: dict[str, set[str]] | None = None) -> dict:
+    """labels 화자들을 등록된 사람과 맞춘 제안 {label: {person_id, name, score}}. dismissed: {label: 사용자가 거절한 person_id들}."""
     embs = {lb: v for lb in labels if (v := speaker_embedding(embedder, pcm, segments, lb)) is not None}
-    return match(embs, people)
+    return match(embs, people, dismissed)
 
 
-def match(speaker_embs: dict[str, np.ndarray], people: list[dict]) -> dict:
+def match(speaker_embs: dict[str, np.ndarray], people: list[dict], dismissed: dict[str, set[str]] | None = None) -> dict:
     """사람 중심 벡터(표본 정규화 평균)와 코사인 → 헝가리안 1:1 배정. 점수가 THRESHOLD 이상이고 그 화자의 2위 사람보다
-    MARGIN 이상 높을 때만 제안한다."""
+    MARGIN 이상 높을 때만 제안한다. dismissed[label]에 든 사람은 그 화자에 배정하지 않는다(거절한 사람을 다시 제안하지 않는다).
+    거절한 사람도 2위 비교에는 남겨 둔다: 비슷한 두 사람 중 아무나 고르지 않는다는 기준은 그대로다."""
     from scipy.optimize import linear_sum_assignment
 
     people = [p for p in people if p.get("samples")]
@@ -139,8 +152,11 @@ def match(speaker_embs: dict[str, np.ndarray], people: list[dict]) -> dict:
         return {}
     cent = np.stack([_unit(np.mean([s["embedding"] for s in p["samples"]], axis=0)) for p in people])
     score = np.stack([_unit(speaker_embs[lb]) for lb in labels]) @ cent.T  # [화자, 사람]
+    allowed = np.array([[p["id"] not in (dismissed or {}).get(lb, ()) for p in people] for lb in labels])
     out = {}
-    for i, j in zip(*linear_sum_assignment(-score)):
+    for i, j in zip(*linear_sum_assignment(-np.where(allowed, score, -1.0))):
+        if not allowed[i, j]:
+            continue
         second = max((score[i, k] for k in range(len(people)) if k != j), default=-1.0)
         if score[i, j] >= THRESHOLD and score[i, j] - second >= MARGIN:
             out[labels[i]] = {"person_id": people[j]["id"], "name": people[j]["name"], "score": round(float(score[i, j]), 2)}
@@ -161,6 +177,19 @@ def load_profiles(home: Path) -> dict:
     return data
 
 
+@contextmanager
+def profiles_lock(home: Path):
+    """voices.json을 읽고 고쳐 쓰는 동안 다른 프로세스의 같은 작업을 막는다 ($TRACTUS_HOME/.voices.lock, fcntl.flock).
+    순서는 노트 잠금(store.note_lock) 다음이다. 이 잠금을 쥔 채 노트 잠금을 잡지 않는다 (서로 기다리는 일이 없게)."""
+    home.mkdir(parents=True, exist_ok=True)
+    fd = os.open(home / ".voices.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
 def save_profiles(home: Path, data: dict) -> None:
     """임시 파일을 0600으로 만들어 쓰고 바꿔 끼운다. 기존 파일 권한과 상관없이 결과는 0600."""
     home.mkdir(parents=True, exist_ok=True)
@@ -177,6 +206,14 @@ def save_profiles(home: Path, data: dict) -> None:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def restore_profiles(home: Path, previous: dict | None) -> None:
+    """save_profiles 이전 상태로 되돌린다 (previous가 None이면 파일이 없던 상태)."""
+    if previous is None:
+        (home / VOICES_FILE).unlink(missing_ok=True)
+    else:
+        save_profiles(home, previous)
 
 
 def needs_reenroll(data: dict) -> bool:

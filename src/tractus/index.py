@@ -327,10 +327,16 @@ class Index:
         if vectors is None:
             return
         self.db.execute("BEGIN IMMEDIATE")
-        for (cid, _, mid, date), v in zip(rows, vectors):
+        stored = 0
+        for (cid, text, mid, date), v in zip(rows, vectors):
+            # 임베딩하는 동안 다른 연결이 이 청크를 다시 썼으면(같은 chunk_id에 다른 글) 낡은 벡터를 넣지 않는다. 빠진 채로 두면 다음 동기화가 채운다.
+            now = self.db.execute("SELECT 1 FROM chunks WHERE chunk_id=? AND text=? AND meeting_id=?", (cid, text, mid)).fetchone()
+            if now is None:
+                continue
             self.db.execute("INSERT INTO chunks_vec(chunk_id, embedding, meeting_id, meeting_date) VALUES(?, ?, ?, ?)", (cid, v.astype(np.float32).tobytes(), mid, date))
+            stored += 1
         self.db.execute("COMMIT")
-        report.embedded += len(rows)
+        report.embedded += stored
 
     # ── 동기화 ────────────────────────────────────────────────────────
     def sync(self, embed: bool = True) -> SyncReport:
@@ -480,10 +486,16 @@ class Index:
 
     def stats(self) -> dict:
         one = lambda sql: self.db.execute(sql).fetchone()[0]  # noqa: E731
+        chunks = one("SELECT count(*) FROM chunks")
+        has_vec = self._table("chunks_vec")
+        # pending = 지금 모델로는 벡터가 없는 청크. 교정으로 본문이 바뀌었거나 모델이 바뀌면 `tractus index`가 채울 때까지 키워드로만 찾힌다
+        stale = self.embedder is not None and has_vec and not self._vectors_current()
+        pending = chunks if stale or not has_vec else one("SELECT count(*) FROM chunks WHERE chunk_id NOT IN (SELECT chunk_id FROM chunks_vec)")
         return {
             "meetings": one("SELECT count(*) FROM meetings"),
-            "chunks": one("SELECT count(*) FROM chunks"),
-            "vectors": one("SELECT count(*) FROM chunks_vec") if self._table("chunks_vec") else 0,
+            "chunks": chunks,
+            "vectors": one("SELECT count(*) FROM chunks_vec") if has_vec else 0,
+            "pending": pending,
             "embedding_model": self._meta("embedding_model"),
             "index_path": str(self.path),
         }

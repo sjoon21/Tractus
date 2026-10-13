@@ -118,6 +118,21 @@ struct AppState {
     live: LiveSlot,
     /// 지금 쓰는 중인 대상 (작업·질문·녹음 ID → 노트 ID 또는 녹음 폴더). 삭제가 이 대상을 거절한다
     busy: Busy,
+    /// 돌고 있는 백그라운드 검색 정보 갱신 프로세스. 변환·녹음·질문이 시작하면 kill해 임베딩 모델이 겹쳐 올라가지 않게 한다 (다음 갱신이 이어서 한다)
+    index: IndexSlot,
+}
+
+type IndexSlot = Arc<Mutex<Option<Arc<Mutex<Child>>>>>;
+
+/// 갱신 중인 검색 정보 프로세스를 멈춘다. 없으면 아무 일도 없다. 먼저 `hold`로 자기 표시를 한 뒤 부른다
+/// (그 뒤에 시작하는 갱신은 `new_if_idle`에서 비켜 가고, 이미 시작한 갱신은 아래에서 멈춘다)
+fn cancel_index(slot: &IndexSlot) {
+    if let Some(child) = slot.lock().unwrap().as_ref() {
+        // 대기 스레드가 이미 wait 중이면 끝나는 중이다
+        if let Ok(mut c) = child.try_lock() {
+            let _ = c.kill();
+        }
+    }
 }
 
 type Busy = Arc<Mutex<HashMap<String, String>>>;
@@ -137,6 +152,43 @@ fn hold(busy: &Busy, target: &str) -> String {
 fn release(busy: &Busy, key: &str) {
     busy.lock().unwrap().remove(key);
 }
+
+/// 짧은 명령(문장 수정·참석자 편집·내보내기·목소리 등록)이 노트를 쓰는 동안 노트를 쓰는 중으로 표시한다. 놓으면(Drop) 풀린다.
+/// 삭제는 이 표시가 있으면 거절한다 (앱은 먼저 수정 줄을 비우지만, 그 사이를 뚫은 호출이 폴더가 사라진 뒤에 '노트 없음'으로 실패하지 않게)
+struct BusyGuard {
+    busy: Busy,
+    key: String,
+}
+
+impl BusyGuard {
+    fn new(busy: &Busy, target: &str) -> Self {
+        BusyGuard { busy: busy.clone(), key: hold(busy, target) }
+    }
+
+    /// 아무것도 쓰이지 않을 때만 잡는다. 확인과 표시를 한 번의 잠금 안에서 하므로 동시에 둘이 잡을 수 없다
+    fn new_if_idle(busy: &Busy, target: &str) -> Option<Self> {
+        let mut m = busy.lock().unwrap();
+        if !m.is_empty() {
+            return None;
+        }
+        let key = ulid::Ulid::new().to_string();
+        m.insert(key.clone(), target.to_string());
+        Some(BusyGuard { busy: busy.clone(), key })
+    }
+}
+
+impl Drop for BusyGuard {
+    fn drop(&mut self) {
+        release(&self.busy, &self.key);
+    }
+}
+
+/// 가져오기 작업이 쓰는 표시 대상 (노트 ID나 녹음 폴더가 아니므로 삭제를 막지 않는다)
+const IMPORT_TARGET: &str = "<import>";
+/// 백그라운드 검색 정보 갱신이 쓰는 표시 대상
+const INDEX_TARGET: &str = "<index>";
+/// 노트 하나에 묶이지 않는 질문(전체 범위)이 쓰는 표시 대상 (갱신이 비켜 간다. 삭제는 막지 않는다)
+const ASK_TARGET: &str = "<ask>";
 
 type LiveSlot = Arc<Mutex<Option<procs::Stoppable>>>;
 
@@ -162,7 +214,7 @@ fn save_settings(state: State<'_, AppState>, settings: Settings) -> Result<(), S
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다: {e}"))?;
+    std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
     state.mcp.set_spawn(settings.mcp_spawn());
     *state.settings.lock().unwrap() = settings;
     Ok(())
@@ -185,7 +237,7 @@ fn set_rec_mode(state: State<'_, AppState>, mode: String) -> Result<(), String> 
     if let Some(dir) = state.config_path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다: {e}"))?;
+    std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
     state.settings.lock().unwrap().rec_mode = mode;
     Ok(())
 }
@@ -289,6 +341,7 @@ fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>) -> 
     }
     let (slot, live, live_dir) = (state.rec.clone(), state.live.clone(), dir.clone());
     let (busy, busy_key) = (state.busy.clone(), hold(&state.busy, &dir.to_string_lossy()));
+    cancel_index(&state.index); // 실시간 변환 모델과 임베딩 모델이 함께 올라가지 않게
     let release_key = busy_key.clone();
     // 실시간 자막은 녹음 헬퍼가 트랙 파일을 만든 뒤(started)에 띄운다. 설정은 녹음을 시작할 때의 값을 쓴다
     let live_settings = s.live_captions.then(|| s.clone());
@@ -322,7 +375,7 @@ fn rec_send(state: State<'_, AppState>, cmd: String, text: Option<String>) -> Re
     let line = procs::recorder_line(&cmd, text.as_deref())?;
     let mut rec = state.rec.lock().unwrap();
     let stdin = rec.as_mut().ok_or("녹음 중이 아닙니다")?;
-    stdin.write_all(line.as_bytes()).and_then(|_| stdin.flush()).map_err(|e| format!("녹음 프로그램에 명령을 보내지 못했습니다: {e}"))?;
+    stdin.write_all(line.as_bytes()).and_then(|_| stdin.flush()).map_err(|e| format!("녹음 프로그램에 명령을 보내지 못했습니다\n{e}"))?;
     // 자막도 지금 멈추기 시작한다 (녹음 헬퍼가 파일을 마무리하는 동안). 끝나기를 기다리는 것은 stopped 때(stop_live)
     if cmd == "stop" {
         if let Some(p) = state.live.lock().unwrap().as_mut() {
@@ -358,8 +411,10 @@ fn job_start(app: AppHandle, state: State<'_, AppState>, kind: String, target: S
     let s = state.settings();
     let cmd = s.tractus(&job_args(&s.home(), &kind, &target)?);
     let tag = json!({"job": job, "kind": kind}).as_object().unwrap().clone();
-    // 노트·녹음을 쓰는 동안은 삭제를 거절한다 (가져오기는 대상이 아직 없다)
-    let key = (kind != "import").then(|| (state.busy.clone(), hold(&state.busy, &target)));
+    // 노트·녹음을 쓰는 동안은 삭제를 거절한다. 가져오기는 대상이 아직 없어 IMPORT_TARGET으로 표시만 한다 (백그라운드 검색 정보 갱신이 비켜 간다)
+    let held = if kind == "import" { IMPORT_TARGET } else { target.as_str() };
+    let key = Some((state.busy.clone(), hold(&state.busy, held)));
+    cancel_index(&state.index);
     let slot = key.clone();
     // stdin은 쓰지 않으므로 바로 닫는다
     let started = procs::spawn_streaming(cmd, tag, move |ev| {
@@ -398,7 +453,9 @@ fn ask_start(
     let tag = json!({ "job": job }).as_object().unwrap().clone();
     let (asks, key) = (state.asks.clone(), job.clone());
     // 한 노트에 묻는 동안은 그 노트 삭제를 거절한다
-    let held = meeting.as_deref().map(|m| (state.busy.clone(), hold(&state.busy, m)));
+    // 전체 범위 질문도 표시한다 (검색 정보 갱신이 비켜 가고, 이미 돌고 있으면 멈춘다)
+    let held = Some((state.busy.clone(), hold(&state.busy, meeting.as_deref().unwrap_or(ASK_TARGET))));
+    cancel_index(&state.index);
     let slot = held.clone();
     // 넣기 전에 잠가 둔다: 바로 끝나는 프로세스의 exit가 넣기보다 먼저 지우지 않게
     let mut running = state.asks.lock().unwrap();
@@ -523,7 +580,7 @@ fn run_tractus(s: &Settings, args: &[String], input: Option<&str>, what: &str) -
     let mut child = cmd.spawn().map_err(|e| procs::cannot_run(&s.tractus_bin, e))?;
     if let (Some(text), Some(mut stdin)) = (input, child.stdin.take()) {
         // 코어는 stdin을 다 읽은 뒤에 출력하므로 먼저 쓰고 닫아도 막히지 않는다
-        stdin.write_all(text.as_bytes()).map_err(|e| format!("{what}: 입력을 넘기지 못했습니다: {e}"))?;
+        stdin.write_all(text.as_bytes()).map_err(|e| format!("{what}\n입력을 넘기지 못했습니다: {e}"))?;
     }
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
     if !out.status.success() {
@@ -560,7 +617,9 @@ fn stdout_json(out: &str) -> Result<Value, String> {
 async fn edit_speakers(state: State<'_, AppState>, id: String, edit: SpeakerEdit) -> Result<meetings::MeetingDetail, String> {
     let s = state.settings();
     let args = speakers_args(&id, &edit)?;
+    let guard = BusyGuard::new(&state.busy, &id);
     blocking(move || {
+        let _guard = guard;
         run_tractus(&s, &args, None, "참석자를 고치지 못했습니다")?;
         meetings::load(&s.home(), &id)
     })
@@ -597,7 +656,9 @@ struct EditResult {
 async fn edit_segments(state: State<'_, AppState>, id: String, edits: Vec<TextEdit>) -> Result<EditResult, String> {
     let s = state.settings();
     let (args, input) = segments_edit(&id, &edits)?;
+    let guard = BusyGuard::new(&state.busy, &id);
     blocking(move || {
+        let _guard = guard;
         let changed = stdout_json(&run_tractus(&s, &args, Some(&input), "대화 내용을 수정하지 못했습니다")?)?["changed"].as_u64().unwrap_or(0);
         Ok(EditResult { changed, meeting: meetings::load(&s.home(), &id)? })
     })
@@ -621,6 +682,44 @@ async fn glossary_add(state: State<'_, AppState>, terms: Vec<String>) -> Result<
     blocking(move || Ok(stdout_json(&run_tractus(&s, &args, None, "자주 쓰는 단어에 추가하지 못했습니다")?)?["added"].as_u64().unwrap_or(0))).await
 }
 
+/// 수정한 문장을 검색에 반영한다: `tractus index` (바뀐 노트만 다시 읽고 임베딩한다). 앱이 한가할 때 조용히 부른다.
+/// 다른 작업(변환·요약·단어 싱크·녹음·질문·수정·내보내기)이 하나라도 돌고 있거나 이미 갱신 중이면 하지 않고 false를 돌려준다.
+/// 실행했으면 true. 도는 중에 변환·녹음·질문이 시작하면 갱신 프로세스를 멈추고 false (다음 갱신이 이어서 한다). 실패는 오류 문장(코어 마지막 줄)
+#[tauri::command]
+async fn index_refresh(state: State<'_, AppState>) -> Result<bool, String> {
+    let s = state.settings();
+    let Some(guard) = BusyGuard::new_if_idle(&state.busy, INDEX_TARGET) else { return Ok(false) };
+    let (busy, slot) = (state.busy.clone(), state.index.clone());
+    blocking(move || {
+        let _guard = guard;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (stdin, child) = procs::spawn_streaming(s.tractus(&["index".to_string()]), serde_json::Map::new(), move |ev| {
+            if ev["event"] == "exit" {
+                let _ = tx.send(ev);
+            }
+        })?;
+        drop(stdin);
+        *slot.lock().unwrap() = Some(child);
+        // 시작하는 사이에 다른 작업이 표시를 하고 cancel_index를 지나갔을 수 있다: 내 표시 말고 다른 표시가 있으면 비켜 준다
+        if busy.lock().unwrap().len() > 1 {
+            cancel_index(&slot);
+        }
+        let exit = rx.recv().map_err(|e| e.to_string());
+        *slot.lock().unwrap() = None;
+        index_outcome(&exit?)
+    })
+    .await
+}
+
+/// 검색 정보 갱신 프로세스의 exit 이벤트 → 했으면 true, 다른 작업에 밀려 멈췄으면 false(신호로 끝나 종료 코드가 없다), 실패는 오류 문장
+fn index_outcome(exit: &Value) -> Result<bool, String> {
+    match exit["code"].as_i64() {
+        Some(0) => Ok(true),
+        None => Ok(false),
+        Some(code) => Err(last_error_line(exit["stderr"].as_str().unwrap_or("")).unwrap_or_else(|| format!("스마트 검색 정보를 갱신하지 못했습니다 (종료 코드 {code})"))),
+    }
+}
+
 const EXPORT_FORMATS: &[&str] = &["txt", "md", "srt", "vtt", "csv", "docx", "bundle"];
 
 /// `tractus export`. 경로는 저장 대화상자가 고른 절대 경로이고, 덮어쓰기는 대화상자가 이미 물었으므로 --force
@@ -637,7 +736,9 @@ fn export_args(id: &str, format: &str, out: &Path) -> Result<Vec<String>, String
 async fn export_meeting(state: State<'_, AppState>, id: String, format: String, out: String) -> Result<String, String> {
     let s = state.settings();
     let args = export_args(&id, &format, Path::new(&out))?;
+    let guard = BusyGuard::new(&state.busy, &id);
     blocking(move || {
+        let _guard = guard;
         let v = stdout_json(&run_tractus(&s, &args, None, "내보내지 못했습니다")?)?;
         let path = v["path"].as_str().ok_or("내보낸 파일 위치를 알 수 없습니다")?.to_string();
         // Finder 보여 주기가 실패해도 파일은 이미 저장됐다
@@ -686,7 +787,7 @@ pub fn run() {
                     eprintln!("MCP 예열 실패: {e}");
                 }
             });
-            app.manage(AppState { settings: Mutex::new(settings), config_path, mcp, rec: Arc::default(), asks: Arc::default(), live: Arc::default(), busy: Arc::default() });
+            app.manage(AppState { settings: Mutex::new(settings), config_path, mcp, rec: Arc::default(), asks: Arc::default(), live: Arc::default(), busy: Arc::default(), index: Arc::default() });
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -700,6 +801,7 @@ pub fn run() {
             edit_speakers,
             edit_segments,
             glossary_add,
+            index_refresh,
             export_meeting,
             mcp_call,
             rec_start,
@@ -916,6 +1018,77 @@ mod tests {
     }
 
     #[test]
+    fn quick_edit_guard_marks_the_note_busy_and_blocks_delete_until_dropped() {
+        let busy = Busy::default();
+        let guard = BusyGuard::new(&busy, "01AAA");
+        assert!(is_busy(&busy, "01AAA") && !is_busy(&busy, "01BBB"));
+        // 삭제는 처리 중이라는 문장으로 깨끗하게 거절된다 (없는 노트로 실패하지 않는다)
+        let home = std::env::temp_dir().join(format!("tractus-guard-{}", std::process::id()));
+        let dir = home.join("meetings/2026-10-08_t_01AAA");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("transcript.json"), r#"{"meeting_id":"01AAA","segments":[]}"#).unwrap();
+        std::fs::create_dir_all(home.join("recordings")).unwrap();
+        let e = removal::note_dir(&home, "01AAA", |k| is_busy(&busy, k)).unwrap_err();
+        assert!(e.contains("처리하는 중") && dir.exists());
+        drop(guard);
+        assert!(!is_busy(&busy, "01AAA"));
+        assert!(removal::note_dir(&home, "01AAA", |k| is_busy(&busy, k)).is_ok());
+        std::fs::remove_dir_all(&home).unwrap();
+        // 다른 노트의 표시는 서로 영향이 없다
+        let (a, b) = (BusyGuard::new(&busy, "01AAA"), BusyGuard::new(&busy, "01BBB"));
+        drop(a);
+        assert!(!is_busy(&busy, "01AAA") && is_busy(&busy, "01BBB"));
+        drop(b);
+    }
+
+    #[test]
+    fn index_refresh_runs_only_when_nothing_else_is_busy_and_one_at_a_time() {
+        let busy = Busy::default();
+        let first = BusyGuard::new_if_idle(&busy, INDEX_TARGET).expect("한가하면 잡는다");
+        assert!(BusyGuard::new_if_idle(&busy, INDEX_TARGET).is_none(), "이미 갱신 중이면 하나만");
+        drop(first);
+        // 변환·요약·수정·녹음·가져오기 같은 다른 표시가 있으면 비켜 간다
+        for target in ["01AAA", "/h/recordings/01REC", IMPORT_TARGET] {
+            let key = hold(&busy, target);
+            assert!(BusyGuard::new_if_idle(&busy, INDEX_TARGET).is_none(), "{target}");
+            release(&busy, &key);
+        }
+        assert!(BusyGuard::new_if_idle(&busy, INDEX_TARGET).is_some());
+        // 갱신 표시는 어느 노트의 삭제도 막지 않는다
+        let _g = BusyGuard::new(&busy, INDEX_TARGET);
+        assert!(!is_busy(&busy, "01AAA"));
+    }
+
+    #[test]
+    fn index_outcome_maps_exit_events() {
+        assert_eq!(index_outcome(&json!({"code": 0, "stderr": ""})), Ok(true));
+        assert_eq!(index_outcome(&json!({"code": null, "stderr": ""})), Ok(false)); // kill로 비켜 줬다
+        assert_eq!(index_outcome(&json!({"code": 1, "stderr": "log\nError: 디스크가 가득 찼습니다"})), Err("디스크가 가득 찼습니다".into()));
+        assert!(index_outcome(&json!({"code": 2, "stderr": ""})).unwrap_err().contains("종료 코드 2"));
+    }
+
+    #[test]
+    fn global_ask_holds_a_busy_mark_that_blocks_index_but_not_delete() {
+        let busy = Busy::default();
+        let key = hold(&busy, ASK_TARGET);
+        assert!(BusyGuard::new_if_idle(&busy, INDEX_TARGET).is_none());
+        assert!(!is_busy(&busy, "01AAA"));
+        release(&busy, &key);
+    }
+
+    #[test]
+    fn cancel_index_kills_a_running_refresh_and_ignores_an_empty_slot() {
+        let slot = IndexSlot::default();
+        cancel_index(&slot);
+        let child = Command::new("sleep").arg("30").spawn().unwrap();
+        let child = Arc::new(Mutex::new(child));
+        *slot.lock().unwrap() = Some(child.clone());
+        cancel_index(&slot);
+        let status = child.lock().unwrap().wait().unwrap();
+        assert!(status.code().is_none(), "신호로 끝났다");
+    }
+
+    #[test]
     fn last_json_line() {
         assert_eq!(stdout_json("log\n{\"path\": \"/a b.txt\"}\n\n").unwrap()["path"], "/a b.txt");
         assert!(stdout_json("").is_err());
@@ -959,5 +1132,17 @@ mod tests {
     fn cannot_run_names_the_program() {
         assert!(procs::cannot_run("/x/recorder/.build/release/tractus-rec", "없음").starts_with("녹음 프로그램을 실행할 수 없습니다"));
         assert!(procs::cannot_run("~/.local/bin/tractus", "없음").starts_with("Tractus 엔진을 실행할 수 없습니다"));
+    }
+
+    #[test]
+    fn cannot_run_keeps_the_os_text_out_of_the_sentence() {
+        let e = procs::cannot_run("/x/.venv/bin/tractus", "No such file or directory (os error 2)");
+        let (sentence, detail) = e.split_once('\n').expect("문장과 자세히가 줄로 갈린다");
+        assert!(!sentence.contains("os error") && !sentence.contains("No such file"), "{sentence}");
+        assert!(sentence.ends_with("(/x/.venv/bin/tractus)"));
+        assert_eq!(detail, "No such file or directory (os error 2)");
+        // 실행해 보면 실제 OS 오류도 같은 꼴이다
+        let real = run_tractus(&Settings { tractus_bin: "/nonexistent/tractus".into(), ..Default::default() }, &[], None, "x").unwrap_err();
+        assert!(real.lines().next().is_some_and(|l| !l.contains("os error")) && real.contains("os error 2"), "{real}");
     }
 }

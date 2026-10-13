@@ -59,8 +59,61 @@ export function segmentIndexAt(segments: { start: number }[], t: number): number
   return found;
 }
 
-/** t초의 단어: start <= t인 마지막 단어. 첫 단어 전이면 -1 */
-export const wordIndexAt: (words: Word[], t: number) => number = segmentIndexAt;
+/** 단어 하나가 화면에서 최소로 보이는 시간(초). 시작이 같은 단어와 길이 0인 단어도 이만큼은 칠해진다 */
+export const MIN_WORD_SPAN = 0.12;
+
+/** 가라오케용 단어 시각: starts[k]는 k번째 단어를 칠하기 시작할 시각(오름차순), end는 마지막 단어를 칠하는 끝 시각 */
+export interface WordClock {
+  starts: number[];
+  end: number;
+}
+
+const clocks = new WeakMap<Word[], WordClock>();
+
+/**
+ * 단어 시각을 칠하기 좋게 다듬는다 (한 번 만들면 단어 배열마다 캐시한다). 코어가 시작이 같은 단어를 내는 경우가 있다
+ * (실제 노트에 132쌍): 그대로 이진 탐색하면 앞 단어는 한 번도 칠해지지 않는다. 시작이 같은 단어 묶음은 다음 다른 시작 시각까지를
+ * 균등하게 나눠 차례로 칠한다. 마지막 묶음은 끝 시각까지, 길이가 0이면 단어마다 MIN_WORD_SPAN만큼 칠한다.
+ */
+export function wordClock(words: Word[]): WordClock {
+  const cached = clocks.get(words);
+  if (cached) return cached;
+  const starts: number[] = [];
+  let end = 0;
+  for (let i = 0; i < words.length; ) {
+    const base = words[i].start;
+    let j = i + 1;
+    while (j < words.length && words[j].start <= base) j++; // 같은(또는 거꾸로 온) 시작은 한 묶음
+    const n = j - i;
+    const from = Math.max(base, starts.length ? starts[starts.length - 1] : base);
+    const groupEnd = words.slice(i, j).reduce((m, w) => Math.max(m, w.end), base);
+    const span = j < words.length ? Math.max(words[j].start - from, 0) : Math.max(groupEnd - from, MIN_WORD_SPAN * n);
+    for (let k = 0; k < n; k++) starts.push(from + (span * k) / n);
+    end = from + span;
+    i = j;
+  }
+  const clock = { starts, end };
+  clocks.set(words, clock);
+  return clock;
+}
+
+/** t초의 단어: 칠하기 시작한 시각(wordClock)이 t 이하인 마지막 단어. 첫 단어 전이면 -1. 이진 탐색이라 O(log n) */
+export function wordIndexAt(words: Word[], t: number): number {
+  const { starts } = wordClock(words);
+  let lo = 0;
+  let hi = starts.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (starts[mid] <= t) {
+      found = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return found;
+}
 
 /** 공백으로 나눈 토큰의 글자 위치 (코어 seg_text(s).split()과 같은 토큰). 가라오케 Range와 단어 클릭에 쓴다 */
 export const tokenOffsets = (text: string): { start: number; end: number }[] => [...text.matchAll(/\S+/g)].map((m) => ({ start: m.index, end: m.index + m[0].length }));
@@ -78,7 +131,7 @@ export function clickSeekTime(seg: Segment, offset: number | null): number {
   const words = offset === null ? null : usableWords(seg);
   if (!words || offset === null) return seg.start;
   const k = tokenOffsets(segText(seg)).findLastIndex((o) => o.start <= offset);
-  return k < 0 || words[k].approx ? seg.start : words[k].start;
+  return k < 0 || words[k].approx ? seg.start : wordClock(words).starts[k];
 }
 
 export type Row = { kind: "seg"; seg: Segment; index: number; turnStart?: boolean } | { kind: "memo"; memo: Memo };
@@ -191,6 +244,14 @@ export function renameRequest(raw: string, remember: boolean, consent: boolean):
   if (!consent) return { error: "본인이거나 동의를 받은 사람인지 확인해 주세요" };
   return { name, remember: true };
 }
+
+/** 목소리 인식 파일을 쓸 수 있는가. `tractus voices list --json`의 model_present. 코어가 알리지 않으면(키 없음) 쓸 수 있다고 본다 */
+export const voiceModelReady = (list: { model_present?: boolean } | null | undefined): boolean => list?.model_present !== false;
+
+/** 목소리 인식 파일이 없을 때 이름 바꾸기의 '목소리 등록' 체크 아래 문장과 '자세히' (WORDS.md §4.4) */
+export const VOICE_MODEL_MISSING = "목소리 인식에 필요한 파일이 없어 목소리를 등록할 수 없습니다. 이름만 바꿀 수 있습니다.";
+export const VOICE_MODEL_SETUP =
+  "변환 엔진 위치(설정)의 3dspeaker-campplus-zh-en 폴더에 3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx 파일이 있어야 합니다. 받는 방법은 저장소 README의 ‘목소리 프로필’ 설치 절차를 따르세요.";
 
 export type RememberResult<M> =
   | { meeting: M; samples: number }
@@ -399,14 +460,20 @@ export const JOB_ERROR = {
   live: "실시간 변환이 일시 중지되었습니다 (녹음은 정상 진행 중)",
 } as const;
 
-/** 앱(Rust invoke 거부)이 만든 오류: 문구가 이미 WORDS.md 문장이라 그대로 보인다 (예: 실행 파일 경로를 확인하세요) */
+/** 앱(Rust invoke 거부)이 만든 오류: 첫 줄이 이미 WORDS.md 문장이라 그대로 보이고, 둘째 줄부터(OS 오류 문구 등)는 접힌 '자세히'로 간다 (예: 실행 파일 경로를 확인하세요) */
 export const APP_ERROR = "app";
+
+/** 첫 줄 = 화면 문장, 나머지 = 원래 문구('자세히'). Rust 오류 문자열의 규칙 (removal.rs) */
+export function splitMessage(message: string): { text: string; detail: string | null } {
+  const [text, ...rest] = message.split("\n");
+  return { text, detail: rest.join("\n").trim() || null };
+}
 
 /**
  * 오류 → 화면 문장(text)과 원래 문구(detail, 접힌 '자세히'). 앱 오류 > 코드 문장 > 앱이 만든 종료 문장(첫 줄이 "(종료 코드 N)"으로 끝남) > 기본 문장.
  */
 export function errorView(message: string | null, code: string | null | undefined, fallback: string): { text: string; detail: string | null } {
-  if (code === APP_ERROR && message) return { text: message, detail: null };
+  if (code === APP_ERROR && message) return splitMessage(message);
   const mapped = code ? ERROR_TEXT[code] : undefined;
   if (mapped) return { text: mapped, detail: message || null };
   const [first, ...rest] = (message ?? "").split("\n");
@@ -606,6 +673,15 @@ export function liveReduce(s: LiveState, ev: LiveEvent): LiveState {
 /** "실시간 변환이 일시 중지되었습니다" 안내를 띄울지. 앱은 녹음 단계를 벗어난 뒤에야 stop을 보내므로,
  *  녹음 중의 종료는 정상 종료(SIGTERM → done + exit 0)라도 예상 밖이다 */
 export const liveHalted = (s: LiveState, recording: boolean) => recording && (s.status === "failed" || s.status === "stopped");
+
+/**
+ * 멈춘 실시간 변환 안내의 문장. 메모리 부족(live_low_memory)은 멈춘 것이 아니라 처음부터 켜지 않은 것이라 '일시 중지' 말 없이 그 문장만 보인다
+ * (앱에서 억지로 켤 길은 없다: 녹음은 정상 진행되고 종료 후 변환한다). 그 밖에는 '일시 중지' + 코드 문장(있으면)
+ */
+export function liveHaltView(s: Pick<LiveState, "errorCode">): { text: string; note: string | null } {
+  if (s.errorCode === "live_low_memory") return { text: ERROR_TEXT.live_low_memory, note: null };
+  return { text: JOB_ERROR.live, note: (s.errorCode && ERROR_TEXT[s.errorCode]) || null };
+}
 
 // ── Phase 5: 재생 컨트롤·편집·찾기·가져오기·내보내기 (docs/roadmap.md §2) ──
 

@@ -1,0 +1,4 @@
+{"qid": "f01", "type": "follow", "history": ["Redis 캐시는 누가 맡았어?"], "question": "그럼 그건 언제까지야?", "gold": {"01M0C67Y40RMV2S860E7CD9PGX": ["s0007"]}}
+{"qid": "f02", "type": "follow", "history": ["다온로지스 장애 대응은 어떤 범위로 계약하기로 했어?"], "question": "그럼 그 계약서는 누가 보내?", "gold": {"01M3QYXKE0WC2SE1CW214JX464": ["s0010"]}}
+{"qid": "f03", "type": "follow", "history": ["ML 엔지니어 채용은 어떻게 됐어?"], "question": "그럼 4분기에는?", "gold": {"01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0012"]}}
+{"qid": "f04", "type": "follow", "history": ["GPU 서버 구매는 어떻게 하기로 했어?"], "question": "그럼 언제 다시 판단하기로 했어?", "gold": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0007"], "01M2PZ6MR0KZ0R3C1T2RHWN1E4": ["s0009"]}, "ok": {"01KWZKT9M0T5YFCND21XGZFT8G": ["s0008"]}}

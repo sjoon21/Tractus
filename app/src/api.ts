@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Citation, ChatMessage, LlmConfig } from "./ask";
-import { APP_ERROR, DetailedError, IDLE_JOB, IDLE_LIVE, IDLE_REC, jobReduce, liveReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type LiveEvent, type LiveState, type Memo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
+import { APP_ERROR, DetailedError, IDLE_JOB, splitMessage, IDLE_LIVE, IDLE_REC, jobReduce, liveReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type LiveEvent, type LiveState, type Memo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
 
 export type { JobState, LiveState, RecState } from "./lib";
 
@@ -56,6 +56,8 @@ export interface VoiceList {
   people: VoicePerson[];
   /** 임베딩 모델이 바뀌어 지금 프로필로는 맞춰 보지 않는다 → 다시 등록 */
   needs_reenroll: boolean;
+  /** 목소리 인식 모델 파일을 쓸 수 있는지. 없으면 등록할 수 없다. 코어가 알리지 않으면 true로 본다 (voiceModelReady) */
+  model_present: boolean;
 }
 
 export interface PendingRecording {
@@ -134,6 +136,8 @@ export const api = {
     invoke<{ samples: number; meeting: MeetingDetail }>("voices_enroll", { meeting, label, name, consent: true }),
   /** 지운 사람 수 */
   voicesForget: (id: string) => invoke<number>("voices_forget", { id }),
+  /** `tractus index`: 고친 문장을 검색에 반영한다. 다른 작업이 돌고 있어 비켜 갔으면 false */
+  indexRefresh: () => invoke<boolean>("index_refresh"),
   /** `tractus glossary add`. 새로 더한 개수 */
   glossaryAdd: (terms: string[]) => invoke<number>("glossary_add", { terms }),
   /** `tractus export` 후 Finder에서 보여 준다. 저장한 절대 경로 */
@@ -157,9 +161,13 @@ export const api = {
   status: async () => parseToolResult<McpStatus>(await invoke("mcp_call", { name: "status", arguments: {} })),
 };
 
-export const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
-/** DetailedError의 원래 문구 ('자세히'). 없으면 null */
-export const errDetail = (e: unknown): string | null => (e instanceof DetailedError ? e.detail : null);
+const errRaw = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** 화면 문장: Rust 오류 문자열은 첫 줄이 문장이고 둘째 줄부터가 원래 문구다 (lib.splitMessage) */
+export const errText = (e: unknown) => splitMessage(errRaw(e)).text;
+/** 원래 문구 ('자세히'): DetailedError의 detail, 없으면 오류 문자열의 둘째 줄부터. 없으면 null */
+export const errDetail = (e: unknown): string | null => (e instanceof DetailedError ? e.detail : splitMessage(errRaw(e)).detail);
+/** 줄바꿈을 포함한 오류 전체 (문장 + 자세히를 함께 다시 해석할 때) */
+export const errFull = errRaw;
 
 // ── 작업 (transcribe / summarize / import / align) ──
 
@@ -196,7 +204,7 @@ export function useJob(onDone: (meetingId: string, warnings: Warning[]) => void)
     try {
       await invoke("job_start", { kind, target, job });
     } catch (e) {
-      setState({ ...IDLE_JOB, error: errText(e), errorCode: APP_ERROR }); // 실행 실패 등 Rust 문장은 그대로 보인다
+      setState({ ...IDLE_JOB, error: errFull(e), errorCode: APP_ERROR }); // 실행 실패 등 Rust 문장은 그대로 보인다
     }
   }, []);
 

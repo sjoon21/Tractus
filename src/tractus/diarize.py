@@ -25,6 +25,7 @@ MODEL_DIR = "nemotron-3-diarization"
 MAX_SPEAKERS = 8  # 모델 출력 채널 수
 NEMOTRON = "nemotron"
 FLUID = "fluid"
+FLUID_MIN_CLIP_S = 60.0  # community-1(pyannote)은 이보다 짧은 클립에서 화자를 과하게 쪼갠다. --diarizer fluid로 명시했을 때만 경고한다 (auto는 8명을 다 쓴 긴 회의에서만 fluid로 간다)
 
 # 단일 화자 평활화 (프레임 = 10ms)
 THRESHOLD = 0.5  # 가장 높은 화자 확률이 이보다 낮으면 무음

@@ -1,7 +1,8 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, errText, useJob, type MeetingDetail, type SpeakerEdit, type Summary } from "./api";
+import { useAlign } from "./alignJobs";
+import { api, errDetail, errText, useJob, type MeetingDetail, type SpeakerEdit, type Summary } from "./api";
 import type { Notify, Seek } from "./App";
 import {
   applyEdits,
@@ -34,6 +35,7 @@ import {
   tokenOffsets,
   transcriptRows,
   usableWords,
+  wordClock,
   wordIndexAt,
   type EXPORT_FORMATS,
   type Match,
@@ -43,9 +45,11 @@ import {
 } from "./lib";
 import { providerLabel } from "./ask";
 import { AskPanel } from "./AskPanel";
+import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
+import { indexer } from "./indexer";
 import { printDoc } from "./print";
-import type { DeleteTarget } from "./remove";
+import { EDIT_BLOCKED, type DeleteTarget } from "./remove";
 import { PrintSheet } from "./PrintSheet";
 import { SpeakerChip, SpeakerMenu, SpeakersBar, spkStyle, type MenuTarget, type MergeAsk } from "./Speakers";
 import { ExportMenu, FindBar, SegmentEditor, type FindState } from "./TranscriptTools";
@@ -71,7 +75,7 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
   }, []);
   const [pending, setPending] = useState<TextEdit[][]>([]);
   const detail = useMemo(() => (base && pending.length ? { ...base, segments: pending.reduce(applyEdits, base.segments) } : base), [base, pending]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ text: string; detail: string | null } | null>(null);
   const audio = useRef<HTMLAudioElement>(null);
   const list = useRef<HTMLOListElement>(null);
   const [t, setT] = useState(0);
@@ -86,7 +90,7 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
       commit(d);
       setDuration(d.info.duration_sec);
     } catch (e) {
-      setError(errText(e));
+      setError({ text: errText(e), detail: errDetail(e) });
     }
   }, [id, commit]);
   useEffect(() => void load(), [load]);
@@ -110,13 +114,14 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
   const segments = detail?.segments ?? [];
   // 단어 타이밍 (6.1): 예전 회의는 words가 없다 → '단어 타이밍 만들기'. 코어는 정렬하는 동안 고친 문장을 덮어쓰지 않는다
   const hasWords = segments.some((s) => !!s.words?.length);
-  const align = useJob(() => {
-    void load();
-    notify({ text: "단어 싱크를 맞췄습니다. 단어를 누르면 그 단어부터 재생합니다" });
-  });
+  // 작업 상태는 노트 ID별로 앱 전체 저장소에 있다(alignJobs.ts): 노트를 닫았다 다시 열어도 진행이 보이고 버튼이 다시 켜지지 않는다.
+  // 끝났다는 알림(토스트)도 App이 한다. 이 화면은 열려 있는 동안 끝나면 다시 읽기만 한다
+  const align = useAlign(id);
+  const alignWasRunning = useRef(align.job.running);
   useEffect(() => {
-    if (!align.job.running && align.job.error) notify({ ...errorView(align.job.error, align.job.errorCode, JOB_ERROR.align), error: true });
-  }, [align.job.running, align.job.error, align.job.errorCode, notify]);
+    if (alignWasRunning.current && !align.job.running && !align.job.error) void load();
+    alignWasRunning.current = align.job.running;
+  }, [align.job.running, align.job.error, load]);
   const speakers = detail?.speakers ?? {};
   const stats = useMemo(() => speakerStats(segments, speakers), [detail]);
   const diarized = stats.length > 0;
@@ -136,16 +141,23 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
   const [renaming, setRenaming] = useState<string | null>(null);
   const [merge, setMerge] = useState<MergeAsk | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
-  // 편집은 한 줄로 세운다: 코어가 transcript.json을 잠금 없이 읽고-고쳐-쓴다. 화자·문장 편집·내보내기가 같은 줄에 선다
-  const chain = useRef<Promise<unknown>>(Promise.resolve());
+  // 편집은 노트마다 한 줄로 세운다(editQueue.ts): 코어가 transcript.json을 읽고-고쳐-쓴다. 화자·문장 편집·목소리 등록·내보내기가 같은 줄에 선다.
+  // 줄은 모듈에 있어 삭제가 이 줄이 빌 때까지 기다릴 수 있고, 삭제를 기다리는 동안에는 새 편집을 받지 않는다
   const [inFlight, setInFlight] = useState(0);
   const editing = inFlight > 0;
-  const serial = useCallback((task: () => Promise<void>) => {
-    setInFlight((n) => n + 1);
-    const run = chain.current.then(task).finally(() => setInFlight((n) => n - 1));
-    chain.current = run.catch(() => {});
-    return run;
-  }, []);
+  const serial = useCallback(
+    (task: () => Promise<void>) => {
+      if (editQueue.isBlocked(id)) {
+        setEditError(EDIT_BLOCKED);
+        return Promise.resolve();
+      }
+      setInFlight((n) => n + 1);
+      return Promise.resolve(editQueue.run(id, task))
+        .then(() => {})
+        .finally(() => setInFlight((n) => n - 1));
+    },
+    [id],
+  );
   // 오류 표시는 사용자가 새로 고칠 때만 지운다: 줄에 선 다음 작업이 시작하며 지우면 실패를 못 보고 지나간다
   const editSpeakers = useCallback(
     (edit: SpeakerEdit) => {
@@ -191,6 +203,7 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
         commit(meeting);
         if (changed > 0) {
           setEditSeq((n) => n + 1);
+          indexer.touch(); // 한가할 때 조용히 검색에 반영한다 (마지막 수정 뒤 20초)
           if (!isUndo && before) undoStack.current.push(inverseEdits(before.segments, edits));
         }
       } catch (e) {
@@ -207,11 +220,12 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
   const saveText = useCallback(
     (edits: TextEdit[]) => {
       if (!edits.length) return;
+      if (editQueue.isBlocked(id)) return setEditError(EDIT_BLOCKED); // 삭제를 기다리는 중: 낙관적 반영도 하지 않는다
       setEditError(null);
       setPending((p) => [...p, edits]);
       void serial(() => persist(edits, false));
     },
-    [serial, persist],
+    [id, serial, persist],
   );
   // 되돌리기도 줄에 선다: 앞선 저장이 끝나 스택에 오른 뒤에 꺼낸다(저장 중에 ⌘Z를 눌러도 순서가 맞다)
   const undo = useCallback(() => {
@@ -388,8 +402,9 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
     const paint = () => {
       const now = audio.current?.currentTime ?? t;
       const seg = segments[segmentIndexAt(segments, now)];
-      // 발화가 끝난 뒤의 공백과 고치는 중인 세그먼트는 칠하지 않는다
-      const words = seg && seg.id !== editingId && now <= seg.end ? usable.get(seg.id) : null;
+      // 발화가 끝난 뒤의 공백과 고치는 중인 세그먼트는 칠하지 않는다. 끝 시각에 겹친 단어(길이 0)는 wordClock의 끝까지 칠한다
+      const cand = seg && seg.id !== editingId ? usable.get(seg.id) : null;
+      const words = cand && now <= Math.max(seg.end, wordClock(cand).end) ? cand : null;
       const k = words ? wordIndexAt(words, now) : -1;
       const key = k < 0 ? "" : `${seg.id}:${k}`;
       if (key !== last) {
@@ -494,7 +509,13 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
     });
   };
 
-  if (error) return <p className="page-error">{error}</p>;
+  if (error)
+    return (
+      <div className="page-error">
+        <p>{error.text}</p>
+        <ErrorDetail detail={error.detail} />
+      </div>
+    );
   if (!detail) return <p className="page-loading">불러오는 중…</p>;
 
   const { info, summary } = detail;
@@ -528,7 +549,7 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
                 <button
                   className="ghost-button head-button"
                   disabled={align.job.running}
-                  onClick={() => void align.startJob("align", id)}
+                  onClick={align.startAlign}
                   title="음성과 대화 내용을 단어 단위로 맞춥니다. 재생 중인 단어가 강조되고, 단어를 누르면 그 단어부터 재생합니다"
                 >
                   {align.job.running

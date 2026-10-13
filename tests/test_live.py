@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from types import SimpleNamespace
 from typer.testing import CliRunner
 
 from tractus import cli, live
@@ -296,6 +297,79 @@ def test_live_bounds_latency_by_skipping_ahead_once_warned():
     assert mixer.pos % 3 == 0 and lv.seg.t == mixer.pos // 3  # 건너뛴 뒤에도 시각이 맞다
 
 
+class Clock:
+    """가짜 시계: 녹음은 실시간으로 쌓이고(pending), ASR은 시간을 쓴다(t가 늘어난다). 실제로 자지 않는다."""
+
+    def __init__(self, t=0.0):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+
+class ClockMixer(FakeMixer):
+    """디스크에 쌓인 양 = 시계가 가리키는 시각까지 녹음된 표본 수 - 읽은 위치."""
+
+    def __init__(self, audio, clock):
+        super().__init__([], 0)
+        self.audio, self.clock = audio, clock
+
+    def _end(self):
+        return min(int(self.clock.t * REC), len(self.audio))
+
+    def read(self):
+        x, self.pos = self.audio[self.pos:self._end()], self._end()
+        return x
+
+    def pending(self):
+        return self._end() - self.pos
+
+    def skip(self):
+        self.pos = self._end() - self._end() % 3
+
+
+def test_live_does_not_transcribe_old_utterances_inside_a_single_step():
+    # 40초 분량(말 3초 + 쉼 1초 열 번)이 한 번에 읽혔고 ASR이 한 번에 3초 걸린다. 앞의 발화는 라이브 끝에서 10초 넘게 뒤라
+    # ASR을 돌리지 않고 넘어가야 한다. step이 끝난 뒤에야 검사하면 마지막 발화는 36초 뒤에 나온다.
+    clock = Clock(40.0)
+    x = np.tile(np.concatenate([speech(3), silence(1)]), 10)
+    events = []
+    asr_calls = []
+
+    def asr(audio):
+        clock.t += 3.0
+        asr_calls.append(len(audio) / SR)
+        return f"말{len(asr_calls)}"
+
+    emit = lambda event, **d: events.append((clock.t, {"event": event, **d}))  # noqa: E731
+    lv = live.Live(ClockMixer(up(x), clock), energy_vad, asr, emit, warn=lambda code, msg: emit("warning", code=code), clock=clock)
+    assert lv.step()
+    finals = [(t, e) for t, e in events if e["event"] == "live" and e["kind"] == "final"]
+    assert finals and len(finals) < 10 and lv.dropped >= 5
+    for t, e in finals:
+        assert t - e["end"] <= live.MAX_LAG_S + 3.0 + 0.1  # 시작할 때 10초 이내 + ASR 한 번
+    assert [e["code"] for _, e in events if e["event"] == "warning"] == ["live_lagging"]  # 한 번만
+    assert lv.stats()["dropped_finals"] == lv.dropped
+
+
+def test_live_dropped_utterance_closes_the_preview_that_was_shown():
+    clock = Clock(0.0)
+    events = []
+    texts = iter(["미리보기", "다시 전사한 문장"])
+    asr = lambda audio: next(texts)  # noqa: E731 — 두 번째 ASR이 불리면 다른 문장이 나온다
+    emit = lambda event, **d: events.append({"event": event, **d})  # noqa: E731
+    mixer = ClockMixer(up(np.concatenate([speech(4), silence(40)])), clock)
+    lv = live.Live(mixer, energy_vad, asr, emit, warn=lambda code, msg: None, clock=clock)
+    clock.t = 3.2
+    lv.step()  # 3초 미리보기가 나간다
+    assert [e["kind"] for e in events if e["event"] == "live"] == ["partial"]
+    clock.t = 40.0  # 그 뒤 한참 뒤처졌다 (확정 시점의 발화가 10초 넘게 낡았다)
+    lv.step()
+    kinds = [e["kind"] for e in events if e["event"] == "live"]
+    assert kinds == ["partial", "final"] and events[-1]["text"] == "미리보기"  # 화면에 partial이 남지 않는다
+    assert lv.shown is None
+
+
 def test_live_stop_finalises_short_utterance():
     lv, events = run_live([up(np.concatenate([silence(0.5), speech(2)]))])
     assert events == []
@@ -388,7 +462,7 @@ def rec(tmp_path, monkeypatch):
     write_wav(d / "mic.wav", (np.repeat(x, 3) * 32767).astype(np.int16))
     seen = {}
 
-    def fake_load(vad_dir, asr_dir, diar_dir, hotwords, warn):
+    def fake_load(vad_dir, asr_dir, diar_dir, hotwords, warn, stop=None):
         seen.update(vad=vad_dir.name, asr=asr_dir.name, hotwords=hotwords, diar=diar_dir and diar_dir.name)
         return energy_vad, FakeASR(), None
 
@@ -411,6 +485,23 @@ def test_cli_live_runs_until_stop_and_emits_contract_events(rec, monkeypatch):
     assert all(e["speaker"] is None for e in finals)
     res = CliRunner().invoke(cli.app, ["live", "--recording", str(d), "--progress-json", "--speakers"], input="stop\n")
     assert res.exit_code == 0 and seen["diar"] == "nemotron-3-diarization"
+
+
+def test_cli_live_restores_signal_handlers(rec):
+    import signal
+
+    d, _ = rec
+    before = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
+    assert CliRunner().invoke(cli.app, ["live", "--recording", str(d), "--progress-json"], input="stop\n").exit_code == 0
+    assert {sig: signal.getsignal(sig) for sig in before} == before
+
+
+def test_cli_live_without_progress_json_prints_finals_to_the_terminal(rec):
+    d, _ = rec
+    res = CliRunner().invoke(cli.app, ["live", "--recording", str(d)], input="stop\n")
+    assert res.exit_code == 0, res.output
+    lines = res.stdout.splitlines()
+    assert len(lines) == 1 and lines[0].startswith("[00:00] 말")  # 확정된 자막 한 줄. 미리보기·이벤트는 찍지 않는다
 
 
 def test_cli_live_refuses_low_memory_without_force(rec, monkeypatch):
@@ -444,3 +535,69 @@ def test_live_sim_reports_gpu_as_delta_over_baseline():
     out = sim_mod.summarize(sim, None, None, 1.0, 1.0, "synthetic")
     assert (out["gpu_util_mean"], out["gpu_util_baseline"], out["gpu_util_delta"]) == (29.4, 17.5, 11.9)
     assert sim_mod.summarize({**sim, "gpu_base": []}, None, None, 1.0, 1.0, "synthetic")["gpu_util_delta"] is None
+
+
+# ── 모델을 올리는 동안 정지 ────────────────────────────────────────────────
+
+
+@pytest.fixture
+def slow_loads(monkeypatch):
+    """mlx 모델 로드를 가짜로 바꾼다. loads에 올린 순서가 남고, on_vad가 있으면 VAD를 올리는 중에 불린다 (정지가 그때 왔다)."""
+    import mlx_audio.vad.utils as vad_utils
+
+    import tractus.asr as asr_mod
+
+    loads = []
+    hooks = {"on_vad": lambda: None}
+
+    def load_vad(path):
+        loads.append("vad")
+        hooks["on_vad"]()
+        return SimpleNamespace(feed=lambda frame, state: (SimpleNamespace(item=lambda: 0.0), state))
+
+    monkeypatch.setattr(vad_utils, "load", load_vad)
+    monkeypatch.setattr(asr_mod.Transcriber, "load", classmethod(lambda cls, path: loads.append("asr") or SimpleNamespace(transcribe=lambda *a, **k: SimpleNamespace(text=""))))
+    return loads, hooks
+
+
+def make_rec(tmp_path) -> Path:
+    d = tmp_path / "rec"
+    d.mkdir()
+    write_wav(d / "mic.wav", np.zeros(REC, np.int16))
+    (d / "recording.json").write_text(json.dumps({"tracks": {"mic": "mic.wav"}}))
+    return d
+
+
+def run_live_main(tmp_path, stop):
+    events, emit = collect()
+    t = time.perf_counter()
+    live.run(make_rec(tmp_path), emit, lambda code, msg: emit("warning", code=code), stop, tmp_path, tmp_path, None, [])
+    return events, time.perf_counter() - t
+
+
+def test_stop_during_vad_load_skips_the_asr_load_and_ends_with_done(tmp_path, slow_loads):
+    loads, hooks = slow_loads
+    stop = threading.Event()
+    hooks["on_vad"] = stop.set  # VAD를 올리는 중에 정지가 왔다
+    events, took = run_live_main(tmp_path, stop)
+    assert loads == ["vad"]  # ASR 로드(1–2초)를 시작하지 않는다
+    assert [e["event"] for e in events] == ["stage", "done"] and events[-1]["stats"]["audio_sec"] == 0.0
+    assert took < 1.0
+
+
+def test_stop_before_any_load_loads_nothing(tmp_path, slow_loads):
+    loads, _ = slow_loads
+    stop = threading.Event()
+    stop.set()
+    events, took = run_live_main(tmp_path, stop)
+    assert loads == [] and events[-1]["event"] == "done" and took < 1.0
+
+
+def test_load_models_checks_stop_between_asr_and_speakers(tmp_path, slow_loads):
+    loads, hooks = slow_loads
+    stop = threading.Event()
+    assert live.load_models(tmp_path, tmp_path, None, [], print, stop) is not None  # 정지 없음: 모두 올린다
+    assert loads == ["vad", "asr"]
+    loads.clear()
+    hooks["on_vad"] = stop.set
+    assert live.load_models(tmp_path, tmp_path, None, [], print, stop) is None and loads == ["vad"]

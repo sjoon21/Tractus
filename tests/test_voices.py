@@ -216,7 +216,7 @@ def test_rename_and_dismiss_clear_suggestion_and_merge_drops_source_suggestion()
     t = _t()
     renamed = apply_speaker_edit(t, "rename", "S1", "홍길동")
     assert renamed["speakers"]["S1"] == {"name": "홍길동"} and t["speakers"]["S1"]["suggested"] == SUGG  # 원본은 그대로
-    assert apply_speaker_edit(t, "dismiss", "S1")["speakers"]["S1"] == {"name": None}
+    assert apply_speaker_edit(t, "dismiss", "S1")["speakers"]["S1"] == {"name": None, "dismissed": ["P1"]}  # 거절한 사람을 기억한다
     merged = apply_speaker_edit(t, "merge", "S2", "S1")
     assert merged["speakers"] == {"S1": {"name": None, "suggested": SUGG}, "S3": {"name": "박민수"}}
     merged = apply_speaker_edit(t, "merge", "S3", "S1")  # 이름 있는 화자를 합치면 이름을 받고 제안은 지운다

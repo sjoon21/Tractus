@@ -13,13 +13,14 @@ use std::time::Duration;
 
 const STDERR_TAIL: usize = 20;
 
-/// 실행 파일을 띄우지 못했을 때의 화면 문장 (WORDS.md). 녹음 헬퍼(tractus-rec)와 코어(tractus)를 이름으로 가른다
+/// 실행 파일을 띄우지 못했을 때의 오류. 첫 줄은 화면 문장 (WORDS.md), 둘째 줄은 OS 오류 문구('자세히').
+/// 녹음 헬퍼(tractus-rec)와 코어(tractus)를 이름으로 가른다
 pub fn cannot_run(program: &str, e: impl std::fmt::Display) -> String {
     // ponytail: 파일 이름으로 가른다. 녹음 헬퍼 이름을 바꾸면 코어 문장이 나온다
     if Path::new(program).file_name().is_some_and(|n| n.to_string_lossy().starts_with("tractus-rec")) {
-        format!("녹음 프로그램을 실행할 수 없습니다. 설정에서 tractus-rec 실행 파일 경로를 확인하세요 ({program}): {e}")
+        format!("녹음 프로그램을 실행할 수 없습니다. 설정에서 tractus-rec 실행 파일 경로를 확인하세요 ({program})\n{e}")
     } else {
-        format!("Tractus 엔진을 실행할 수 없습니다. 설정에서 tractus 실행 파일 경로를 확인하세요 ({program}): {e}")
+        format!("Tractus 엔진을 실행할 수 없습니다. 설정에서 tractus 실행 파일 경로를 확인하세요 ({program})\n{e}")
     }
 }
 

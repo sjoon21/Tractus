@@ -274,3 +274,65 @@ def test_speaker_edit_reuses_vectors_and_only_embeds_changed_chunks(home):
     t["segments"][-1]["text"] = t["segments"][-1]["text"][::-1]  # 길이가 같아 청크 경계는 그대로
     (d / "transcript.json").write_text(json.dumps(t, ensure_ascii=False), encoding="utf-8")
     assert idx.sync().embedded == 1  # 본문이 바뀐 청크만
+
+
+def test_text_edit_leaves_pending_until_index_then_embeds_only_edited_chunk(home):
+    emb = FakeEmbedder()
+    idx = Index(home, embedder=emb)
+    idx.sync()
+    assert idx.stats()["pending"] == 0
+    (d,) = [p for p in (home / "meetings") .iterdir() if "01M1JFX" in p.name]
+    t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+    t["segments"][-1]["corrected_text"] = "교정으로 완전히 새로 쓴 마지막 문장입니다"
+    (d / "transcript.json").write_text(json.dumps(t, ensure_ascii=False), encoding="utf-8")
+
+    quiet = Index(home)  # 앱의 교정·MCP·ask 경로: 모델 없이 키워드 색인만
+    assert quiet.sync(embed=False).updated == 1
+    assert quiet.stats()["pending"] == 1  # 고친 청크 하나만 벡터가 없다
+    quiet.close()
+
+    chunks, calls = idx.stats()["chunks"], emb.calls
+    r = idx.sync()
+    assert r.embedded == 1 and emb.calls == calls + 1  # 고친 청크만, 한 번에 임베딩
+    assert idx.stats()["pending"] == 0 and idx.stats()["vectors"] == chunks
+    assert idx.sync().embedded == 0  # 다시 돌려도 할 일이 없다
+
+
+def test_pending_counts_every_chunk_when_embedding_model_changed(home):
+    idx = Index(home, embedder=FakeEmbedder())
+    idx.sync()
+    chunks = idx.stats()["chunks"]
+    other = FakeEmbedder()
+    other.model_id = "fake-embedder-v2"
+    idx.embedder = other
+    assert idx.stats()["pending"] == chunks  # 옛 모델 벡터는 쓸 수 없다 (검색이 키워드로만 떨어진다)
+    idx.sync()
+    assert idx.stats()["pending"] == 0
+
+
+def test_edit_during_embedding_does_not_attach_a_stale_vector(home):
+    """임베딩하는 동안 다른 연결이 마지막 노트를 고쳐 청크를 다시 쓰면, 낡은 벡터를 새 청크에 붙이지 않는다."""
+    (d,) = [p for p in (home / "meetings").iterdir() if "01M1JFX" in p.name]
+
+    class EditingEmbedder(FakeEmbedder):
+        fired = False
+
+        def embed(self, texts, is_query=False):
+            out = super().embed(texts, is_query)
+            if not self.fired:
+                EditingEmbedder.fired = True
+                t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+                t["segments"][0]["text"] = "임베딩 도중에 고쳐진 문장 블루베리"
+                (d / "transcript.json").write_text(json.dumps(t, ensure_ascii=False), encoding="utf-8")
+                Index(home, embedder=None).sync(embed=False)
+            return out
+
+    idx = Index(home, embedder=EditingEmbedder())
+    idx.sync()
+    st = idx.stats()
+    assert st["pending"] >= 1 and st["vectors"] < st["chunks"]  # 빠진 벡터는 보류로 남는다
+    bad = idx.db.execute("SELECT count(*) FROM chunks_vec WHERE chunk_id NOT IN (SELECT chunk_id FROM chunks)").fetchone()[0]
+    assert bad == 0
+    idx.embedder = FakeEmbedder()
+    r = idx.sync()
+    assert r.embedded >= 1 and idx.stats()["pending"] == 0

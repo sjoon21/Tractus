@@ -2,10 +2,11 @@
 // 인라인 인용 칩은 open-webui의 인용 UI에서 아이디어만 얻었다(코드는 쓰지 않음).
 import { listen } from "@tauri-apps/api/event";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { api, errText, type ChatEntry } from "./api";
+import { api, errFull, errText, type ChatEntry } from "./api";
 import { ErrorDetail } from "./ErrorDetail";
-import { answeredBy, answerParts, askReduce, citeTarget, isAsking, sendNotice, START_ASK, trimHistory, turnsHistory, type AskEvent, type AskSource, type AskState, type LlmConfig } from "./ask";
+import { answeredBy, answerParts, askReduce, citeTarget, isAsking, isNoteGone, sendNotice, START_ASK, trimHistory, turnsHistory, type AskEvent, type AskSource, type AskState, type LlmConfig } from "./ask";
 import { APP_ERROR, errorView, fmtTime, isImeKey, JOB_ERROR } from "./lib";
+import { NOTE_GONE } from "./remove";
 
 export type AskScope = { kind: "meeting"; id: string; starts: Map<string, number> } | { kind: "global" };
 type Turn = { id: string; question: string; state: AskState };
@@ -19,7 +20,11 @@ const fromEntry = (e: ChatEntry, i: number): Turn => ({
 
 const STATUS: Partial<Record<AskState["phase"], string>> = { starting: "준비 중…", retrieve: "관련 대화를 찾는 중…", answer: "답변 작성 중…" };
 
-export function AskPanel({ scope, onCite, inputRef }: { scope: AskScope; onCite: OnCite; inputRef?: React.RefObject<HTMLTextAreaElement | null> }) {
+/**
+ * notes: 지금 있는 노트의 ID들 (전체 범위 질문용). 목록에 없는 노트를 가리키는 인용 칩은 삭제된 노트로 보고 누를 수 없게 한다.
+ * 목록이 바뀔 때마다 새로 판단하므로 답을 쓰는 사이에 지워진 노트도 따라간다. 아직 목록을 못 읽었으면 null
+ */
+export function AskPanel({ scope, onCite, inputRef, notes }: { scope: AskScope; onCite: OnCite; inputRef?: React.RefObject<HTMLTextAreaElement | null>; notes?: ReadonlySet<string> | null }) {
   const meetingId = scope.kind === "meeting" ? scope.id : null;
   const [turns, setTurns] = useState<Turn[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -78,7 +83,7 @@ export function AskPanel({ scope, onCite, inputRef }: { scope: AskScope; onCite:
     try {
       await api.askStart({ job, meeting: meetingId, from: range.from || null, to: range.to || null, question, history });
     } catch (e) {
-      setTurns((ts) => ts.map((t) => (t.id === job ? { ...t, state: { ...t.state, phase: "error", error: errText(e), errorCode: APP_ERROR } } : t)));
+      setTurns((ts) => ts.map((t) => (t.id === job ? { ...t, state: { ...t.state, phase: "error", error: errFull(e), errorCode: APP_ERROR } } : t)));
     }
   };
   const cancel = () => {
@@ -104,7 +109,7 @@ export function AskPanel({ scope, onCite, inputRef }: { scope: AskScope; onCite:
       {loadError && <p className="inline-error ask-note">{loadError}</p>}
       <ol className="ask-log" aria-label="질문과 답변">
         {turns.map((t) => (
-          <TurnItem key={t.id} turn={t} scope={scope} onCite={onCite} />
+          <TurnItem key={t.id} turn={t} scope={scope} onCite={onCite} notes={notes} />
         ))}
       </ol>
       <div ref={end} aria-hidden />
@@ -160,7 +165,7 @@ export function AskPanel({ scope, onCite, inputRef }: { scope: AskScope; onCite:
   );
 }
 
-function TurnItem({ turn: { question, state: s }, scope, onCite }: { turn: Turn; scope: AskScope; onCite: OnCite }) {
+function TurnItem({ turn: { question, state: s }, scope, onCite, notes }: { turn: Turn; scope: AskScope; onCite: OnCite; notes?: ReadonlySet<string> | null }) {
   const ctx = { meetingId: scope.kind === "meeting" ? scope.id : undefined, citations: s.citations, sources: s.sources, starts: scope.kind === "meeting" ? scope.starts : undefined };
   const status = STATUS[s.phase];
   return (
@@ -177,6 +182,7 @@ function TurnItem({ turn: { question, state: s }, scope, onCite }: { turn: Turn;
                 key={i}
                 label={chipLabel(to.t, scope.kind === "global" ? src : undefined)}
                 title={scope.kind === "global" && src ? `${src.title} · ${fmtTime(to.t)} 위치로 이동` : `${fmtTime(to.t)} 위치로 이동`}
+                gone={scope.kind === "global" && isNoteGone(notes, to.meetingId)}
                 onClick={() => onCite(to.meetingId, to.segId, to.t)}
               />
             ) : null; // 풀리지 않은 인용은 그리지 않는다 (내부 ID를 보이지 않는다)
@@ -191,7 +197,7 @@ function TurnItem({ turn: { question, state: s }, scope, onCite }: { turn: Turn;
       </p>
       {s.error && <AskError error={s.error} code={s.errorCode} />}
       {s.warning && <p className="ask-note is-warn">{s.warning}</p>}
-      {s.sources.length > 0 && <Sources sources={s.sources} global={scope.kind === "global"} onCite={onCite} />}
+      {s.sources.length > 0 && <Sources sources={s.sources} global={scope.kind === "global"} onCite={onCite} notes={notes} />}
     </li>
   );
 }
@@ -213,15 +219,16 @@ function chipLabel(t: number, src?: AskSource | null): string {
   return m ? `${Number(m[1])}/${Number(m[2])} ${fmtTime(t)}` : fmtTime(t);
 }
 
-function CiteChip({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
+/** gone: 삭제된 노트의 인용. 누를 수 없고 설명만 보인다 (오류 없이) */
+function CiteChip({ label, title, gone, onClick }: { label: string; title: string; gone?: boolean; onClick: () => void }) {
   return (
-    <button type="button" className="time-chip cite-chip tnum" title={title} onClick={onClick}>
+    <button type="button" className={`time-chip cite-chip tnum ${gone ? "is-gone" : ""}`} title={gone ? NOTE_GONE : title} aria-disabled={gone || undefined} aria-label={gone ? `${label} (${NOTE_GONE})` : undefined} onClick={gone ? undefined : onClick}>
       {label}
     </button>
   );
 }
 
-function Sources({ sources, global, onCite }: { sources: AskSource[]; global: boolean; onCite: OnCite }) {
+function Sources({ sources, global, onCite, notes }: { sources: AskSource[]; global: boolean; onCite: OnCite; notes?: ReadonlySet<string> | null }) {
   return (
     <details className="ask-sources">
       <summary>
@@ -230,7 +237,7 @@ function Sources({ sources, global, onCite }: { sources: AskSource[]; global: bo
       <ol>
         {sources.map((s) => (
           <li key={`${s.meeting_id}#${s.segment_id}`}>
-            <CiteChip label={chipLabel(s.start, global ? s : undefined)} title={`${s.title} · ${fmtTime(s.start)}`} onClick={() => onCite(s.meeting_id, s.segment_id, s.start)} />
+            <CiteChip label={chipLabel(s.start, global ? s : undefined)} title={`${s.title} · ${fmtTime(s.start)}`} gone={global && isNoteGone(notes, s.meeting_id)} onClick={() => onCite(s.meeting_id, s.segment_id, s.start)} />
             <span>
               {global && <span className="ask-src-title">{s.title}</span>}
               {s.speaker && <span className="ask-src-speaker">{s.speaker}</span>}

@@ -5,6 +5,7 @@ import {
   citeTarget,
   historyFromEntries,
   isAsking,
+  isNoteGone,
   answeredBy,
   sendNotice,
   START_ASK,
@@ -145,5 +146,21 @@ describe("전송 안내", () => {
     expect(sendNotice({ provider: "upstage", model: null, local_only: true })).toEqual({ text: "로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 외부 AI 서비스(Upstage)로 보내지 않습니다", warn: true });
     expect(sendNotice({ provider: "mystery", model: null, local_only: false })).toEqual({ text: "알 수 없는 AI 서비스입니다: mystery", warn: true });
     expect(sendNotice({ provider: "openai", model: null, local_only: false })).toEqual({ text: "사용할 OpenAI AI 모델을 지정하세요 (TRACTUS_LLM_MODEL)", warn: true });
+  });
+});
+
+describe("삭제된 노트의 인용", () => {
+  const known = new Set(["01AAA", "01BBB"]);
+  test("목록에 없는 노트의 인용만 삭제된 것으로 본다", () => {
+    expect(isNoteGone(known, "01AAA")).toBe(false);
+    expect(isNoteGone(known, "01GONE")).toBe(true);
+  });
+  test("목록을 아직 읽지 못했으면 판단하지 않는다 (칩이 깜빡 꺼지지 않게)", () => {
+    expect(isNoteGone(null, "01AAA")).toBe(false);
+    expect(isNoteGone(undefined, "01GONE")).toBe(false);
+  });
+  test("노트가 지워진 뒤 목록을 새로 읽으면 같은 인용이 바로 삭제됨으로 바뀐다", () => {
+    const after = new Set([...known].filter((id) => id !== "01BBB"));
+    expect([isNoteGone(known, "01BBB"), isNoteGone(after, "01BBB")]).toEqual([false, true]);
   });
 });

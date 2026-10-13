@@ -167,8 +167,8 @@ def build_server(home: Path, embedder) -> MCPServer:
         hint = None
         if idx.embedder is None:
             hint = "임베딩 모델이 없거나 올리지 못해 키워드 검색만 합니다 (TRACTUS_MODELS_DIR/qwen3-embedding-0.6b)"
-        elif st["vectors"] < st["chunks"]:
-            hint = f"벡터가 없는 청크 {st['chunks'] - st['vectors']}개: 터미널에서 `tractus index`를 실행하면 의미 검색에 포함됩니다"
+        elif st["pending"]:
+            hint = f"벡터가 없는 청크 {st['pending']}개: 터미널에서 `tractus index`를 실행하면 의미 검색에 포함됩니다"
         return Status(
             home=str(home), meetings=st["meetings"], indexed_chunks=st["chunks"], vectors=st["vectors"], vector_search=vector_search,
             embedding_model=st["embedding_model"], index_errors=state.get("errors", []), hint=hint,

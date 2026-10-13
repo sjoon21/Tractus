@@ -104,7 +104,7 @@ fn connect(spec: Spawn, id: u64) -> Result<Conn, String> {
     if let Some(cwd) = &spec.cwd {
         cmd.current_dir(cwd);
     }
-    let mut child = cmd.spawn().map_err(|e| format!("스마트 검색을 시작하지 못했습니다 ({}): {e}", spec.program.display()))?;
+    let mut child = cmd.spawn().map_err(|e| format!("스마트 검색을 시작하지 못했습니다 ({})\n{e}", spec.program.display()))?;
     let stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let pending: Pending = Arc::default();
@@ -122,8 +122,8 @@ fn connect(spec: Spawn, id: u64) -> Result<Conn, String> {
         "clientInfo": {"name": "tractus-app", "version": env!("CARGO_PKG_VERSION")}
     }});
     let mut conn = Conn { spec, child, stdin, pending, alive };
-    send(&mut conn.stdin, &init).map_err(|e| format!("스마트 검색을 시작하지 못했습니다: {e}"))?;
-    wait(rx).map_err(|e| format!("스마트 검색을 시작하지 못했습니다: {e}"))?;
+    send(&mut conn.stdin, &init).map_err(|e| format!("스마트 검색을 시작하지 못했습니다\n{e}"))?;
+    wait(rx).map_err(|e| format!("스마트 검색을 시작하지 못했습니다\n{e}"))?;
     send(&mut conn.stdin, &json!({"jsonrpc": "2.0", "method": "notifications/initialized"})).map_err(|e| e.to_string())?;
     Ok(conn)
 }

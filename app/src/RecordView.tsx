@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { JobState, LiveState, RecState } from "./api";
 import { ErrorDetail } from "./ErrorDetail";
-import { ERROR_TEXT, errorView, fmtTime, JOB_ERROR, levelFraction, liveHalted, REC_MODES, STAGE_LABEL, warningText } from "./lib";
+import { errorView, fmtTime, JOB_ERROR, levelFraction, liveHaltView, liveHalted, REC_MODES, STAGE_LABEL, warningText } from "./lib";
 
 type Send = (cmd: "bookmark" | "memo" | "stop", text?: string) => Promise<void>;
 
@@ -117,6 +117,7 @@ function LivePane({ live, recording }: { live: LiveState; recording: boolean }) 
   }, [live.finals, live.partial]);
 
   if (live.status === "off") return null;
+  const halt = liveHaltView(live);
   const empty = !live.finals.length && !live.partial;
   return (
     <section className="live-pane" aria-labelledby="live-title">
@@ -126,8 +127,8 @@ function LivePane({ live, recording }: { live: LiveState; recording: boolean }) 
       </p>
       {liveHalted(live, recording) && (
         <div className="record-warning" role="status">
-          {JOB_ERROR.live}
-          {live.errorCode && ERROR_TEXT[live.errorCode] && <span className="live-error">{ERROR_TEXT[live.errorCode]}</span>}
+          {halt.text}
+          {halt.note && <span className="live-error">{halt.note}</span>}
           <ErrorDetail detail={live.error} />
         </div>
       )}

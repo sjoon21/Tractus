@@ -5,6 +5,9 @@ ARCHITECTURE.md §2.3, docs/desktop.md §2.6. 2026-10-06 실측(실제 대면 �
 
 mlx-audio의 한국어 토크나이저(`tokenize_korean`)는 soynlp(LGPL-3)를 불러오므로 공백 토크나이저(`tokenize`)로 바꿔 끼운다.
 `tokenize_space_lang`은 한자를 글자마다 나눠 단어 수가 어긋나므로 쓰지 않는다.
+
+모델이 시각을 못 낸 세그먼트(`Aligner.align`이 None)는 `align_segments`가 `spread`로 단어를 고르게 펴고 `approx: true`를 붙인다.
+words는 표시 텍스트에 단어가 없을 때만 None이다 (스키마·불변식은 그대로).
 """
 
 import difflib
@@ -69,29 +72,47 @@ def load_aligner(models_dir: Path) -> Aligner | None:
     return Aligner(load(str(path)))
 
 
+def spread(text: str, dur: float) -> list[dict]:
+    """모델이 단어 시각을 못 낼 때(길이 0, 단어 수 불일치, 토큰 하나뿐인 긴 세그먼트): 표시 텍스트의 공백 토큰을
+    슬라이스 전체에 고르게 펴고 approx: true를 붙인다. 앱은 words가 있는 세그먼트로 그대로 보여 준다 (단어 하나하나는 추정)."""
+    tokens = text.split()
+    step = dur / len(tokens) if tokens else 0.0
+    return [{"text": tok, "start": step * k, "end": step * (k + 1), "approx": True} for k, tok in enumerate(tokens)]
+
+
+def is_approximate(words: list[dict] | None) -> bool:
+    """모든 단어가 추정이면(spread) True. 모델이 맞춘 세그먼트에는 approx가 없다."""
+    return bool(words) and all(w.get("approx") for w in words)
+
+
 def _absolute(words: list[dict], start: float, end: float) -> list[dict]:
-    """상대 시각 → 회의 시각. 소수 둘째 자리로 반올림하고 세그먼트 안으로 자른다 (단조 변환이라 순서는 유지된다)."""
+    """상대 시각 → 회의 시각. 소수 둘째 자리로 반올림하고 세그먼트 안으로 자른다 (단조 변환이라 순서는 유지된다). approx는 그대로 둔다."""
     clamp = lambda x: min(max(round(start + x, 2), start), end)  # noqa: E731
-    return [{"text": w["text"], "start": clamp(w["start"]), "end": clamp(w["end"])} for w in words]
+    return [{"text": w["text"], "start": clamp(w["start"]), "end": clamp(w["end"]), **({"approx": True} if w.get("approx") else {})} for w in words]
 
 
 def align_segments(
     aligner: Aligner, pcm: np.ndarray, segments: list[dict], on_progress: Callable[[int, int], None] | None = None, only: set[str] | None = None
-) -> tuple[list[dict], int, int]:
-    """세그먼트마다 표시 텍스트를 정렬한다 → (새 세그먼트 목록, 성공 수, 실패 수). 원본은 건드리지 않는다.
-    only가 있으면 그 id만 정렬하고 나머지는 그대로 둔다. 실패한 세그먼트는 words = None."""
+) -> tuple[list[dict], int, int, int]:
+    """세그먼트마다 표시 텍스트를 정렬한다 → (새 세그먼트 목록, 성공 수, 실패 수, 추정 수). 원본은 건드리지 않는다.
+    only가 있으면 그 id만 정렬하고 나머지는 그대로 둔다. 모델이 못 맞춘 세그먼트는 단어를 고르게 편 추정(approx)이고 추정 수에 센다.
+    실패(words = None)는 표시 텍스트에 단어가 없는 세그먼트뿐이다. 성공 + 실패 + 추정 = 정렬 대상 수."""
     total = sum(1 for s in segments if only is None or s["id"] in only)
-    out, done, aligned = [], 0, 0
+    out, done, aligned, approximate = [], 0, 0, 0
     for s in segments:
         if only is not None and s["id"] not in only:
             out.append(s)
             continue
-        rel = aligner.align(pcm[round(s["start"] * SR):round(s["end"] * SR)], seg_text(s))
+        text = seg_text(s)
+        rel = aligner.align(pcm[round(s["start"] * SR):round(s["end"] * SR)], text)
+        precise = rel is not None
+        if rel is None and text.split():
+            rel = spread(text, s["end"] - s["start"])
         out.append({**s, "words": _absolute(rel, s["start"], s["end"]) if rel else None})
-        done, aligned = done + 1, aligned + (rel is not None)
+        done, aligned, approximate = done + 1, aligned + precise, approximate + (rel is not None and not precise)
         if on_progress:
             on_progress(done, total)
-    return out, aligned, total - aligned
+    return out, aligned, total - aligned - approximate, approximate
 
 
 def remap_words(old: list[dict] | None, new_text: str, seg_start: float, seg_end: float) -> list[dict] | None:

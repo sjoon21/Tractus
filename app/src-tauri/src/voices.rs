@@ -20,6 +20,8 @@ pub struct VoiceList {
     pub people: Vec<Person>,
     /// voices.json의 임베딩 모델이 지금 모델과 달라 맞춰 보지 않는다 → 다시 등록해야 한다
     pub needs_reenroll: bool,
+    /// 목소리 인식 모델 파일을 지금 쓸 수 있는지 (`tractus voices list --json`의 `model_present`). 코어가 이 키를 주지 않으면 true로 본다
+    pub model_present: bool,
 }
 
 #[derive(Deserialize, Default)]
@@ -43,6 +45,7 @@ fn parse_list(out: &str) -> Result<VoiceList, String> {
         .and_then(|l| serde_json::from_str(l).ok())
         .ok_or(READ_FAILED)?;
     let needs_reenroll = v.get("reenroll").and_then(Value::as_bool).unwrap_or(false);
+    let model_present = v.get("model_present").and_then(Value::as_bool).unwrap_or(true);
     let items = match &v {
         Value::Array(a) => a.clone(),
         Value::Object(o) => o.get("people").and_then(Value::as_array).cloned().unwrap_or_default(),
@@ -59,7 +62,7 @@ fn parse_list(out: &str) -> Result<VoiceList, String> {
             created_at: p.created_at,
         })
         .collect();
-    Ok(VoiceList { people, needs_reenroll })
+    Ok(VoiceList { people, needs_reenroll, model_present })
 }
 
 /// `tractus voices enroll <회의> <라벨> --name=<이름> --consent`. 동의 확인 없이는 인수를 만들지 않는다(코어도 exit 2).
@@ -100,7 +103,9 @@ pub struct EnrollResult {
 pub async fn voices_enroll(state: State<'_, AppState>, meeting: String, label: String, name: String, consent: bool) -> Result<EnrollResult, String> {
     let s = state.settings();
     let args = enroll_args(&meeting, &label, &name, consent)?;
+    let guard = super::BusyGuard::new(&state.busy, &meeting);
     blocking(move || {
+        let _guard = guard;
         let samples = stdout_json(&run_tractus(&s, &args, None, "목소리를 등록하지 못했습니다")?)?["samples"].as_u64().unwrap_or(0);
         Ok(EnrollResult { samples, meeting: meetings::load(&s.home(), &meeting)? })
     })
@@ -147,11 +152,16 @@ mod tests {
             {\"name\":\"ID 없음\"}, 3]}\n";
         let l = parse_list(out).unwrap();
         assert!(!l.needs_reenroll);
+        assert!(l.model_present, "코어가 model_present를 주지 않으면 쓸 수 있다고 본다");
         assert_eq!(l.people.iter().map(|p| (p.id.as_str(), p.samples)).collect::<Vec<_>>(), vec![("01P1", 3), ("01P2", 2)]);
         assert_eq!(l.people[0].created_at, "2026-10-07T10:00:00+09:00");
         // 앱으로 넘기는 값에 벡터가 없다
         assert!(!serde_json::to_string(&l).unwrap().contains("embedding"));
 
+        let missing = parse_list(r#"{"model_present":false,"reenroll":false,"people":[]}"#).unwrap();
+        assert!(!missing.model_present);
+        assert!(parse_list(r#"{"model_present":true,"people":[]}"#).unwrap().model_present);
+        assert!(parse_list(r#"[{"id":"01P","name":"a","samples":1}]"#).unwrap().model_present);
         let stale = parse_list(r#"{"reenroll":true,"people":[]}"#).unwrap();
         assert!(stale.needs_reenroll && stale.people.is_empty());
         assert_eq!(parse_list(r#"[{"id":"01P","name":"a","samples":1}]"#).unwrap().people.len(), 1);
@@ -167,12 +177,16 @@ mod tests {
             l,
             VoiceList {
                 people: vec![Person { id: "01M4ABVBAA6N46V7MCV8M7DC17".into(), name: "유나".into(), samples: 1, created_at: "2026-10-07T14:02:17+09:00".into() }],
-                needs_reenroll: false
+                needs_reenroll: false,
+                model_present: true
             }
         );
         let stale = parse_list(r#"{"people": [{"id": "01OLDPERSON", "name": "옛사람", "samples": 1, "created_at": "2026-01-01T00:00:00+09:00"}], "reenroll": true}"#).unwrap();
         assert!(stale.needs_reenroll && stale.people.len() == 1 && forget_args(&stale.people[0].id).is_ok());
         assert!(parse_list(r#"{"people": [], "reenroll": false}"#).unwrap().people.is_empty());
+        // v3.17: model_present가 든 현재 코어 출력 (모델 폴더가 비었을 때와 있을 때, 통합 실행에서 받은 그대로)
+        assert!(!parse_list(r#"{"people": [], "reenroll": false, "model_present": false}"#).unwrap().model_present);
+        assert!(parse_list(r#"{"people": [], "reenroll": false, "model_present": true}"#).unwrap().model_present);
         assert_eq!(stdout_json(r#"{"person_id": "01M4ABVBAA6N46V7MCV8M7DC17", "name": "유나", "samples": 1}"#).unwrap()["samples"].as_u64(), Some(1));
         assert_eq!(stdout_json(r#"{"forgotten": 1}"#).unwrap()["forgotten"].as_u64(), Some(1));
     }

@@ -39,6 +39,7 @@ STALL_S = 1.0  # 트랙 하나가 이만큼 뒤처지면(장치 재연결 등) �
 PARTIAL_LAG_S = 1.0  # 라이브 끝에서 이보다 뒤처진 미리보기는 건너뛴다
 MAX_LAG_S = 10.0  # 이보다 뒤처지면 밀린 오디오를 건너뛰고 라이브 끝으로 간다 (live_lagging 경고 한 번)
 STOP_BUDGET_S = 1.0  # 정지 후 마무리 전사에 쓰는 시간
+EMPTY_STATS = {"audio_sec": 0.0, "asr_sec": 0.0, "asr_rtf": None, "asr_calls": 0, "finals": 0, "partials": 0, "skipped_partials": 0, "dropped_finals": 0}
 WAIT_S = 5.0  # 녹음 파일이 생기기를 기다리는 시간
 POLL_S = 0.05
 
@@ -349,7 +350,7 @@ class Live:
         self.seg = Segmenter(vad_prob)
         self.audio = 0  # 읽은 48k 표본 수
         self.asr_sec = self.asr_audio = 0.0
-        self.finals = self.partials = self.skipped = self.calls = 0
+        self.finals = self.partials = self.skipped = self.calls = self.dropped = 0
         self.cache: tuple[int, int, str] | None = None  # 마지막으로 전사한 (uid, 표본 수, 문장)
         self.lagging = False
         self.shown: tuple[int, str, float] | None = None  # 지금 화면에 있는 partial (uid, text, start)
@@ -359,7 +360,7 @@ class Live:
         audio_sec = self.audio / REC_SR
         return {"audio_sec": round(audio_sec, 2), "asr_sec": round(self.asr_sec, 2), "asr_rtf": round(self.asr_sec / audio_sec, 3) if audio_sec else None,
                 "asr_calls": self.calls,
-                "finals": self.finals, "partials": self.partials, "skipped_partials": self.skipped}
+                "finals": self.finals, "partials": self.partials, "skipped_partials": self.skipped, "dropped_finals": self.dropped}
 
     def _rtf(self) -> float:
         """전사한 오디오 1초당 걸린 시간. 아직 모르면 0.1 (0.6B 실측 약 0.06)."""
@@ -367,6 +368,23 @@ class Live:
 
     def _lag(self, cut: Cut) -> float:
         return (self.mixer.pos + self.mixer.pending()) / REC_SR - cut.end / SR
+
+    def _cached(self, cut: Cut) -> bool:
+        return self.cache is not None and self.cache[:2] == (cut.uid, len(cut.audio))
+
+    def _too_old(self, cut: Cut) -> bool:
+        """한 step 안에서도 밀림을 본다: ASR을 돌리기 전에 라이브 끝에서 MAX_LAG_S 넘게 뒤처진 발화면 전사하지 않는다.
+        (미리 전사해 둔 문장이 있으면 ASR이 들지 않으므로 그대로 확정한다. 정지 중에는 STOP_BUDGET_S가 시간을 막는다)"""
+        return self.deadline is None and not self._cached(cut) and self._lag(cut) > MAX_LAG_S
+
+    def _drop(self, cut: Cut) -> None:
+        """너무 오래된 발화를 전사하지 않고 넘어간다. 보이던 미리보기가 있으면 그 문장으로 확정해 화면에 남지 않게 한다."""
+        self._warn_lagging()
+        self.dropped += 1
+        if self.shown and self.shown[0] == cut.uid:
+            text, self.shown = self.shown[1], None
+            self.finals += 1
+            self._send("final", cut.uid, cut.start / SR, cut.end / SR, text, self._speaker(cut))
 
     def step(self) -> bool:
         x = self.mixer.read()
@@ -380,7 +398,10 @@ class Live:
         last_partial = max((i for i, c in enumerate(cuts) if c.kind == "partial"), default=None)
         for i, c in enumerate(cuts):
             if c.kind == "final":
-                self._final(c)
+                if self._too_old(c):
+                    self._drop(c)
+                else:
+                    self._final(c)
             elif self.deadline is None and i == last_partial and c.uid not in final_uids and self._lag(c) < PARTIAL_LAG_S:
                 self._partial(c)
             else:
@@ -434,8 +455,7 @@ class Live:
 
     def _final(self, cut: Cut) -> None:
         shown = self.shown if self.shown and self.shown[0] == cut.uid else None
-        cached = self.cache is not None and self.cache[:2] == (cut.uid, len(cut.audio))
-        if not cached and self.deadline is not None and self.clock() + len(cut.audio) / SR * self._rtf() > self.deadline:
+        if not self._cached(cut) and self.deadline is not None and self.clock() + len(cut.audio) / SR * self._rtf() > self.deadline:
             text = shown[1] if shown else ""  # 시간이 모자라면 보이던 미리보기 문장으로 확정한다
         else:
             text = self._transcribe(cut)
@@ -446,10 +466,13 @@ class Live:
         self.finals += 1
         self._send("final", cut.uid, cut.start / SR, cut.end / SR, text, self._speaker(cut))
 
-    def _skip_ahead(self) -> None:
+    def _warn_lagging(self) -> None:
         if not self.lagging:
             self.lagging = True
             self.warn("live_lagging", "실시간 텍스트 변환이 녹음을 따라가지 못해 일부 구간을 건너뜁니다. 녹음과 녹음 종료 후 변환에는 영향이 없습니다")
+
+    def _skip_ahead(self) -> None:
+        self._warn_lagging()
         uid = self.seg.uid
         if self.shown and self.shown[0] == uid:  # 건너뛴 발화의 미리보기는 그 문장으로 확정해 둔다
             _, text, start = self.shown
@@ -487,15 +510,19 @@ def find_tracks(rec_dir: Path, stop: threading.Event, wait_s: float = WAIT_S) ->
     return found
 
 
-def load_models(vad_dir: Path, asr_dir: Path, diar_dir: Path | None, hotwords: list[str], warn):
+def load_models(vad_dir: Path, asr_dir: Path, diar_dir: Path | None, hotwords: list[str], warn, stop: threading.Event | None = None):
     """→ (VAD 창 → 확률, 오디오 → 문장, SpeakerTrack | None). 1.7B는 올리지 않는다 (메모리).
+    stop이 설정되면 모델 사이에서 멈추고 None을 돌려준다 (이미 올리는 중인 모델 하나는 끝까지 기다린다: VAD 약 0.3초, ASR 0.6B 약 1–2초).
     diar_dir가 None이면 화자를 붙이지 않는다 (기본). 실측(M3, 68초 가상 대화, ARCHITECTURE §2.6): 화자 스트리밍을 켜면
     GPU 사용률 증가분(시스템 전체 − 시작 전 기준값) 약 12–17%p → 42%p, footprint 1.8 → 3.0–3.2GB. 인코더가 0.72초마다 화자 캐시(최대 528프레임) 전체를 다시 돌리기 때문이다."""
+    stopped = stop.is_set if stop is not None else (lambda: False)
+    if stopped():
+        return None  # import도 아낀다 (mlx 불러오기만 약 0.5초)
     from mlx_audio.vad.utils import load as load_vad
 
-    from tractus.asr import Transcriber
-
     vad = load_vad(str(vad_dir))
+    if stopped():
+        return None
     state = None
 
     def prob(frame: np.ndarray) -> float:
@@ -503,7 +530,11 @@ def load_models(vad_dir: Path, asr_dir: Path, diar_dir: Path | None, hotwords: l
         p, state = vad.feed(frame, state)
         return float(p.item())
 
+    from tractus.asr import Transcriber
+
     transcriber = Transcriber.load(asr_dir)
+    if stopped():
+        return None
 
     def asr(audio: np.ndarray) -> str:
         return transcriber.transcribe(audio, language=None, hotwords=hotwords).text
@@ -549,7 +580,12 @@ def run(rec_dir: Path, emit, warn, stop: threading.Event, vad_dir: Path, asr_dir
     """stop이 설정될 때까지 자막을 낸다. 이벤트: stage(live_load) → stage(live) → live* → done{stats}."""
     emit("stage", stage="live_load")
     tracks = find_tracks(rec_dir, stop)
-    prob, asr, speakers = load_models(vad_dir, asr_dir, diar_dir, hotwords, warn)
+    loaded = load_models(vad_dir, asr_dir, diar_dir, hotwords, warn, stop)
+    if loaded is None:  # 모델을 올리는 동안 정지가 왔다: 자막 없이 끝낸다 (정식 변환은 녹음 파일에서 따로 만든다)
+        _unload()
+        emit("done", stats={**EMPTY_STATS, "peak_memory_gb": _peak_memory_gb()})
+        return
+    prob, asr, speakers = loaded
     mixer = Mixer([WavTail(p) for p in tracks])
     lv = Live(mixer, prob, asr, emit, warn=warn, speakers=speakers)
     emit("stage", stage="live")
@@ -561,6 +597,6 @@ def run(rec_dir: Path, emit, warn, stop: threading.Event, vad_dir: Path, asr_dir
     finally:
         mixer.close()
     stats = {**lv.stats(), "peak_memory_gb": _peak_memory_gb()}
-    del lv, prob, asr, speakers
+    del lv, prob, asr, speakers, loaded
     _unload()
     emit("done", stats=stats)

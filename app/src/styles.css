@@ -1064,6 +1064,18 @@ mark {
   color: var(--ink-3);
 }
 
+.spk-check:has(input:disabled) {
+  cursor: not-allowed;
+  color: var(--ink-3);
+}
+
+.spk-check-note {
+  margin: 0;
+  font-size: var(--fs-xs);
+  font-weight: 450;
+  color: var(--ink-3);
+}
+
 .spk-rename-error {
   margin: 0;
   font-size: var(--fs-xs);
@@ -2461,6 +2473,17 @@ pre.inline-error {
   line-height: 1.55;
   vertical-align: 0.06em;
   white-space: nowrap;
+}
+
+/* 삭제된 노트의 인용: 누를 수 없다 (title이 이유를 말한다) */
+.cite-chip.is-gone,
+.cite-chip.is-gone:hover {
+  color: var(--ink-3, var(--ink-2));
+  border-color: var(--rule-strong);
+  background: transparent;
+  text-decoration: line-through;
+  cursor: default;
+  opacity: 0.6;
 }
 
 .ask-status {

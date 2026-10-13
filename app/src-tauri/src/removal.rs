@@ -36,8 +36,9 @@ pub fn note_dir(home: &Path, id: &str, is_busy: impl Fn(&str) -> bool) -> Result
     if !directly_under(&home.join("meetings"), &dir)? {
         return Err("노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.".into());
     }
-    // 변환이 끝나지 않은 노트(.job.json)는 이어하기에 쓰므로 옮기지 않는다
-    if dir.join(".job.json").exists() {
+    // 변환이 끝나지 않은 노트(.job.json만 있고 transcript.json이 없는 것)는 이어하기에 쓰므로 옮기지 않는다.
+    // transcript.json이 있으면 끝난 노트다: 변환 마지막에 끊겨 .job.json이 남았어도 지울 수 있다 (코어가 transcript.json을 이긴 것으로 본다, docs/desktop.md §2.7.2)
+    if dir.join(".job.json").exists() && !dir.join("transcript.json").exists() {
         return Err("이 노트는 아직 텍스트 변환이 끝나지 않아 삭제할 수 없습니다.".into());
     }
     if is_busy(id) {
@@ -160,8 +161,13 @@ mod tests {
     fn refuses_unfinished_job_and_busy_note() {
         let home = temp_home("busy");
         let dir = note(&home, "01JOB");
+        // 변환 중인 폴더: .job.json만 있고 transcript.json이 아직 없다
         fs::write(dir.join(".job.json"), "{}").unwrap();
+        fs::rename(dir.join("transcript.json"), dir.join("transcript.json.bak")).unwrap();
         assert!(note_dir(&home, "01JOB", |_| false).unwrap_err().contains("변환이 끝나지 않아"));
+        fs::rename(dir.join("transcript.json.bak"), dir.join("transcript.json")).unwrap();
+        // 끝난 노트에 .job.json이 남았어도(transcript.json이 이긴다) 지울 수 있다
+        assert!(note_dir(&home, "01JOB", |_| false).is_ok());
         fs::remove_file(dir.join(".job.json")).unwrap();
         assert!(note_dir(&home, "01JOB", |_| false).is_ok());
         let e = note_dir(&home, "01JOB", |k| k == "01JOB").unwrap_err();

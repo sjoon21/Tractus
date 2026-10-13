@@ -28,13 +28,14 @@ from tractus.env import load_env_all  # noqa: E402
 from tractus.llm import LLMError, make_client, resolve_provider  # noqa: E402
 from tractus.paths import home_dir, models_dir  # noqa: E402
 from tractus.align import MODEL_DIR as ALIGNER_DIR, MODEL_REPO as ALIGNER_REPO, MODEL_REVISION as ALIGNER_REVISION  # noqa: E402
-from tractus.align import align_segments, load_aligner  # noqa: E402
+from tractus.align import align_segments, is_approximate, load_aligner  # noqa: E402
 from tractus.asr import SR, Transcriber  # noqa: E402
-from tractus.diarize import FLUID, MAX_SPEAKERS, NEMOTRON, MODEL_DIR as DIARIZER_DIR, MODEL_REPO as DIARIZER_REPO, MODEL_REVISION as DIARIZER_REVISION  # noqa: E402
+from tractus.diarize import FLUID, FLUID_MIN_CLIP_S, MAX_SPEAKERS, NEMOTRON, MODEL_DIR as DIARIZER_DIR, MODEL_REPO as DIARIZER_REPO, MODEL_REVISION as DIARIZER_REVISION  # noqa: E402
 from tractus.diarize import fluid_hint, load_diarizer, load_fluid, split_chunks  # noqa: E402
 from tractus.export import FORMATS as EXPORT_FORMATS, render_export, write_bytes_atomic  # noqa: E402
 from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_suggestions, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
 from tractus.store import IncompleteError, load_glossary, meeting_dir_name, new_ulid, save_transcript, seg_text, speaker_name, write_transcript  # noqa: E402
+from tractus.store import JOB_FILE, edit_transcript, forget_person, note_lock, render_files  # noqa: E402
 from tractus.store import _hms  # noqa: E402
 from tractus.vad import find_chunks  # noqa: E402
 
@@ -213,6 +214,17 @@ def _transcribe(
     _run(job, pcm, source, keep_tracks, align)
 
 
+def _still_registered(suggestions: dict) -> dict:
+    """변환하는 동안 `voices forget`으로 등록을 지운 사람의 제안은 버린다 (메모리의 작업이 지운 제안을 되살리지 않게)."""
+    if not suggestions:
+        return suggestions
+    try:
+        ids = {p["id"] for p in voices.load_profiles(home_dir())["people"]}
+    except (OSError, ValueError):
+        return suggestions
+    return {k: v for k, v in suggestions.items() if v.get("person_id") in ids}
+
+
 def _warn(code: str, message: str) -> None:
     Events.emit("warning", code=code, message=message)
     console.print(f"[yellow]{escape(message)}[/yellow]")
@@ -242,9 +254,11 @@ def _diarize(pcm, max_speakers: int | None, engine: DiarizerEngine = DiarizerEng
     """노트 전체 화자 분리 → (turn 목록, transcript.json의 diarization). 모델이 없거나 실패하면 화자 없이 진행한다.
 
     auto: Nemotron을 돌리고 8채널을 모두 썼으면(9명 이상일 수 있음) fluid로 다시 돌린다. --max-speakers가 8 이하면 그대로.
-    fluid: 헬퍼·모델이 없거나 실패하면 Nemotron으로 돌린다."""
+    fluid: 헬퍼·모델이 없거나 실패하면 Nemotron으로 돌린다. 60초 미만 클립이면 화자가 과하게 쪼개질 수 있다고 경고만 하고 그대로 돌린다."""
     models = models_dir()
     if engine is DiarizerEngine.fluid:
+        if len(pcm) / SR < FLUID_MIN_CLIP_S:
+            _warn("fluid_short_clip", f"{FLUID_MIN_CLIP_S:.0f}초보다 짧은 클립은 fluid 엔진이 화자를 과하게 나눌 수 있습니다. 결과가 이상하면 --diarizer nemotron으로 다시 해 보세요")
         fluid = load_fluid(models)
         if fluid is None:
             _warn("fluid_missing", f"fluid 화자 분리 헬퍼나 모델이 없어 Nemotron으로 화자 분리합니다:\n{fluid_hint(models)}")
@@ -305,21 +319,23 @@ def _align_progress() -> Progress:
 def _save_words(d: Path, segments: list[dict], ids: set[str]) -> dict:
     """정렬한 words를 transcript.json에 쓴다. transcript.json이 있으면 앱이 이미 편집할 수 있으므로 정렬하는 동안 고친
     세그먼트·화자를 덮어쓰지 않게, 다시 읽고 표시 텍스트가 그대로인 세그먼트에만 words를 쓴다 (나머지 필드는 다시 읽은 쪽).
-    → {"aligned", "failed", "skipped"}"""
-    # ponytail: 다시 읽기와 쓰기 사이(수 ms)의 편집은 잃을 수 있다. 잠금이 필요하면 store에 파일 잠금을 둔다
+    다시 읽기부터 쓰기까지를 note_lock 안에서 해서 그 사이의 앱 편집도 잃지 않는다.
+    → {"aligned", "approximate", "failed", "skipped"} (approximate: 모델이 못 맞춰 단어를 고르게 편 세그먼트, failed: 단어가 없는 세그먼트)"""
     new = {s["id"]: s for s in segments if s["id"] in ids}
-    cur = _read_transcript(d)
-    counts = {"aligned": 0, "failed": 0}
-    merged = []
-    for s in cur["segments"]:
-        a = new.get(s["id"])
-        if a is not None and seg_text(a) == seg_text(s):
-            merged.append({**s, "words": a["words"]})
-            counts["aligned" if a["words"] is not None else "failed"] += 1
-        else:
-            merged.append(s)
-    save_transcript(d, {**cur, "segments": merged})
-    return {**counts, "skipped": len(merged) - counts["aligned"] - counts["failed"]}
+
+    def merge(cur: dict) -> tuple[dict, dict]:
+        counts = {"aligned": 0, "approximate": 0, "failed": 0}
+        merged = []
+        for s in cur["segments"]:
+            a = new.get(s["id"])
+            if a is not None and seg_text(a) == seg_text(s):
+                merged.append({**s, "words": a["words"]})
+                counts["failed" if a["words"] is None else "approximate" if is_approximate(a["words"]) else "aligned"] += 1
+            else:
+                merged.append(s)
+        return {**cur, "segments": merged}, {**counts, "skipped": len(merged) - sum(counts.values())}
+
+    return edit_transcript(d, merge)
 
 
 def _align(d: Path, t: dict, pcm) -> None:
@@ -339,13 +355,13 @@ def _align(d: Path, t: dict, pcm) -> None:
                 progress.advance(bar)
                 Events.emit("progress", done=n, total=total)
 
-            segments, _, _ = align_segments(aligner, pcm, t["segments"], on_progress=tick)
+            segments, *_ = align_segments(aligner, pcm, t["segments"], on_progress=tick)
     except Exception as e:  # noqa: BLE001 — 단어 타이밍 실패가 전사를 막지 않는다
         _warn("aligner_failed", f"단어 타이밍을 만들지 못했습니다 (`tractus align {t['meeting_id']}`로 다시 시도): {e}")
         return
-    failed = _save_words(d, segments, {s["id"] for s in t["segments"]})["failed"]
-    if failed:
-        console.print(f"[yellow]단어 타이밍을 맞추지 못한 세그먼트 {failed}개 (세그먼트 단위로만 이동)[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+    counts = _save_words(d, segments, {s["id"] for s in t["segments"]})
+    if counts["approximate"]:
+        console.print(f"[yellow]단어 타이밍을 정확히 맞추지 못해 고르게 나눈 세그먼트 {counts['approximate']}개 (`tractus align --force`로 다시 시도)[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
 
 
 def _new_job(
@@ -427,6 +443,7 @@ def _run(job: Job, pcm, source: Source, keep_tracks: bool, align: bool = True) -
         _fail("변환을 중단했습니다. 같은 명령으로 다시 실행하면 이어서 진행합니다.", code="interrupted", exit_code=130)
 
     elapsed = time.perf_counter() - t0
+    job.suggestions = _still_registered(job.suggestions)
     try:
         t = write_transcript(job)
     except IncompleteError as e:
@@ -460,7 +477,8 @@ def live_cmd(
     progress_json: bool = typer.Option(False, "--progress-json", help="자막 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
 ) -> None:
     """녹음 중 실시간 자막(미리보기). Qwen3-ASR 0.6B로 발화마다 전사해 내보내고 아무것도 저장하지 않는다.
-    stdin에 `stop` 줄, stdin EOF, SIGTERM이면 마무리하고 종료 코드 0으로 끝난다. 정식 전사는 녹음을 멈춘 뒤 `transcribe --recording`."""
+    stdin에 `stop` 줄, stdin EOF, SIGTERM이면 마무리하고 종료 코드 0으로 끝난다. 정식 전사는 녹음을 멈춘 뒤 `transcribe --recording`.
+    --progress-json 없이 실행하면 확정된 자막을 `\\[mm:ss] 문장` 줄로 stdout에 찍는다."""
     import signal
     import threading
 
@@ -483,13 +501,23 @@ def live_cmd(
         stop.set()  # stop 줄 또는 EOF (부모 앱이 죽어도 고아로 남지 않게)
 
     threading.Thread(target=watch_stdin, daemon=True).start()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        signal.signal(sig, lambda *_: stop.set())
     hotwords = load_glossary(home_dir() / "glossary.md")
+
+    def emit(event: str, **data) -> None:
+        Events.emit(event, **data)
+        if not progress_json and event == "live" and data["kind"] == "final" and data["text"]:
+            m, s = divmod(int(data["start"]), 60)
+            print(f"[{m:02d}:{s:02d}] {data['speaker'] + ': ' if data['speaker'] else ''}{data['text']}", flush=True)  # 터미널에서 실행하면 확정된 자막만 stdout에 찍는다
+
+    # 프로세스 전체 핸들러라 끝나면 되돌린다 (테스트·다른 코드가 같은 프로세스에서 SIGINT를 받을 수 있다)
+    previous = {sig: signal.signal(sig, lambda *_: stop.set()) for sig in (signal.SIGTERM, signal.SIGINT)}
     try:
-        live_mod.run(recording, Events.emit, _warn, stop, vad_dir, asr_dir, models_dir() / DIARIZER_DIR if speakers else None, hotwords)
+        live_mod.run(recording, emit, _warn, stop, vad_dir, asr_dir, models_dir() / DIARIZER_DIR if speakers else None, hotwords)
     except (live_mod.LiveError, ValueError, OSError) as e:
         _fail(f"실시간 텍스트 변환을 멈췄습니다: {e}", code="live_failed")
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
 
 
 @app.command("align")
@@ -499,7 +527,8 @@ def align_cmd(
     progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
 ) -> None:
     """기존 노트의 단어 타이밍(segment.words)을 채운다. 기본은 words가 없는 세그먼트만.
-    stdout: {"aligned": N, "failed": M, "skipped": K} (--progress-json이면 같은 값이 done 이벤트에 들어간다)"""
+    stdout: {"aligned": N, "approximate": A, "failed": M, "skipped": K} (--progress-json이면 같은 값이 done 이벤트에 들어간다).
+    approximate: 모델이 못 맞춰 단어를 세그먼트에 고르게 편 수 (words는 있고 단어마다 approx). failed: 단어가 없는 세그먼트."""
     Events.enabled = progress_json
 
     try:
@@ -509,7 +538,7 @@ def align_cmd(
         raise
     t = _read_transcript(d)
     todo = {s["id"] for s in t["segments"] if force or s.get("words") is None}
-    counts = {"aligned": 0, "failed": 0, "skipped": len(t["segments"])}
+    counts = {"aligned": 0, "approximate": 0, "failed": 0, "skipped": len(t["segments"])}
     if todo:
         aligner = load_aligner(models_dir())
         if aligner is None:
@@ -529,9 +558,9 @@ def align_cmd(
                 progress.advance(bar)
                 Events.emit("progress", done=n, total=total)
 
-            segments, _, _ = align_segments(aligner, pcm, t["segments"], on_progress=tick, only=todo)
+            segments, *_ = align_segments(aligner, pcm, t["segments"], on_progress=tick, only=todo)
         counts = _save_words(d, segments, todo)
-        console.print(f"단어 타이밍: 성공 {counts['aligned']}, 실패 {counts['failed']}, 건너뜀 {counts['skipped']} ({time.perf_counter() - t0:.1f}초)")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+        console.print(f"단어 타이밍: 성공 {counts['aligned']}, 추정 {counts['approximate']}, 실패 {counts['failed']}, 건너뜀 {counts['skipped']} ({time.perf_counter() - t0:.1f}초)")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
     if progress_json:
         Events.emit("done", meeting_id=t["meeting_id"], meeting_dir=str(d), **counts)
     else:
@@ -618,7 +647,7 @@ def _save_chat(d: Path, question: str, done: dict) -> None:
     from tractus.ask import save_chat
 
     try:
-        save_chat(d, _read_transcript(d)["meeting_id"], {"question": question, **{k: done[k] for k in ("answer", "citations", "provider", "model")}})
+        save_chat(d, _read_transcript(d)["meeting_id"], {"question": question, **{k: done[k] for k in ("answer", "citations", "provider", "model", "no_evidence")}})
     except (OSError, ValueError) as e:  # ValueError: 깨졌거나 다른 형식의 chat.json (덮어쓰지 않음)
         _warn("chat_save_failed", f"질문 기록을 저장하지 못했습니다: {e}")
 
@@ -659,7 +688,7 @@ def ask(
         idx = Index(home_dir(), embedder=load_embedder(models_dir()))  # 질의 임베딩 때만 모델을 올린다 (LazyEmbedder)
         try:
             idx.sync(embed=False)  # 새 벡터는 만들지 않는다: 노트가 많으면 몇 분 걸린다. 벡터 없는 청크는 키워드로 찾힌다
-            return qa.search_sources(idx, question, **kw)
+            return qa.search_sources(idx, question, history, **kw)
         finally:
             idx.close()
 
@@ -710,8 +739,8 @@ def index(rebuild: bool = typer.Option(False, "--rebuild", help="색인 파일�
     )
     if not has_embedder:
         console.print("[yellow]임베딩 모델이 없거나 올리지 못해 키워드 검색만 됩니다. README '모델 받기'의 qwen3-embedding-0.6b를 확인하세요.[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
-    elif st["vectors"] < st["chunks"]:
-        console.print(f"[yellow]벡터가 없는 청크 {st['chunks'] - st['vectors']}개가 남았습니다.[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+    elif st["pending"]:
+        console.print(f"[yellow]벡터가 없는 청크 {st['pending']}개가 남았습니다.[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
     for err in r.errors:
         console.print(f"[yellow]건너뜀:[/yellow] {escape(err)}")
 
@@ -783,11 +812,10 @@ def speakers_list(ctx: typer.Context, as_json: bool = typer.Option(False, "--jso
 
 def _edit_speakers(d: Path, op: str, *args: str) -> None:
     try:
-        t = apply_speaker_edit(_read_transcript(d), op, *args)
+        edit_transcript(d, lambda t: (apply_speaker_edit(t, op, *args), None))
     except ValueError as e:
         console.print(f"[red]{escape(str(e))}[/red]")
         raise typer.Exit(1)
-    save_transcript(d, t)
     _sync_index_quietly(embed=False)
     console.print(f"저장했습니다: {d / 'transcript.json'}")
 
@@ -860,12 +888,13 @@ def _meeting_pcm(d: Path, t: dict):
 
 @voices_app.command("list")
 def voices_list(as_json: bool = typer.Option(False, "--json", help="JSON으로 stdout에 출력 (데스크톱 앱용)")) -> None:
-    """등록된 사람(이름, 표본 수, 등록일). 벡터는 출력하지 않는다. stdout(--json): {"people": [...], "reenroll": bool}"""
+    """등록된 사람(이름, 표본 수, 등록일). 벡터는 출력하지 않는다.
+    stdout(--json): {"people": [...], "reenroll": bool, "model_present": bool} (model_present: 목소리 인식 파일이 있고 올바르다)"""
     data = _profiles()
     rows = [{"id": p["id"], "name": p["name"], "samples": len(p.get("samples") or []), "created_at": p.get("created_at")} for p in data["people"]]
     reenroll = voices.needs_reenroll(data)
     if as_json:
-        print(json.dumps({"people": rows, "reenroll": reenroll}, ensure_ascii=False))
+        print(json.dumps({"people": rows, "reenroll": reenroll, "model_present": voices.model_present(models_dir())}, ensure_ascii=False))
         return
     if reenroll:
         console.print("[yellow]목소리 모델이 바뀌어 등록된 목소리를 쓸 수 없습니다. 다시 등록하세요 (`tractus voices enroll`).[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
@@ -895,14 +924,25 @@ def voices_enroll(
     clean = renamed["speakers"][label]["name"]
     if not clean:
         _fail("이름을 입력하세요.")
-    data = _profiles()
     embedder = _voice_embedder()
     emb = voices.speaker_embedding(embedder, _meeting_pcm(d, t), t["segments"], label)
     if emb is None:
         _fail(f"이 참석자가 {voices.MIN_CLIP_S:g}초 이상 이어서 말한 부분이 없어 목소리를 등록할 수 없습니다.")
-    data, person = voices.enroll(data, clean, emb, t["meeting_id"])
-    voices.save_profiles(home_dir(), data)
-    save_transcript(d, renamed)
+    with note_lock(d):  # 오래 걸리는 임베딩은 잠금 밖에서 하고, 읽기부터 쓰기까지만 잠근다 (그 사이의 편집을 덮어쓰지 않게 다시 읽는다)
+        try:
+            renamed = apply_speaker_edit(_read_transcript(d), "rename", label, clean)
+        except ValueError as e:
+            _fail(str(e))
+        with voices.profiles_lock(home_dir()):  # 다른 노트의 등록·forget과 voices.json을 덮어쓰지 않게
+            data = _profiles()
+            previous = data if (home_dir() / voices.VOICES_FILE).exists() else None
+            data, person = voices.enroll(data, clean, emb, t["meeting_id"])
+            voices.save_profiles(home_dir(), data)
+            try:
+                save_transcript(d, renamed)
+            except BaseException:
+                voices.restore_profiles(home_dir(), previous)  # 이름은 못 붙였는데 목소리만 등록된 채로 남지 않게
+                raise
     _sync_index_quietly(embed=False)
     print(json.dumps({"person_id": person["id"], "name": person["name"], "samples": len(person["samples"])}, ensure_ascii=False))
 
@@ -910,19 +950,31 @@ def voices_enroll(
 @voices_app.command("forget")
 def voices_forget(ref: str = typer.Argument(..., help="이름 또는 id")) -> None:
     """등록한 사람을 지운다. 노트에 남은 그 사람의 목소리 제안도 지운다 (확정한 이름은 그대로). stdout: {"forgotten": N}"""
-    data, gone = voices.forget(_profiles(), ref)
+    with voices.profiles_lock(home_dir()):  # 읽고 고쳐 쓰는 동안만 잡는다. 노트 잠금과 함께 쥐지 않는다
+        data, gone = voices.forget(_profiles(), ref)
+        if gone:
+            voices.save_profiles(home_dir(), data)
     if gone:
-        voices.save_profiles(home_dir(), data)
-        for p in sorted((home_dir() / "meetings").glob("*/transcript.json")):
-            # ponytail: 노트 폴더 전체를 훑는다. 수천 개가 되면 제안이 있는 노트 목록을 따로 둔다
+        ids, meetings = set(gone), home_dir() / "meetings"
+        # ponytail: 노트 폴더 전체를 훑는다. 수천 개가 되면 제안이 있는 노트 목록을 따로 둔다
+        for p in sorted(meetings.glob("*/transcript.json")):
             try:
-                t = _read_transcript(p.parent)
+                if not any(i in p.read_text(encoding="utf-8") for i in ids):
+                    continue  # 이 사람을 가리키는 기록이 없는 노트는 잠금 파일도 만들지 않는다
+                edit_transcript(p.parent, lambda t: (forget_person(t, ids), None))
             except (OSError, ValueError):
                 continue
-            keep = {k: v["suggested"] for k, v in (t.get("speakers") or {}).items() if (v or {}).get("suggested") and v["suggested"].get("person_id") not in gone}
-            new = apply_suggestions(t, keep)
-            if new["speakers"] != t["speakers"]:
-                save_transcript(p.parent, new)
+        for p in sorted(meetings.glob(f"*/{JOB_FILE}")):  # 변환이 끝나지 않은 작업: 이어하기가 지운 제안을 되살리지 않게
+            if (p.parent / "transcript.json").is_file():
+                continue
+            try:
+                job = Job.load(p.parent)
+                kept = {k: v for k, v in job.suggestions.items() if v.get("person_id") not in ids}
+                if kept != job.suggestions:
+                    job.suggestions = kept
+                    job.save()
+            except (OSError, ValueError, TypeError, KeyError):
+                continue
     print(json.dumps({"forgotten": len(gone)}))
 
 
@@ -944,19 +996,42 @@ def voices_match(
     confirmed = {(v or {}).get("name") for v in speakers.values()} - {None}
     labels = [k for k, v in speakers.items() if not (v or {}).get("name")]
     people = [p for p in voices.usable_people(_profiles()) if p["name"] not in confirmed]
+    dismissed = {k: set((v or {}).get("dismissed") or []) for k, v in speakers.items()}  # 사용자가 '다름'으로 거절한 사람은 다시 제안하지 않는다
     suggestions = {}
     if people and labels:
         embedder = _voice_embedder()
         pcm = _meeting_pcm(d, t)
         Events.emit("stage", stage="voices")
-        suggestions = voices.suggest(embedder, pcm, t["segments"], people, labels)
-    new = apply_suggestions(t, suggestions)
-    if new["speakers"] != speakers:
-        save_transcript(d, new)
+        suggestions = voices.suggest(embedder, pcm, t["segments"], people, labels, dismissed)
+    suggestions = _still_registered(suggestions)  # 계산하는 동안 forget한 사람의 이름을 노트에 남기지 않는다
+    edit_transcript(d, lambda cur: (apply_suggestions(cur, suggestions), None))  # 오래 걸린 계산 뒤라 최신 노트를 다시 읽어 합친다
     if progress_json:
         Events.emit("done", meeting_id=t["meeting_id"], meeting_dir=str(d), suggested=len(suggestions))
     else:
         print(json.dumps({"suggested": len(suggestions)}))
+
+
+@app.command("render")
+def render_cmd(
+    meeting: str = typer.Argument(None, help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
+    all_notes: bool = typer.Option(False, "--all", help="모든 노트"),
+) -> None:
+    """transcript.json으로 transcript.md·vtt를 다시 만든다 (표시 문구가 바뀐 뒤 기존 노트에 반영). stdout: {"rendered": N}"""
+    if (meeting is None) == (not all_notes):
+        raise typer.BadParameter("노트 하나 또는 --all 중 하나만 지정하세요")
+    dirs = [p.parent for p in sorted((home_dir() / "meetings").glob("*/transcript.json"))] if all_notes else [resolve_meeting(meeting)]
+    rendered = 0
+    for d in dirs:
+        try:
+            with note_lock(d):
+                render_files(d, _read_transcript(d))
+        except (OSError, ValueError, KeyError, TypeError) as e:  # 형식이 깨진 transcript.json은 KeyError로 나온다
+            if not all_notes:
+                _fail(f"문서를 다시 만들지 못했습니다: {e}")
+            console.print(f"[yellow]건너뜀:[/yellow] {escape(d.name)}: {escape(str(e))}")
+            continue
+        rendered += 1
+    print(json.dumps({"rendered": rendered}))
 
 
 segments_app = typer.Typer(help="노트 전사 텍스트 고치기. 원문(text)은 두고 corrected_text에 쓴 뒤 md·vtt를 다시 쓰고 검색 색인을 갱신한다")
@@ -978,12 +1053,11 @@ def segments_edit(ctx: typer.Context) -> None:
         edits = req.get("edits") if isinstance(req, dict) else None
         if not isinstance(edits, list):
             raise ValueError('입력은 {"edits": [{"id": "s0012", "text": "…"}]} 형식이어야 합니다')  # words-ok: 앱 계약 오류
-        t, changed = apply_text_edits(_read_transcript(d), edits)
+        changed = edit_transcript(d, lambda t: apply_text_edits(t, edits))
     except ValueError as e:  # json.JSONDecodeError 포함
         console.print(f"[red]{escape(str(e))}[/red]")
         raise typer.Exit(1)
     if changed:
-        save_transcript(d, t)
         _sync_index_quietly(embed=False)  # 바뀐 청크는 벡터 없이 키워드로만 찾힌다. 다음 `tractus index`나 전사·요약 때 임베딩
     print(json.dumps({"changed": changed}))
 

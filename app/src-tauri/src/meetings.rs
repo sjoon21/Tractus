@@ -163,8 +163,8 @@ pub struct MeetingDetail {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
-    let raw = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    serde_json::from_str(&raw).map_err(|e| format!("{}: {e}", path.display()))
+    let raw = fs::read_to_string(path).map_err(|e| format!("노트 파일을 읽지 못했습니다\n{}: {e}", path.display()))?;
+    serde_json::from_str(&raw).map_err(|e| format!("노트 파일을 읽지 못했습니다\n{}: {e}", path.display()))
 }
 
 fn info(dir: &Path, t: &Transcript) -> MeetingInfo {
@@ -248,7 +248,7 @@ pub fn find_dir(home: &Path, id: &str) -> Result<PathBuf, String> {
     // 폴더 이름은 <날짜>_<제목>_<meeting_id> (store.meeting_dir_name)
     let suffix = format!("_{id}");
     fs::read_dir(home.join("meetings"))
-        .map_err(|e| format!("노트 폴더를 읽을 수 없습니다: {e}"))?
+        .map_err(|e| format!("노트 폴더를 읽을 수 없습니다\n{e}"))?
         .flatten()
         .map(|e| e.path())
         .find(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with(&suffix)))

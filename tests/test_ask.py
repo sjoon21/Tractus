@@ -85,6 +85,29 @@ def test_search_sources_add_neighbor_segments_and_respect_dates(home):
     idx.close()
 
 
+def test_follow_up_question_retrieves_with_previous_user_questions(home):
+    idx = Index(home)
+    idx.sync()
+    follow = "그럼 그건 언제까지야?"  # 이것만으로는 찾을 것이 없다
+    history = [{"role": "user", "content": "Redis 캐시는 누가 맡았어?"}, {"role": "assistant", "content": "오태양 님입니다 [s0007]."}]
+    assert not any("keyword" in h.matched for h in idx.search(follow).hits)
+    first = lambda hits: [(h.meeting_id, h.segment_ids[0]) for h in hits[:2]]  # noqa: E731
+    assert (SEARCH, "s0005") in first(qa._hits(idx, follow, history))  # Redis 캐시 청크가 앞쪽
+    assert (SEARCH, "s0005") not in first(qa._hits(idx, follow, []))
+    assert (SEARCH, "s0007") in {(s["meeting_id"], s["segment_id"]) for s in qa.search_sources(idx, follow, history)}
+    # 단독 질문이 스스로 근거를 찾으면 이전 대화는 검색을 바꾸지 않는다
+    own = "edge n-gram analyzer"
+    assert qa.search_sources(idx, own, history) == qa.search_sources(idx, own)
+    # 직전 사용자 질문은 최대 2개, 길이도 자른다 (조립된 질의에 3번째 이전 질문은 없다)
+    seen = []
+    real = idx.search
+    idx.search = lambda q, **kw: seen.append(q) or real(q, **kw)
+    long_hist = [{"role": "user", "content": f"질문{i} " + "가" * 400} for i in range(3)]
+    qa.search_sources(idx, follow, long_hist)
+    assert "질문0" not in seen[1] and "질문1" in seen[1] and "질문2" in seen[1] and len(seen[1]) <= 2 * (qa.CONTEXT_CHARS + 1) + len(follow)
+    idx.close()
+
+
 # ── 프롬프트 ──────────────────────────────────────────────────────────
 
 
@@ -107,7 +130,8 @@ def test_global_prompt_groups_by_meeting_with_full_ids(home):
     user = qa.build_messages("예산?", [], src, "global")[-1]["content"]
     assert "3분기 예산 계획 회의 (2026-07-08)" in user and f"[{SEARCH}#s0001 00:00:00]" in user
     assert f"[{BUDGET}#s0012]" not in user  # 예시는 system에만
-    assert "[<meeting_id>#s0012]" in qa.build_messages("예산?", [], src, "global")[0]["content"]
+    system = qa.build_messages("예산?", [], src, "global")[0]["content"]
+    assert f"[{BUDGET}#s0001]" in system and f"[{SEARCH}#s0001][{BUDGET}#s0001]" not in system and "<meeting_id>" not in system  # 자리표시자 대신 실제 ID (모델이 베낀다)
 
 
 # ── 인용 정리 ─────────────────────────────────────────────────────────
@@ -154,6 +178,32 @@ def test_ask_streams_events_and_cleans_citations(home):
     done = events[-1]
     assert done["answer"] == "3분기 GPU 서버 구매는 보류했습니다 [s0008]." and done["provider"] == "upstage" and done["model"] == "solar-pro4"
     assert done["citations"] == [{"meeting_id": BUDGET, "segment_id": "s0008", "start": 116.2}]
+
+
+def test_finalize_cleans_copied_meeting_id_placeholder(home):
+    src = qa.transcript_sources(transcript(home, BUDGET)) + qa.transcript_sources(transcript(home, SEARCH))
+    text, cites = qa.finalize("보류했습니다 [<meeting_id>#s0007][<meeting_id>#s0012].", src, "global")  # s0007·s0012는 두 회의에 다 있다
+    assert text == "보류했습니다." and cites == []  # 어느 회의인지 알 수 없는 인용은 지운다 (자리표시자가 답에 남지 않게)
+    text, cites = qa.finalize("로그 [<meeting_id>#s0013]", src, "global")  # s0013은 검색 회의에만 있다
+    assert text == f"로그 [{SEARCH}#s0013]" and [c["segment_id"] for c in cites] == ["s0013"]
+
+
+def test_done_marks_no_evidence_by_citations_not_by_sentence(home):
+    src = qa.transcript_sources(transcript(home, BUDGET))
+    done = lambda pieces: list(qa.ask(FakeStream(pieces), "upstage", "m", "q", [], "meeting", lambda: src))[-1]  # noqa: E731
+    assert done(["답입니다 [s0008]."])["no_evidence"] is False
+    assert done([qa.NO_EVIDENCE])["no_evidence"] is True
+    assert done(["No evidence in the notes."])["no_evidence"] is True  # 질문 언어로 거절해도, 인용을 빠뜨려도
+    assert list(qa.ask(FakeStream([]), "upstage", "m", "q", [], "global", lambda: []))[-1]["no_evidence"] is True
+
+
+def test_turn_no_evidence_prefers_flag_and_falls_back_for_old_turns():
+    cite = [{"meeting_id": "M", "segment_id": "s0001", "start": 1.0}]
+    assert qa.turn_no_evidence({"answer": "회의 기록에서 근거를 찾지 못했습니다", "citations": []})  # 옛 문장, 키 없음
+    assert qa.turn_no_evidence({"answer": "아무 문장", "citations": [], "provider": None})
+    assert not qa.turn_no_evidence({"answer": "3억 [s0012]", "citations": cite})
+    assert qa.turn_no_evidence({"answer": "x", "citations": cite, "no_evidence": True})  # 새 키가 있으면 그것이 우선
+    assert not qa.turn_no_evidence({"answer": "x", "citations": [], "no_evidence": False})
 
 
 def test_ask_without_sources_skips_llm():
@@ -211,6 +261,7 @@ def test_cli_ask_meeting_scope_saves_chat(cli_env, monkeypatch):
     assert len(ev[1]["sources"]) == 12 and ev[-1]["citations"][0]["segment_id"] == "s0012"
     turns = json.loads(next((cli_env / "meetings").glob(f"*{BUDGET}")).joinpath("chat.json").read_text(encoding="utf-8"))["turns"]
     assert turns[0]["question"] == "예산안 제출 기한은?" and turns[0]["citations"] == ev[-1]["citations"] and turns[0]["provider"] == "upstage"
+    assert turns[0]["no_evidence"] is False and ev[-1]["no_evidence"] is False
     assert "[s0012 00:02:56] 정리하면" in client.calls[0]["messages"][-1]["content"]
 
 
@@ -239,7 +290,7 @@ def test_cli_ask_long_meeting_falls_back_to_retrieval(cli_env, monkeypatch):
     monkeypatch.setattr(qa, "MEETING_CHARS", 500)
     seen = []
     real = qa.search_sources
-    monkeypatch.setattr(qa, "search_sources", lambda idx, q, **kw: seen.append(kw) or real(idx, q, **kw))
+    monkeypatch.setattr(qa, "search_sources", lambda idx, q, history=None, **kw: seen.append(kw) or real(idx, q, history, **kw))
     r, ev, _ = run_ask(monkeypatch, ["ok"], '{"question": "GPU 서버 구매"}', "--meeting", BUDGET[-6:])
     assert r.exit_code == 0, r.output
     assert seen == [{"meeting_id": BUDGET}]

@@ -4,13 +4,17 @@
 suggested는 목소리 프로필이 맞춘 **제안**이다(voices.py). 이름이 없는 화자에만 있고, 표시 이름·md·vtt·요약·MCP·내보내기에 쓰지 않는다."""
 
 import copy
+import fcntl
 import json
 import os
 import re
 import secrets
+import threading
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from tractus.asr import Segment
 
@@ -21,8 +25,9 @@ CHUNKS_FILE = ".chunks.jsonl"
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 __all__ = [
-    "Job", "Segment", "add_glossary_terms", "apply_speaker_edit", "apply_suggestions", "apply_text_edits", "find_job", "find_meeting_dir", "load_glossary",
-    "meeting_dir_name", "new_ulid", "render_markdown", "save_transcript", "seg_text", "speaker_display", "speaker_name", "write_transcript",
+    "Job", "Segment", "add_glossary_terms", "apply_speaker_edit", "apply_suggestions", "apply_text_edits", "edit_transcript", "find_job", "find_meeting_dir",
+    "forget_person", "load_glossary", "meeting_dir_name", "new_ulid", "note_lock", "read_transcript", "render_files", "render_markdown", "save_transcript",
+    "seg_text", "speaker_display", "speaker_name", "write_transcript",
 ]
 
 
@@ -129,6 +134,9 @@ def find_job(meetings: Path, sha256: str) -> Job | None:
             job = Job.load(p.parent)
         except (OSError, ValueError, TypeError, KeyError):
             continue  # 다른 회의 폴더의 손상된 파일 때문에 전체가 막히지 않게 한다
+        if (p.parent / "transcript.json").is_file():
+            _clean_stale_job(p.parent)  # 끝난 노트에 남은 작업 파일: 이어하기 대상이 아니다
+            continue
         if job.sha256 == sha256:
             return job
     return None
@@ -142,6 +150,7 @@ def find_transcribed(meetings: Path, sha256: str) -> Path | None:
         except (OSError, ValueError, TypeError, KeyError):
             continue
         if found:
+            _clean_stale_job(p.parent)
             return p.parent
     return None
 
@@ -150,6 +159,7 @@ def find_meeting_dir(meetings: Path, ref: str) -> Path:
     """회의 폴더 경로 또는 meeting_id(일부)로 전사된 회의 폴더를 찾는다. 없거나 여러 개면 LookupError."""
     path = Path(ref).expanduser()
     if (path / "transcript.json").is_file():
+        _clean_stale_job(path)
         return path
     ref = ref.strip()
     hits = [d for d in sorted(meetings.glob("*")) if ref and ref in d.name and (d / "transcript.json").is_file()] if ref else []
@@ -157,7 +167,16 @@ def find_meeting_dir(meetings: Path, ref: str) -> Path:
         raise LookupError(f"‘{ref}’에 해당하는 노트가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.")
     if len(hits) > 1:
         raise LookupError(f"‘{ref}’에 해당하는 노트가 {len(hits)}개입니다: " + ", ".join(d.name for d in hits[:5]))
+    _clean_stale_job(hits[0])
     return hits[0]
+
+
+def _clean_stale_job(d: Path) -> None:
+    """transcript.json이 있으면 그 노트는 끝난 것이다. write_transcript가 transcript.json을 쓴 뒤 작업 파일을 지우기 전에 끊겼다면
+    남아 있는 .job.json·.chunks.jsonl을 지운다 (이어하기·삭제 거절·'변환 대기 중' 표시를 막는다)."""
+    if (d / "transcript.json").is_file():
+        for name in (JOB_FILE, CHUNKS_FILE):
+            (d / name).unlink(missing_ok=True)
 
 
 class IncompleteError(RuntimeError):
@@ -195,18 +214,64 @@ def write_transcript(job: Job) -> dict:
         "diarization": job.diarizer,
         "segments": segments,
     }
-    save_transcript(job.dir, transcript)
-    (job.dir / JOB_FILE).unlink()
-    (job.dir / CHUNKS_FILE).unlink(missing_ok=True)
+    save_transcript(job.dir, transcript)  # transcript.json이 마지막: 이 파일이 생기면 노트는 끝난 것이다
+    _clean_stale_job(job.dir)  # 여기서 끊겨도 transcript.json이 이기고, 남은 작업 파일은 다음에 find_*가 지운다
     return transcript
+
+
+def render_files(d: Path, t: dict) -> None:
+    """transcript.json은 그대로 두고 transcript.md·vtt만 t로 다시 만든다."""
+    _write_atomic(d / "transcript.md", render_markdown(t, load_memos(d)))
+    _write_atomic(d / "transcript.vtt", render_vtt(t))
 
 
 def save_transcript(d: Path, t: dict) -> None:
     """transcript.md·vtt를 먼저, transcript.json을 마지막에 원자적으로 쓴다.
-    transcript.json이 완료 표시라 중간에 끊겨도 md 없는 "완료"가 생기지 않는다."""
-    _write_atomic(d / "transcript.md", render_markdown(t, load_memos(d)))
-    _write_atomic(d / "transcript.vtt", render_vtt(t))
+    transcript.json이 완료 표시라 중간에 끊겨도 md 없는 "완료"가 생기지 않는다.
+    이미 있는 transcript.json을 고쳐 쓰는 호출자는 note_lock(또는 edit_transcript) 안에서 읽고 쓴다."""
+    render_files(d, t)
     _write_atomic(d / "transcript.json", json.dumps(t, ensure_ascii=False, indent=1))
+
+
+LOCK_FILE = ".lock"
+_held = threading.local()  # 이 스레드가 이미 잡고 있는 노트 폴더 (같은 스레드의 중첩 호출이 스스로를 막지 않게)
+
+
+@contextmanager
+def note_lock(d: Path):
+    """노트 폴더의 transcript.json을 읽고 고쳐 쓰는 동안 다른 프로세스·스레드의 같은 작업을 막는다 (<노트>/.lock, fcntl.flock).
+    앱 편집·화자 편집·목소리 등록·정렬 병합이 서로의 수정을 덮어쓰지 않게 하려면 읽기부터 쓰기까지를 이 안에서 한다.
+    같은 스레드에서 중첩해 불러도 된다. 프로세스가 죽으면 OS가 잠금을 푼다."""
+    key = str(d.resolve())
+    held = getattr(_held, "dirs", set())
+    if key in held:
+        yield
+        return
+    fd = os.open(d / LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        _held.dirs = {*held, key}
+        try:
+            yield
+        finally:
+            _held.dirs = held
+    finally:
+        os.close(fd)  # 닫으면 잠금도 풀린다
+
+
+def read_transcript(d: Path) -> dict:
+    return json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+
+
+def edit_transcript(d: Path, fn: Callable[[dict], tuple[dict, object]]):
+    """잠금 안에서 transcript.json을 읽고 fn(t) → (새 전사, 결과)로 고쳐 바뀌었을 때만 저장한다. 결과를 돌려준다.
+    fn이 예외를 던지면 아무것도 쓰지 않는다."""
+    with note_lock(d):
+        t = read_transcript(d)
+        new, result = fn(t)
+        if new != t:
+            save_transcript(d, new)
+        return result
 
 
 # ── 화자 ──────────────────────────────────────────────────────────────
@@ -217,11 +282,15 @@ def _label_key(label: str) -> tuple[int, str]:
 
 
 def _speaker_entry(info: dict | None) -> dict:
-    """{"name"}, 이름이 없을 때만 목소리 제안 {"suggested"}을 남긴다 (이름을 확정하면 제안은 지운다)."""
+    """{"name"}, 이름이 없을 때만 목소리 제안 {"suggested"}을 남긴다 (이름을 확정하면 제안은 지운다).
+    "dismissed"는 사용자가 '다름'으로 거절한 person_id 목록이다. 이름·제안과 상관없이 이어받아 `voices match`가 같은 사람을 다시 제안하지 않게 한다."""
     info = info or {}
+    out = {"name": info.get("name")}
     if info.get("name") is None and info.get("suggested"):
-        return {"name": None, "suggested": info["suggested"]}
-    return {"name": info.get("name")}
+        out["suggested"] = info["suggested"]
+    if info.get("dismissed"):
+        out["dismissed"] = list(info["dismissed"])
+    return out
 
 
 def _speakers_map(old: dict, segments: list[dict]) -> dict:
@@ -232,8 +301,27 @@ def _speakers_map(old: dict, segments: list[dict]) -> dict:
 
 def apply_suggestions(t: dict, suggestions: dict) -> dict:
     """이름이 없는 화자의 목소리 제안을 suggestions로 바꾼 새 전사. 이름이 확정된 화자는 건드리지 않고, suggestions에 없는 화자의 옛 제안은 지운다."""
-    speakers = {k: {"name": (v or {}).get("name"), **({"suggested": suggestions[k]} if k in suggestions else {})}
-                for k, v in (t.get("speakers") or {}).items()}
+    def fresh(k: str, v: dict | None) -> dict:
+        refused = (v or {}).get("dismissed") or []  # 거절한 사람은 다시 제안하지 않는다
+        ok = k in suggestions and suggestions[k].get("person_id") not in refused
+        return {**{a: b for a, b in (v or {}).items() if a != "suggested"}, **({"suggested": suggestions[k]} if ok else {})}
+
+    speakers = {k: fresh(k, v) for k, v in (t.get("speakers") or {}).items()}
+    return {**t, "speakers": _speakers_map(speakers, t["segments"])}
+
+
+def forget_person(t: dict, gone: set[str]) -> dict:
+    """등록을 지운 사람(person_id가 gone)을 가리키는 목소리 제안·거절 기록을 지운 새 전사. 확정한 이름은 그대로 둔다."""
+    entries = (t.get("speakers") or {}).values()
+    if not any(((v or {}).get("suggested") or {}).get("person_id") in gone or gone & set((v or {}).get("dismissed") or []) for v in entries):
+        return t  # 이 사람을 가리키는 기록이 없으면 노트를 다시 쓰지 않는다 (speakers가 없는 옛 노트도 그대로)
+    speakers = {}
+    for k, v in (t.get("speakers") or {}).items():
+        v = v or {}
+        sug = v.get("suggested")
+        speakers[k] = {**{a: b for a, b in v.items() if a not in ("suggested", "dismissed")},
+                       **({"suggested": sug} if sug and sug.get("person_id") not in gone else {}),
+                       "dismissed": [p for p in v.get("dismissed") or [] if p not in gone]}
     return {**t, "speakers": _speakers_map(speakers, t["segments"])}
 
 
@@ -271,7 +359,7 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
     """화자 편집. 원본은 건드리지 않고 새 전사를 돌려준다. 잘못된 인자는 ValueError.
 
     rename LABEL NAME   이름 지정 (빈 문자열이면 이름 지움). 목소리 제안은 지운다 (앱의 '확정' = 제안된 이름으로 rename)
-    dismiss LABEL       목소리 제안 지우기 ('아님')
+    dismiss LABEL       목소리 제안 지우기 ('아님'). 그 사람은 이 화자에 다시 제안하지 않는다 (speakers[LABEL].dismissed)
     set SEGMENT LABEL   세그먼트 화자 변경. LABEL이 new면 다음 라벨(S4 등)을 만든다
     merge SRC DST       SRC 화자의 세그먼트를 모두 DST로 옮기고 SRC를 없앤다"""
     t = copy.deepcopy(t)
@@ -284,10 +372,14 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
         return label
 
     if op == "rename" and len(args) == 2:
-        speakers[known(args[0])] = {"name": _clean_name(args[1])}
+        label = known(args[0])
+        speakers[label] = {**{k: v for k, v in (speakers[label] or {}).items() if k == "dismissed"}, "name": _clean_name(args[1])}
     elif op == "dismiss" and len(args) == 1:
         label = known(args[0])
-        speakers[label] = {"name": (speakers[label] or {}).get("name")}
+        cur = speakers[label] or {}
+        now = (cur.get("suggested") or {}).get("person_id")
+        refused = [*(cur.get("dismissed") or []), *([now] if now else [])]
+        speakers[label] = {"name": cur.get("name"), "dismissed": list(dict.fromkeys(refused))}
     elif op == "set" and len(args) == 2:
         seg = next((s for s in t["segments"] if s["id"] == args[0]), None)
         if seg is None:
@@ -306,8 +398,12 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
         for seg in t["segments"]:
             if seg.get("speaker") == src:
                 seg["speaker"] = dst
-        if not (speakers[dst] or {}).get("name") and (speakers[src] or {}).get("name"):
-            speakers[dst] = {"name": speakers[src]["name"]}  # SRC의 목소리 제안은 SRC와 함께 사라진다
+        s_src, s_dst = speakers[src] or {}, speakers[dst] or {}
+        refused = list(dict.fromkeys([*(s_dst.get("dismissed") or []), *(s_src.get("dismissed") or [])]))  # 합친 참석자는 둘의 거절을 모두 이어받는다
+        if not s_dst.get("name") and s_src.get("name"):
+            speakers[dst] = {"name": s_src["name"], "dismissed": refused}  # SRC의 목소리 제안은 SRC와 함께 사라진다
+        else:
+            speakers[dst] = {**s_dst, "dismissed": refused}
     else:
         raise ValueError(f"알 수 없는 화자 편집: {op} {' '.join(args)}")  # words-ok: 앱 계약 오류
     t["speakers"] = _speakers_map(speakers, t["segments"])
@@ -326,6 +422,7 @@ def seg_text(s: dict) -> str:
 def apply_text_edits(t: dict, edits: list) -> tuple[dict, int]:
     """세그먼트 텍스트 교정 [{id, text}]. 원문 text는 그대로 두고 corrected_text만 바꾼 새 전사와 바뀐 세그먼트 수를 돌려준다.
     단어 시각(words)이 있으면 바뀐 텍스트에 맞게 옮긴다(align.remap_words, 새 단어는 approx).
+    처음 고칠 때 words를 words_asr(선택 키)에 복사해 두고, 원문과 같아지면 words_asr로 words를 정확히 되돌린다.
     원문과 같아지면 교정을 지운다(null). 공백·줄바꿈은 한 칸으로 줄이고 제어 문자는 뺀다(one_line).
     없는 id·빈 텍스트·잘못된 형식이 하나라도 있으면 아무것도 바꾸지 않고 ValueError."""
     t = copy.deepcopy(t)
@@ -346,8 +443,13 @@ def apply_text_edits(t: dict, edits: list) -> tuple[dict, int]:
     for seg, text in plan:
         new = None if text == one_line(seg["text"]) else text
         if seg.get("corrected_text") != new:
+            if seg.get("corrected_text") is None and seg.get("words") is not None:
+                seg["words_asr"] = copy.deepcopy(seg["words"])  # 처음 고치기 직전의 정렬 결과. 원문으로 되돌리면 그대로 복원한다
             seg["corrected_text"] = new
             seg["words"] = remap_words(seg.get("words"), seg_text(seg), seg["start"], seg["end"])  # 단어 = 표시 텍스트 공백 토큰 (불변식)
+            saved = seg.pop("words_asr", None) if new is None else None
+            if saved is not None and [w["text"] for w in saved] == seg_text(seg).split():
+                seg["words"] = saved  # 원문으로 돌아왔다: 추정(approx)한 시각 대신 처음 정렬한 단어 시각
             changed.add(seg["id"])
     return t, len(changed)
 

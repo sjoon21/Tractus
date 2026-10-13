@@ -35,6 +35,11 @@ import {
   ERROR_TEXT,
   APP_ERROR,
   errorView,
+  liveHaltView,
+  splitMessage,
+  VOICE_MODEL_MISSING,
+  VOICE_MODEL_SETUP,
+  voiceModelReady,
   stderrTail,
   JOB_ERROR,
   statusLine,
@@ -226,8 +231,32 @@ describe("jobReduce", () => {
     expect(errorView("키 없음", "unknown_code", JOB_ERROR.summarize)).toEqual({ text: "요약하지 못했습니다", detail: "키 없음" });
     expect(errorView("답변을 받지 못했습니다 (종료 코드 1)", null, JOB_ERROR.ask)).toEqual({ text: "답변을 받지 못했습니다 (종료 코드 1)", detail: null });
     expect(errorView(null, null, JOB_ERROR.align)).toEqual({ text: "단어 싱크를 맞추지 못했습니다", detail: null });
-    const spawn = "Tractus 엔진을 실행할 수 없습니다. 설정에서 tractus 실행 파일 경로를 확인하세요 (/x/tractus): 없음";
+    const spawn = "Tractus 엔진을 실행할 수 없습니다. 설정에서 tractus 실행 파일 경로를 확인하세요 (/x/tractus)";
     expect(errorView(spawn, APP_ERROR, JOB_ERROR.summarize)).toEqual({ text: spawn, detail: null });
+  });
+
+  test("errorView: 앱 오류의 OS 문구(둘째 줄부터)는 문장이 아니라 '자세히'로 간다", () => {
+    const e = errorView(`${"Tractus 엔진을 실행할 수 없습니다. 설정에서 tractus 실행 파일 경로를 확인하세요 (/x/tractus)"}\nNo such file or directory (os error 2)`, APP_ERROR, JOB_ERROR.summarize);
+    expect(e.text).not.toContain("os error");
+    expect(e.detail).toBe("No such file or directory (os error 2)");
+    expect(splitMessage("한 줄")).toEqual({ text: "한 줄", detail: null });
+    expect(splitMessage("문장\n둘째\n셋째\n")).toEqual({ text: "문장", detail: "둘째\n셋째" });
+  });
+
+  test("liveHaltView: 메모리 부족은 '일시 중지' 없이 그 문장만, 그 밖에는 일시 중지 + 코드 문장", () => {
+    expect(liveHaltView({ errorCode: "live_low_memory" })).toEqual({ text: ERROR_TEXT.live_low_memory, note: null });
+    expect(liveHaltView({ errorCode: "live_failed" })).toEqual({ text: JOB_ERROR.live, note: ERROR_TEXT.live_failed });
+    expect(liveHaltView({ errorCode: null })).toEqual({ text: JOB_ERROR.live, note: null });
+    expect(ERROR_TEXT.live_low_memory).not.toMatch(/--force|터미널/); // 앱에서 억지로 켜는 길은 없다
+  });
+
+  test("voiceModelReady: model_present가 false일 때만 막는다 (키가 없으면 쓸 수 있다고 본다)", () => {
+    expect(voiceModelReady({ model_present: false })).toBe(false);
+    expect(voiceModelReady({ model_present: true })).toBe(true);
+    expect(voiceModelReady({})).toBe(true);
+    expect(voiceModelReady(null)).toBe(true);
+    expect(VOICE_MODEL_MISSING).toMatch(/파일이 없어 목소리를 등록할 수 없습니다/);
+    expect(VOICE_MODEL_SETUP).toContain("3dspeaker-campplus-zh-en");
   });
 });
 
@@ -581,7 +610,7 @@ describe("내보내기 (5.6)", () => {
 
 // ── Phase 6.1·6.2: 단어 타이밍, 가라오케, 단어 클릭 ──
 
-import { clickSeekTime, tokenOffsets, usableWords, wordIndexAt, type Word } from "./lib";
+import { clickSeekTime, MIN_WORD_SPAN, tokenOffsets, usableWords, wordClock, wordIndexAt, type Word } from "./lib";
 
 describe("단어 타이밍", () => {
   const words: Word[] = [
@@ -598,6 +627,58 @@ describe("단어 타이밍", () => {
     expect(wordIndexAt(words, 10.5)).toBe(1);
     expect(wordIndexAt(words, 99)).toBe(2);
     expect(wordIndexAt([], 1)).toBe(-1);
+  });
+
+  test("wordIndexAt: 시작이 같은 단어는 다음 다른 시작까지를 나눠 차례로 칠한다 (앞 단어도 칠해진다)", () => {
+    const tie: Word[] = [
+      { text: "a", start: 1, end: 1.2 },
+      { text: "b", start: 1, end: 1.2 },
+      { text: "c", start: 2, end: 2.4 },
+    ];
+    expect(wordIndexAt(tie, 0.9)).toBe(-1);
+    expect(wordIndexAt(tie, 1)).toBe(0);
+    expect(wordIndexAt(tie, 1.49)).toBe(0);
+    expect(wordIndexAt(tie, 1.5)).toBe(1);
+    expect(wordIndexAt(tie, 1.99)).toBe(1);
+    expect(wordIndexAt(tie, 2)).toBe(2);
+    // 세 단어가 한 시각에 몰려도 순서대로 하나씩
+    const triple: Word[] = [0, 1, 2, 3].map((i) => ({ text: `w${i}`, start: i < 3 ? 5 : 6, end: 5 }));
+    expect([5, 5.34, 5.67, 6].map((t) => wordIndexAt(triple, t))).toEqual([0, 1, 2, 3]);
+  });
+
+  test("wordIndexAt: 길이 0인 단어와 마지막 단어도 MIN_WORD_SPAN만큼은 칠해진다", () => {
+    const zero: Word[] = [
+      { text: "a", start: 3, end: 3 },
+      { text: "b", start: 3, end: 3 },
+    ];
+    const c = wordClock(zero);
+    expect(c.end).toBeCloseTo(3 + 2 * MIN_WORD_SPAN);
+    expect(wordIndexAt(zero, 3)).toBe(0);
+    expect(wordIndexAt(zero, 3 + MIN_WORD_SPAN)).toBe(1);
+    expect(c.end - c.starts[1]).toBeGreaterThanOrEqual(MIN_WORD_SPAN - 1e-9);
+    // 길이 0인 마지막 단어 하나
+    expect(wordClock([{ text: "z", start: 9, end: 9 }]).end).toBeCloseTo(9 + MIN_WORD_SPAN);
+    // 사이에 낀 길이 0인 단어는 다음 단어가 시작할 때까지 칠해진다 (깜빡이지 않는다)
+    const mid: Word[] = [{ text: "a", start: 1, end: 1 }, { text: "b", start: 1.5, end: 1.9 }];
+    expect(wordIndexAt(mid, 1.3)).toBe(0);
+  });
+
+  test("wordIndexAt: 시각은 오름차순으로 단조, 큰 입력도 선형 탐색과 같다 (이진 탐색)", () => {
+    const big: Word[] = Array.from({ length: 20_000 }, (_, i) => ({ text: `w${i}`, start: Math.floor(i / 2) * 0.3, end: Math.floor(i / 2) * 0.3 }));
+    const { starts } = wordClock(big);
+    expect(starts.every((v, i) => i === 0 || v >= starts[i - 1])).toBe(true);
+    expect(wordClock(big)).toBe(wordClock(big)); // 캐시
+    for (const t of [-1, 0, 0.05, 0.15, 777.7, 1e9]) expect(wordIndexAt(big, t)).toBe(starts.findLastIndex((v) => v <= t));
+    const t0 = performance.now();
+    for (let i = 0; i < 20_000; i++) wordIndexAt(big, (i % 3000) * 1.7);
+    expect(performance.now() - t0).toBeLessThan(500);
+  });
+
+  test("clickSeekTime: 시작이 같은 둘째 단어는 칠해지기 시작하는 시각으로 이동한다", () => {
+    const tied: Word[] = [{ text: "가", start: 4, end: 4.1 }, { text: "나", start: 4, end: 4.1 }, { text: "다", start: 5, end: 5.2 }];
+    const s: Segment = { id: "s0002", start: 3.9, end: 6, text: "가 나 다", words: tied };
+    expect(clickSeekTime(s, 0)).toBe(4);
+    expect(clickSeekTime(s, 2)).toBeCloseTo(4.5);
   });
 
   test("tokenOffsets: 공백 토큰의 글자 위치 (연속 공백·앞뒤 공백)", () => {

@@ -27,6 +27,12 @@ export function deleteReduce(s: DeleteState, a: DeleteAction): DeleteState {
   }
 }
 
+/** 삭제를 기다리는 노트에 새 수정이 들어왔을 때 (저장 중인 수정은 끝까지 마친 뒤 지운다) */
+export const EDIT_BLOCKED = "노트를 삭제하는 중이라 지금은 수정할 수 없습니다";
+
+/** 사라진 노트를 가리키는 인용 칩의 설명 (칩은 눌러도 아무 일도 하지 않는다) */
+export const NOTE_GONE = "삭제된 노트입니다";
+
 /** 사이드바 '변환 대기 중인 녹음' 줄 이름. 예: `녹음 2026-10-07 14:05` */
 export const recordingLabel = (startedAt: string): string => `녹음 ${startedAt.slice(0, 10)} ${startedAt.slice(11, 16)}`;
 

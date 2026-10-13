@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, errDetail, errText, type McpStatus, type Settings, type VoiceList, type VoicePerson } from "./api";
 import { ErrorDetail } from "./ErrorDetail";
+import { onIndexed } from "./indexer";
 import { recMode, statusLine, withRecMode } from "./lib";
 
 const FIELDS: { key: keyof Omit<Settings, "fake_recorder" | "rec_mode" | "live_captions">; label: string; hint: string }[] = [
@@ -13,18 +14,32 @@ const FIELDS: { key: keyof Omit<Settings, "fake_recorder" | "rec_mode" | "live_c
 export function SettingsView({ onSaved }: { onSaved: () => void }) {
   const [s, setS] = useState<Settings | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [msgDetail, setMsgDetail] = useState<string | null>(null); // 저장 실패의 원래 문구(OS 사유)
   const [status, setStatus] = useState<McpStatus | { text: string; detail: string | null } | null>(null);
 
   useEffect(() => {
-    api.getSettings().then(setS, (e) => setMsg(errText(e)));
+    api.getSettings().then(setS, (e) => {
+      setMsg(errText(e));
+      setMsgDetail(errDetail(e));
+    });
   }, []);
+
+  // 스마트 검색 상태를 열어 둔 채로 문장을 고쳐 백그라운드 갱신이 끝나면 그 줄을 조용히 새로 읽는다
+  const statusShown = useRef(false);
+  statusShown.current = status !== null;
+  useEffect(() => onIndexed(() => statusShown.current && void api.status().then(setStatus, () => {})), []);
 
   const checkStatus = () => {
     setStatus({ text: "확인 중…", detail: null });
     api.status().then(setStatus, (e) => setStatus({ text: errText(e), detail: errDetail(e) }));
   };
 
-  if (!s) return <p className="page-loading">{msg ?? "불러오는 중…"}</p>;
+  if (!s) return (
+      <div className="page-loading">
+        <p>{msg ?? "불러오는 중…"}</p>
+        <ErrorDetail detail={msgDetail} />
+      </div>
+    );
 
   return (
     <section className="settings" aria-labelledby="settings-title">
@@ -38,9 +53,11 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
             const latest = await api.getSettings();
             await api.saveSettings(withRecMode(s, recMode(latest.rec_mode)));
             setMsg("저장했습니다.");
+            setMsgDetail(null);
             onSaved();
           } catch (err) {
             setMsg(errText(err));
+            setMsgDetail(errDetail(err));
           }
         }}
       >
@@ -72,6 +89,7 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
             스마트 검색 상태
           </button>
           {msg && <span className="field-hint">{msg}</span>}
+          <ErrorDetail detail={msgDetail} />
         </div>
       </form>
 

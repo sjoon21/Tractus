@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, noteTitle, recordingLabel, type DeleteTarget } from "./remove";
+import { EDIT_BLOCKED, NOTE_GONE, deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, noteTitle, recordingLabel, type DeleteTarget } from "./remove";
 
 const note: DeleteTarget = { kind: "note", id: "01ABC", title: "3분기 예산", dir: "/Users/me/Tractus/meetings/2026-10-08_3분기_예산_01ABC" };
 const rec: DeleteTarget = { kind: "recording", dir: "/Users/me/Tractus/recordings/01REC", startedAt: "2026-10-07T14:05:12+09:00" };
@@ -76,4 +76,9 @@ describe("toasts", () => {
     });
     expect(deleteFailure(note, "")).toEqual({ text: "‘3분기 예산’ 노트를 삭제하지 못했습니다", detail: null });
   });
+});
+
+test("삭제 관련 문구는 WORDS.md 문장이다 (금지어 없음)", () => {
+  expect(NOTE_GONE).toBe("삭제된 노트입니다");
+  expect(EDIT_BLOCKED).toBe("노트를 삭제하는 중이라 지금은 수정할 수 없습니다");
 });

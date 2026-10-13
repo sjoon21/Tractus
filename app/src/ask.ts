@@ -119,6 +119,12 @@ export function citeTarget(
   return t === undefined ? null : { meetingId, segId: cite.segId, t };
 }
 
+/**
+ * 인용이 가리키는 노트가 지금 노트 목록에 없는가 (삭제되었다). `known`은 앱이 읽은 노트 ID 목록이고, 아직 못 읽었으면 null → 판단하지 않는다.
+ * 전체 범위 질문은 답을 쓰는 동안 노트가 삭제될 수 있다: 칩은 오류 없이 눌러도 아무 일도 하지 않게 하고 이유를 보여 준다
+ */
+export const isNoteGone = (known: ReadonlySet<string> | null | undefined, meetingId: string): boolean => !!known && !known.has(meetingId);
+
 // ── 대화 기록: stdin의 history. 코어도 자르지만 보내는 양을 줄이려고 앱에서도 자른다 ──
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };

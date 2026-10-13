@@ -1,6 +1,31 @@
 // 화자 표시·편집 (docs/desktop.md §2.1). 편집은 전부 코어(`tractus speakers`)가 하고 앱은 고친 회의를 다시 받는다.
-import { memo, useLayoutEffect, useRef, useState } from "react";
-import { fmtTime, renameRequest, SPEAKER_INKS, suggestionText, type Segment, type SpeakerStat } from "./lib";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { api } from "./api";
+import { ErrorDetail } from "./ErrorDetail";
+import { fmtTime, renameRequest, SPEAKER_INKS, suggestionText, VOICE_MODEL_MISSING, VOICE_MODEL_SETUP, voiceModelReady, type Segment, type SpeakerStat } from "./lib";
+
+/** 목소리 인식 파일을 쓸 수 있는지 한 번 물어 두고 잠시 기억한다 (코어를 띄우는 일이라 이름 바꾸기를 열 때마다 묻지 않는다). 읽지 못하면 쓸 수 있다고 본다 */
+const VOICE_MODEL_TTL_MS = 30_000;
+let voiceModelSeen: { at: number; ready: boolean } | null = null;
+
+function useVoiceModelReady(): boolean {
+  const [ready, setReady] = useState(voiceModelSeen?.ready ?? true);
+  useEffect(() => {
+    if (voiceModelSeen && Date.now() - voiceModelSeen.at < VOICE_MODEL_TTL_MS) return setReady(voiceModelSeen.ready);
+    let alive = true;
+    api.voicesList().then(
+      (l) => {
+        voiceModelSeen = { at: Date.now(), ready: voiceModelReady(l) };
+        if (alive) setReady(voiceModelSeen.ready);
+      },
+      () => {}, // 알 수 없으면 그대로 둔다: 등록은 코어가 한 번 더 거절한다
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return ready;
+}
 
 /** 화자 색 (SpeakerStat.slot). 화자 미상이면 무채색. 슬롯 8..15는 같은 잉크에 속 빈 점(--spk-fill)·빗금 막대(--spk-bar).
  *  세 변수를 늘 함께 정한다: 중첩된 요소가 바깥 화자의 표시를 물려받지 않게 */
@@ -65,8 +90,9 @@ export function RenameForm({
   const [remember, setRemember] = useState(false);
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const modelReady = useVoiceModelReady();
   const submit = () => {
-    const r = renameRequest(input.current?.value ?? "", remember, consent);
+    const r = renameRequest(input.current?.value ?? "", modelReady && remember, consent);
     if ("error" in r) setError(r.error);
     else onSubmit(r.name, r.remember);
   };
@@ -94,7 +120,8 @@ export function RenameForm({
       <label className="spk-check">
         <input
           type="checkbox"
-          checked={remember}
+          checked={modelReady && remember}
+          disabled={!modelReady}
           onChange={(e) => {
             setRemember(e.target.checked);
             setError(null);
@@ -102,7 +129,13 @@ export function RenameForm({
         />
         이 참석자 목소리 등록 (다음 녹음에서 자동 인식)
       </label>
-      {remember && (
+      {!modelReady && (
+        <p className="spk-check-note" role="status">
+          {VOICE_MODEL_MISSING}
+          <ErrorDetail detail={VOICE_MODEL_SETUP} />
+        </p>
+      )}
+      {modelReady && remember && (
         <label className="spk-check is-consent">
           <input
             type="checkbox"

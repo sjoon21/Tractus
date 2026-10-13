@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 from test_cli import env, events, fake_asr  # noqa: F401 — pytest fixture
 from tractus import cli
-from tractus.align import MAX_SLICE_S, SR, Aligner, align_segments, remap_words, tokenize
+from tractus.align import MAX_SLICE_S, SR, Aligner, align_segments, is_approximate, remap_words, spread, tokenize
 from tractus.store import apply_text_edits, save_transcript, seg_text
 
 
@@ -88,21 +88,48 @@ def test_align_segments_uses_display_text_absolute_times_and_does_not_mutate():
     segs = [seg(1, 1.0, 3.0, "원문", corrected_text="고친 문장"), seg(2, 4.0, 4.6, "가 나 다"), seg(3, 5.0, 6.0, "짧음")]
     before = json.dumps(segs)
     progress = []
-    out, aligned, failed = align_segments(Aligner(FakeModel()), pcm, segs, on_progress=lambda n, total: progress.append((n, total)))
+    out, aligned, failed, approximate = align_segments(Aligner(FakeModel()), pcm, segs, on_progress=lambda n, total: progress.append((n, total)))
     assert json.dumps(segs) == before and out is not segs
-    assert (aligned, failed) == (3, 0) and progress == [(1, 3), (2, 3), (3, 3)]
+    assert (aligned, failed, approximate) == (3, 0, 0) and progress == [(1, 3), (2, 3), (3, 3)]
     assert out[0]["words"] == [{"text": "고친", "start": 1.0, "end": 1.4}, {"text": "문장", "start": 1.5, "end": 1.9}]
     assert out[1]["words"][-1] == {"text": "다", "start": 4.6, "end": 4.6}  # 세그먼트 끝에서 자른다
     for s in out:
         check_words(s)
 
 
-def test_align_segments_marks_failures_and_respects_only():
+def test_align_segments_spreads_words_evenly_with_approx_when_the_model_cannot_place_them():
     pcm = np.zeros(4 * SR, np.float32)
     done = [{"text": "그대로", "start": 0.0, "end": 0.5}]
     segs = [seg(1, 0.0, 1.0, "그대로", words=done), seg(2, 1.0, 2.0, "가 나")]
-    out, aligned, failed = align_segments(Aligner(FakeModel(extra=1)), pcm, segs, only={"s0002"})
-    assert out[0]["words"] == done and out[1]["words"] is None and (aligned, failed) == (0, 1)
+    out, aligned, failed, approximate = align_segments(Aligner(FakeModel(extra=1)), pcm, segs, only={"s0002"})  # 단어 수 불일치
+    assert out[0]["words"] == done and (aligned, failed, approximate) == (0, 0, 1)
+    assert out[1]["words"] == [{"text": "가", "start": 1.0, "end": 1.5, "approx": True}, {"text": "나", "start": 1.5, "end": 2.0, "approx": True}]
+    check_words(out[1])
+    assert is_approximate(out[1]["words"]) and not is_approximate(done) and not is_approximate(None)
+
+
+def test_align_segments_one_token_segment_with_garbage_times_gets_one_approx_word():
+    pcm = np.zeros(10 * SR, np.float32)
+    segs = [seg(1, 2.0, 5.0, "네"), seg(2, 5.0, 6.0, "가 나", words=None)]
+    model = FakeModel(spans=[(0.0, 0.0)])  # 토큰 하나, 길이 0 (쓰레기 출력)
+    out, aligned, failed, approximate = align_segments(Aligner(model), pcm, segs, only={"s0001"})
+    assert out[0]["words"] == [{"text": "네", "start": 2.0, "end": 5.0, "approx": True}] and (aligned, failed, approximate) == (0, 0, 1)
+    assert out[1] is segs[1]
+    check_words(out[0])
+
+
+def test_align_segments_counts_empty_text_as_failed_and_spreads_over_long_slices():
+    pcm = np.zeros(int((MAX_SLICE_S + 5) * SR), np.float32)
+    segs = [seg(1, 0.0, 1.0, "   "), seg(2, 0.0, MAX_SLICE_S + 3, "가 나 다")]
+    out, aligned, failed, approximate = align_segments(Aligner(FakeModel()), pcm, segs)
+    assert out[0]["words"] is None and out[1]["words"][-1]["end"] == MAX_SLICE_S + 3
+    assert (aligned, failed, approximate) == (0, 1, 1)
+    check_words(out[1])
+
+
+def test_spread_is_evenly_spaced_and_keeps_text_tokens():
+    assert spread("a b c d", 2.0) == [{"text": t, "start": i * 0.5, "end": (i + 1) * 0.5, "approx": True} for i, t in enumerate("abcd")]
+    assert spread("", 2.0) == [] and spread("가", 0.0) == [{"text": "가", "start": 0.0, "end": 0.0, "approx": True}]
 
 
 # ── 편집 뒤 시각 옮기기 ───────────────────────────────────────────────
@@ -244,16 +271,16 @@ def test_align_command_fills_missing_words_then_skips(env, fake_asr, fake_aligne
     ref = t["meeting_id"][-6:]
     r = align_cmd(ref)
     assert r.exit_code == 0, r.output
-    assert json.loads(r.stdout) == {"aligned": 3, "failed": 0, "skipped": 0}
+    assert json.loads(r.stdout) == {"aligned": 3, "approximate": 0, "failed": 0, "skipped": 0}
     _, t = _meeting(env)
     for s in t["segments"]:
         check_words(s)
-    assert json.loads(align_cmd(ref).stdout) == {"aligned": 0, "failed": 0, "skipped": 3}
+    assert json.loads(align_cmd(ref).stdout) == {"aligned": 0, "approximate": 0, "failed": 0, "skipped": 3}
     assert len(fake_aligner.calls) == 3
     forced = align_cmd(ref, "--force", "--progress-json")
     ev = events(forced.stdout)
     assert [e["stage"] for e in ev if e["event"] == "stage"] == ["decode", "align"]
-    assert ev[-1] == {"event": "done", "meeting_id": t["meeting_id"], "meeting_dir": str(d), "aligned": 3, "failed": 0, "skipped": 0}
+    assert ev[-1] == {"event": "done", "meeting_id": t["meeting_id"], "meeting_dir": str(d), "aligned": 3, "approximate": 0, "failed": 0, "skipped": 0}
 
 
 def test_align_command_keeps_edits_made_during_alignment(env, fake_asr, monkeypatch):  # noqa: F811
@@ -271,11 +298,51 @@ def test_align_command_keeps_edits_made_during_alignment(env, fake_asr, monkeypa
     monkeypatch.setattr(cli, "load_aligner", lambda models: EditingAligner(FakeModel()))
     r = align_cmd(t["meeting_id"])
     assert r.exit_code == 0, r.output
-    assert json.loads(r.stdout) == {"aligned": 2, "failed": 0, "skipped": 1}
+    assert json.loads(r.stdout) == {"aligned": 2, "approximate": 0, "failed": 0, "skipped": 1}
     _, t = _meeting(env)
     assert t["segments"][1]["corrected_text"] == "앱에서 고침" and t["segments"][1]["words"] is None
     check_words(t["segments"][0])
     check_words(t["segments"][2])
+
+
+def test_align_command_reports_approximate_segments_and_force_retries_them(env, fake_asr, monkeypatch):  # noqa: F811
+    _, wav = env
+    assert CliRunner().invoke(cli.app, ["transcribe", str(wav), "--no-align"]).exit_code == 0
+    d, t = _meeting(env)
+    monkeypatch.setattr(cli, "load_aligner", lambda models: Aligner(FakeModel(spans=[(0.0, 0.0)] * 5)))  # 모두 길이 0 → 추정
+    r = align_cmd(t["meeting_id"], "--progress-json")
+    assert r.exit_code == 0, r.output
+    done = events(r.stdout)[-1]
+    assert (done["aligned"], done["approximate"], done["failed"], done["skipped"]) == (0, 3, 0, 0)
+    _, t = _meeting(env)
+    for s in t["segments"]:
+        check_words(s)
+        assert is_approximate(s["words"])
+    assert json.loads(align_cmd(t["meeting_id"]).stdout) == {"aligned": 0, "approximate": 0, "failed": 0, "skipped": 3}  # words가 있으니 건너뜀
+    monkeypatch.setattr(cli, "load_aligner", lambda models: Aligner(FakeModel()))
+    assert json.loads(align_cmd(t["meeting_id"], "--force").stdout)["aligned"] == 3  # --force가 다시 맞춘다
+    _, t = _meeting(env)
+    assert not any(is_approximate(s["words"]) for s in t["segments"])
+
+
+def test_save_words_waits_for_the_note_lock(env, fake_asr, fake_aligner):  # noqa: F811
+    import threading
+
+    from tractus.store import note_lock
+
+    _, wav = env
+    assert CliRunner().invoke(cli.app, ["transcribe", str(wav), "--no-align"]).exit_code == 0
+    d, t = _meeting(env)
+    segs, *_ = align_segments(Aligner(FakeModel()), np.zeros(10 * SR, np.float32), t["segments"])
+    result = {}
+    worker = threading.Thread(target=lambda: result.update(cli._save_words(d, segs, {s["id"] for s in segs})))
+    with note_lock(d):  # 다른 쓰기(앱 편집 등)가 잠금을 쥐고 있는 동안
+        worker.start()
+        worker.join(0.3)
+        assert worker.is_alive() and not result
+        assert all(s["words"] is None for s in json.loads((d / "transcript.json").read_text(encoding="utf-8"))["segments"])
+    worker.join(5)
+    assert result == {"aligned": 3, "approximate": 0, "failed": 0, "skipped": 0}
 
 
 def test_align_command_without_model_explains_download(env, fake_asr):  # noqa: F811
@@ -308,8 +375,8 @@ def test_real_aligner_on_synthetic_korean(tmp_path):
     aligner = load_aligner(MODELS)
     assert aligner is not None, f"{MODELS}/qwen3-forcedaligner-0.6b-8bit 필요"
     segs = [seg(1, 0.0, round(len(pcm) / SR, 2), text)]
-    out, aligned, failed = align_segments(aligner, pcm, segs)
-    assert (aligned, failed) == (1, 0)
+    out, aligned, failed, approximate = align_segments(aligner, pcm, segs)
+    assert (aligned, failed, approximate) == (1, 0, 0)
     check_words(out[0])
     words = out[0]["words"]
     assert words[-1]["end"] > words[0]["start"] and sum(w["end"] > w["start"] for w in words) >= len(words) // 2

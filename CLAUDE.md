@@ -46,7 +46,8 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - `mlx_audio.stt.utils.load`로 프로세스 안에서 돈다. ASR 모델을 내린 뒤(`_free_mlx`) 세그먼트마다 1회 돌리고, 끝나면 내린 뒤 색인한다.
 - **soynlp(LGPL-3) 금지.** mlx-audio의 `tokenize_korean`이 soynlp를 불러오므로 `align.Aligner`가 `aligner_processor.tokenize_korean`을 `align.tokenize`(공백 토큰마다 하나)로 바꿔 끼우고 `language="Korean"`으로 부른다. `tokenize_space_lang`은 한자를 글자마다 나눠 단어 수가 어긋나므로 쓰지 않는다.
 - **불변식:** `words`가 null이 아니면 `words[k]["text"] == seg_text(s).split()[k]`이다. 텍스트를 바꾸는 코드는 `align.remap_words`로 `words`를 함께 옮긴다(`store.apply_text_edits`).
-- 모델이 없거나 실패하면 `words`는 null이고 `aligner_missing`/`aligner_failed` 경고만 낸다. `tractus align <회의>`가 나중에 채운다.
+- 모델이 없거나 실패하면(`aligner_missing`/`aligner_failed`) 변환 직후 `words`는 null이다. `tractus align <회의>`가 나중에 채운다. 모델이 단어 시각을 못 낸 세그먼트(길이 0, 단어 수 불일치)는 null 대신 단어를 고르게 편 `approx: true` 추정이 되고, `align`은 이를 건너뛰고 `--force`가 다시 맞춘다. 단어 스키마에는 필수 키를 더하지 않는다.
+- **텍스트를 처음 고칠 때 `words`를 `words_asr`(선택 키)에 복사하고, 원문으로 되돌리면 그 시각을 그대로 복원한다.** `words_asr`를 읽는 쪽은 `apply_text_edits`뿐이다.
 
 ## 목소리 프로필 (Phase 7.1, 2026-10-07)
 
@@ -78,6 +79,8 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 
 ## 데이터와 저장소 규칙
 
+- **이미 있는 transcript.json을 고쳐 쓰는 코드는 모두 `store.note_lock(dir)`(`<노트>/.lock`, `fcntl.flock`) 안에서 읽고 쓴다.** 보통은 `store.edit_transcript(dir, fn)`을 쓴다(읽기→`fn`→바뀌었을 때만 쓰기). 오래 걸리는 계산(임베딩·정렬)은 잠금 밖에서 하고, 끝난 뒤 최신 노트를 다시 읽어 합친다. 새 노트의 첫 transcript.json(`write_transcript`)만 예외다. 앱은 transcript.json을 직접 쓰지 않고 CLI를 부른다.
+- 끝난 노트(transcript.json 있음)에 남은 `.job.json`·`.chunks.jsonl`은 transcript.json이 이긴다(`find_job`이 지운다). 앱의 삭제 검사도 같은 규칙이다.
 - 다음은 커밋하지 않는다(`.gitignore` 처리됨):
   - `models/`(가중치), `data/`(데이터셋)
   - `bench/results/raw/`(전사 원문), `bench/cache/`
@@ -103,9 +106,9 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `env.py` | `.env` / `.env.local` 로더 |
 | `paths.py` | `TRACTUS_HOME`, `TRACTUS_MODELS_DIR` 해석 (CLI·MCP 공용) |
 | `embed.py` | Qwen3-Embedding-0.6B (공식 가중치 bf16, mlx-lm), `LazyEmbedder` |
-| `index.py` | SQLite FTS5 음절 bigram + sqlite-vec, 증분 동기화, strict 우선 + 가중 RRF |
+| `index.py` | SQLite FTS5 음절 bigram + sqlite-vec, 증분 동기화(`stats()['pending']` = 지금 모델로 벡터가 없는 청크), strict 우선 + 가중 RRF |
 | `mcp_server.py` | MCP 서버 7개 도구 (`build_server(home, embedder)`) |
-| `cli.py` | `tractus transcribe`, `align`, `summarize`, `ask`, `index`, `search`, `speakers`, `voices`, `segments`, `glossary`, `export`, `mcp` |
+| `cli.py` | `tractus transcribe`, `align`, `summarize`, `ask`, `index`, `search`, `speakers`, `voices`(`list --json`은 `model_present` 포함), `segments`, `render`, `glossary`, `export`, `mcp` |
 
 환경변수는 `.env.example`에 모두 있다. 개발 중에는 저장소 루트의 `.env`(기본값)와 `.env.local`(API 키)을 CLI가 읽는다. 우선순위는 셸 > `.env.local` > `.env`.
 
@@ -126,7 +129,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - 공급자는 OpenAI 호환 API 키 방식만 쓴다. `claude -p`, `codex exec`, `agy`를 공급자로 붙이지 않는다(약관, ARCHITECTURE.md §0).
 - 모든 추출 항목은 근거 `segment_ids`가 필수다. 프롬프트·스키마를 바꾸면 `uv run pytest -m llm`으로 확인한다.
 - 화자는 자동 추정이다. owner에는 사용자가 이름을 붙인 화자만 쓰고 `S1` 같은 라벨은 쓰지 않는다. 프롬프트만으로는 새어 나와서 `summarize.clean_owners`가 null로 바꾼다.
-- **회의 질의(`ask`)는 원격 공급자로 질문, 최근 대화, 근거 세그먼트 텍스트만 보낸다.** 오디오·요약·근거 밖 전사는 보내지 않는다. 답의 인용은 `ask.finalize`가 근거와 대조해 없는 ID를 지운다. 프롬프트를 바꾸면 `uv run pytest -m llm`과 `bench/ask_eval.py`(가상 회의만)를 돌린다.
+- **회의 질의(`ask`)는 원격 공급자로 질문, 최근 대화, 근거 세그먼트 텍스트만 보낸다.** 오디오·요약·근거 밖 전사는 보내지 않는다. 답의 인용은 `ask.finalize`가 근거와 대조해 없는 ID를 지운다. 프롬프트를 바꾸면 `uv run pytest -m llm`과 `bench/ask_eval.py`(가상 회의만)를 돌린다. 전체 범위 질의는 단독 질문에 keyword 일치가 없으면 직전 사용자 질문 2개를 보탠 검색을 섞는다(`ask._hits`). `done`·`chat.json`의 `no_evidence`는 인용이 하나도 안 남았다는 뜻이다(거절 문장과 같은 말이 아니다).
 - **AI Hub 데이터의 전사를 원격 LLM에 보내지 않는다.** 테스트는 `tests/fixtures/sample_meeting.json`(가상 회의)만 쓴다.
 - API 키를 코드·로그·커밋·대화에 남기지 않는다. `.env.local`에만 둔다.
 

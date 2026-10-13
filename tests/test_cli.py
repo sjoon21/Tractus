@@ -444,7 +444,7 @@ def test_explicit_fluid_missing_falls_back_to_nemotron(env, fake_asr, fake_diar,
     home, wav = env
     monkeypatch.setattr(cli, "load_fluid", lambda models: None)
     _, diar, warns = transcribe_json(wav, "--diarizer", "fluid")
-    assert warns[0] == "fluid_missing" and [e["engine"] for e in diar] == ["nemotron"]
+    assert warns[:2] == ["fluid_short_clip", "fluid_missing"] and [e["engine"] for e in diar] == ["nemotron"]
     assert diarization(home)["diarization"]["model"] == "fake"
 
 
@@ -452,8 +452,25 @@ def test_explicit_fluid_failure_falls_back_to_nemotron(env, fake_asr, fake_diar,
     home, wav = env
     fake_fluid.fail = True
     _, diar, warns = transcribe_json(wav, "--diarizer", "fluid")
-    assert warns[0] == "diarizer_failed" and [e["engine"] for e in diar] == ["fluid", "nemotron"]
+    assert warns[:2] == ["fluid_short_clip", "diarizer_failed"] and [e["engine"] for e in diar] == ["fluid", "nemotron"]
     assert diarization(home)["diarization"]["model"] == "fake"
+
+
+def test_explicit_fluid_warns_on_clips_under_a_minute_but_still_runs_fluid(env, fake_asr, fake_diar, fake_fluid):
+    _, wav = env  # 8초
+    _, diar, warns = transcribe_json(wav, "--diarizer", "fluid")
+    assert warns[0] == "fluid_short_clip" and "diarizer_failed" not in warns and [e["engine"] for e in diar] == ["fluid"] and fake_fluid.calls == [None]  # 경고만, 엔진은 그대로
+
+
+def test_fluid_short_clip_warning_not_for_long_clips(env, fake_asr, fake_diar, fake_fluid, monkeypatch):
+    _, wav = env
+    monkeypatch.setattr(cli, "FLUID_MIN_CLIP_S", 5.0)  # 8초 클립이 문턱을 넘는다
+    assert "fluid_short_clip" not in transcribe_json(wav, "--diarizer", "fluid")[2]
+
+
+def test_auto_never_warns_about_short_clips(env, fake_asr, fake_diar, fake_fluid):
+    _, wav = env
+    assert "fluid_short_clip" not in transcribe_json(wav)[2]  # auto는 그대로 (8명을 다 써야 fluid로 간다)
 
 
 def test_explicit_nemotron_never_runs_fluid(env, fake_asr, fake_diar, fake_fluid, monkeypatch):
@@ -658,12 +675,15 @@ def test_transcribe_suggests_enrolled_voice_without_displaying_it(env, fake_asr,
     assert next(r for r in listed["speakers"] if r["label"] == label)["display"] == label
 
     assert speakers(d2.name[-6:], "dismiss", label).exit_code == 0
-    assert "suggested" not in json.loads((d2 / "transcript.json").read_text(encoding="utf-8"))["speakers"][label]
-    m = voices_cmd("match", d2.name[-6:])
+    sp = json.loads((d2 / "transcript.json").read_text(encoding="utf-8"))["speakers"]
+    assert "suggested" not in sp[label] and sp[label]["dismissed"] == [out["person_id"]]
+    m = voices_cmd("match", d2.name[-6:])  # 거절한 사람은 같은 참석자에 다시 제안하지 않는다 (다른 참석자에는 제안할 수 있다)
     assert m.exit_code == 0, m.output
-    assert json.loads(m.stdout) == {"suggested": 1}
+    sp = json.loads((d2 / "transcript.json").read_text(encoding="utf-8"))["speakers"]
+    assert "suggested" not in sp[label] and sp[label]["dismissed"] == [out["person_id"]]
+    assert json.loads(m.stdout) == {"suggested": 1} and sum("suggested" in v for v in sp.values()) == 1
     assert speakers(d2.name[-6:], "rename", label, "홍길동").exit_code == 0  # 앱의 '확정'
-    assert json.loads((d2 / "transcript.json").read_text(encoding="utf-8"))["speakers"][label] == {"name": "홍길동"}
+    assert json.loads((d2 / "transcript.json").read_text(encoding="utf-8"))["speakers"][label] == {"name": "홍길동", "dismissed": [out["person_id"]]}
     assert json.loads(voices_cmd("match", d2.name[-6:]).stdout) == {"suggested": 0}  # 확정된 화자·이미 쓰인 이름은 다시 제안하지 않는다
 
 
