@@ -15,6 +15,7 @@ use std::ffi::OsStr;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -514,6 +515,65 @@ async fn delete_meeting(state: State<'_, AppState>, id: String) -> Result<(), St
     Ok(())
 }
 
+/// ⌘Q 종료 흐름: 화면이 쓰던 메모를 저장하는 동안 종료를 미룬다. QUIT_ASKED는 한 번만 묻게, QUIT_READY는 미룬 종료를 통과시킨다
+static QUIT_ASKED: AtomicBool = AtomicBool::new(false);
+static QUIT_READY: AtomicBool = AtomicBool::new(false);
+/// 화면이 응답하지 않아도 이 시간 뒤에는 끝낸다
+const QUIT_WAIT: Duration = Duration::from_secs(3);
+
+/// 화면이 쓰던 메모를 저장했다: 미룬 종료를 이어 간다
+#[tauri::command]
+fn quit_ready(app: AppHandle) {
+    QUIT_READY.store(true, Ordering::SeqCst);
+    app.exit(0);
+}
+
+/// 종료를 한 번만 미루고 화면에 저장하라고 알린다. 3초 안에 quit_ready가 오지 않아도 끝낸다
+fn begin_quit(app: &AppHandle) {
+    if app.webview_windows().is_empty() {
+        QUIT_READY.store(true, Ordering::SeqCst);
+        return app.exit(0);
+    }
+    if QUIT_ASKED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let _ = app.emit("quit-requested", ());
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(QUIT_WAIT);
+        QUIT_READY.store(true, Ordering::SeqCst);
+        handle.exit(0);
+    });
+}
+
+/// 마지막 창이 닫혀 앱이 끝나려 할 때: 열린 창이 있으면 한 번 미룬다. 이미 통과시키기로 했거나 창이 없으면 그대로 둔다
+fn defer_exit(app: &AppHandle, api: &tauri::ExitRequestApi) {
+    if QUIT_READY.load(Ordering::SeqCst) || app.webview_windows().is_empty() {
+        return;
+    }
+    api.prevent_exit();
+    begin_quit(app);
+}
+
+/// macOS ⌘Q: 기본 메뉴의 종료 항목은 Cocoa `terminate:`라 ExitRequested를 거치지 않고 바로 끝난다(미룰 수 없다).
+/// 그래서 그 항목을 직접 만든 항목으로 바꿔, 눌렀을 때 begin_quit을 부른다. (Dock의 종료는 여전히 `terminate:`다)
+const QUIT_MENU_ID: &str = "quit-tractus";
+
+#[cfg(target_os = "macos")]
+fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{Menu, MenuItem, MenuItemKind};
+    let menu = Menu::default(app)?;
+    if let Some(MenuItemKind::Submenu(app_sub)) = menu.items()?.into_iter().next() {
+        // 기본 앱 메뉴의 마지막 항목이 종료다 (tauri 2.12.1 menu.rs)
+        if let Some(last) = app_sub.items()?.pop().filter(|k| matches!(k, MenuItemKind::Predefined(_))) {
+            app_sub.remove(&last)?;
+        }
+        let name = app.package_info().name.clone();
+        app_sub.append(&MenuItem::with_id(app, QUIT_MENU_ID, format!("Quit {name}"), true, Some("Cmd+Q"))?)?;
+    }
+    Ok(menu)
+}
+
 /// 변환하지 않은 녹음을 휴지통으로 옮긴다. 녹음 중이거나 변환 중인 폴더는 거절한다
 #[tauri::command]
 async fn delete_recording(state: State<'_, AppState>, dir: String) -> Result<(), String> {
@@ -720,6 +780,104 @@ fn index_outcome(exit: &Value) -> Result<bool, String> {
     }
 }
 
+/// 메모 본문 상한 (글자 수). 코어 `note save`와 같다
+const MEMO_BODY_MAX: usize = 200_000;
+/// 제목 길이 상한 (글자 수). 코어 `note title`과 같다
+const TITLE_MAX: usize = 120;
+
+/// 제목: 공백·줄바꿈은 한 칸으로 줄이고 앞뒤를 자른다 (코어 store.one_line). 1~120자. 화면이 먼저 거르므로 여기는 마지막 방어선이다
+fn clean_title(raw: &str) -> Result<String, String> {
+    let title = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    match title.chars().count() {
+        0 => Err("제목을 입력하세요.".into()),
+        n if n > TITLE_MAX => Err(format!("제목은 {TITLE_MAX}자까지 쓸 수 있습니다.")),
+        _ => Ok(title),
+    }
+}
+
+/// `tractus note new`. 제목이 없으면 코어가 `메모 HH:MM`으로 정한다. 있으면 stdin JSON으로 넘긴다
+fn note_new_args(title: Option<&str>) -> Result<(Vec<String>, Option<String>), String> {
+    let input = match title.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => Some(json!({ "title": clean_title(t)? }).to_string()),
+        None => None,
+    };
+    Ok((["note", "new"].map(String::from).to_vec(), input))
+}
+
+/// `tractus note save <노트>` 인수와 stdin JSON. 본문은 인수가 아니라 stdin으로 넘긴다 (길이·특수 문자 걱정 없이)
+fn note_save_args(id: &str, body: &str) -> Result<(Vec<String>, String), String> {
+    if !is_meeting_id(id) {
+        return Err(format!("잘못된 노트 ID: {id}"));
+    }
+    if body.chars().count() > MEMO_BODY_MAX {
+        return Err("메모는 200,000자까지 쓸 수 있습니다.".into());
+    }
+    Ok((["note", "save", id].map(String::from).to_vec(), json!({ "body": body }).to_string()))
+}
+
+/// `tractus note title <노트>` 인수와 stdin JSON
+fn note_title_args(id: &str, title: &str) -> Result<(Vec<String>, String, String), String> {
+    if !is_meeting_id(id) {
+        return Err(format!("잘못된 노트 ID: {id}"));
+    }
+    let title = clean_title(title)?;
+    Ok((["note", "title", id].map(String::from).to_vec(), json!({ "title": title }).to_string(), title))
+}
+
+/// 새 메모 노트. 코어가 폴더·transcript.json·검색 정보(단어 일치)까지 만든다
+#[derive(Serialize)]
+struct NoteNew {
+    meeting_id: String,
+}
+
+#[tauri::command]
+async fn note_new(state: State<'_, AppState>, title: Option<String>) -> Result<NoteNew, String> {
+    let s = state.settings();
+    let (args, input) = note_new_args(title.as_deref())?;
+    blocking(move || {
+        let v = stdout_json(&run_tractus(&s, &args, input.as_deref(), "메모를 만들지 못했습니다")?)?;
+        let meeting_id = v["meeting_id"].as_str().filter(|id| is_meeting_id(id)).ok_or("만든 메모를 찾지 못했습니다")?.to_string();
+        Ok(NoteNew { meeting_id })
+    })
+    .await
+}
+
+/// 메모 저장 결과: 코어가 만든 줄(대화) 수와 고친 노트
+#[derive(Serialize)]
+struct NoteSaved {
+    segments: u64,
+    meeting: meetings::MeetingDetail,
+}
+
+/// 메모 본문을 저장하고(코어가 대화·md·검색 정보를 고친다) 고친 노트를 돌려준다. 메모 노트는 본문을, 녹음 노트는 오른쪽 패널 메모 탭의 글을 저장한다 (코어가 노트 종류로 가른다).
+/// 노트를 처리 중으로 표시해 삭제가 기다리게 한다
+#[tauri::command]
+async fn note_save(state: State<'_, AppState>, id: String, body: String) -> Result<NoteSaved, String> {
+    let s = state.settings();
+    let (args, input) = note_save_args(&id, &body)?;
+    let guard = BusyGuard::new(&state.busy, &id);
+    blocking(move || {
+        let _guard = guard;
+        let segments = stdout_json(&run_tractus(&s, &args, Some(&input), "메모를 저장하지 못했습니다")?)?["segments"].as_u64().unwrap_or(0);
+        Ok(NoteSaved { segments, meeting: meetings::load(&s.home(), &id)? })
+    })
+    .await
+}
+
+/// 노트 제목을 바꾼다 (녹음·메모 모두). 폴더 이름은 그대로다. 코어가 돌려준 제목(없으면 보낸 제목)
+#[tauri::command]
+async fn note_title(state: State<'_, AppState>, id: String, title: String) -> Result<String, String> {
+    let s = state.settings();
+    let (args, input, sent) = note_title_args(&id, &title)?;
+    let guard = BusyGuard::new(&state.busy, &id);
+    blocking(move || {
+        let _guard = guard;
+        let v = stdout_json(&run_tractus(&s, &args, Some(&input), "제목을 바꾸지 못했습니다")?)?;
+        Ok(v["title"].as_str().map_or(sent, String::from))
+    })
+    .await
+}
+
 const EXPORT_FORMATS: &[&str] = &["txt", "md", "srt", "vtt", "csv", "docx", "bundle"];
 
 /// `tractus export`. 경로는 저장 대화상자가 고른 절대 경로이고, 덮어쓰기는 대화상자가 이미 물었으므로 --force
@@ -764,7 +922,15 @@ fn import_args(path: &Path) -> Result<Vec<String>, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(app_menu);
+    builder
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == QUIT_MENU_ID {
+                begin_quit(app);
+            }
+        })
         // 회의 오디오: media://localhost/<경로> (media.rs). 파일 읽기는 UI 스레드 밖에서
         .register_asynchronous_uri_scheme_protocol("media", |ctx, request, responder| {
             let home = ctx.app_handle().state::<AppState>().settings().home();
@@ -803,6 +969,9 @@ pub fn run() {
             glossary_add,
             index_refresh,
             export_meeting,
+            note_new,
+            note_save,
+            note_title,
             mcp_call,
             rec_start,
             rec_send,
@@ -812,6 +981,7 @@ pub fn run() {
             load_chat,
             delete_meeting,
             delete_recording,
+            quit_ready,
             llm_config,
             voices::voices_list,
             voices::voices_enroll,
@@ -820,6 +990,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Tauri 앱을 만들 수 없습니다")
         .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = &event {
+                defer_exit(app, api);
+            }
             // 앱을 닫으면 녹음을 정상 종료시킨다 (WAV 헤더 마무리). 실시간 자막은 저장할 것이 없으므로 바로 끝낸다
             if let tauri::RunEvent::Exit = event {
                 let state = app.state::<AppState>();
@@ -989,6 +1162,35 @@ mod tests {
         assert_eq!(t(&[" budget ", "", "-WTO"]).unwrap(), ["glossary", "add", "--", "budget", "-WTO"]);
         assert!(t(&["  "]).is_err());
         assert!(t(&["a\nb"]).is_err());
+    }
+
+    #[test]
+    fn note_command_args() {
+        // 새 메모: 제목이 없으면 stdin 없이 (코어가 `메모 HH:MM`), 있으면 한 줄로 줄여 JSON으로
+        assert_eq!(note_new_args(None).unwrap(), (vec!["note".to_string(), "new".into()], None));
+        assert_eq!(note_new_args(Some("  \n ")).unwrap().1, None);
+        let (_, input) = note_new_args(Some("  주간\n 아이디어 ")).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&input.unwrap()).unwrap(), json!({"title": "주간 아이디어"}));
+        assert!(note_new_args(Some(&"가".repeat(121))).is_err());
+
+        // 저장: 본문은 stdin JSON으로 그대로 (줄바꿈·따옴표·-- 포함)
+        let body = "첫 줄\n\n-- $(rm) \"따옴표\" 😀";
+        let (args, input) = note_save_args("01ABC", body).unwrap();
+        assert_eq!(args, ["note", "save", "01ABC"]);
+        assert_eq!(serde_json::from_str::<Value>(&input).unwrap(), json!({ "body": body }));
+        assert!(note_save_args("01ABC", "").is_ok(), "빈 메모도 저장한다");
+        assert!(note_save_args("../x", "a").is_err());
+        assert!(note_save_args("01ABC", &"가".repeat(200_000)).is_ok());
+        assert_eq!(note_save_args("01ABC", &"가".repeat(200_001)).unwrap_err(), "메모는 200,000자까지 쓸 수 있습니다.");
+
+        // 제목: 한국어·이모지는 글자 수로 센다 (코어 len과 같다), 빈 제목·너무 긴 제목은 문장으로 거절
+        let (args, input, title) = note_title_args("01ABC", " 회의 😀\t정리\n").unwrap();
+        assert_eq!((args, title.as_str()), (vec!["note".to_string(), "title".into(), "01ABC".into()], "회의 😀 정리"));
+        assert_eq!(serde_json::from_str::<Value>(&input).unwrap(), json!({"title": "회의 😀 정리"}));
+        assert!(note_title_args("01ABC", &"😀".repeat(120)).is_ok());
+        assert_eq!(note_title_args("01ABC", &"😀".repeat(121)).unwrap_err(), "제목은 120자까지 쓸 수 있습니다.");
+        assert_eq!(note_title_args("01ABC", " \n ").unwrap_err(), "제목을 입력하세요.");
+        assert!(note_title_args("a b", "x").is_err());
     }
 
     #[test]

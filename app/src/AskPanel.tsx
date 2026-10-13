@@ -4,11 +4,16 @@ import { listen } from "@tauri-apps/api/event";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { api, errFull, errText, type ChatEntry } from "./api";
 import { ErrorDetail } from "./ErrorDetail";
-import { answeredBy, answerParts, askReduce, citeTarget, isAsking, isNoteGone, sendNotice, START_ASK, trimHistory, turnsHistory, type AskEvent, type AskSource, type AskState, type LlmConfig } from "./ask";
+import { answeredBy, answerParts, askReduce, citeLabel, citeTarget, isAsking, isMemoCite, isNoteGone, isTaggedMemo, sendNotice, START_ASK, trimHistory, turnsHistory, type AskEvent, type AskSource, type AskState, type LlmConfig } from "./ask";
 import { APP_ERROR, errorView, fmtTime, isImeKey, JOB_ERROR } from "./lib";
+import { flushMemos } from "./memo";
 import { NOTE_GONE } from "./remove";
 
-export type AskScope = { kind: "meeting"; id: string; starts: Map<string, number> } | { kind: "global" };
+/**
+ * memoNote: 이 노트가 메모 노트인가. memoLines: 줄 ID → 본문의 줄 번호 (인용 칩 `n번째 줄`).
+ * 메모 노트는 대화가 곧 줄이고, 녹음 노트는 사용자가 적은 메모의 줄(`m0003`)이 들어 있다. 메모는 시각이 없다
+ */
+export type AskScope = { kind: "meeting"; id: string; starts: Map<string, number>; memoLines?: Map<string, number>; memoNote?: boolean } | { kind: "global" };
 type Turn = { id: string; question: string; state: AskState };
 type OnCite = (meetingId: string, segId: string, t: number) => void;
 
@@ -24,7 +29,7 @@ const STATUS: Partial<Record<AskState["phase"], string>> = { starting: "준비 �
  * notes: 지금 있는 노트의 ID들 (전체 범위 질문용). 목록에 없는 노트를 가리키는 인용 칩은 삭제된 노트로 보고 누를 수 없게 한다.
  * 목록이 바뀔 때마다 새로 판단하므로 답을 쓰는 사이에 지워진 노트도 따라간다. 아직 목록을 못 읽었으면 null
  */
-export function AskPanel({ scope, onCite, inputRef, notes }: { scope: AskScope; onCite: OnCite; inputRef?: React.RefObject<HTMLTextAreaElement | null>; notes?: ReadonlySet<string> | null }) {
+export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: AskScope; onCite: OnCite; inputRef?: React.RefObject<HTMLTextAreaElement | null>; notes?: ReadonlySet<string> | null; memoIds?: ReadonlySet<string> }) {
   const meetingId = scope.kind === "meeting" ? scope.id : null;
   const [turns, setTurns] = useState<Turn[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -72,9 +77,14 @@ export function AskPanel({ scope, onCite, inputRef, notes }: { scope: AskScope; 
     if (pinned.current) end.current?.scrollIntoView({ block: "end" });
   }, [turns]);
 
+  const flushing = useRef(false);
   const send = async () => {
     const question = draft.trim();
-    if (!question || running) return;
+    if (!question || running || flushing.current) return;
+    // 쓰던 메모를 먼저 저장한다 (질문이 저장된 글을 읽는다). 저장하지 못하면 묻지 않고 질문을 남겨 둔다 (오류는 편집기가 보인다)
+    flushing.current = true;
+    const saved = await flushMemos().finally(() => (flushing.current = false));
+    if (!saved) return;
     const job = crypto.randomUUID();
     const history = trimHistory(turnsHistory(turns));
     pinned.current = true;
@@ -109,7 +119,7 @@ export function AskPanel({ scope, onCite, inputRef, notes }: { scope: AskScope; 
       {loadError && <p className="inline-error ask-note">{loadError}</p>}
       <ol className="ask-log" aria-label="질문과 답변">
         {turns.map((t) => (
-          <TurnItem key={t.id} turn={t} scope={scope} onCite={onCite} notes={notes} />
+          <TurnItem key={t.id} turn={t} scope={scope} onCite={onCite} notes={notes} memoIds={memoIds} />
         ))}
       </ol>
       <div ref={end} aria-hidden />
@@ -165,7 +175,7 @@ export function AskPanel({ scope, onCite, inputRef, notes }: { scope: AskScope; 
   );
 }
 
-function TurnItem({ turn: { question, state: s }, scope, onCite, notes }: { turn: Turn; scope: AskScope; onCite: OnCite; notes?: ReadonlySet<string> | null }) {
+function TurnItem({ turn: { question, state: s }, scope, onCite, notes, memoIds }: { turn: Turn; scope: AskScope; onCite: OnCite; notes?: ReadonlySet<string> | null; memoIds?: ReadonlySet<string> }) {
   const ctx = { meetingId: scope.kind === "meeting" ? scope.id : undefined, citations: s.citations, sources: s.sources, starts: scope.kind === "meeting" ? scope.starts : undefined };
   const status = STATUS[s.phase];
   return (
@@ -177,11 +187,14 @@ function TurnItem({ turn: { question, state: s }, scope, onCite, notes }: { turn
             if (p.kind === "text") return <Fragment key={i}>{p.text}</Fragment>;
             const to = citeTarget(p, ctx);
             const src = to && s.sources.find((x) => x.meeting_id === to.meetingId && x.segment_id === to.segId);
+            const memo = !!to && isMemoCite({ segment_id: to.segId, source: src?.source }, inMemoNote(scope, memoIds, to.meetingId, to.line));
+            // 줄 번호는 지금 노트의 줄을 먼저 보고(고쳐졌을 수 있다), 없으면 인용에 실린 줄
+            const label = to && chipLabel(to.t, { src: scope.kind === "global" ? src : undefined, memo, tagged: isTaggedMemo({ segment_id: to.segId, source: src?.source }), line: (scope.kind === "meeting" ? scope.memoLines?.get(to.segId) : undefined) ?? to.line });
             return to ? (
               <CiteChip
                 key={i}
-                label={chipLabel(to.t, scope.kind === "global" ? src : undefined)}
-                title={scope.kind === "global" && src ? `${src.title} · ${fmtTime(to.t)} 위치로 이동` : `${fmtTime(to.t)} 위치로 이동`}
+                label={label ?? ""}
+                title={memo ? (scope.kind === "global" && src ? `${src.title} · 메모의 줄로 이동` : "메모의 줄로 이동") : scope.kind === "global" && src ? `${src.title} · ${fmtTime(to.t)} 위치로 이동` : `${fmtTime(to.t)} 위치로 이동`}
                 gone={scope.kind === "global" && isNoteGone(notes, to.meetingId)}
                 onClick={() => onCite(to.meetingId, to.segId, to.t)}
               />
@@ -197,7 +210,7 @@ function TurnItem({ turn: { question, state: s }, scope, onCite, notes }: { turn
       </p>
       {s.error && <AskError error={s.error} code={s.errorCode} />}
       {s.warning && <p className="ask-note is-warn">{s.warning}</p>}
-      {s.sources.length > 0 && <Sources sources={s.sources} global={scope.kind === "global"} onCite={onCite} notes={notes} />}
+      {s.sources.length > 0 && <Sources sources={s.sources} scope={scope} onCite={onCite} notes={notes} memoIds={memoIds} />}
     </li>
   );
 }
@@ -213,11 +226,8 @@ function AskError({ error, code }: { error: string; code: string | null }) {
   );
 }
 
-/** 회의 범위는 시각만, 전체 범위는 날짜도 ("10/2 5:31") */
-function chipLabel(t: number, src?: AskSource | null): string {
-  const m = /^\d{4}-(\d{2})-(\d{2})/.exec(src?.date ?? "");
-  return m ? `${Number(m[1])}/${Number(m[2])} ${fmtTime(t)}` : fmtTime(t);
-}
+/** 회의 범위는 시각만, 전체 범위는 날짜도 ("10/2 5:31"). 메모는 시각 대신 줄 (ask.citeLabel) */
+const chipLabel = (t: number, o: { src?: AskSource | null; memo?: boolean; tagged?: boolean; line?: number }): string => citeLabel(t, { date: o.src?.date, memo: o.memo, tagged: o.tagged, line: o.line });
 
 /** gone: 삭제된 노트의 인용. 누를 수 없고 설명만 보인다 (오류 없이) */
 function CiteChip({ label, title, gone, onClick }: { label: string; title: string; gone?: boolean; onClick: () => void }) {
@@ -228,7 +238,8 @@ function CiteChip({ label, title, gone, onClick }: { label: string; title: strin
   );
 }
 
-function Sources({ sources, global, onCite, notes }: { sources: AskSource[]; global: boolean; onCite: OnCite; notes?: ReadonlySet<string> | null }) {
+function Sources({ sources, scope, onCite, notes, memoIds }: { sources: AskSource[]; scope: AskScope; onCite: OnCite; notes?: ReadonlySet<string> | null; memoIds?: ReadonlySet<string> }) {
+  const global = scope.kind === "global";
   return (
     <details className="ask-sources">
       <summary>
@@ -237,7 +248,12 @@ function Sources({ sources, global, onCite, notes }: { sources: AskSource[]; glo
       <ol>
         {sources.map((s) => (
           <li key={`${s.meeting_id}#${s.segment_id}`}>
-            <CiteChip label={chipLabel(s.start, global ? s : undefined)} title={`${s.title} · ${fmtTime(s.start)}`} gone={global && isNoteGone(notes, s.meeting_id)} onClick={() => onCite(s.meeting_id, s.segment_id, s.start)} />
+            <CiteChip
+              label={chipLabel(s.start, { src: global ? s : undefined, memo: isMemoCite(s, inMemoNote(scope, memoIds, s.meeting_id, s.line)), tagged: isTaggedMemo(s), line: (scope.kind === "meeting" ? scope.memoLines?.get(s.segment_id) : undefined) ?? s.line })}
+              title={isMemoCite(s, inMemoNote(scope, memoIds, s.meeting_id, s.line)) ? `${s.title} · 메모의 줄` : `${s.title} · ${fmtTime(s.start)}`}
+              gone={global && isNoteGone(notes, s.meeting_id)}
+              onClick={() => onCite(s.meeting_id, s.segment_id, s.start)}
+            />
             <span>
               {global && <span className="ask-src-title">{s.title}</span>}
               {s.speaker && <span className="ask-src-speaker">{s.speaker}</span>}
@@ -249,3 +265,7 @@ function Sources({ sources, global, onCite, notes }: { sources: AskSource[]; glo
     </details>
   );
 }
+
+/** 인용이 메모 노트의 것인가: 노트 안 질문은 노트가 메모인지, 전체 질문은 노트 목록의 종류나 인용에 실린 줄 번호로 */
+const inMemoNote = (scope: AskScope, memoIds: ReadonlySet<string> | undefined, meetingId: string, line?: number): boolean =>
+  scope.kind === "meeting" ? !!scope.memoNote : !!memoIds?.has(meetingId) || line !== undefined;

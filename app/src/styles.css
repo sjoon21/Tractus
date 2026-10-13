@@ -2729,6 +2729,9 @@ pre.inline-error {
     padding: 2pt 0;
     break-inside: avoid;
   }
+  .print-rows.is-memo li {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .print-rows li.is-turn {
     margin-top: 6pt;
   }
@@ -2846,4 +2849,262 @@ pre.inline-error {
 .job-error {
   margin: 14px 0;
   font-size: var(--fs-sm);
+}
+
+/* ── 메모 노트 (녹음 없이 직접 쓴 노트) ── */
+
+/* 녹음 버튼 옆 '새 노트' 메뉴 단추. 녹음이 주 버튼이고 이쪽은 보조 */
+.rec-row {
+  display: flex;
+  gap: 8px;
+  margin: 0 16px;
+}
+
+.rec-row .rec-button {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.new-note-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  background: none;
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  font-weight: 650;
+  white-space: nowrap;
+  transition: border-color var(--fast), background var(--fast), transform var(--fast) var(--ease);
+}
+
+.new-note-button kbd {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.new-note-button:hover:not(:disabled) {
+  border-color: var(--ink);
+  background: var(--paper-3);
+  transform: translateY(-1px);
+}
+
+.new-note-button:disabled {
+  opacity: 0.55;
+}
+
+/* 새 노트 메뉴: 단추 아래로 펼친다 (오른쪽 끝에 맞춘다) */
+.new-note {
+  position: relative;
+  display: flex;
+}
+
+.new-note-button {
+  height: 100%;
+}
+
+.new-note-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  background: var(--paper-3);
+  color: var(--ink);
+  box-shadow: 0 22px 44px -20px rgba(0, 0, 0, 0.45), 0 2px 6px -2px rgba(0, 0, 0, 0.12);
+  animation: pop 160ms var(--ease) both;
+}
+
+.new-note-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font-size: var(--fs-sm);
+  font-weight: 560;
+}
+
+.new-note-menu button:hover,
+.new-note-menu button:focus-visible {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.new-note-menu button[aria-disabled="true"] {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.new-note-menu kbd {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+/* 녹음 노트의 메모 탭: 오른쪽 패널 안의 같은 편집기 */
+.rail-memo-hint {
+  margin: 0 0 12px;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}
+
+.memo-pane.is-rail {
+  max-width: none;
+  margin-left: 0;
+  padding-bottom: 8px;
+}
+
+.memo-pane.is-rail .memo-editor {
+  min-height: 50vh;
+  padding-bottom: 16px;
+  font-size: var(--fs-base);
+  line-height: 1.7;
+}
+
+.memo-pane.is-rail .memo-status {
+  background: linear-gradient(transparent, var(--paper-3) 40%);
+}
+
+/* 검색 결과: 녹음 노트의 메모 줄 표시 */
+.hit-memo-badge {
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+
+/* 노트 제목: 누르면 입력창. 평소엔 제목 글자 그대로, 가리키면 '수정'이 보인다 */
+.note-title {
+  margin: 0;
+  font-size: var(--fs-h1);
+  font-weight: 740;
+  line-height: 1.12;
+  letter-spacing: -0.04em;
+}
+
+.title-button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 12px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: text;
+}
+
+.title-button > span:first-child {
+  overflow-wrap: anywhere;
+}
+
+.title-pencil {
+  flex: none;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--ink-3);
+  opacity: 0;
+  transition: opacity var(--fast);
+}
+
+.title-button:hover .title-pencil,
+.title-button:focus-visible .title-pencil {
+  opacity: 1;
+}
+
+.title-input {
+  width: 100%;
+  padding: 0 0 4px;
+  border: 0;
+  border-bottom: 2px solid var(--ink);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+}
+
+.title-input:focus-visible {
+  outline: none;
+  border-bottom-color: var(--focus);
+}
+
+.title-input[aria-invalid="true"] {
+  border-bottom-color: var(--danger);
+}
+
+.title-error {
+  margin: 8px 0 0;
+  font-size: var(--fs-sm);
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+/* 메모 본문: 종이 위에 그대로 쓰는 큰 글상자. 머리말과 같은 칸에 맞춘다 */
+.memo-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  max-width: 46rem;
+  margin-left: var(--time-col);
+  padding-bottom: 28px;
+}
+
+.memo-editor {
+  flex: 1;
+  width: 100%;
+  min-height: 55vh;
+  padding: 4px 0 24px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-read);
+  line-height: 1.75;
+  resize: none;
+}
+
+.memo-editor:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 6px;
+  border-radius: 2px;
+}
+
+.memo-editor::placeholder {
+  color: var(--ink-3);
+}
+
+.memo-status {
+  position: sticky;
+  bottom: 0;
+  margin: 0;
+  padding: 8px 0 0;
+  background: linear-gradient(transparent, var(--paper) 40%);
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}
+
+@media (max-width: 1180px) {
+  .memo-pane {
+    margin-left: 0;
+  }
 }

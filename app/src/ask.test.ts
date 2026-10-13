@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   answerParts,
   askReduce,
+  citeLabel,
   citeTarget,
   historyFromEntries,
   isAsking,
@@ -162,5 +163,26 @@ describe("삭제된 노트의 인용", () => {
   test("노트가 지워진 뒤 목록을 새로 읽으면 같은 인용이 바로 삭제됨으로 바뀐다", () => {
     const after = new Set([...known].filter((id) => id !== "01BBB"));
     expect([isNoteGone(known, "01BBB"), isNoteGone(after, "01BBB")]).toEqual([false, true]);
+  });
+});
+
+describe("코어가 실제로 낸 메모 질문 이벤트", () => {
+  // `tractus ask --progress-json`을 메모 노트에 실제로 돌려 받은 줄 (가상 메모, 줄 번호는 line)
+  const MID = "01M4SQKXTMEQ5BPCG841527FXK";
+  const lines = [
+    String.raw`{"job":"j","event":"stage","stage":"retrieve"}`,
+    `{"job":"j","event":"sources","sources":[{"meeting_id":"${MID}","title":"이름 바꿈 ★","date":"2026-10-13","segment_id":"s0007","speaker":null,"start":0.0,"text":"결정: 스테이징 클러스터를 10월 말까지 만든다.","line":2}]}`,
+    String.raw`{"job":"j","event":"stage","stage":"answer"}`,
+    `{"job":"j","event":"done","answer":"10월 말까지 만들기로 했습니다 [s0007].","citations":[{"meeting_id":"${MID}","segment_id":"s0007","start":0.0,"line":2}],"provider":"upstage","model":"solar-pro4","no_evidence":false}`,
+  ];
+
+  test("시각 없는 인용이 줄 번호로 칩이 된다", () => {
+    const end = lines.map((l) => JSON.parse(l) as AskEvent).reduce(askReduce, START_ASK);
+    expect(end.phase).toBe("done");
+    const cite = answerParts(end.answer).find((p) => p.kind === "cite");
+    expect(cite).toEqual({ kind: "cite", meetingId: null, segId: "s0007" });
+    const target = citeTarget({ meetingId: null, segId: "s0007" }, { meetingId: MID, citations: end.citations, sources: end.sources });
+    expect(target).toEqual({ meetingId: MID, segId: "s0007", t: 0, line: 2 });
+    expect(citeLabel(target!.t, { memo: true, line: target!.line })).toBe("2번째 줄");
   });
 });

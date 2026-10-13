@@ -13,11 +13,17 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from tractus.store import MEMOS_FILE, _hms, _vtt_time, load_memos, one_line, render_markdown, render_vtt, seg_text, speaker_display
+from tractus.store import MEMOS_FILE, _hms, _vtt_time, is_memo, load_memos, memo_lines, one_line, render_markdown, render_vtt, seg_text, speaker_display
 
 FORMATS = ("txt", "md", "srt", "vtt", "csv", "docx", "bundle")
 BUNDLE_FILES = ("audio.ogg", "audio.opus", "transcript.json", "transcript.md", "transcript.vtt", "summary.md", "summary.json", MEMOS_FILE)
+MEMO_FORMATS = ("txt", "md", "csv", "docx", "bundle")  # 메모는 시각이 없어 자막(srt·vtt)으로 내보낼 수 없다
+NO_SUBTITLES = "메모는 자막 파일로 내보낼 수 없습니다."
 EAST_ASIA_FONT = "Apple SD Gothic Neo"  # Word·Pages(macOS)에서 한글이 대체 글꼴로 깨지지 않게 w:eastAsia에 지정
+
+
+class UnsupportedFormat(ValueError):
+    """이 노트에는 쓸 수 없는 형식 (CLI가 종료 코드 2와 이 문장으로 알린다)."""
 
 
 def _when(t: dict) -> str:
@@ -32,9 +38,19 @@ def _rows(t: dict) -> list[tuple[dict, str | None, str]]:
     return [(s, speaker_display(t, s.get("speaker")), one_line(seg_text(s))) for s in t["segments"] if one_line(seg_text(s))]
 
 
+def _memo_rows(t: dict) -> list[tuple[int, str]]:
+    """녹음 노트에 사용자가 적은 메모의 (줄 번호, 한 줄 텍스트). 메모가 없거나 메모 노트면 빈 목록."""
+    return [(m["line"], one_line(m["text"])) for m in memo_lines(t) if one_line(m["text"])]
+
+
 def _txt(t: dict) -> str:
+    if is_memo(t):
+        body = t["body"].strip("\n") if isinstance(t.get("body"), str) else "\n".join(text for _, _, text in _rows(t))
+        return "\n".join([t["title"], _when(t), "", body]) + "\n"
     head = [t["title"], f"{_when(t)} · {_hms(t['audio']['duration_sec'])}", ""]
-    return "\n".join(head + [f"[{_hms(s['start'])}] {f'{who}: ' if who else ''}{text}" for s, who, text in _rows(t)]) + "\n"
+    memo_rows = _memo_rows(t)
+    memo = ["", "메모", "", *(text for _, text in memo_rows)] if memo_rows else []
+    return "\n".join(head + [f"[{_hms(s['start'])}] {f'{who}: ' if who else ''}{text}" for s, who, text in _rows(t)] + memo) + "\n"
 
 
 def _srt(t: dict) -> str:
@@ -53,8 +69,13 @@ def _cell(v: str) -> str:
 def _csv(t: dict) -> bytes:
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["시작", "끝", "참석자", "내용"])
-    w.writerows([_hms(s["start"]), _hms(s["end"]), _cell(who or ""), _cell(text)] for s, who, text in _rows(t))
+    if is_memo(t):
+        w.writerow(["줄", "내용"])
+        w.writerows([s.get("line", ""), _cell(text)] for s, _, text in _rows(t))
+    else:
+        w.writerow(["시작", "끝", "참석자", "내용"])
+        w.writerows([_hms(s["start"]), _hms(s["end"]), _cell(who or ""), _cell(text)] for s, who, text in _rows(t))
+        w.writerows([f"메모 {line}번째 줄", "", "", _cell(text)] for line, text in _memo_rows(t))  # 사용자 메모: 표 모양은 그대로, 시작 칸에 위치 표시
     return buf.getvalue().encode("utf-8-sig")  # BOM: 한국어 Excel이 UTF-8로 연다
 
 
@@ -87,7 +108,8 @@ def _docx(d: Path, t: dict) -> bytes:
     doc.styles["Normal"].font.size = Pt(10.5)
 
     doc.add_heading(t["title"], 0)
-    doc.add_paragraph(f"일시 {_when(t)} · 길이 {_hms(t['audio']['duration_sec'])}")
+    memo = is_memo(t)
+    doc.add_paragraph(f"일시 {_when(t)}" + ("" if memo else f" · 길이 {_hms(t['audio']['duration_sec'])}"))
     names = [speaker_display(t, label) for label in t.get("speakers") or {}]
     if names:
         doc.add_paragraph(f"참석자 {len(names)}명 ({', '.join(names)})")
@@ -103,14 +125,21 @@ def _docx(d: Path, t: dict) -> bytes:
             who = ", ".join(str(v) for v in (a.get("owner"), a.get("due")) if v)
             doc.add_paragraph(f"{a.get('task') or ''}{' — ' + who if who else ''}", style="List Bullet")
 
-    doc.add_heading("대화 내용", 1)
+    doc.add_heading("메모 내용" if memo else "대화 내용", 1)
     for seg, who, text in _rows(t):
         p = doc.add_paragraph()
+        if memo:
+            p.add_run(text)
+            continue
         p.add_run(f"{_hms(seg['start'])}  ").font.color.rgb = RGBColor(0x80, 0x80, 0x80)
         if who:
             p.add_run(who).bold = True
             p.add_run("  ")
         p.add_run(text)
+    if memo_rows := _memo_rows(t):
+        doc.add_heading("메모", 1)
+        for _, text in memo_rows:
+            doc.add_paragraph(text)
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
@@ -139,6 +168,8 @@ def render_export(d: Path, fmt: str) -> bytes:
     }
     if fmt not in writers:
         raise ValueError(f"지원하지 않는 형식입니다: {fmt} ({', '.join(FORMATS)})")
+    if is_memo(t) and fmt not in MEMO_FORMATS:
+        raise UnsupportedFormat(NO_SUBTITLES)
     return writers[fmt]()
 
 

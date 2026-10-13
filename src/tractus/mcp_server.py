@@ -19,7 +19,7 @@ from mcp_types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from tractus.index import Index
-from tractus.store import _hms, find_meeting_dir, seg_text, speaker_name
+from tractus.store import find_meeting_dir, memo_segments, seg_text, speaker_name, stamp
 from tractus.summarize import MeetingSummary, check_segment_ids, write_summary
 
 log = logging.getLogger("tractus.mcp")
@@ -28,6 +28,8 @@ INSTRUCTIONS = """Tractus: 사용자의 로컬 회의 기록(음성 전사·요�
 - 과거 회의에 관한 질문은 먼저 search_meetings로 근거를 찾고, 답에는 실제로 근거가 된 세그먼트의 cite 값([meeting_id#s0012 00:05:31])을 그대로 붙인다. 검색 결과 하나에 세그먼트가 여러 개 들어 있으니 내용이 있는 세그먼트를 골라 인용한다.
 - "7월 회의", "지난주"처럼 시점이 있으면 date_from/date_to(YYYY-MM-DD)를 채운다. 어떤 회의가 있는지는 list_meetings로 본다.
 - 결정 사항·할 일은 get_summary, list_action_items로 본다. 전사 원문은 get_transcript로 페이지 단위(next_offset)로 읽는다.
+- kind가 memo인 노트는 사용자가 직접 쓴 메모다. 오디오·시각이 없고 세그먼트는 본문의 한 줄이다. 시각 자리에는 'n번째 줄'이 붙는다.
+- 녹음 노트에는 사용자가 직접 적은 메모가 있을 수 있다(검색 결과의 source가 memo이고 id가 m0001 같은 줄). 메모 줄은 음성 인식이 아니라 사용자가 쓴 글이고 시각 대신 '메모 n번째 줄'이 붙는다. get_transcript는 전사 끝에 memo 구간으로 보여 준다. 근거로 쓸 때는 cite 값을 그대로 붙인다.
 - 전사는 음성 인식 결과라 오인식이 있을 수 있다. 화자는 목소리로 자동 추정한 값이다(틀릴 수 있음). S1·S2 같은 라벨은 사람 이름이 아니고, 이름으로 보이면 사용자가 지정한 것이다. 화자 표시가 없으면 모르는 것이다.
 - 요약을 만들어 달라는 요청이면 get_transcript로 전사를 끝까지 읽고, save_summary로 저장한다. 모든 항목에 근거 segment_ids를 넣는다."""
 
@@ -43,13 +45,15 @@ def _who(t: dict, s: dict) -> str:
     return f" {name}" if name else ""
 
 
-def _cite(meeting_id: str, segment_ids: list[str], start: float) -> str:
-    return f"[{meeting_id}#{segment_ids[0] if segment_ids else '-'} {_hms(start)}]"
+def _cite(meeting_id: str, segment_ids: list[str], where: str) -> str:
+    return f"[{meeting_id}#{segment_ids[0] if segment_ids else '-'} {where}]"
 
 
 class HitSegment(BaseModel):
-    id: str
-    time: str = Field(description="HH:MM:SS")
+    id: str = Field(description="세그먼트 ID. 녹음 노트의 사용자 메모 줄은 m0001 같은 ID")
+    source: str = Field(default="transcript", description="transcript(음성 인식 전사, 메모 노트의 줄 포함) | memo(녹음 노트에 사용자가 직접 적은 메모 줄)")
+    time: str = Field(description="HH:MM:SS. 메모 노트는 시각이 없어 'n번째 줄', 녹음 노트의 사용자 메모 줄은 '메모 n번째 줄'")
+    line: int | None = Field(default=None, description="메모 노트의 줄 번호, 녹음 노트의 사용자 메모 줄이면 메모 본문의 줄 번호 (그 밖에는 null)")
     text: str
     speaker: str | None = Field(default=None, description="화자 (사용자가 지정한 이름 또는 자동 추정 라벨 S1…, 모르면 null)")
     cite: str = Field(description="이 세그먼트를 근거로 쓸 때 답에 그대로 붙이는 인용 표기")
@@ -75,6 +79,7 @@ class MeetingInfo(BaseModel):
     title: str
     date: str
     duration_sec: float
+    kind: str = Field(default="recording", description="recording(녹음에서 만든 노트) | memo(직접 쓴 메모, 오디오 없음)")
     segments: int
     has_summary: bool
 
@@ -191,7 +196,7 @@ def build_server(home: Path, embedder) -> MCPServer:
             hits=[
                 SearchHit(
                     meeting_id=h.meeting_id, title=h.title, date=h.date, matched=h.matched, vector_distance=h.distance,
-                    segments=[HitSegment(id=s["id"], time=_hms(s["start"]), text=seg_text(s), speaker=s.get("speaker"), cite=_cite(h.meeting_id, [s["id"]], s["start"])) for s in h.segments],
+                    segments=[HitSegment(id=s["id"], source=s.get("source") or "transcript", line=s.get("line"), time=stamp(s), text=seg_text(s), speaker=s.get("speaker"), cite=_cite(h.meeting_id, [s["id"]], stamp(s))) for s in h.segments],
                 )
                 for h in res.hits
             ],
@@ -207,7 +212,7 @@ def build_server(home: Path, embedder) -> MCPServer:
                 date = str(t.get("created_at") or "")[:10]
                 if in_range(date, date_from, date_to):
                     out.append(MeetingInfo(meeting_id=t["meeting_id"], title=str(t.get("title") or ""), date=date,
-                                           duration_sec=float((t.get("audio") or {}).get("duration_sec") or 0.0), segments=len(t["segments"]),
+                                           duration_sec=float((t.get("audio") or {}).get("duration_sec") or 0.0), kind=t.get("kind") or "recording", segments=len(t["segments"]),
                                            has_summary=(p.parent / "summary.json").exists()))
             except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
                 log.warning("list_meetings: %s 건너뜀: %s", p.parent.name, e)
@@ -220,14 +225,18 @@ def build_server(home: Path, embedder) -> MCPServer:
         offset: Annotated[int, Field(ge=0, description="건너뛸 세그먼트 수")] = 0,
         max_segments: Annotated[int, Field(ge=1, le=500)] = 200,
     ) -> str:
-        """회의 전사 원문. 줄마다 `[세그먼트ID HH:MM:SS 화자] 텍스트` (화자를 모르면 생략). 남은 세그먼트가 있으면 마지막 줄에 next_offset이 붙는다."""
+        """회의 전사 원문. 줄마다 `[세그먼트ID HH:MM:SS 화자] 텍스트` (화자를 모르면 생략, 메모 노트는 시각 자리에 'n번째 줄'). 남은 세그먼트가 있으면 마지막 줄에 next_offset이 붙는다.
+        녹음 노트에 사용자가 적은 메모가 있으면 마지막 쪽(전사의 끝) 뒤에 `memo` 구간으로 줄마다 `[m0001 메모 n번째 줄] 텍스트`가 붙는다."""
         _, t = meeting(meeting_id)
         segs = t["segments"]
         page = segs[offset : offset + max_segments]
         head = f"# {t.get('title', '')} ({(t.get('created_at') or '')[:10]}, meeting_id {t['meeting_id']}, 세그먼트 {offset + 1}–{offset + len(page)} / {len(segs)})"
-        lines = [f"[{s['id']} {_hms(s['start'])}{_who(t, s)}] {seg_text(s)}" for s in page]
-        tail = [f"next_offset: {offset + len(page)}"] if offset + len(page) < len(segs) else ["(끝)"]
-        return "\n".join([head, *lines, *tail])
+        lines = [f"[{s['id']} {stamp(s)}{_who(t, s)}] {seg_text(s)}" for s in page]
+        more = offset + len(page) < len(segs)
+        tail = [f"next_offset: {offset + len(page)}"] if more else ["(끝)"]
+        m = [] if more else memo_segments(t)
+        memo = [f"memo (사용자가 직접 적은 메모, 음성 인식 아님, {len(m)}줄):", *(f"[{x['id']} {stamp(x)}] {x['text']}" for x in m)] if m else []
+        return "\n".join([head, *lines, *tail, *memo])
 
     @server.tool(annotations=READ_ONLY, structured_output=False)
     async def get_summary(meeting_id: MeetingRef) -> str:
@@ -252,11 +261,12 @@ def build_server(home: Path, embedder) -> MCPServer:
                 if not (d / "summary.json").exists():
                     missing.append(t["meeting_id"])
                     continue
-                seg = {s["id"]: s for s in t["segments"]}
+                seg = {s["id"]: s for s in [*t["segments"], *memo_segments(t)]}
                 for a in _load(d / "summary.json").get("action_items", []):
-                    start = min((seg[i]["start"] for i in a["segment_ids"] if i in seg), default=0.0)
+                    found = [seg[i] for i in a["segment_ids"] if i in seg]
+                    first = min([x for x in found if x.get("source") != "memo"] or found, key=lambda s: s["start"], default={"start": 0.0})  # 전사 근거가 있으면 그 시각, 메모 줄뿐이면 '메모 n번째 줄'
                     items.append(ActionItemOut(meeting_id=t["meeting_id"], title=str(t.get("title") or ""), date=date, task=a["task"], owner=a.get("owner"),
-                                               due=a.get("due"), segment_ids=a["segment_ids"], cite=_cite(t["meeting_id"], a["segment_ids"], start)))
+                                               due=a.get("due"), segment_ids=a["segment_ids"], cite=_cite(t["meeting_id"], a["segment_ids"], stamp(first))))
             except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
                 log.warning("list_action_items: %s 건너뜀: %s", d.name, e)
         return ActionItems(items=items, meetings_without_summary=missing)

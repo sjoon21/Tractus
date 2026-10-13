@@ -1,0 +1,161 @@
+{
+ "schema_version": 2,
+ "meeting_id": "01M4SV7KREWFM3MJPYR83JJD3M",
+ "title": "예산 논의",
+ "created_at": "2026-10-13T14:19:37+09:00",
+ "audio": {
+  "file": "audio.ogg",
+  "duration_sec": 9.41,
+  "source": "a.wav",
+  "sha256": "72c2939062f7ede259abd8c8273faf3d25ea0addf53b9db0ed476524a780c210"
+ },
+ "asr": {
+  "model": "mlx-community/Qwen3-ASR-1.7B-8bit",
+  "track": "standard",
+  "runtime": "mlx-audio",
+  "language": "auto",
+  "hotwords": []
+ },
+ "speakers": {
+  "S1": {
+   "name": null
+  }
+ },
+ "diarization": {
+  "engine": "nemotron",
+  "model": "mlx-community/Nemotron-3-Diarization",
+  "revision": "59ed2dbfc1346dcea9d423c71306a3a2499c568f",
+  "params": {
+   "threshold": 0.5,
+   "median_frames": 11,
+   "min_turn_s": 1.0,
+   "fill_gap_s": 1.0,
+   "min_piece_s": 1.0,
+   "max_speakers": null
+  }
+ },
+ "segments": [
+  {
+   "id": "s0001",
+   "start": 0.0,
+   "end": 9.41,
+   "text": "오늘은 다음 분기 예산을 논의합니다. 서버 비용을 20% 줄이기로 했습니다. 그리고 다음 주 금요일까지 새 견적을 받기로 했습니다.",
+   "lang": "ko",
+   "speaker": "S1",
+   "corrected_text": null,
+   "words": [
+    {
+     "text": "오늘은",
+     "start": 0.0,
+     "end": 0.4
+    },
+    {
+     "text": "다음",
+     "start": 0.4,
+     "end": 0.72
+    },
+    {
+     "text": "분기",
+     "start": 0.72,
+     "end": 1.12
+    },
+    {
+     "text": "예산을",
+     "start": 1.12,
+     "end": 1.6
+    },
+    {
+     "text": "논의합니다.",
+     "start": 1.6,
+     "end": 2.32
+    },
+    {
+     "text": "서버",
+     "start": 2.56,
+     "end": 2.88
+    },
+    {
+     "text": "비용을",
+     "start": 2.88,
+     "end": 3.28
+    },
+    {
+     "text": "20%",
+     "start": 3.28,
+     "end": 4.16
+    },
+    {
+     "text": "줄이기로",
+     "start": 4.16,
+     "end": 4.64
+    },
+    {
+     "text": "했습니다.",
+     "start": 4.64,
+     "end": 5.36
+    },
+    {
+     "text": "그리고",
+     "start": 5.6,
+     "end": 6.08
+    },
+    {
+     "text": "다음",
+     "start": 6.16,
+     "end": 6.56
+    },
+    {
+     "text": "주",
+     "start": 6.56,
+     "end": 6.64
+    },
+    {
+     "text": "금요일까지",
+     "start": 6.72,
+     "end": 7.44
+    },
+    {
+     "text": "새",
+     "start": 7.44,
+     "end": 7.68
+    },
+    {
+     "text": "견적을",
+     "start": 7.68,
+     "end": 8.24
+    },
+    {
+     "text": "받기로",
+     "start": 8.24,
+     "end": 8.72
+    },
+    {
+     "text": "했습니다.",
+     "start": 8.72,
+     "end": 9.36
+    }
+   ]
+  }
+ ],
+ "memo": {
+  "body": "서버 비용 20퍼센트 절감이 핵심\n\n견적은 하늘상사에서 받는다\n마감은 금요일",
+  "lines": [
+   {
+    "id": "m0001",
+    "line": 1,
+    "text": "서버 비용 20퍼센트 절감이 핵심"
+   },
+   {
+    "id": "m0002",
+    "line": 3,
+    "text": "견적은 하늘상사에서 받는다"
+   },
+   {
+    "id": "m0003",
+    "line": 4,
+    "text": "마감은 금요일"
+   }
+  ],
+  "seq": 3
+ }
+}

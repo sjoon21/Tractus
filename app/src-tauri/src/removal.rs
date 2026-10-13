@@ -132,6 +132,20 @@ mod tests {
     }
 
     #[test]
+    fn accepts_memo_folder_without_audio_written_by_the_core() {
+        let home = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/memo_home");
+        let dir = note_dir(&home, "01M4SQKXTMEQ5BPCG841527FXK", |_| false).unwrap();
+        assert!(dir.join("transcript.json").is_file() && !dir.join("audio.ogg").exists());
+    }
+
+    #[test]
+    fn accepts_recording_note_with_memo_written_by_the_core() {
+        let home = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/memo_home");
+        let dir = note_dir(&home, "01M4SV7KREWFM3MJPYR83JJD3M", |_| false).unwrap();
+        assert!(dir.join("transcript.json").is_file() && dir.join("audio.ogg").exists());
+    }
+
+    #[test]
     fn rejects_bad_ids_without_trashing() {
         let home = temp_home("ids");
         note(&home, "01AAA");

@@ -102,6 +102,7 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 | `tractus segments` | 텍스트 편집. 아래 §2.2 |
 | `tractus glossary add` | 용어집 추가. 아래 §2.3 |
 | `tractus export` | 내보내기. 아래 §2.4 |
+| `tractus note` (v3.18) | 직접 쓰는 메모 노트(오디오 없음)와 노트 제목 바꾸기. 아래 §2.10 |
 | `tractus ask` (Phase 6) | 회의 질의. 아래 §2.5 |
 | 단어 타이밍 (Phase 6) | `transcribe`가 전사 뒤 `segments[].words`를 채운다(`--no-align`으로 끔). 기존 회의는 `tractus align`. 아래 §2.6 |
 | 목소리 프로필 (Phase 7.1) | `transcribe`가 화자 분리 뒤 등록된 목소리와 맞춰 `speakers.S1.suggested`에 이름을 제안한다. `tractus voices`, `tractus speakers <회의> dismiss`. 아래 §2.7 |
@@ -383,6 +384,66 @@ Tauri 명령 (`src-tauri/src/removal.rs`, `lib.rs`):
 - **색인 정리:** 성공하면 백그라운드로 MCP `status`를 부른다(= `sync(embed=False)`). 실패해도 삭제는 성공이다(검색·질문이 먼저 동기화하므로 지워진 노트는 나오지 않는다).
 - **오류 문자열:** 첫 줄이 화면 문장, 둘째 줄부터가 원래 오류(앱이 `자세히`로 접는다).
 - **건드리지 않는 것:** 목소리 프로필(`voices.json`)과 자주 쓰는 단어(`glossary.md`)는 노트 데이터가 아니다. 노트를 지워도 그대로다.
+
+### 2.10 `tractus note` (메모 노트와 제목 바꾸기, v3.18)
+
+노트 제목을 바꾸고, 녹음 없이 직접 쓰는 **메모 노트**를 만든다. 세 명령 모두 stdout에 JSON 한 줄을 쓰고, 입력 오류는 종료 코드 2와 stderr 마지막 줄의 문장(WORDS.md §4.7)이다. 성공하면 키워드 색인을 조용히 갱신한다(`sync(embed=False)`, 바뀐 청크의 벡터는 대기 상태이고 앱의 조용한 색인 작업이 채운다).
+
+| 명령 | stdin | stdout | 오류 (종료 코드 2, 아무것도 쓰지 않음) |
+| --- | --- | --- | --- |
+| `tractus note new [--title T]` | 선택. `{"title"?: str, "body"?: str}`. 비었거나 터미널이면 빈 메모 | `{"meeting_id": "01K…", "meeting_dir": "<절대 경로>"}` | 입력 형식, 제목 120자 초과, 본문 200,000자·5,000줄 초과 |
+| `tractus note save <노트>` | `{"body": str}` (필수, 본문 통째로) | `{"saved": true, "segments": N, "changed": bool, "kind": "memo"\|"recording"}` (`N`: 메모의 줄 수. 메모 노트는 세그먼트 수와 같다) | 입력 형식, 한도 초과, 노트 없음. **메모 노트와 녹음 노트 모두 된다**(녹음 노트는 아래 "녹음 노트의 메모") |
+| `tractus note title <노트>` | `{"title": str}` (필수) | `{"title": "<정리된 제목>"}` | 비었음, 120자 초과, 입력 형식, 노트 없음 |
+
+- **제목 우선순위(`note new`):** `--title` > stdin의 `title` > `메모 HH:MM`(이 Mac의 현지 시각). 폴더는 `$TRACTUS_HOME/meetings/<YYYY-MM-DD>_<제목>_<ULID>/`(기존 `meeting_dir_name` 규칙).
+- **제목 정리(`store.one_line` + 길이):** 공백·줄바꿈은 한 칸, 제어 문자는 뺀다. 1–120자(코드 포인트 기준, 이모지 하나는 1자). `note title`은 녹음·메모 모두 된다. **폴더 이름은 바꾸지 않는다**(찾는 기준은 ULID, 앱도 meeting_id로 찾는다). `note_lock` 안에서 transcript.json(+ md·vtt 다시 쓰기), `summary.json`의 `title`, `summary.md`의 첫 `# ` 줄을 새 제목으로 바꾸고(요약이 없으면 건너뜀), 색인을 갱신한다. 같은 제목이면 아무것도 다시 쓰지 않는다.
+- **본문 정리(`note save`·`note new`):** `\r\n`·`\r` → `\n`, `\n`·`\t` 외의 제어 문자(C0·C1·DEL)는 뺀다. 줄 앞뒤 공백은 본문에 그대로 두되 세그먼트 텍스트에서는 `strip()`한다.
+
+**메모 노트의 transcript.json** (schema_version 2, 평범한 노트 폴더다):
+
+```jsonc
+{ "schema_version": 2, "kind": "memo", "meeting_id": "01K…", "title": "장보기", "created_at": "2026-10-13T13:09:21+09:00",
+  "audio": { "file": null, "duration_sec": 0, "source": "memo", "sha256": null },
+  "body": "우유\n\n계란",          // 사용자 글 그대로 (\n 줄바꿈)
+  "seg_seq": 2,                     // 마지막으로 낸 세그먼트 번호 (지워도 줄지 않는다)
+  "speakers": {}, "diarization": null,
+  "segments": [ { "id": "s0001", "start": 0.0, "end": 0.0, "text": "우유", "lang": null, "speaker": null, "corrected_text": null, "words": null, "line": 1 },
+                { "id": "s0002", "start": 0.0, "end": 0.0, "text": "계란", "lang": null, "speaker": null, "corrected_text": null, "words": null, "line": 3 } ] }
+```
+
+- **`kind`가 없으면 녹음 노트다.** 옛 파일을 고치지 않는다. 판별은 `store.is_memo(t)`.
+- **세그먼트 = 본문의 비어 있지 않은 줄**(`notes.derive_segments`). `line`은 본문을 `\n`으로 나눴을 때의 1부터 센 줄 번호(빈 줄 포함, 입력창의 줄과 같다). 앱은 `body`가 진실이고 `segments`는 거기서 만든 파생물이다.
+- **ID 유지:** `note save`는 옛 세그먼트 텍스트 목록과 새 줄 목록을 `difflib.SequenceMatcher`로 맞춘다. 같은 줄은 ID를 이어받고, 같은 자리에서 고친 줄(`replace` 구간의 앞 `min(옛, 새)`개)도 ID를 이어받는다(**지시서에서의 변경:** 고친 줄에 새 ID를 주면 타자 한 번마다 ID가 소진돼 요약의 근거가 금방 끊긴다). 그 밖의 새 줄은 `seg_seq` 다음 번호를 받는다. 번호는 `s9999` 다음에 처음으로 돌아가 쓰이지 않는 번호를 고른다(ID 형식이 `s\d{4}`라 5자리를 쓰지 않는다. 그래서 줄 수 한도가 5,000이다). 줄이 지워지면 그 ID를 가리키던 요약 근거는 앱이 "없는 대화"로 처리한다.
+- **요약이 낡았는지**는 앱이 정한다(앱이 센 편집 횟수). 코어는 `note save`가 `"changed": true`를 돌려줄 때만(본문 또는 세그먼트가 실제로 바뀜) 앱이 편집 횟수를 올릴 수 있게 한다.
+- **md:** frontmatter `meeting_id`·`title`·`created_at`·`kind: memo`(`duration`·`asr_model` 없음), `# 제목`, 줄마다 빈 줄로 나눈 문단. **vtt는 만들지 않는다**(`render_files`가 메모는 건너뛴다).
+- **다른 기능과의 관계:** 색인·검색(`Hit.segments[].line`, `start`·`end`는 0), `ask`(근거·인용에 `line`, 프롬프트 줄은 `[s0003] 내용`), `summarize`(시각 없는 프롬프트 `메모 제목: …`/`[s0001] …`와 메모용 시스템 문구, `summary.md`에 시각 없음), `export`(아래), MCP(`list_meetings.kind`, `search_meetings`·`get_transcript`의 시각 자리는 `n번째 줄`, 안내문에 한 줄 추가), 삭제(폴더째 휴지통, 변경 없음)가 그대로 동작한다.
+- **export:** `txt`(제목, 일시, 빈 줄, 본문 그대로), `md`(transcript.md + 요약), `csv`(`줄,내용`), `docx`(일시만, 제목 `메모 내용`), `bundle`(audio·vtt 없음)은 된다. **`srt`·`vtt`는 종료 코드 2 + `메모는 자막 파일로 내보낼 수 없습니다.`** (`export.UnsupportedFormat`, `MEMO_FORMATS`).
+- **거절하는 명령(종료 코드 2):** `align`(`no_audio` 코드), `speakers rename|set|merge|dismiss`, `segments edit`, `voices enroll`. `voices match`·`render`·`index`·`search`는 그대로 돌고 메모에는 할 일이 없다. `live`·`transcribe`는 녹음 전용이다.
+- **한도:** 본문 200,000자(`notes.MAX_BODY`), 비어 있지 않은 줄 5,000개(`notes.MAX_LINES`), 제목 120자.
+- **동시성:** `note save`·`note title`은 `edit_transcript`(= `note_lock`) 안에서 읽고 쓰므로 앱의 다른 편집과 서로 덮어쓰지 않는다. 같은 노트에 저장이 겹치면 나중 것이 이긴다(본문을 통째로 쓴다). 앱은 노트마다 저장 줄(`editQueue`)로 직렬화한다.
+
+#### 녹음 노트의 메모 (오른쪽 패널 메모 탭, v3.18)
+
+녹음 노트(`kind` 없음)도 사용자가 직접 적은 메모를 가질 수 있다. 앱은 오른쪽 패널의 세 번째 탭(요약 / AI 질문 / 메모)에서 쓰고, 같은 `tractus note save <노트>`로 저장한다. 메모 노트가 입력창이 본문 전체인 노트라면 이것은 **녹음 옆에 붙는 글**이다. 녹음 중 남기는 메모·북마크(`memos.json`)와는 다른 것이다.
+
+```jsonc
+// transcript.json (녹음 노트)에 선택 키 "memo"가 생긴다. 없으면 메모가 없는 것이다 (옛 노트는 migration 없이 그대로)
+"memo": { "body": "예산은 동결합니다\n\n견적은 김철수 님이 받습니다",   // 사용자 글 그대로 (\n 줄바꿈, clean_body를 거친 것)
+          "lines": [ { "id": "m0001", "line": 1, "text": "예산은 동결합니다" },    // 비어 있지 않은 줄마다 하나, line = 1부터 센 줄 번호(빈 줄 포함)
+                     { "id": "m0002", "line": 3, "text": "견적은 김철수 님이 받습니다" } ],
+          "seq": 2 }                                                                // 마지막으로 낸 번호 (지워도 줄지 않는다)
+```
+
+- **저장:** `note save`는 `edit_transcript`(= `note_lock`) 안에서 `memo` 블록만 쓴다. `segments`·`words`·`speakers`·`summary`·오디오는 건드리지 않는다. **본문이 비었거나 공백뿐이면 `memo` 키를 지운다**(`changed`는 지울 것이 있었을 때만 true). 그래서 비운 뒤 다시 쓰면 번호가 `m0001`부터 새로 시작한다(요약에 남은 옛 `m` 근거가 새 줄과 겹칠 수 있음 — `ponytail` 주석). 한도·정리(`clean_body`, 200,000자, 5,000줄, 제어 문자, `\r\n`)와 오류 문장은 메모 노트와 같다. 같은 본문이면 다시 쓰지 않는다.
+- **줄 ID `m####`**는 ASR 세그먼트 ID `s####`와 **다른 번호 공간**이다. 유지 규칙은 메모 노트와 같은 코드(`notes.derive_lines(body, old, seq, prefix)`: 같은 줄·같은 자리에서 고친 줄·끼워 넣으며 고친 줄(닮은 정도 0.5 이상)은 ID를 잇고, 새 줄은 `seq` 다음 번호, `m9999` 다음은 처음으로 돌아가 빈 번호). `store.memo_lines(t)`가 `[{id, line, text}]`를 돌려주고, 키가 없거나 형식이 달라도(손상·옛 노트) 빈 목록이다. 메모 노트(`kind: memo`)에는 `memo` 키가 없다(세그먼트가 메모).
+- **transcript.md:** 대화 내용 뒤에 `## 메모` 절(줄마다 문단). **transcript.vtt는 그대로**(자막만).
+- **색인·검색:** 메모 줄은 ASR 청크와 섞이지 않는 **자기 청크**(`store.memo_segments`: `start=end=0`, `line`, `source: "memo"`)로 같은 노트의 청크 뒤에 들어간다. 스키마는 그대로다(청크의 `segments` JSON에 `source`가 실린다). `Hit.segments[]`에 `{"id": "m0003", "line": n, "source": "memo", "start": 0.0, "end": 0.0, "text", "speaker": null}`, `Hit.source`는 `"memo"` \| `"transcript"`. 본문이 바뀌면 transcript.json이 바뀌어 다시 색인되고, 본문이 그대로인 청크는 벡터를 옮겨 쓴다.
+- **MCP:** `search_meetings`의 세그먼트에 `source`(`"transcript"`\|`"memo"`)가 더해지고 메모 줄은 `id` `m0003`, `line` n(메모 본문의 줄 번호, 메모 노트의 줄에도 붙는다. 그 밖에는 null), `time` `메모 n번째 줄`, `cite` `[meeting_id#m0003 메모 n번째 줄]`이다. 앱은 `line`을 먼저 읽고, 없으면 `time`에서 줄 번호를 읽는다. `get_transcript`는 **마지막 쪽(`(끝)`) 뒤**에 `memo (사용자가 직접 적은 메모, 음성 인식 아님, N줄):` 구간과 줄마다 `[m0003 메모 n번째 줄] 텍스트`를 붙인다(중간 쪽에는 없다, 쪽 나누기는 ASR 세그먼트 기준). `list_meetings`(`segments` = ASR 세그먼트 수)는 그대로. `save_summary`는 `segment_ids`를 ASR ID ∪ 메모 ID로 검증하고, `list_action_items`의 `cite`는 전사 근거가 있으면 그 시각, 메모 줄뿐이면 `메모 n번째 줄`이다.
+- **AI 질문:** 노트의 근거에 메모 줄이 **따로 라벨 붙은 블록 `[내가 적은 메모]`**(줄마다 `[m0003] 내용`)로 들어가고(노트 제목 줄 다음, **대화 기록보다 앞**이다. 뒤에 두었더니 solar-pro4가 20회 중 5회 메모를 못 보고 '근거 없음'으로 답해 앞으로 옮겼다(0/40). 메모와 대화가 함께 있으면 대화에는 `[대화 기록]` 라벨이 붙는다), 이때만 시스템 프롬프트에 메모 규칙(`ask.MEMO_PROMPT`)이 붙는다(메모 없는 노트의 프롬프트는 글자 하나 다르지 않다). 근거 형식 `{"segment_id": "m0003", "line": n, "source": "memo", "start": 0.0, …}`. `finalize`는 `[m0003]`·`[meeting_id#m0003]`을 근거와 대조해 받고, 인용은 `{"meeting_id", "segment_id": "m0003", "start": 0.0, "line": n, "source": "memo"}`(`source`는 메모 줄에만)다. 전체 범위 검색은 메모 청크를 포함하고 메모 줄도 앞뒤 1줄씩 함께 보낸다(ASR 대화와는 따로). 원격으로 나가는 것은 근거로 고른 줄뿐이라 데이터 최소화 규칙은 그대로다. `tractus ask`의 터미널 인용은 `[m0003 메모 n번째 줄]`.
+- **요약:** 프롬프트 끝에 `사용자가 적은 메모:` 블록(줄마다 `[m0003] 내용`, 시각 없음)이 붙고 시스템 프롬프트에 `RECORDING_MEMO_PROMPT`가 붙는다. 요약 항목은 `segment_ids`에 `m` ID를 쓸 수 있다. 검증은 ASR ID ∪ 메모 ID. `summary.md`의 위치는 전사 근거 `[HH:MM:SS]`(주제는 `[시작–끝]`), 메모 근거 `메모 n번째 줄`(여러 줄이면 `메모 n–m번째 줄`), 섞이면 `[00:00:03–00:01:05, 메모 3번째 줄]`. 요약 JSON의 `segment_ids`에는 `m0003`이 그대로 남는다(앱은 현재 줄 번호를 다시 찾는다). 요약이 낡았는지는 앱이 정한다(메모 저장도 편집 횟수를 올린다, 코어가 더하는 것은 없다).
+- **내보내기:** `txt`(대화 뒤 빈 줄, `메모`, 빈 줄, 줄마다), `md`(transcript.md와 같은 `## 메모` 절), `csv`(**표 모양 그대로 4열**, 대화 행 뒤에 `메모 n번째 줄,,,내용` 행: 시작 칸이 위치 표시. utf-8-sig 유지), `docx`(`대화 내용` 뒤 제목 `메모`, 줄마다 문단), `bundle`(transcript.json·md에 이미 포함). `srt`·`vtt`는 그대로(자막에 메모를 넣지 않는다).
+- **위치 표기:** `store.stamp(s)`는 `source == "memo"`면 `메모 n번째 줄`, 메모 노트의 줄(`line`만)이면 `n번째 줄`, 그 밖에는 `HH:MM:SS`.
+- **동시성:** 메모 저장과 문장 교정·참석자 편집·목소리 등록·정렬 병합이 모두 `note_lock` 안에서 읽고 쓴다. 다른 편집은 `{**t, …}`·`deepcopy`로 새 전사를 만들어 `memo` 키를 그대로 이어 가고(테스트로 고정), 녹음 노트의 `write_transcript`는 새 노트를 만들 때만 돈다.
 
 ## 3. Tauri 앱 (app/)
 

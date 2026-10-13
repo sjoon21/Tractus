@@ -1,0 +1,63 @@
+{
+ "schema_version": 2,
+ "kind": "memo",
+ "meeting_id": "01M4SQKXTMEQ5BPCG841527FXK",
+ "title": "이름 바꿈 ★",
+ "created_at": "2026-10-13T13:16:33+09:00",
+ "audio": {
+  "file": null,
+  "duration_sec": 0,
+  "source": "memo",
+  "sha256": null
+ },
+ "body": "쿠버네티스 도입 검토 메모\n결정: 스테이징 클러스터를 10월 말까지 만든다.\n할 일: 김민수가 다음 주 수요일까지 비용 견적을 정리한다.\n열린 질문: 매니지드 서비스를 쓸지 직접 운영할지 아직 정하지 못했다.",
+ "seg_seq": 9,
+ "speakers": {},
+ "diarization": null,
+ "segments": [
+  {
+   "id": "s0006",
+   "start": 0.0,
+   "end": 0.0,
+   "text": "쿠버네티스 도입 검토 메모",
+   "lang": null,
+   "speaker": null,
+   "corrected_text": null,
+   "words": null,
+   "line": 1
+  },
+  {
+   "id": "s0007",
+   "start": 0.0,
+   "end": 0.0,
+   "text": "결정: 스테이징 클러스터를 10월 말까지 만든다.",
+   "lang": null,
+   "speaker": null,
+   "corrected_text": null,
+   "words": null,
+   "line": 2
+  },
+  {
+   "id": "s0008",
+   "start": 0.0,
+   "end": 0.0,
+   "text": "할 일: 김민수가 다음 주 수요일까지 비용 견적을 정리한다.",
+   "lang": null,
+   "speaker": null,
+   "corrected_text": null,
+   "words": null,
+   "line": 3
+  },
+  {
+   "id": "s0009",
+   "start": 0.0,
+   "end": 0.0,
+   "text": "열린 질문: 매니지드 서비스를 쓸지 직접 운영할지 아직 정하지 못했다.",
+   "lang": null,
+   "speaker": null,
+   "corrected_text": null,
+   "words": null,
+   "line": 4
+  }
+ ]
+}

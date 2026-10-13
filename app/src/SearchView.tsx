@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { api, errDetail, errText, type SearchResponse } from "./api";
 import { ErrorDetail } from "./ErrorDetail";
-import { dayParts, fmtTime, highlight, parseHms } from "./lib";
+import { dayParts, highlight } from "./lib";
+import { hitView } from "./memo";
 
-export function SearchView({ query, onOpen }: { query: string; onOpen: (id: string, seek: { segId: string; t: number }) => void }) {
+export function SearchView({ query, onOpen, memoIds }: { query: string; onOpen: (id: string, seek: { segId: string; t: number }) => void; memoIds?: ReadonlySet<string> }) {
   const [res, setRes] = useState<SearchResponse | null>(null);
   const [error, setError] = useState<{ text: string; detail: string | null } | null>(null);
 
@@ -37,26 +38,33 @@ export function SearchView({ query, onOpen }: { query: string; onOpen: (id: stri
           <ol className="hits">
             {res.hits.map((h, i) => {
               const d = dayParts(h.date);
+              const memo = !!memoIds?.has(h.meeting_id); // 메모는 시각이 없다
               return (
                 <li key={`${h.meeting_id}-${i}`} className="hit">
                   <header>
                     <span className="hit-title">{h.title}</span>
+                    {memo && <span className="badge">메모</span>}
                     <span className="hit-date tnum">
                       {d.month} {d.day}일 {d.weekday}
                     </span>
                     {!h.matched.includes("keyword") && <span className="badge">{h.matched.includes("partial") ? "일부 일치" : "비슷한 뜻"}</span>}
                   </header>
                   <ul>
-                    {h.segments.map((s) => (
-                      <li key={s.id}>
-                        <button className="seg-button" onClick={() => onOpen(h.meeting_id, { segId: s.id, t: parseHms(s.time) })}>
-                          <time className="seg-time tnum">{fmtTime(parseHms(s.time))}</time>
-                          <span className="seg-text">
-                            {highlight(s.text, query).map((p, j) => (p.hit ? <mark key={j}>{p.text}</mark> : <span key={j}>{p.text}</span>))}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
+                    {h.segments.map((s) => {
+                      // 메모의 줄은 시각 대신 `3번째 줄`. 녹음 노트의 메모 줄은 열면 메모 탭에서 그 줄을 고른다 (MeetingView)
+                      const v = hitView(s, memo);
+                      return (
+                        <li key={s.id}>
+                          <button className="seg-button" onClick={() => onOpen(h.meeting_id, v.seek)}>
+                            <time className="seg-time tnum">{v.label}</time>
+                            <span className="seg-text">
+                              {v.tagged && <span className="badge hit-memo-badge">메모</span>}
+                              {highlight(s.text, query).map((p, j) => (p.hit ? <mark key={j}>{p.text}</mark> : <span key={j}>{p.text}</span>))}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </li>
               );

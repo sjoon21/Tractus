@@ -168,6 +168,20 @@ uv run tractus glossary add 쿠버네티스 "Project Atlas"
 
 `segments edit`는 stdin의 JSON으로 여러 세그먼트를 한 번에 고칩니다. 고친 문장은 `corrected_text`에 들어가고 ASR 원문(`text`)은 그대로 남습니다. 원문과 같게 고치면 교정이 지워집니다. md·vtt·요약·검색·MCP·내보내기는 모두 고친 문장을 씁니다. 없는 세그먼트 ID나 빈 문장이 하나라도 있으면 아무것도 바꾸지 않습니다. `glossary add`는 `~/Tractus/glossary.md`에 중복 없이 용어를 더하고, 다음 전사부터 적용됩니다.
 
+### 메모 작성 (오디오 없이 직접 쓰기)
+
+녹음 없이 직접 쓰는 메모도 같은 노트입니다. 검색·AI 질문·요약·내보내기가 그대로 되고, 시각 대신 줄 번호(`3번째 줄`)로 가리킵니다. 앱은 사이드바의 `새 메모`(⌘N)로 만듭니다.
+
+```bash
+uv run tractus note new --title "장보기"                              # 빈 메모. stdout: {"meeting_id", "meeting_dir"}
+echo '{"body": "우유\n계란"}' | uv run tractus note save 01K6X3     # 본문 통째로 저장. stdout: {"saved": true, "segments": 2, "changed": true, "kind": "memo"}
+echo '{"title": "새 제목"}' | uv run tractus note title 01K6X3       # 제목 바꾸기 (녹음 노트도 된다). stdout: {"title": "새 제목"}
+```
+
+**녹음 노트에도 메모를 적을 수 있습니다.** 앱 오른쪽 패널의 `메모` 탭(요약 · AI 질문 · 메모)에서 쓰고, 같은 `tractus note save <노트>`가 녹음 노트에는 `transcript.json`의 `memo` 블록을 씁니다(줄은 `m0001` 같은 ID와 `메모 3번째 줄`로 가리킵니다). 메모는 검색·AI 질문·요약 근거가 되고, `transcript.md`·txt·md·csv·docx·전체 백업에 `메모` 절로 들어갑니다(SRT·WebVTT는 그대로).
+
+메모 노트는 `audio.ogg`와 `transcript.vtt`가 없고 SRT·WebVTT로는 내보낼 수 없습니다. 제목을 바꿔도 폴더 이름은 그대로입니다(찾는 기준은 ID). 자세한 계약은 `docs/desktop.md` §2.10.
+
 ### 내보내기
 
 ```bash

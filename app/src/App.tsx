@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open } from "@tauri-apps/plugin-dialog";
@@ -9,8 +10,11 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
 import { bindIndexer } from "./indexer";
-import { baseName, dayParts, errorView, IDLE_JOB, JOB_ERROR, fmtTime, groupByDay, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, STAGE_FALLBACK, STAGE_LABEL, warningText, type RecMode } from "./lib";
+import { baseName, dayParts, errorView, isImeKey, IDLE_JOB, JOB_ERROR, fmtTime, groupByDay, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, STAGE_FALLBACK, STAGE_LABEL, warningText, type RecMode } from "./lib";
 import { MeetingView } from "./MeetingView";
+import type { NewNoteAction } from "./menu";
+import { NewNoteMenu } from "./NewNoteMenu";
+import { dropMemo, flushMemos, isMemo, noteTime, settleMemo } from "./memo";
 import { RecordView } from "./RecordView";
 import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, recordingLabel, type DeleteTarget } from "./remove";
 import { SearchView } from "./SearchView";
@@ -72,9 +76,29 @@ export function App() {
   }, []);
   // 삭제(휴지통으로 이동): 확인 대화상자 상태. 노트 화면과 사이드바의 남은 녹음이 같이 쓴다
   const [del, dispatchDel] = useReducer(deleteReduce, IDLE_DELETE);
-  const openMeeting = useCallback((id: string, seek?: Omit<Seek, "nonce">) => {
-    setView({ kind: "meeting", id, seek: seek && { ...seek, nonce: Date.now() } });
+  // 화면을 옮기기 전에 쓰던 메모를 저장한다. 저장하지 못하면 옮기지 않는다 (그 메모가 오류를 이미 보이고 있다)
+  const go = useCallback(async (next: View) => {
+    if (await flushMemos()) setView(next);
   }, []);
+  const openMeeting = useCallback(
+    (id: string, seek?: Omit<Seek, "nonce">) => void go({ kind: "meeting", id, seek: seek && { ...seek, nonce: Date.now() } }),
+    [go],
+  );
+  // 새 메모 (⌘N): 빈 메모 노트를 만들고 열면 본문에 초점이 간다
+  const [creating, setCreating] = useState(false);
+  const newMemo = useCallback(async () => {
+    if (creating) return;
+    setCreating(true);
+    try {
+      const { meeting_id } = await api.noteNew();
+      await refresh();
+      openMeeting(meeting_id);
+    } catch (e) {
+      notify({ text: errText(e), detail: errDetail(e), error: true });
+    } finally {
+      setCreating(false);
+    }
+  }, [creating, refresh, openMeeting, notify]);
 
   // 녹음 정지 → 전사 → 회의 상세
   const transcribe = useJob((meetingId) => {
@@ -94,8 +118,11 @@ export function App() {
     dispatchDel({ type: "start" });
     try {
       if (t.kind === "note") {
+        // 쓰던 메모가 있으면 마지막으로 저장해 둔다(휴지통에서 되살려도 최신 글이 있게)
+        await settleMemo(t.id);
         // 저장 중인 수정(문장·참석자·목소리 등록·내보내기)이 끝난 뒤에 지운다. 그동안 이 노트의 새 수정은 받지 않는다 (editQueue)
         await editQueue.exclusive(t.id, () => api.deleteMeeting(t.id));
+        dropMemo(t.id); // 지운 뒤에야 저장을 멈춘다 (삭제가 실패하면 편집기는 계속 저장한다)
         // 열려 있던 노트는 닫는다: 지워진 폴더를 다시 읽지 않게 목록 갱신보다 먼저
         setView((v) => (v.kind === "meeting" && v.id === t.id ? { kind: "home" } : v));
       } else {
@@ -189,13 +216,21 @@ export function App() {
   }, [enqueue]);
 
   // 창을 닫으면 앱이 끝난다: 전사 중이거나 대기 중인 파일이 있으면 묻는다.
-  // ponytail: ⌘Q(macOS terminate:)는 막을 수 없어 묻지 않는다. 남은 전사 프로세스는 stdout이 닫혀 다음 진행 이벤트에서 끝난다
+  // ponytail: ⌘Q는 묻지 않는다(쓰던 메모만 저장하고 끝낸다: quit-requested). 남은 전사 프로세스는 stdout이 닫혀 다음 진행 이벤트에서 끝난다
   const busyRef = useRef("");
   busyRef.current = !(transcribing || imp.job.running || queue.length) ? "" : queue.length ? `진행 중인 변환과 대기 중인 파일 ${queue.length}개가 취소됩니다.` : "진행 중인 변환이 취소됩니다.";
   useEffect(() => {
     const un = getCurrentWindow().onCloseRequested(async (e) => {
+      // 저장하지 못한 메모가 있으면 묻는다 (⌘Q는 묻지 않고 저장만 마친다: quit-requested)
+      if (!(await flushMemos()) && !(await ask("저장하지 못한 메모가 있습니다. 그래도 닫을까요?", { title: "Tractus 닫기", kind: "warning", okLabel: "저장하지 않고 닫기", cancelLabel: "계속 쓰기" }))) return e.preventDefault();
       if (busyRef.current && !(await ask(`${busyRef.current} 그래도 닫을까요?`, { title: "Tractus 닫기", kind: "warning", okLabel: "닫기", cancelLabel: "계속 변환" }))) e.preventDefault();
     });
+    return () => void un.then((f) => f());
+  }, []);
+
+  // ⌘Q: 코어가 종료를 미루고 알리면 쓰던 메모를 저장한 뒤 이어 간다 (저장하지 못해도 끝낸다: ⌘Q는 묻지 않는다)
+  useEffect(() => {
+    const un = listen("quit-requested", () => void flushMemos().finally(() => void api.quitReady()));
     return () => void un.then((f) => f());
   }, []);
 
@@ -242,6 +277,9 @@ export function App() {
       if (e.metaKey && e.code === "KeyJ") {
         e.preventDefault();
         setAskOpen((o) => !o);
+      } else if (e.metaKey && !e.shiftKey && !e.altKey && e.code === "KeyN" && !isImeKey(e)) {
+        e.preventDefault();
+        void newMemo();
       } else if (e.metaKey && e.code === "KeyK") {
         e.preventDefault();
         searchRef.current?.focus();
@@ -254,19 +292,27 @@ export function App() {
     // e.key가 아니라 e.code(물리 키)로 본다: 한글 입력 상태에서는 e.key가 "ㅠ"·"ㅏ"다
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [rec.phase, sendRec]);
+  }, [rec.phase, sendRec, newMemo]);
 
   const onRecordButton = () => {
     if (!recording && !transcribing) {
       resetRec();
       void startRec(mode);
     }
-    setView({ kind: "record" });
+    void go({ kind: "record" });
+  };
+
+  // `새 노트` 메뉴 (⌘N은 메뉴 없이 바로 글쓰기)
+  const onNewNote = (a: NewNoteAction) => {
+    if (a === "write") void newMemo();
+    else if (a === "record") onRecordButton();
+    else void pickFiles();
   };
 
   const dialogText = del.target && deleteDialogText(del.target);
   const activeId = view.kind === "meeting" ? view.id : null;
   const groups = groupByDay(meetings);
+  const memoIds = useMemo(() => new Set(meetings.filter(isMemo).map((m) => m.id)), [meetings]);
   const knownNotes = useMemo(() => (listLoaded ? new Set(meetings.map((m) => m.id)) : null), [listLoaded, meetings]);
 
   return (
@@ -277,19 +323,25 @@ export function App() {
           <span className="brand-sub">노트와 녹음</span>
         </header>
 
-        <button className={`rec-button ${recording ? "is-live" : ""}`} onClick={onRecordButton} aria-current={view.kind === "record"}>
-          <span className="rec-dot" aria-hidden />
-          {recording ? (
-            <>
-              <span>녹음 중</span>
-              <time className="tnum">{fmtTime(rec.t)}</time>
-            </>
-          ) : transcribing ? (
-            <span>{transcribe.job.running ? "변환 중…" : "변환 대기 중…"}</span>
-          ) : (
-            <span>녹음 시작</span>
-          )}
-        </button>
+        <div className="rec-row">
+          <button className={`rec-button ${recording ? "is-live" : ""}`} onClick={onRecordButton} aria-current={view.kind === "record"}>
+            <span className="rec-dot" aria-hidden />
+            {recording ? (
+              <>
+                <span>녹음 중</span>
+                <time className="tnum">{fmtTime(rec.t)}</time>
+              </>
+            ) : transcribing ? (
+              <span>{transcribe.job.running ? "변환 중…" : "변환 대기 중…"}</span>
+            ) : (
+              <span>녹음 시작</span>
+            )}
+          </button>
+          <NewNoteMenu
+            onPick={onNewNote}
+            disabled={{ write: creating ? "만드는 중…" : undefined, record: recording ? "이미 녹음 중입니다" : transcribing ? "변환이 끝난 뒤에 녹음할 수 있습니다" : undefined }}
+          />
+        </div>
 
         <div className="mode-switch" role="radiogroup" aria-label="녹음 방식">
           {REC_MODES.map((m) => (
@@ -335,7 +387,7 @@ export function App() {
           onSubmit={(e) => {
             e.preventDefault();
             const q = searchRef.current?.value.trim();
-            if (q) setView({ kind: "search", q });
+            if (q) void go({ kind: "search", q });
           }}
         >
           <input ref={searchRef} type="search" placeholder="노트 검색" aria-label="노트 검색" />
@@ -373,7 +425,7 @@ export function App() {
                       disabled={transcribing}
                       onClick={() => {
                         startTranscribe(p.dir);
-                        setView({ kind: "record" });
+                        void go({ kind: "record" });
                       }}
                     >
                       <span className="meeting-link-title tnum">{recordingLabel(p.started_at)}</span>
@@ -396,7 +448,7 @@ export function App() {
               </ul>
             </section>
           )}
-          {!listError && meetings.length === 0 && leftover.length === 0 && <p className="nav-note">아직 노트가 없습니다. 녹음을 시작하거나 설정에서 데이터 위치를 확인하세요.</p>}
+          {!listError && meetings.length === 0 && leftover.length === 0 && <p className="nav-note">아직 노트가 없습니다. 새 노트로 녹음을 시작하거나 글을 쓰거나, 설정에서 데이터 위치를 확인하세요.</p>}
           {groups.map((g, i) => {
             const p = dayParts(g.day);
             const newMonth = i === 0 || dayParts(groups[i - 1].day).month !== p.month;
@@ -414,8 +466,8 @@ export function App() {
                         <button className="meeting-link" aria-current={m.id === activeId} onClick={() => openMeeting(m.id)}>
                           <span className="meeting-link-title">{m.title || "제목 없음"}</span>
                           <span className="meeting-link-meta tnum">
-                            {fmtTime(m.duration_sec)}
-                            {!m.has_summary && <span className="badge">요약 없음</span>}
+                            {noteTime(m)}
+                            {isMemo(m) ? <span className="badge">메모</span> : !m.has_summary && <span className="badge">요약 없음</span>}
                           </span>
                         </button>
                       </li>
@@ -428,7 +480,7 @@ export function App() {
         </nav>
 
         <footer className="sidebar-foot">
-          <button className="text-button" onClick={() => setView({ kind: "settings" })} aria-current={view.kind === "settings"}>
+          <button className="text-button" onClick={() => void go({ kind: "settings" })} aria-current={view.kind === "settings"}>
             설정
           </button>
           <span className="foot-note">노트 {meetings.length}개</span>
@@ -438,7 +490,7 @@ export function App() {
       <main className="main">
         {view.kind === "home" && <Welcome count={meetings.length} />}
         {view.kind === "meeting" && <MeetingView key={view.id} id={view.id} seek={view.seek} onChanged={refresh} notify={notify} onDelete={askDelete} />}
-        {view.kind === "search" && <SearchView key={view.q} query={view.q} onOpen={openMeeting} />}
+        {view.kind === "search" && <SearchView key={view.q} query={view.q} onOpen={openMeeting} memoIds={memoIds} />}
         {view.kind === "record" && <RecordView rec={rec} captions={live} job={waitDir ? { ...IDLE_JOB, running: true, stage: "wait_import" } : transcribe.job} send={sendRec} retry={() => transcribeDir.current && startTranscribe(transcribeDir.current)} />}
         {view.kind === "settings" && <SettingsView onSaved={refresh} />}
       </main>
@@ -464,7 +516,7 @@ export function App() {
             ×
           </button>
         </header>
-        <AskPanel scope={GLOBAL} inputRef={askInput} notes={knownNotes} onCite={(meetingId, segId, t) => openMeeting(meetingId, { segId, t })} />
+        <AskPanel scope={GLOBAL} inputRef={askInput} notes={knownNotes} memoIds={memoIds} onCite={(meetingId, segId, t) => openMeeting(meetingId, { segId, t })} />
       </aside>
 
       {del.target && dialogText && (
@@ -530,9 +582,13 @@ function Welcome({ count }: { count: number }) {
     <section className="welcome">
       <h1 className="sr-only">Tractus</h1>
       <p className="welcome-lead">
-        {count > 0 ? `노트 ${count}개가 이 Mac에 있습니다. 왼쪽에서 하나를 고르세요.` : "녹음은 이 Mac에서 텍스트로 변환되고, 파일로 남습니다."}
+        {count > 0 ? `노트 ${count}개가 이 Mac에 있습니다. 왼쪽에서 하나를 고르세요.` : "녹음하거나 메모를 써서 노트를 만드세요. 녹음은 이 Mac에서 텍스트로 변환되고, 파일로 남습니다."}
       </p>
       <dl className="shortcuts">
+        <div>
+          <dt><kbd>⌘N</kbd></dt>
+          <dd>글쓰기 (새 메모)</dd>
+        </div>
         <div>
           <dt><kbd>⌘K</kbd></dt>
           <dd>검색</dd>

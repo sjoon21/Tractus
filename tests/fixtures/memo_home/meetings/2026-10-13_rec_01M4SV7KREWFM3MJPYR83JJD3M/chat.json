@@ -1,0 +1,23 @@
+{
+ "schema_version": 1,
+ "meeting_id": "01M4SV7KREWFM3MJPYR83JJD3M",
+ "turns": [
+  {
+   "question": "견적은 어디에서 받기로 했어?",
+   "answer": "하늘상사에서 받기로 했습니다 [m0002].",
+   "citations": [
+    {
+     "meeting_id": "01M4SV7KREWFM3MJPYR83JJD3M",
+     "segment_id": "m0002",
+     "start": 0.0,
+     "line": 3,
+     "source": "memo"
+    }
+   ],
+   "provider": "upstage",
+   "model": "solar-pro4",
+   "no_evidence": false,
+   "created_at": "2026-10-13T14:21:06+09:00"
+  }
+ ]
+}

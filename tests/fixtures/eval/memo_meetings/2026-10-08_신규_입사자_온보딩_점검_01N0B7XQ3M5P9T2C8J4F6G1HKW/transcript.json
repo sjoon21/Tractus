@@ -1,0 +1,94 @@
+{
+ "schema_version": 2,
+ "meeting_id": "01N0B7XQ3M5P9T2C8J4F6G1HKW",
+ "title": "신규 입사자 온보딩 점검",
+ "created_at": "2026-10-08T14:00:00+09:00",
+ "audio": {
+  "file": "audio.opus",
+  "duration_sec": 100.0,
+  "source": "신규 입사자 온보딩 점검.m4a",
+  "sha256": "synthetic"
+ },
+ "asr": {
+  "model": "synthetic",
+  "track": "standard",
+  "runtime": "none",
+  "language": "auto",
+  "hotwords": []
+ },
+ "speakers": {},
+ "diarization": null,
+ "segments": [
+  {
+   "id": "s0001",
+   "start": 0.0,
+   "end": 18.0,
+   "text": "신규 입사자 온보딩 체크리스트를 같이 점검하겠습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0002",
+   "start": 20.0,
+   "end": 38.0,
+   "text": "계정 발급은 입사 전날까지 끝내 두는 것이 원칙이고, 이번 기수는 문제없이 끝났습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0003",
+   "start": 40.0,
+   "end": 58.0,
+   "text": "개발 환경 설정 문서가 오래돼서 첫 주에 막히는 분들이 많았습니다. 문서를 새로 고치겠습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0004",
+   "start": 60.0,
+   "end": 78.0,
+   "text": "첫 주 일정에 팀 소개 시간을 30분 더 넣는 것이 좋겠다는 의견이 있었습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0005",
+   "start": 80.0,
+   "end": 98.0,
+   "text": "온보딩 설문은 2주차 금요일에 보내는 것으로 정리하겠습니다.",
+   "lang": "ko",
+   "speaker": null,
+   "corrected_text": null,
+   "words": null
+  }
+ ],
+ "memo": {
+  "body": "노트북 수령은 10월 20일 총무팀 3층\n\n멘토: 서지후 (백엔드 팀)\n보안 교육 수료 기한 10월 31일",
+  "lines": [
+   {
+    "id": "m0001",
+    "line": 1,
+    "text": "노트북 수령은 10월 20일 총무팀 3층"
+   },
+   {
+    "id": "m0002",
+    "line": 3,
+    "text": "멘토: 서지후 (백엔드 팀)"
+   },
+   {
+    "id": "m0003",
+    "line": 4,
+    "text": "보안 교육 수료 기한 10월 31일"
+   }
+  ],
+  "seq": 3
+ }
+}

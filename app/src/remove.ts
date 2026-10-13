@@ -1,7 +1,8 @@
 // 삭제(휴지통으로 이동) 확인 대화상자의 상태와 문구 (WORDS.md §4.8). 실제 이동은 Rust `delete_meeting`·`delete_recording`이 한다.
 
 export type DeleteTarget =
-  | { kind: "note"; id: string; title: string; dir: string }
+  /** memo: 녹음 없이 직접 쓴 노트 (녹음 파일이 없다). withMemo: 녹음 노트에 내가 적은 메모가 있다 */
+  | { kind: "note"; id: string; title: string; dir: string; memo?: boolean; withMemo?: boolean }
   | { kind: "recording"; dir: string; startedAt: string };
 
 export interface DeleteState {
@@ -57,7 +58,7 @@ export function deleteDialogText(t: DeleteTarget): DeleteDialogText {
     return {
       ...common,
       title: `‘${noteTitle(t.title)}’ 노트를 삭제할까요?`,
-      body: `녹음 파일, 대화 내용, 요약, 질문 기록이 휴지통으로 옮겨지고, 검색과 AI 질문에서도 빠집니다. ${restore}`,
+      body: `${t.memo ? "메모 내용" : t.withMemo ? "녹음 파일, 대화 내용, 메모" : "녹음 파일, 대화 내용"}, 요약, 질문 기록이 휴지통으로 옮겨지고, 검색과 AI 질문에서도 빠집니다. ${restore}`,
     };
   }
   return {

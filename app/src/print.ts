@@ -1,6 +1,7 @@
 // PDF 인쇄용 문서 (docs/roadmap.md §3 6.5). 화면 데이터를 인쇄 레이아웃에 맞게 다듬는다 (print.test.ts).
 // 레이아웃은 PrintSheet.tsx + styles.css @media print, 인쇄는 macOS 인쇄 대화상자의 'PDF로 저장'.
-import { dayParts, evidenceStart, fmtTime, segText, speakerName, speakerStats, type Segment, type Speakers, type SummaryLike } from "./lib";
+import { isMemo, memoLineNumbers } from "./memo";
+import { dayParts, evidenceLabel, fmtTime, segText, speakerName, speakerStats, type NoteMemo, type Segment, type Speakers, type SummaryLike } from "./lib";
 
 export interface PrintDoc {
   title: string;
@@ -8,6 +9,8 @@ export interface PrintDoc {
   date: string;
   duration: string;
   speakers: string[];
+  /** 메모 노트: 길이·시각·참석자가 없다 */
+  memo: boolean;
   summary: {
     lead: string;
     decisions: { text: string; at: string | null }[];
@@ -16,29 +19,33 @@ export interface PrintDoc {
   } | null;
   /** speaker: 발언이 바뀔 때만 (화자 없는 회의는 늘 null) */
   rows: { id: string; time: string; speaker: string | null; text: string }[];
+  /** 녹음 노트에 사용자가 적은 메모의 줄 (대화 내용 뒤 `메모` 섹션). 없으면 빈 목록 */
+  memoLines: { id: string; text: string }[];
 }
 
 export function printDoc(d: {
-  info: { title: string; created_at: string; duration_sec: number };
+  info: { title: string; created_at: string; duration_sec: number; kind?: string };
   segments: Segment[];
   speakers: Speakers;
   summary: SummaryLike | null;
+  note_memo?: NoteMemo | null;
 }): PrintDoc {
   const p = dayParts(d.info.created_at.slice(0, 10));
   const hm = /T(\d{2}:\d{2})/.exec(d.info.created_at)?.[1];
-  const starts = new Map(d.segments.map((s) => [s.id, s.start]));
-  const at = (ids: string[]) => {
-    const t = evidenceStart(ids, starts);
-    return t === null ? null : fmtTime(t);
-  };
+  const memo = isMemo(d.info);
+  // 메모는 시각이 없다: 근거 표시도 붙이지 않는다
+  const starts = new Map(memo ? [] : d.segments.map((s) => [s.id, s.start]));
+  const lineOf = memo ? undefined : memoLineNumbers(d.note_memo);
+  const at = (ids: string[]) => evidenceLabel(ids, starts, lineOf);
   const speakers = speakerStats(d.segments, d.speakers).map((s) => s.display);
   const diarized = speakers.length > 0;
   const s = d.summary;
   return {
     title: d.info.title || "제목 없음",
     date: p.weekday ? `${p.month} ${p.day}일 (${p.weekday})${hm ? ` ${hm}` : ""}` : "",
-    duration: fmtTime(d.info.duration_sec),
+    duration: memo ? "" : fmtTime(d.info.duration_sec),
     speakers,
+    memo,
     summary: s && {
       lead: s.summary,
       decisions: s.decisions.map((x) => ({ text: x.text, at: at(x.segment_ids) })),
@@ -47,7 +54,8 @@ export function printDoc(d: {
     },
     rows: d.segments.map((seg, i) => {
       const turn = diarized && (i === 0 || (d.segments[i - 1].speaker ?? null) !== (seg.speaker ?? null));
-      return { id: seg.id, time: fmtTime(seg.start), speaker: turn ? (speakerName(seg.speaker, d.speakers) ?? "알 수 없음") : null, text: segText(seg) };
+      return { id: seg.id, time: memo ? "" : fmtTime(seg.start), speaker: turn ? (speakerName(seg.speaker, d.speakers) ?? "알 수 없음") : null, text: segText(seg) };
     }),
+    memoLines: memo ? [] : (d.note_memo?.lines ?? []).map((l) => ({ id: l.id, text: l.text })),
   };
 }

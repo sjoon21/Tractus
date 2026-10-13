@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tractus.store import seg_text, speaker_name
+from tractus.store import memo_segments, seg_text, speaker_name
 
 log = logging.getLogger("tractus.index")
 
@@ -143,7 +143,9 @@ def make_chunks(segments: list[dict], speakers: dict | None = None) -> list[dict
             "start": float(g[0][0]["start"]),
             "end": float(g[-1][0]["end"]),
             "segments": [
-                {"id": s["id"], "start": float(s["start"]), "end": float(s["end"]), "text": t, "speaker": speaker_name({"speakers": speakers}, s.get("speaker"))}
+                {"id": s["id"], "start": float(s["start"]), "end": float(s["end"]), "text": t, "speaker": speaker_name({"speakers": speakers}, s.get("speaker")),
+                 **({"line": s["line"]} if s.get("line") else {}),  # 메모의 줄 번호 (시각이 없다)
+                 **({"source": s["source"]} if s.get("source") else {})}  # "memo": 녹음 노트의 사용자 메모 줄
                 for s, t in g
             ],
             "text": " ".join(t for _, t in g),
@@ -171,7 +173,8 @@ class Hit:
     meeting_id: str
     title: str
     date: str
-    segments: list[dict]  # [{id, start, end, text, speaker}] — 근거 인용은 세그먼트 단위로
+    segments: list[dict]  # [{id, start, end, text, speaker, line?, source?}] — 근거 인용은 세그먼트 단위로. line은 메모 줄에만 있다 (start·end는 0).
+    # source "memo" = 녹음 노트에 사용자가 적은 메모 줄 (id m0001…). 메모 청크는 ASR 청크와 섞이지 않는다
     start: float
     end: float
     score: float  # 표시용 순위 점수 (strict 키워드 결과는 1 이상)
@@ -185,6 +188,11 @@ class Hit:
     @property
     def text(self) -> str:
         return " ".join(s["text"] for s in self.segments)
+
+    @property
+    def source(self) -> str:
+        """"memo"(녹음 노트의 사용자 메모) | "transcript"(대화 내용, 메모 노트의 줄 포함)."""
+        return "memo" if self.segments and self.segments[0].get("source") == "memo" else "transcript"
 
 
 @dataclass(frozen=True)
@@ -391,7 +399,7 @@ class Index:
     def _replace_meeting(self, d: Path, t: dict, sig: str, sha: str) -> None:
         """새 벡터는 여기서 만들지 않는다. sync() 끝의 _ensure_vectors가 빠진 벡터를 한 번에 채운다.
         본문이 그대로인 청크는 기존 벡터를 옮겨 쓴다 (화자 편집은 본문을 바꾸지 않아 다시 임베딩할 것이 없다)."""
-        chunks = make_chunks(t["segments"], t.get("speakers"))
+        chunks = make_chunks(t["segments"], t.get("speakers")) + make_chunks(memo_segments(t))  # 사용자 메모는 따로 묶는다 (ASR 청크와 섞지 않음)
         date = str(t.get("created_at") or "")[:10]
         has_vec = self._table("chunks_vec")
         self.db.execute("BEGIN IMMEDIATE")

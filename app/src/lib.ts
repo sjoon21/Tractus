@@ -10,6 +10,8 @@ export interface Segment {
   speaker?: string | null;
   /** 단어 타이밍 (Phase 6.1, `tractus align`). 표시 텍스트의 공백 토큰과 1:1. 없거나 정렬 전이면 null */
   words?: Word[] | null;
+  /** 메모 노트: 본문의 줄 번호 (1부터, 빈 줄 포함). 인용 칩 `n번째 줄` */
+  line?: number;
 }
 
 /** 시각은 회의 기준 절대 초. approx: 문장을 고친 뒤 보간한 시각 */
@@ -25,6 +27,23 @@ export interface Memo {
   kind: "memo" | "bookmark" | string;
   text: string | null;
 }
+
+/** 녹음 노트에 사용자가 직접 적은 메모의 한 줄 (본문의 비어 있지 않은 줄). id는 `m0003`: 녹음 대화(`s0012`)와 따로 센다 */
+export interface NoteMemoLine {
+  id: string;
+  /** 본문의 1부터 세는 줄 번호 (빈 줄 포함) */
+  line: number;
+  text: string;
+}
+
+/** 녹음 노트의 메모 (transcript.json `memo`). 녹음 중 남기는 메모·북마크(`Memo`)와는 다르다 */
+export interface NoteMemo {
+  body: string;
+  lines: NoteMemoLine[];
+}
+
+/** 녹음 노트 메모의 줄 ID인가 (`m0003`). 메모 노트의 줄은 대화처럼 `s0003`이다 */
+export const isMemoLineId = (id: string): boolean => /^m\d{4,}$/.test(id);
 
 /** 초 → "4:05", 한 시간이 넘으면 "1:02:03". */
 export function fmtTime(sec: number): string {
@@ -293,6 +312,14 @@ export function transcriptRows(segments: Segment[], memos: Memo[], only: string 
 export function evidenceStart(segmentIds: string[], starts: Map<string, number>): number | null {
   const ts = segmentIds.map((id) => starts.get(id)).filter((t): t is number => t !== undefined);
   return ts.length ? Math.min(...ts) : null;
+}
+
+/** 근거 표시: 가장 이른 시각(`1:05`)과 메모의 가장 이른 줄(`메모 3번째 줄`)을 쉼표로. 둘 다 없으면 null. 요약 복사·PDF가 쓴다 */
+export function evidenceLabel(segmentIds: string[], starts: Map<string, number>, memoLines?: Map<string, number>): string | null {
+  const t = evidenceStart(segmentIds, starts);
+  const line = Math.min(...segmentIds.flatMap((id) => memoLines?.get(id) ?? []));
+  const parts = [t !== null && fmtTime(t), Number.isFinite(line) && `메모 ${line}번째 줄`].filter(Boolean);
+  return parts.length ? parts.join(", ") : null;
 }
 
 /** 화면 문장(message)과 원래 문구(detail). 오류 줄·토스트가 detail을 접힌 '자세히'에 넣는다 (WORDS.md §4.7) */
@@ -816,11 +843,11 @@ export interface SummaryLike {
   action_items: { task: string; owner: string | null; due: string | null; segment_ids: string[] }[];
 }
 
-/** '요약 복사' 마크다운. 결정 사항에는 근거 시각을 붙인다. */
-export function summaryMarkdown(s: SummaryLike, starts: Map<string, number>): string {
+/** '요약 복사' 마크다운. 항목에는 근거 시각을 붙인다. memoLines: 녹음 노트 메모의 줄 ID → 줄 번호(`메모 3번째 줄`) */
+export function summaryMarkdown(s: SummaryLike, starts: Map<string, number>, memoLines?: Map<string, number>): string {
   const at = (ids: string[]) => {
-    const t = evidenceStart(ids, starts);
-    return t === null ? "" : ` (${fmtTime(t)})`;
+    const label = evidenceLabel(ids, starts, memoLines);
+    return label === null ? "" : ` (${label})`;
   };
   const section = (title: string, lines: string[]) => (lines.length ? [`## ${title}`, "", ...lines, ""] : []);
   return [

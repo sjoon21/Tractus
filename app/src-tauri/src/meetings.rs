@@ -20,6 +20,9 @@ pub struct Segment {
     /// 단어 타이밍 (Phase 6.1, `tractus align`). 정렬 전이거나 값이 이상하면 null
     #[serde(default, deserialize_with = "lenient")]
     pub words: Option<Vec<Word>>,
+    /// 메모 노트: 본문의 줄 번호(1부터, 빈 줄 포함). 시각이 없어 인용 칩 `n번째 줄`에 쓴다. 녹음에는 없다
+    #[serde(default, deserialize_with = "lenient", skip_serializing_if = "Option::is_none")]
+    pub line: Option<u64>,
 }
 
 /// 공백 토큰 하나. 시각은 회의 기준 절대 초. approx: 문장을 고친 뒤 보간한 시각
@@ -56,12 +59,13 @@ pub struct Suggestion {
     pub score: f64,
 }
 
+/// 메모 노트는 `"audio": {"file": null, "duration_sec": 0, ...}`이고, 아주 오래된 파일은 audio가 없거나 null일 수 있다
 #[derive(Deserialize, Clone, Debug, Default)]
 struct Audio {
     #[serde(default)]
     file: Option<String>,
     #[serde(default)]
-    duration_sec: f64,
+    duration_sec: Option<f64>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -72,7 +76,16 @@ struct Transcript {
     #[serde(default)]
     created_at: String,
     #[serde(default)]
-    audio: Audio,
+    audio: Option<Audio>,
+    /// "memo": 녹음 없이 직접 쓴 노트. 없으면(옛 노트) 녹음이다
+    #[serde(default)]
+    kind: Option<String>,
+    /// 메모 노트의 본문 (그대로). 녹음에는 없다
+    #[serde(default)]
+    body: Option<String>,
+    /// 녹음 노트에 사용자가 적은 메모 `{body, lines, seq}`. 값이 어떤 모양이어도 읽는다 (`parse_note_memo`가 이상하면 없는 것으로 본다)
+    #[serde(default)]
+    memo: Option<serde_json::Value>,
     #[serde(default)]
     segments: Vec<Segment>,
     /// schema_version 2. v1에는 없고, 화자 분리를 끄면 {} (null도 받는다)
@@ -87,6 +100,43 @@ fn lenient_speakers<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<S
         serde_json::Value::Object(m) => m.into_iter().map(|(k, v)| (k, serde_json::from_value(v).unwrap_or_default())).collect(),
         _ => BTreeMap::new(),
     })
+}
+
+/// 녹음 노트의 메모 한 줄 (본문의 비어 있지 않은 줄). id는 `m0003`: 녹음 대화(`s0012`)와 따로 센다. line은 본문의 줄 번호(1부터, 빈 줄 포함)
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct NoteMemoLine {
+    pub id: String,
+    pub line: u64,
+    pub text: String,
+}
+
+/// 녹음 노트에 사용자가 적은 메모 (transcript.json `memo`, docs/desktop.md §2.10). 녹음 중 남기는 메모·북마크(`Memo`)와 다르다
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct NoteMemo {
+    pub body: String,
+    pub lines: Vec<NoteMemoLine>,
+}
+
+/// 너그럽게 읽는다: 객체가 아니거나 body가 문자열이 아니거나 비어 있으면 메모가 없는 것이다. 이상한 줄은 건너뛴다 (노트 전체를 못 읽지 않게)
+fn parse_note_memo(v: Option<&serde_json::Value>) -> Option<NoteMemo> {
+    let o = v?.as_object()?;
+    let body = o.get("body")?.as_str()?;
+    if body.trim().is_empty() {
+        return None;
+    }
+    let lines = o
+        .get("lines")
+        .and_then(|l| l.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|l| {
+                    let id = l.get("id")?.as_str().filter(|id| !id.is_empty())?;
+                    Some(NoteMemoLine { id: id.to_string(), line: l.get("line")?.as_u64()?, text: l.get("text")?.as_str()?.to_string() })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(NoteMemo { body: body.to_string(), lines })
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -148,6 +198,8 @@ pub struct MeetingInfo {
     pub duration_sec: f64,
     pub segments: usize,
     pub has_summary: bool,
+    /// "recording" | "memo"
+    pub kind: String,
 }
 
 #[derive(Serialize, Debug)]
@@ -158,6 +210,10 @@ pub struct MeetingDetail {
     pub speakers: BTreeMap<String, Speaker>,
     pub summary: Option<Summary>,
     pub memos: Vec<Memo>,
+    /// 메모 노트의 본문. 녹음은 null
+    pub body: Option<String>,
+    /// 녹음 노트에 사용자가 적은 메모. 없으면(메모 노트이거나 아직 쓰지 않았거나 읽을 수 없음) null
+    pub note_memo: Option<NoteMemo>,
     /// 오디오 절대 경로. 프론트엔드가 convertFileSrc(path, "media")로 URL을 만든다 (media.rs).
     pub audio_path: Option<String>,
 }
@@ -167,15 +223,25 @@ fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
     serde_json::from_str(&raw).map_err(|e| format!("노트 파일을 읽지 못했습니다\n{}: {e}", path.display()))
 }
 
+/// "memo"만 메모이고 없거나 모르는 값은 녹음이다 (옛 파일을 옮기지 않는다)
+fn kind_of(t: &Transcript) -> &'static str {
+    if t.kind.as_deref() == Some("memo") {
+        "memo"
+    } else {
+        "recording"
+    }
+}
+
 fn info(dir: &Path, t: &Transcript) -> MeetingInfo {
     MeetingInfo {
         id: t.meeting_id.clone(),
         dir: dir.to_string_lossy().into_owned(),
         title: t.title.clone(),
         created_at: t.created_at.clone(),
-        duration_sec: t.audio.duration_sec,
+        duration_sec: t.audio.as_ref().and_then(|a| a.duration_sec).unwrap_or(0.0),
         segments: t.segments.len(),
         has_summary: dir.join("summary.json").is_file(),
+        kind: kind_of(t).to_string(),
     }
 }
 
@@ -265,13 +331,16 @@ pub fn load(home: &Path, id: &str) -> Result<MeetingDetail, String> {
     // audio.file은 파일 이름만 허용한다 (회의 폴더 밖을 가리키지 못하게)
     let audio_path = t
         .audio
-        .file
-        .as_deref()
+        .as_ref()
+        .and_then(|a| a.file.as_deref())
         .filter(|f| !f.is_empty() && !f.contains(['/', '\\']) && *f != "..")
         .map(|f| dir.join(f))
         .filter(|p| p.is_file())
         .map(|p| p.to_string_lossy().into_owned());
-    Ok(MeetingDetail { info: info(&dir, &t), speakers: t.speakers, segments: t.segments, summary, memos, audio_path })
+    let is_memo = kind_of(&t) == "memo";
+    let body = if is_memo { Some(t.body.clone().unwrap_or_default()) } else { None };
+    let note_memo = if is_memo { None } else { parse_note_memo(t.memo.as_ref()) };
+    Ok(MeetingDetail { info: info(&dir, &t), speakers: t.speakers, segments: t.segments, summary, memos, body, note_memo, audio_path })
 }
 
 /// chat.json 항목 (`tractus ask --save`가 덧붙인다, 최근 50개). 없는 필드는 기본값으로 읽는다
@@ -292,6 +361,12 @@ pub struct ChatCitation {
     pub meeting_id: String,
     pub segment_id: String,
     pub start: f64,
+    /// 메모 노트의 인용이면 줄 번호 (시각이 없다)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u64>,
+    /// "memo": 녹음 노트에 사용자가 적은 메모의 줄 (segment_id는 `m0003`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// 회의의 질문 기록. 파일이 없으면 빈 목록. 목록 또는 {"turns": [...]}을 받고, 읽지 못하는 항목은 건너뛴다
@@ -502,6 +577,151 @@ mod tests {
         let v = serde_json::to_value(&d.segments).unwrap();
         assert_eq!(v[0]["words"][1], serde_json::json!({"text": "하세요", "start": 0.6, "end": 1.2, "approx": true}));
         assert!(v[1]["words"].is_null());
+    }
+
+    /// 코어(`tractus note new/save`, `summarize`)가 실제로 만든 메모 폴더를 앱 파서로 읽는다 (tests/fixtures/memo_home)
+    #[test]
+    fn reads_memo_folder_written_by_the_real_core() {
+        let home = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/memo_home");
+        let id = "01M4SQKXTMEQ5BPCG841527FXK";
+        let m = load(&home, id).unwrap();
+        assert_eq!((m.info.kind.as_str(), m.info.duration_sec, m.info.segments), ("memo", 0.0, 4));
+        assert_eq!(m.info.title, "이름 바꿈 ★");
+        assert!(m.body.as_deref().unwrap().starts_with("쿠버네티스 도입 검토 메모\n결정:"));
+        assert!(m.audio_path.is_none() && m.speakers.is_empty());
+        assert_eq!(m.segments.iter().map(|s| s.line).collect::<Vec<_>>(), vec![Some(1), Some(2), Some(3), Some(4)]);
+        assert!(m.summary.is_some());
+        let l = list(&home);
+        let mut kinds: Vec<_> = l.iter().map(|i| i.kind.as_str()).collect();
+        kinds.sort();
+        assert_eq!(kinds, vec!["memo", "recording"]);
+    }
+
+    /// 코어가 만든 녹음 노트(메모 + 요약의 m-ID 인용 + 질문 기록의 메모 인용)를 앱 파서로 읽는다
+    #[test]
+    fn reads_recording_note_with_memo_written_by_the_real_core() {
+        let home = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/memo_home");
+        let id = "01M4SV7KREWFM3MJPYR83JJD3M";
+        let m = load(&home, id).unwrap();
+        assert_eq!((m.info.kind.as_str(), m.info.segments), ("recording", 1));
+        assert!(m.audio_path.is_some() && m.body.is_none());
+        let memo = m.note_memo.unwrap();
+        assert_eq!(memo.body, "서버 비용 20퍼센트 절감이 핵심\n\n견적은 하늘상사에서 받는다\n마감은 금요일");
+        assert_eq!(
+            memo.lines.iter().map(|l| (l.id.as_str(), l.line)).collect::<Vec<_>>(),
+            vec![("m0001", 1), ("m0002", 3), ("m0003", 4)]
+        );
+        let sm = m.summary.unwrap();
+        assert!(sm.decisions.iter().any(|d| d.segment_ids == vec!["m0002".to_string()]));
+        assert!(sm.action_items[0].segment_ids.iter().any(|s| s == "m0003"));
+        let chat = load_chat(&home, id).unwrap();
+        let c = &chat[0].citations[0];
+        assert_eq!((c.segment_id.as_str(), c.source.as_deref(), c.line, c.start), ("m0002", Some("memo"), Some(3), 0.0));
+    }
+
+    /// 메모 노트: 녹음 없음(audio.file null), kind·body. 옛 노트(kind 없음)는 녹음, audio가 null이어도 읽힌다
+    #[test]
+    fn reads_memo_notes_and_old_notes_without_kind() {
+        let home = temp_home("memo-kind");
+        let write = |id: &str, json: &str| {
+            let dir = home.join(format!("meetings/2026-10-13_t_{id}"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("transcript.json"), json).unwrap();
+        };
+        write(
+            "01MEMO",
+            r#"{"schema_version":2,"meeting_id":"01MEMO","title":"메모 14:05","created_at":"2026-10-13T14:05:00+09:00","kind":"memo",
+               "audio":{"file":null,"duration_sec":0,"source":"memo","sha256":null},"body":"첫 줄\n\n둘째 줄",
+               "segments":[{"id":"s0001","start":0,"end":0,"text":"첫 줄","speaker":null,"lang":null,"corrected_text":null,"words":null,"line":1},
+                           {"id":"s0002","start":0,"end":0,"text":"둘째 줄","speaker":null,"line":"깨짐"}]}"#,
+        );
+        write("01OLD", r#"{"schema_version":2,"meeting_id":"01OLD","audio":{"file":"audio.ogg","duration_sec":9.5},"segments":[]}"#);
+        write("01NOAUDIO", r#"{"meeting_id":"01NOAUDIO","segments":[]}"#);
+        write("01NULLAUDIO", r#"{"meeting_id":"01NULLAUDIO","audio":null,"segments":[]}"#);
+        write("01ODDKIND", r#"{"meeting_id":"01ODDKIND","kind":"voice","body":"x","audio":{"file":null,"duration_sec":null},"segments":[]}"#);
+
+        let m = load(&home, "01MEMO").unwrap();
+        assert_eq!((m.info.kind.as_str(), m.info.duration_sec, m.info.segments), ("memo", 0.0, 2));
+        assert_eq!(m.body.as_deref(), Some("첫 줄\n\n둘째 줄"));
+        assert!(m.audio_path.is_none() && m.speakers.is_empty());
+        assert_eq!(m.segments.iter().map(|s| s.line).collect::<Vec<_>>(), vec![Some(1), None], "이상한 줄 번호는 None");
+        assert!(serde_json::to_value(&m.segments[1]).unwrap().get("line").is_none(), "없으면 보내지 않는다");
+        let old = load(&home, "01OLD").unwrap();
+        assert_eq!((old.info.kind.as_str(), old.info.duration_sec), ("recording", 9.5));
+        assert!(old.body.is_none());
+        for id in ["01NOAUDIO", "01NULLAUDIO", "01ODDKIND"] {
+            let d = load(&home, id).unwrap();
+            assert_eq!((d.info.kind.as_str(), d.info.duration_sec), ("recording", 0.0), "{id}");
+            assert!(d.body.is_none() && d.audio_path.is_none(), "{id}");
+        }
+        assert_eq!(list(&home).len(), 5, "목록에서 빠지지 않는다");
+        let v = serde_json::to_value(&m).unwrap();
+        assert_eq!((v["info"]["kind"].as_str(), v["body"].as_str()), (Some("memo"), Some("첫 줄\n\n둘째 줄")));
+        assert!(serde_json::to_value(&old).unwrap()["body"].is_null());
+    }
+
+    /// 녹음 노트의 메모 (`memo` 블록): 있음·없음·이상함. 이상해도 노트는 읽히고 메모만 없는 것으로 본다
+    #[test]
+    fn reads_note_memo_of_recordings_leniently() {
+        let home = temp_home("note-memo");
+        let write = |id: &str, extra: &str| {
+            let dir = home.join(format!("meetings/2026-10-13_t_{id}"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("transcript.json"),
+                format!(r#"{{"schema_version":2,"meeting_id":"{id}","audio":{{"file":null,"duration_sec":3}},"segments":[{{"id":"s0001","start":0,"end":1,"text":"안녕"}}]{extra}}}"#),
+            )
+            .unwrap();
+        };
+        write("01WITH", r#","memo":{"body":"첫 줄\n\n셋째 줄","lines":[{"id":"m0001","line":1,"text":"첫 줄"},{"id":"m0002","line":3,"text":"셋째 줄"}],"seq":2}"#);
+        write("01NONE", "");
+        write("01NULL", r#","memo":null"#);
+        write("01STR", r#","memo":"깨짐""#);
+        write("01NOBODY", r#","memo":{"lines":[]}"#);
+        write("01BODYNUM", r#","memo":{"body":5,"lines":[]}"#);
+        write("01EMPTY", r#","memo":{"body":"  \n","lines":[]}"#);
+        write("01BADLINES", r#","memo":{"body":"a\nb","lines":[{"id":"m0001","line":1,"text":"a"},{"id":"m0002","line":"x","text":"b"},{"line":2,"text":"b"},3]}"#);
+        write("01NOLINES", r#","memo":{"body":"a","lines":"깨짐"}"#);
+
+        let m = load(&home, "01WITH").unwrap().note_memo.unwrap();
+        assert_eq!(m.body, "첫 줄\n\n셋째 줄");
+        assert_eq!(m.lines, vec![NoteMemoLine { id: "m0001".into(), line: 1, text: "첫 줄".into() }, NoteMemoLine { id: "m0002".into(), line: 3, text: "셋째 줄".into() }]);
+        for id in ["01NONE", "01NULL", "01STR", "01NOBODY", "01BODYNUM", "01EMPTY"] {
+            let d = load(&home, id).unwrap();
+            assert!(d.note_memo.is_none(), "{id}");
+            assert_eq!(d.segments.len(), 1, "{id}: 노트는 그대로 읽힌다");
+        }
+        // 이상한 줄만 건너뛴다. 줄 목록이 통째로 이상하면 본문만 남는다
+        let bad = load(&home, "01BADLINES").unwrap().note_memo.unwrap();
+        assert_eq!((bad.body.as_str(), bad.lines.iter().map(|l| l.id.as_str()).collect::<Vec<_>>()), ("a\nb", vec!["m0001"]));
+        let nolines = load(&home, "01NOLINES").unwrap().note_memo.unwrap();
+        assert_eq!((nolines.body.as_str(), nolines.lines.len()), ("a", 0));
+        assert_eq!(list(&home).len(), 9, "목록에서 빠지지 않는다");
+        // 앱은 note_memo를 항상 키로 받는다 (없으면 null). 목록 항목은 그대로다
+        let v = serde_json::to_value(load(&home, "01WITH").unwrap()).unwrap();
+        assert_eq!(v["note_memo"]["lines"][1], serde_json::json!({"id": "m0002", "line": 3, "text": "셋째 줄"}));
+        assert!(serde_json::to_value(load(&home, "01NONE").unwrap()).unwrap()["note_memo"].is_null());
+        assert!(serde_json::to_value(&list(&home)[0]).unwrap().get("note_memo").is_none());
+    }
+
+    /// 메모 노트(kind memo)는 `body`가 본문이고 `memo` 블록이 있어도 쓰지 않는다
+    #[test]
+    fn memo_note_ignores_a_memo_block() {
+        let home = temp_home("memo-note-block");
+        let dir = home.join("meetings/2026-10-13_t_01MN");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("transcript.json"), r#"{"meeting_id":"01MN","kind":"memo","body":"x","memo":{"body":"y","lines":[]},"segments":[]}"#).unwrap();
+        let d = load(&home, "01MN").unwrap();
+        assert_eq!((d.body.as_deref(), d.note_memo.is_none()), (Some("x"), true));
+    }
+
+    #[test]
+    fn chat_citation_keeps_the_memo_source() {
+        let c: ChatCitation = serde_json::from_str(r#"{"meeting_id":"M","segment_id":"m0003","source":"memo","line":3}"#).unwrap();
+        assert_eq!((c.source.as_deref(), c.line, c.start), (Some("memo"), Some(3), 0.0));
+        let v = serde_json::to_value(&c).unwrap();
+        assert_eq!(v["source"], "memo");
+        assert!(serde_json::to_value(ChatCitation::default()).unwrap().get("source").is_none());
     }
 
     #[test]

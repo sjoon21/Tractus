@@ -35,6 +35,11 @@ describe("dialog text", () => {
     expect([t.cancel, t.confirm, t.busy]).toEqual(["취소", "휴지통으로 이동", "옮기는 중…"]);
   });
 
+  test("a recording note with its own memo names the memo among what moves", () => {
+    expect(deleteDialogText({ ...note, withMemo: true }).body).toMatch(/^녹음 파일, 대화 내용, 메모, 요약, 질문 기록이/);
+    expect(deleteDialogText(note).body).toMatch(/^녹음 파일, 대화 내용, 요약/);
+  });
+
   test("a note without a title is still named", () => {
     expect(noteTitle("  ")).toBe("제목 없음");
     expect(deleteDialogText({ ...note, title: "" }).title).toBe("‘제목 없음’ 노트를 삭제할까요?");

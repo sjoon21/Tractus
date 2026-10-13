@@ -149,7 +149,7 @@ export function FindBar({
 }
 
 /** 머리말의 '내보내기' 메뉴. 네이티브 popover라 Esc·바깥 클릭으로 닫힌다. PDF는 코어가 아니라 인쇄 대화상자로 만든다 */
-export function ExportMenu({ onPick, onPrint }: { onPick: (f: (typeof EXPORT_FORMATS)[number]) => void; onPrint: () => void }) {
+export function ExportMenu({ onPick, onPrint, formats = EXPORT_FORMATS }: { onPick: (f: (typeof EXPORT_FORMATS)[number]) => void; onPrint: () => void; formats?: typeof EXPORT_FORMATS }) {
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const pick = (run: () => void) => {
@@ -178,7 +178,7 @@ export function ExportMenu({ onPick, onPrint }: { onPick: (f: (typeof EXPORT_FOR
         }}
         onToggle={(e) => e.newState === "open" && menu.current?.querySelector<HTMLElement>("button")?.focus()}
       >
-        {EXPORT_FORMATS.map((f) => (
+        {formats.map((f) => (
           <button
             key={f.format}
             role="menuitem"

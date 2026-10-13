@@ -1,0 +1,6 @@
+{"qid": "m01", "type": "meeting", "meeting": "01N0A4TWZ8H7K3Q5V2R9D6B1XE", "question": "AWS 계약 갱신 마감일이 언제야?", "gold": {"01N0A4TWZ8H7K3Q5V2R9D6B1XE": ["m0001"]}}
+{"qid": "m02", "type": "meeting", "meeting": "01N0A4TWZ8H7K3Q5V2R9D6B1XE", "question": "10월 5주차 온콜은 누가 서?", "gold": {"01N0A4TWZ8H7K3Q5V2R9D6B1XE": ["m0002"]}}
+{"qid": "m03", "type": "meeting", "meeting": "01N0B7XQ3M5P9T2C8J4F6G1HKW", "question": "노트북은 언제 어디서 받아?", "gold": {"01N0B7XQ3M5P9T2C8J4F6G1HKW": ["m0001"]}}
+{"qid": "m04", "type": "cross", "question": "신규 입사자 멘토는 누구로 정해졌어?", "gold": {"01N0B7XQ3M5P9T2C8J4F6G1HKW": ["m0002"]}}
+{"qid": "m05", "type": "cross", "question": "하늘상사 담당자가 누구야?", "gold": {"01N0C9RD5V2W7Y4B8K3N6Q1ZMA": ["m0001"]}}
+{"qid": "m06", "type": "date", "from": "2026-10-10", "to": "2026-10-31", "question": "CSV 대량 업로드는 지금 몇 행까지 돼?", "gold": {"01N0C9RD5V2W7Y4B8K3N6Q1ZMA": ["m0002"]}}

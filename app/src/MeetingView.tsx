@@ -15,6 +15,7 @@ import {
   fmtTime,
   inverseEdits,
   isImeKey,
+  isMemoLineId,
   isTypingTarget,
   JOB_ERROR,
   oneLine,
@@ -43,7 +44,7 @@ import {
   type Segment,
   type TextEdit,
 } from "./lib";
-import { providerLabel } from "./ask";
+import { citeLabel, providerLabel } from "./ask";
 import { AskPanel } from "./AskPanel";
 import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
@@ -53,6 +54,9 @@ import { EDIT_BLOCKED, type DeleteTarget } from "./remove";
 import { PrintSheet } from "./PrintSheet";
 import { SpeakerChip, SpeakerMenu, SpeakersBar, spkStyle, type MenuTarget, type MergeAsk } from "./Speakers";
 import { ExportMenu, FindBar, SegmentEditor, type FindState } from "./TranscriptTools";
+import { MemoEditor, TitleEditor, type MemoTarget } from "./MemoView";
+import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, staleSentence, type EditKind, type SaveState } from "./memo";
+import { RAIL_LABEL, railKey, railLabel, railTabs, validTab, type RailTab } from "./rail";
 import { releaseVoiceBoost, resumeVoiceBoost, setVoiceBoost, voiceBoostSupported } from "./voice";
 
 const RATE_KEY = "tractus.playbackRate";
@@ -76,6 +80,12 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
   const [pending, setPending] = useState<TextEdit[][]>([]);
   const detail = useMemo(() => (base && pending.length ? { ...base, segments: pending.reduce(applyEdits, base.segments) } : base), [base, pending]);
   const [error, setError] = useState<{ text: string; detail: string | null } | null>(null);
+  // 메모 노트 (녹음 없이 직접 쓴 글): 본문 편집기가 화면의 가운데를 차지하고 플레이어·참석자·단어 싱크는 없다
+  const memoNote = !!detail && isMemo(detail.info);
+  const memoRef = useRef(false);
+  memoRef.current = memoNote;
+  const [memoSave, setMemoSave] = useState<SaveState>({ status: "saved" });
+  const [memoPick, setMemoPick] = useState<MemoTarget | null>(null); // 요약 칩으로 고른 줄
   const audio = useRef<HTMLAudioElement>(null);
   const list = useRef<HTMLOListElement>(null);
   const [t, setT] = useState(0);
@@ -98,6 +108,12 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
   // 요약이 낡았는지: 코어가 실제로 바꾼 편집 횟수(editSeq)를 요약을 시작할 때의 값(summarySeq)과 견준다.
   // 요약하는 동안 고친 문장은 요약이 끝나도 '낡음'으로 남는다
   const [editSeq, setEditSeq] = useState(0);
+  const editSeqRef = useRef(0); // 저장이 끝나 값이 바뀌어도 await 뒤에 최신 값을 읽는다 (요약 직전 저장이 '낡음'으로 남지 않게)
+  const editKinds = useRef<EditKind[]>([]); // 고친 것의 종류 (안내 문장: 대화 내용 / 메모 / 둘 다). 개수가 editSeq다
+  const bumpEdit = useCallback((kind: EditKind) => {
+    editKinds.current = [...editKinds.current, kind];
+    setEditSeq(++editSeqRef.current);
+  }, []);
   const [summarySeq, setSummarySeq] = useState(0);
   const summaryFrom = useRef(0);
   const edited = editSeq > summarySeq;
@@ -106,10 +122,45 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
     void load();
     onChanged();
   });
-  const startSummarize = () => {
-    summaryFrom.current = editSeq;
+  const startSummarize = async () => {
+    // 메모(메모 노트의 본문, 녹음 노트의 메모 탭)는 쓰던 글을 먼저 저장한다 (요약이 저장된 글을 읽는다). 저장하지 못하면 요약하지 않는다 (오류는 편집기가 보인다)
+    if (!(await flushMemos())) return;
+    summaryFrom.current = editSeqRef.current;
     void summarize.startJob("summarize", id);
   };
+  const onMemoSaved = useCallback(
+    (m: MeetingDetail) => {
+      commit(m);
+      bumpEdit("memo");
+      indexer.touch(); // 한가할 때 조용히 검색에 반영한다
+    },
+    [commit, bumpEdit],
+  );
+  const memoBusy = memoSave.status === "saving";
+
+  // 제목 바꾸기: 낙관적으로 바꾸고 줄을 세워 저장한다. 실패하면 원래 제목으로 되돌리고 알린다. 폴더 이름은 그대로다 (코어)
+  const renameNote = useCallback(
+    (title: string) => {
+      if (editQueue.isBlocked(id)) return notify({ text: EDIT_BLOCKED, error: true });
+      const before = confirmed.current?.info.title ?? "";
+      const setTitle = (t: string) => setBase((b) => (b ? { ...b, info: { ...b.info, title: t } } : b));
+      setTitle(title);
+      setInFlight((n) => n + 1);
+      void Promise.resolve(editQueue.run(id, () => api.noteTitle(id, title)))
+        .then((saved) => {
+          if (saved === undefined) throw new Error(EDIT_BLOCKED);
+          if (confirmed.current) confirmed.current = { ...confirmed.current, info: { ...confirmed.current.info, title: saved } };
+          setTitle(saved);
+          onChanged(); // 사이드바 제목
+        })
+        .catch((e) => {
+          setTitle(before);
+          notify({ text: errText(e), detail: errDetail(e), error: true });
+        })
+        .finally(() => setInFlight((n) => n - 1));
+    },
+    [id, notify, onChanged],
+  );
 
   const segments = detail?.segments ?? [];
   // 단어 타이밍 (6.1): 예전 회의는 words가 없다 → '단어 타이밍 만들기'. 코어는 정렬하는 동안 고친 문장을 덮어쓰지 않는다
@@ -202,7 +253,7 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
         const { changed, meeting } = await api.editSegments(id, edits);
         commit(meeting);
         if (changed > 0) {
-          setEditSeq((n) => n + 1);
+          bumpEdit("text");
           indexer.touch(); // 한가할 때 조용히 검색에 반영한다 (마지막 수정 뒤 20초)
           if (!isUndo && before) undoStack.current.push(inverseEdits(before.segments, edits));
         }
@@ -215,7 +266,7 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
         setPending((p) => p.filter((x) => x !== edits));
       }
     },
-    [id, commit],
+    [id, commit, bumpEdit],
   );
   const saveText = useCallback(
     (edits: TextEdit[]) => {
@@ -317,14 +368,34 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
   }, [printNonce, notify]);
   const printable = useMemo(() => (printNonce && detail ? printDoc(detail) : null), [printNonce > 0, detail]);
 
-  // 오른쪽 레일: 요약 | 질문 (6.3). 질문 탭은 처음 열 때 만들고, 그 뒤에는 숨겨도 둔다(스트리밍이 이어지게)
-  const [tab, setTab] = useState<"summary" | "ask">("summary");
+  // 오른쪽 레일: 요약 | AI 질문 (6.3) | 메모(녹음 노트만). 질문·메모 탭은 처음 열 때 만들고, 그 뒤에는 숨겨도 둔다(스트리밍·쓰던 글이 이어지게)
+  const [tab, setTab] = useState<RailTab>("summary");
   const [askSeen, setAskSeen] = useState(false);
-  const showTab = (k: "summary" | "ask") => {
+  const [memoSeen, setMemoSeen] = useState(false);
+  const tabs = railTabs(memoNote);
+  const tabNow = validTab(tabs, tab);
+  const memoSegs = useMemo(() => memoLineSegments(detail?.note_memo), [detail?.note_memo]);
+  const showTab = (k: RailTab, focusMemo = false) => {
+    if (tabNow === "memo" && k !== "memo") void flushMemos(); // 메모 탭을 떠날 때 저장을 마친다 (입력창을 벗어나는 blur와 같다)
     setTab(k);
     if (k === "ask") setAskSeen(true);
+    if (k === "memo") {
+      setMemoSeen(true);
+      if (focusMemo) setMemoPick({ segId: null, nonce: Date.now() }); // 탭을 눌러 열면 입력창에 초점. 방향키로 지나갈 때는 두지 않는다
+    }
   };
-  const onCite = useCallback((_m: string, _seg: string, sec: number) => seekTo(sec), [seekTo]);
+  // 메모의 줄로 간다: 메모 노트는 가운데 본문에서, 녹음 노트는 메모 탭을 열고 그 줄을 고른다
+  const openMemoLine = useCallback((segId: string | null) => {
+    if (!memoRef.current) {
+      setTab("memo");
+      setMemoSeen(true);
+    }
+    setMemoPick({ segId, nonce: Date.now() });
+  }, []);
+  const onCite = useCallback(
+    (_m: string, segId: string, sec: number) => (memoRef.current || isMemoLineId(segId) ? openMemoLine(segId) : seekTo(sec)),
+    [seekTo, openMemoLine],
+  );
 
   // 검색 결과·시각 칩에서 들어온 시각으로 한 번만 이동 (재생은 사용자가 시작).
   // 요약을 만든 뒤 다시 읽어도(detail이 바뀌어도) 재생 위치를 되돌리지 않게 nonce로 거른다
@@ -332,9 +403,11 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
   useEffect(() => {
     if (!detail || !seek || appliedSeek.current === seek.nonce) return;
     appliedSeek.current = seek.nonce;
+    if (memoRef.current) return; // 메모 노트는 줄을 고른다 (아래 memoTarget)
+    if (seek.segId && isMemoLineId(seek.segId)) return openMemoLine(seek.segId); // 녹음 노트의 메모 줄: 메모 탭에서 그 줄을 고른다
     const sec = seek.segId !== undefined ? (starts.get(seek.segId) ?? seek.t ?? 0) : (seek.t ?? 0);
     seekTo(sec, false);
-  }, [detail, seek, starts, seekTo]);
+  }, [detail, seek, starts, seekTo, openMemoLine]);
 
   // 찾기·바꾸기 (5.4)
   const [find, setFind] = useState<FindState | null>(null);
@@ -453,7 +526,7 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
   // (bbc/react-transcript-editor defaultHotKeys.js, MIT 참고)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isImeKey(e)) return;
+      if (isImeKey(e) || memoRef.current) return; // 메모는 본문 편집기(textarea)가 키를 쓴다. 찾기·재생 단축키는 녹음 노트만
       if (e.metaKey && e.code === "KeyF") {
         e.preventDefault();
         // 이미 열려 있으면 찾을 말을 고른다. 새로 열면 입력이 autoFocus로 초점을 받는다
@@ -498,6 +571,7 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
     }
     if (!out) return;
     const target = out;
+    if (!(await flushMemos())) return; // 쓰던 글까지 내보낸다. 저장하지 못하면 내보내지 않는다 (오류는 편집기가 보인다)
     // 저장 중인 편집이 끝난 뒤에 내보낸다
     void serial(async () => {
       try {
@@ -520,6 +594,24 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
 
   const { info, summary } = detail;
   const created = info.created_at ? new Date(info.created_at) : null;
+  // 메모: 대화 id → 본문 줄 번호 (요약·질문의 인용 칩 `n번째 줄`). 메모는 시각이 없어 시각 지도는 비운다
+  const spans = memoNote ? segmentSpans(detail.body ?? "", segments) : null;
+  // 줄 번호는 코어가 세그먼트에 싣는다(line). 없으면 본문에서 찾는다
+  const memoNoteLines =
+    spans &&
+    new Map(
+      segments.flatMap((s) => {
+        const n = s.line ?? spans.get(s.id)?.line;
+        return n ? [[s.id, n] as [string, number]] : [];
+      }),
+    );
+  // 녹음 노트: 사용자가 적은 메모의 줄 ID(m0003) → 줄 번호 (요약·질문의 칩 `메모 3번째 줄`)
+  const memoLines = memoNoteLines ?? memoLineNumbers(detail.note_memo);
+  const rail = memoNote ? new Map<string, number>() : starts;
+  const memoTarget: MemoTarget | null = memoNote
+    ? [memoPick, seek?.segId ? { segId: seek.segId, nonce: seek.nonce } : null].reduce<MemoTarget | null>((a, b) => (!b || (a && a.nonce >= b.nonce) ? a : b), null)
+    : memoPick;
+  const noteBody = detail.note_memo?.body ?? "";
 
   return (
     <div className="meeting">
@@ -545,7 +637,7 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
               {created?.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
             </p>
             <div className="head-actions">
-              {segments.length > 0 && !hasWords && detail.audio_path && (
+              {!memoNote && segments.length > 0 && !hasWords && detail.audio_path && (
                 <button
                   className="ghost-button head-button"
                   disabled={align.job.running}
@@ -557,26 +649,41 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
                     : "단어 싱크 맞추기"}
                 </button>
               )}
-              <button className="ghost-button head-button" onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
-                찾아 바꾸기
-              </button>
-              <ExportMenu onPick={(f) => void exportAs(f)} onPrint={() => setPrintNonce((n) => n + 1)} />
+              {!memoNote && (
+                <button className="ghost-button head-button" onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
+                  찾아 바꾸기
+                </button>
+              )}
+              <ExportMenu
+                formats={exportFormatsFor(memoNote)}
+                onPick={(f) => void exportAs(f)}
+                onPrint={() => {
+                  // 메모는 쓰던 글까지 인쇄한다
+                  void flushMemos().then((ok) => ok && setPrintNonce((n) => n + 1));
+                }}
+              />
               <button
                 className="ghost-button head-button is-danger"
                 disabled={align.job.running || summarize.job.running}
                 title={align.job.running || summarize.job.running ? "작업이 끝난 뒤에 삭제할 수 있습니다" : "노트를 휴지통으로 옮깁니다"}
-                onClick={() => onDelete({ kind: "note", id, title: info.title, dir: info.dir })}
+                onClick={() => onDelete({ kind: "note", id, title: info.title, dir: info.dir, memo: memoNote, withMemo: !memoNote && memoLines.size > 0 })}
               >
                 삭제
               </button>
             </div>
           </div>
-          <h1>{info.title || "제목 없음"}</h1>
-          <p className="meeting-stats tnum">
-            {fmtTime(info.duration_sec)} · 대화 {info.segments}개{detail.memos.length > 0 && ` · 녹음 중 메모 ${detail.memos.length}개`}
-            <span className="edit-hint"> · 대화를 두 번 누르거나 Enter를 눌러 내용을 수정합니다</span>
-          </p>
-          {diarized && (
+          <TitleEditor title={info.title} onSave={renameNote} onReject={(error) => notify({ text: error, error: true })} />
+          {memoNote ? (
+            <p className="meeting-stats tnum">
+              메모 · 줄 {info.segments}개 · {(detail.body ?? "").length.toLocaleString("ko-KR")}자
+            </p>
+          ) : (
+            <p className="meeting-stats tnum">
+              {fmtTime(info.duration_sec)} · 대화 {info.segments}개{detail.memos.length > 0 && ` · 녹음 중 메모 ${detail.memos.length}개`}
+              <span className="edit-hint"> · 대화를 두 번 누르거나 Enter를 눌러 내용을 수정합니다</span>
+            </p>
+          )}
+          {!memoNote && diarized && (
             <SpeakersBar
               stats={stats}
               only={filter}
@@ -603,13 +710,16 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
           )}
         </header>
 
-        {segments.length === 0 && (
+        {memoNote && (
+          <MemoEditor id={id} initial={detail.body ?? ""} savedBody={detail.body ?? ""} segments={segments} target={memoTarget} notify={notify} onSaved={onMemoSaved} onState={setMemoSave} />
+        )}
+        {!memoNote && segments.length === 0 && (
           <div className="transcript-empty" role="status">
             <p className="eyebrow">인식된 대화가 없습니다</p>
             <p>이 녹음에서 말소리를 찾지 못했습니다. 아래 플레이어로 녹음된 소리를 확인해 보세요. 마이크가 멀었거나 녹음이 너무 짧았을 수 있습니다.</p>
           </div>
         )}
-        <ol className={`transcript ${diarized ? "has-speakers" : ""}`} ref={list}>
+        {!memoNote && <ol className={`transcript ${diarized ? "has-speakers" : ""}`} ref={list}>
           {rows.map((r, i) =>
             r.kind === "seg" ? (
               <SegmentRow
@@ -632,9 +742,9 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
               <MemoRow key={`m${i}`} memo={r.memo} onSeek={seekTo} />
             ),
           )}
-        </ol>
+        </ol>}
 
-        <div className="player" role="group" aria-label="오디오 플레이어">
+        {!memoNote && <div className="player" role="group" aria-label="오디오 플레이어">
           {detail.audio_path ? (
             <audio
               ref={audio}
@@ -723,8 +833,8 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
           <span className={`player-note ${editError ? "inline-error" : ""}`} role="status">
             {editing ? "저장하는 중…" : editError}
           </span>
-        </div>
-        {menu && (
+        </div>}
+        {!memoNote && menu && (
           <SpeakerMenu
             target={menu}
             stats={stats}
@@ -738,33 +848,36 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
         )}
       </article>
 
-      <aside className="summary-col" aria-label="요약과 AI 질문">
+      <aside className="summary-col" aria-label={railLabel(memoNote)}>
         <div
           className="rail-tabs"
           role="tablist"
           aria-label="오른쪽 패널"
           onKeyDown={(e) => {
-            if (e.code !== "ArrowLeft" && e.code !== "ArrowRight") return;
+            if (e.metaKey || e.ctrlKey || e.altKey) return; // Shift+←→도 탭을 옮긴다: 막지 않으면 재생 단축키가 큰 폭으로 되감는다
+            const next = railKey(tabs, tabNow, e.code);
+            if (!next) return;
+            // 재생 단축키(←→ 5초 이동)가 이 키를 다시 쓰지 않게 막는다: 전역 단축키는 defaultPrevented면 지나간다
             e.preventDefault();
-            const next = tab === "summary" ? "ask" : "summary";
             showTab(next);
             document.getElementById(`tab-${next}`)?.focus();
           }}
         >
-          {(["summary", "ask"] as const).map((k) => (
-            <button key={k} id={`tab-${k}`} role="tab" aria-selected={tab === k} aria-controls={`panel-${k}`} tabIndex={tab === k ? 0 : -1} onClick={() => showTab(k)}>
-              {k === "summary" ? "요약" : "AI 질문"}
+          {tabs.map((k) => (
+            <button key={k} id={`tab-${k}`} role="tab" aria-selected={tabNow === k} aria-controls={k === "summary" || (k === "ask" ? askSeen : memoSeen) ? `panel-${k}` : undefined} tabIndex={tabNow === k ? 0 : -1} onClick={() => showTab(k, k === "memo")}>
+              {RAIL_LABEL[k]}
             </button>
           ))}
         </div>
-        <div id="panel-summary" role="tabpanel" aria-labelledby="tab-summary" hidden={tab !== "summary"}>
+        <div id="panel-summary" role="tabpanel" aria-labelledby="tab-summary" hidden={tabNow !== "summary"}>
           {summary ? (
             <SummaryPanel
               summary={summary}
-              starts={starts}
+              starts={rail}
               onSeek={seekTo}
+              memo={memoLines.size > 0 ? { lines: memoLines, onPick: openMemoLine, tagged: !memoNote } : null}
               onCopy={() =>
-                navigator.clipboard.writeText(summaryMarkdown(summary, starts)).then(
+                navigator.clipboard.writeText(summaryMarkdown(summary, rail, memoNote ? undefined : memoLines)).then(
                   () => notify({ text: "요약을 마크다운으로 복사했습니다" }),
                   (e) => notify({ text: `복사하지 못했습니다: ${errText(e)}`, error: true }),
                 )
@@ -772,8 +885,8 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
               stale={
                 edited && (
                   <div className="summary-stale" role="status">
-                    <p>대화 내용을 수정했습니다. 요약에는 아직 반영되지 않았습니다.</p>
-                    <button className="text-button" disabled={summarize.job.running || editing} onClick={startSummarize}>
+                    <p>{staleSentence(editKinds.current.slice(summarySeq))}. 요약에는 아직 반영되지 않았습니다.</p>
+                    <button className="text-button" disabled={summarize.job.running || editing || memoBusy} onClick={() => void startSummarize()}>
                       {summarize.job.running ? (STAGE_LABEL[summarize.job.stage ?? ""] ?? "시작하는 중…") : "요약 다시 만들기"}
                     </button>
                     <SummaryError job={summarize.job} />
@@ -783,8 +896,8 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
             />
           ) : (
             <div className="summary-empty">
-              <p>아직 요약이 없습니다. 결정 사항과 할 일을 근거 대화와 함께 정리합니다.</p>
-              <button className="primary-button" disabled={summarize.job.running || editing} onClick={startSummarize}>
+              <p>{memoNote ? "아직 요약이 없습니다. 결정 사항과 할 일을 근거가 된 줄과 함께 정리합니다." : "아직 요약이 없습니다. 결정 사항과 할 일을 근거 대화와 함께 정리합니다."}</p>
+              <button className="primary-button" disabled={summarize.job.running || editing || memoBusy} onClick={() => void startSummarize()}>
                 {summarize.job.running ? (STAGE_LABEL[summarize.job.stage ?? ""] ?? "시작하는 중…") : "요약 만들기"}
               </button>
               <SummaryError job={summarize.job} />
@@ -792,8 +905,14 @@ export function MeetingView({ id, seek, onChanged, notify, onDelete }: { id: str
           )}
         </div>
         {askSeen && (
-          <div id="panel-ask" role="tabpanel" aria-labelledby="tab-ask" className="rail-ask" hidden={tab !== "ask"}>
-            <AskPanel scope={{ kind: "meeting", id, starts }} onCite={onCite} />
+          <div id="panel-ask" role="tabpanel" aria-labelledby="tab-ask" className="rail-ask" hidden={tabNow !== "ask"}>
+            <AskPanel scope={{ kind: "meeting", id, starts, memoLines: memoLines.size > 0 ? memoLines : undefined, memoNote }} onCite={onCite} />
+          </div>
+        )}
+        {memoSeen && !memoNote && (
+          <div id="panel-memo" role="tabpanel" aria-labelledby="tab-memo" className="rail-memo" hidden={tabNow !== "memo"}>
+            <p className="rail-memo-hint">내가 적는 메모입니다. 요약과 AI 질문에 대화 내용과 함께 쓰입니다.</p>
+            <MemoEditor variant="rail" id={id} initial={noteBody} savedBody={noteBody} segments={memoSegs} target={memoTarget} notify={notify} onSaved={onMemoSaved} onState={setMemoSave} />
           </div>
         )}
       </aside>
@@ -920,13 +1039,30 @@ function MemoRow({ memo: m, onSeek }: { memo: Memo; onSeek: (t: number) => void 
   );
 }
 
-function TimeChip({ ids, starts, onSeek }: { ids: string[]; starts: Map<string, number>; onSeek: (t: number) => void }) {
-  const t = evidenceStart(ids, starts);
-  if (t === null) return null;
+/**
+ * 메모의 근거 표시: 시각 대신 본문의 줄 (`3번째 줄`). 누르면 편집기에서 그 줄을 고른다.
+ * tagged: 녹음 노트의 메모 줄 (`메모 3번째 줄`). 같은 항목에 시각 칩과 함께 나올 수 있어 `메모`를 붙인다
+ */
+type MemoChips = { lines: Map<string, number>; onPick: (segId: string) => void; tagged?: boolean };
+
+function TimeChip({ ids, starts, onSeek, memo }: { ids: string[]; starts: Map<string, number>; onSeek: (t: number) => void; memo?: MemoChips | null }) {
+  // 메모 줄 중 가장 앞의 줄 하나
+  const line = memo && ids.filter((i) => memo.lines.has(i)).sort((a, b) => (memo.lines.get(a) ?? 0) - (memo.lines.get(b) ?? 0))[0];
+  const t = evidenceStart(ids, starts); // 메모 노트는 시각이 없어(starts가 비어 있다) null
+  if (t === null && !line) return null;
   return (
-    <button className="time-chip tnum" onClick={() => onSeek(t)} title={`근거 대화로 이동 (${fmtTime(t)})`}>
-      {fmtTime(t)}
-    </button>
+    <>
+      {t !== null && (
+        <button className="time-chip tnum" onClick={() => onSeek(t)} title={`근거 대화로 이동 (${fmtTime(t)})`}>
+          {fmtTime(t)}
+        </button>
+      )}
+      {memo && line && (
+        <button className="time-chip tnum" onClick={() => memo.onPick(line)} title="메모의 줄로 이동">
+          {citeLabel(0, { memo: true, line: memo.lines.get(line), tagged: memo.tagged })}
+        </button>
+      )}
+    </>
   );
 }
 
@@ -936,11 +1072,14 @@ function SummaryPanel({
   onSeek,
   onCopy,
   stale,
+  memo,
 }: {
   summary: Summary;
   starts: Map<string, number>;
   onSeek: (t: number) => void;
   onCopy: () => void;
+  /** 메모의 줄 칩 (메모 노트는 시각 칩 대신, 녹음 노트는 시각 칩 곁에) */
+  memo?: MemoChips | null;
   /** 전사를 고친 뒤 '요약 다시 만들기' 안내 */
   stale: React.ReactNode;
 }) {
@@ -963,7 +1102,7 @@ function SummaryPanel({
             {summary.decisions.map((d, i) => (
               <li key={i}>
                 <span>{d.text}</span>
-                <TimeChip ids={d.segment_ids} starts={starts} onSeek={onSeek} />
+                <TimeChip ids={d.segment_ids} starts={starts} onSeek={onSeek} memo={memo} />
               </li>
             ))}
           </ol>
@@ -987,7 +1126,7 @@ function SummaryPanel({
                     </span>
                   )}
                 </span>
-                <TimeChip ids={a.segment_ids} starts={starts} onSeek={onSeek} />
+                <TimeChip ids={a.segment_ids} starts={starts} onSeek={onSeek} memo={memo} />
               </li>
             ))}
           </ul>
@@ -1000,7 +1139,7 @@ function SummaryPanel({
           <ul className="topic-list">
             {summary.topics.map((tp, i) => (
               <li key={i}>
-                <TimeChip ids={tp.segment_ids} starts={starts} onSeek={onSeek} />
+                <TimeChip ids={tp.segment_ids} starts={starts} onSeek={onSeek} memo={memo} />
                 <span>{tp.title}</span>
               </li>
             ))}

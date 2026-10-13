@@ -1,6 +1,6 @@
 // 회의 질의 (docs/roadmap.md §3 6.3): `tractus ask --progress-json` 이벤트 → 화면 상태, 인용 파싱, 대화 기록, 전송 안내.
 // 화면과 무관한 순수 로직. 전부 ask.test.ts에서 검사한다.
-import { exitMessage, exitSentence, JOB_ERROR, warningText } from "./lib";
+import { exitMessage, exitSentence, fmtTime, isMemoLineId, JOB_ERROR, warningText } from "./lib";
 
 /** sources 이벤트 항목: 프롬프트에 넣은 근거 세그먼트 */
 export interface AskSource {
@@ -11,6 +11,10 @@ export interface AskSource {
   speaker: string | null;
   start: number;
   text: string;
+  /** 메모 노트의 근거: 본문의 줄 번호 (start는 0) */
+  line?: number;
+  /** "memo": 녹음 노트에 사용자가 적은 메모의 줄 (segment_id는 `m0003`, start는 0) */
+  source?: string;
 }
 
 /** done의 citations: 답에 나오고 sources에도 있던 인용만 (코어가 거른다) */
@@ -18,6 +22,10 @@ export interface Citation {
   meeting_id: string;
   segment_id: string;
   start: number;
+  /** 메모 노트의 인용: 본문의 줄 번호 (start는 0) */
+  line?: number;
+  /** "memo": 녹음 노트에 사용자가 적은 메모의 줄 (segment_id는 `m0003`) */
+  source?: string;
 }
 
 export type AskEvent =
@@ -77,15 +85,15 @@ export function askReduce(s: AskState, ev: AskEvent): AskState {
   }
 }
 
-// ── 인용: [s0012] (회의 범위), [<26자 meeting_id>#s0012] (전체 범위). 한 괄호에 쉼표로 여럿도 받는다 ──
+// ── 인용: [s0012] (노트 범위), [<26자 meeting_id>#s0012] (전체 범위). 녹음 노트의 메모 줄은 [m0003]. 한 괄호에 쉼표로 여럿도 받는다 ──
 
 export type AnswerPart = { kind: "text"; text: string } | { kind: "cite"; meetingId: string | null; segId: string };
 
-const ONE = String.raw`(?:[0-9A-Za-z]{26}#)?s\d{4,}`;
+const ONE = String.raw`(?:[0-9A-Za-z]{26}#)?[sm]\d{4,}`;
 const GROUP = new RegExp(String.raw`\[(${ONE}(?:\s*,\s*${ONE})*)\]`, "g");
 
 /** 스트리밍 중 끝에 덜 온 인용 ("[s00", "[01K…#s0"). 내부 ID가 잠깐이라도 보이지 않게 뗀다 */
-const PARTIAL = /\[(?:[0-9A-Za-z]{0,26}#?s?\d*\s*,\s*)*[0-9A-Za-z]{0,26}#?s?\d*$/;
+const PARTIAL = /\[(?:[0-9A-Za-z]{0,26}#?[sm]?\d*\s*,\s*)*[0-9A-Za-z]{0,26}#?[sm]?\d*$/;
 
 /** 답 → 글과 인용 칩. 다른 대괄호는 글 그대로, 끝에 덜 온 인용은 뗀다 */
 export function answerParts(raw: string): AnswerPart[] {
@@ -111,13 +119,33 @@ export function answerParts(raw: string): AnswerPart[] {
 export function citeTarget(
   cite: { meetingId: string | null; segId: string },
   ctx: { meetingId?: string; citations: Citation[]; sources: AskSource[]; starts?: Map<string, number> },
-): { meetingId: string; segId: string; t: number } | null {
+): { meetingId: string; segId: string; t: number; line?: number } | null {
   const meetingId = cite.meetingId ?? ctx.meetingId;
   if (!meetingId) return null;
   const hit = [...ctx.citations, ...ctx.sources].find((c) => c.meeting_id === meetingId && c.segment_id === cite.segId);
-  const t = hit?.start ?? (meetingId === ctx.meetingId ? ctx.starts?.get(cite.segId) : undefined);
-  return t === undefined ? null : { meetingId, segId: cite.segId, t };
+  // 녹음 노트 메모의 줄(m0003)은 시각이 없다: 시각 0으로 두고 줄로 간다
+  const t = hit?.start ?? (meetingId === ctx.meetingId ? ctx.starts?.get(cite.segId) : undefined) ?? (isMemoLineId(cite.segId) && hit ? 0 : undefined);
+  return t === undefined ? null : { meetingId, segId: cite.segId, t, line: hit?.line };
 }
+
+/**
+ * 인용 칩 글자. 녹음은 시각(`5:31`), 전체 범위에서는 날짜도(`10/2 5:31`).
+ * 메모는 시각이 없다: 줄을 알면 `3번째 줄`, 모르면 `메모`. 전체 범위에서는 날짜도(`10/13 3번째 줄`) (WORDS.md §4.5)
+ */
+export function citeLabel(t: number, o: { date?: string; memo?: boolean; line?: number; tagged?: boolean } = {}): string {
+  const m = /^\d{4}-(\d{2})-(\d{2})/.exec(o.date ?? "");
+  const day = m ? `${Number(m[1])}/${Number(m[2])} ` : "";
+  if (!o.memo) return `${day}${fmtTime(t)}`;
+  // tagged: 녹음 노트의 메모 줄. 같은 노트의 시각 칩과 섞여 보이므로 `메모`를 앞에 붙인다 (메모 노트는 모두 메모라 붙이지 않는다)
+  const where = o.line ? `${o.line}번째 줄` : "메모";
+  return `${day}${o.tagged && o.line ? `메모 ${where}` : where}`;
+}
+
+/** 녹음 노트에 사용자가 적은 메모의 줄인가 (`source: "memo"` 또는 `m0003`). 칩 글자에 `메모`를 붙이는 쪽 */
+export const isTaggedMemo = (c: { segment_id: string; source?: string }): boolean => c.source === "memo" || isMemoLineId(c.segment_id);
+
+/** 인용·출처가 메모의 줄인가: 녹음 노트의 메모 줄이거나 메모 노트의 줄. memoNote: 그 인용이 가리키는 노트가 메모 노트인가 */
+export const isMemoCite = (c: { segment_id: string; source?: string }, memoNote: boolean): boolean => memoNote || isTaggedMemo(c);
 
 /**
  * 인용이 가리키는 노트가 지금 노트 목록에 없는가 (삭제되었다). `known`은 앱이 읽은 노트 ID 목록이고, 아직 못 읽었으면 null → 판단하지 않는다.

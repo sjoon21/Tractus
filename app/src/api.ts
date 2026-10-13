@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Citation, ChatMessage, LlmConfig } from "./ask";
-import { APP_ERROR, DetailedError, IDLE_JOB, splitMessage, IDLE_LIVE, IDLE_REC, jobReduce, liveReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type LiveEvent, type LiveState, type Memo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
+import { APP_ERROR, DetailedError, IDLE_JOB, splitMessage, IDLE_LIVE, IDLE_REC, jobReduce, liveReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type LiveEvent, type LiveState, type Memo, type NoteMemo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
 
 export type { JobState, LiveState, RecState } from "./lib";
 
@@ -15,6 +15,8 @@ export interface MeetingInfo {
   duration_sec: number;
   segments: number;
   has_summary: boolean;
+  /** "memo": 녹음 없이 직접 쓴 노트 (길이 0). 없거나 다른 값이면 녹음 (memo.kindOf) */
+  kind?: "recording" | "memo";
 }
 
 export interface Summary {
@@ -33,6 +35,10 @@ export interface MeetingDetail {
   speakers: Speakers;
   summary: Summary | null;
   memos: Memo[];
+  /** 메모 노트의 본문. 녹음은 null */
+  body: string | null;
+  /** 녹음 노트에 사용자가 적은 메모(오른쪽 패널의 메모 탭). 없으면(메모 노트·아직 안 씀·읽을 수 없음) null. `memos`(녹음 중 메모·북마크)와 다르다 */
+  note_memo: NoteMemo | null;
   audio_path: string | null;
 }
 
@@ -82,7 +88,8 @@ export interface SearchHit {
   meeting_id: string;
   title: string;
   date: string;
-  segments: { id: string; time: string; text: string; cite: string }[];
+  /** 녹음 노트의 메모 줄은 id가 `m0003`이고 source가 "memo" (코어). 메모 노트의 줄은 line이 붙는다 */
+  segments: { id: string; time: string; text: string; cite: string; source?: string; line?: number }[];
   matched: string[];
 }
 
@@ -140,12 +147,20 @@ export const api = {
   indexRefresh: () => invoke<boolean>("index_refresh"),
   /** `tractus glossary add`. 새로 더한 개수 */
   glossaryAdd: (terms: string[]) => invoke<number>("glossary_add", { terms }),
+  /** `tractus note new`: 새 메모 노트(기본 제목 `메모 HH:MM`). 만든 노트 ID */
+  noteNew: (title?: string) => invoke<{ meeting_id: string }>("note_new", { title: title ?? null }),
+  /** `tractus note save`: 메모 본문 전체를 저장한다 (메모 노트는 본문, 녹음 노트는 메모 탭의 글). 코어가 만든 줄 수와 고친 노트. 노트별 줄(editQueue)에 세워서 부른다 */
+  noteSave: (id: string, body: string) => invoke<{ segments: number; meeting: MeetingDetail }>("note_save", { id, body }),
+  /** `tractus note title`: 제목 바꾸기(녹음·메모). 폴더 이름은 그대로다. 코어가 정한 제목 */
+  noteTitle: (id: string, title: string) => invoke<string>("note_title", { id, title }),
   /** `tractus export` 후 Finder에서 보여 준다. 저장한 절대 경로 */
   exportMeeting: (id: string, format: string, out: string) => invoke<string>("export_meeting", { id, format, out }),
   /** 노트 폴더를 휴지통으로 옮긴다 (되돌릴 수 있다). 처리 중이거나 변환이 끝나지 않은 노트는 거절한다. 검색 색인은 백그라운드로 정리 */
   deleteMeeting: (id: string) => invoke<void>("delete_meeting", { id }),
   /** 변환하지 않은 녹음 폴더를 휴지통으로 옮긴다 */
   deleteRecording: (dir: string) => invoke<void>("delete_recording", { dir }),
+  /** ⌘Q로 미룬 종료를 이어 간다 (쓰던 메모를 저장한 뒤) */
+  quitReady: () => invoke<void>("quit_ready"),
   /** `tractus ask --progress-json` (Phase 6.3). 이벤트는 "ask" */
   askStart: (args: AskArgs) => invoke<void>("ask_start", { ...args }),
   /** 질문 멈추기 (프로세스 kill) */

@@ -32,11 +32,12 @@ from tractus.align import align_segments, is_approximate, load_aligner  # noqa: 
 from tractus.asr import SR, Transcriber  # noqa: E402
 from tractus.diarize import FLUID, FLUID_MIN_CLIP_S, MAX_SPEAKERS, NEMOTRON, MODEL_DIR as DIARIZER_DIR, MODEL_REPO as DIARIZER_REPO, MODEL_REVISION as DIARIZER_REVISION  # noqa: E402
 from tractus.diarize import fluid_hint, load_diarizer, load_fluid, split_chunks  # noqa: E402
-from tractus.export import FORMATS as EXPORT_FORMATS, render_export, write_bytes_atomic  # noqa: E402
+from tractus.export import FORMATS as EXPORT_FORMATS, UnsupportedFormat, render_export, write_bytes_atomic  # noqa: E402
+from tractus import notes  # noqa: E402
 from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_suggestions, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
 from tractus.store import IncompleteError, load_glossary, meeting_dir_name, new_ulid, save_transcript, seg_text, speaker_name, write_transcript  # noqa: E402
 from tractus.store import JOB_FILE, edit_transcript, forget_person, note_lock, render_files  # noqa: E402
-from tractus.store import _hms  # noqa: E402
+from tractus.store import _hms, is_memo, memo_lines, stamp  # noqa: E402
 from tractus.vad import find_chunks  # noqa: E402
 
 app = typer.Typer(add_completion=False, help="Local-first 노트·녹음 도구")
@@ -537,6 +538,8 @@ def align_cmd(
         _emit_error(str(e))
         raise
     t = _read_transcript(d)
+    if is_memo(t):
+        _fail(notes.NO_AUDIO_ALIGN, code="no_audio", exit_code=2)
     todo = {s["id"] for s in t["segments"] if force or s.get("words") is None}
     counts = {"aligned": 0, "approximate": 0, "failed": 0, "skipped": len(t["segments"])}
     if todo:
@@ -619,7 +622,7 @@ def summarize(
         raise
     transcript = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
     if not transcript["segments"]:
-        _fail("인식된 대화가 없어 요약할 수 없습니다", code="no_segments")
+        _fail("메모가 비어 있어 요약할 수 없습니다" if is_memo(transcript) else "인식된 대화가 없어 요약할 수 없습니다", code="no_segments")
     try:
         p, m = resolve_provider(provider, model)
         t0 = time.perf_counter()
@@ -718,7 +721,7 @@ def ask(
             print("\n근거:")
         for c in done["citations"]:
             sid = c["segment_id"] if d else f"{c['meeting_id']}#{c['segment_id']}"
-            print(f"  [{sid} {_hms(c['start'])}]")
+            print(f"  [{sid} {stamp(c)}]")
 
 
 @app.command()
@@ -765,7 +768,7 @@ def search(
         print(f"{h.date} {h.title} ({'+'.join(h.matched)})")
         for s in h.segments:
             who = f" {s['speaker']}" if s.get("speaker") else ""
-            print(f"  [{h.meeting_id[-6:]}#{s['id']} {_hms(s['start'])}{who}] {seg_text(s)[:120]}")
+            print(f"  [{h.meeting_id[-6:]}#{s['id']} {stamp(s)}{who}] {seg_text(s)[:120]}")
 
 
 def _iso_date(value: str | None, name: str) -> str | None:
@@ -811,6 +814,8 @@ def speakers_list(ctx: typer.Context, as_json: bool = typer.Option(False, "--jso
 
 
 def _edit_speakers(d: Path, op: str, *args: str) -> None:
+    if is_memo(_read_transcript(d)):
+        _fail("메모에는 참석자를 지정할 수 없습니다.", exit_code=2)
     try:
         edit_transcript(d, lambda t: (apply_speaker_edit(t, op, *args), None))
     except ValueError as e:
@@ -917,6 +922,8 @@ def voices_enroll(
         raise typer.Exit(2)
     d = resolve_meeting(meeting)
     t = _read_transcript(d)
+    if is_memo(t):
+        _fail("녹음이 없는 노트라 목소리를 등록할 수 없습니다.", exit_code=2)
     try:
         renamed = apply_speaker_edit(t, "rename", label, name)
     except ValueError as e:
@@ -1048,6 +1055,8 @@ def segments_edit(ctx: typer.Context) -> None:
     """stdin의 JSON 한 개 {"edits": [{"id": "s0012", "text": "새 문장"}]}로 세그먼트 텍스트를 고친다.
     원문과 같으면 교정을 지운다. 없는 id·빈 텍스트가 하나라도 있으면 아무것도 쓰지 않고 종료 코드 1. stdout: {"changed": N}"""
     d = ctx.obj
+    if is_memo(_read_transcript(d)):
+        _fail(notes.MEMO_EDIT_HERE, exit_code=2)
     try:
         req = json.loads(sys.stdin.read())
         edits = req.get("edits") if isinstance(req, dict) else None
@@ -1060,6 +1069,94 @@ def segments_edit(ctx: typer.Context) -> None:
     if changed:
         _sync_index_quietly(embed=False)  # 바뀐 청크는 벡터 없이 키워드로만 찾힌다. 다음 `tractus index`나 전사·요약 때 임베딩
     print(json.dumps({"changed": changed}))
+
+
+note_app = typer.Typer(help="직접 쓰는 메모 노트(오디오 없음)와 노트 제목. transcript.json·md를 쓰고 검색 색인을 갱신한다 (docs/desktop.md §2.10)")
+app.add_typer(note_app, name="note")
+
+
+@note_app.callback()
+def note_main() -> None:
+    """메모 만들기·저장, 제목 바꾸기."""
+
+
+def _read_json_object(raw: str, shape: str) -> dict:
+    """stdin의 JSON 객체. 비었거나 객체가 아니면 ValueError (shape는 오류 문장에 보여 줄 형식)."""
+    try:
+        req = json.loads(raw)
+    except ValueError:
+        req = None
+    if not isinstance(req, dict):
+        raise ValueError(f"입력은 {shape} 형식이어야 합니다")  # words-ok: 앱 계약 오류
+    return req
+
+
+def _note_dir(meeting: str) -> Path:
+    try:
+        return resolve_meeting(meeting)
+    except typer.BadParameter as e:
+        _fail(e.message, exit_code=2)
+
+
+@note_app.command("new")
+def note_new(title: str = typer.Option(None, "--title", help="제목. stdin의 title보다 우선한다. 생략하면 '메모 HH:MM'(이 Mac의 시각)")) -> None:
+    """빈 메모(또는 stdin의 {"title"?, "body"?}로 채운 메모)를 만든다. stdout: {"meeting_id": "…", "meeting_dir": "<절대 경로>"}
+    잘못된 제목·본문이면 종료 코드 2 (아무것도 만들지 않는다)."""
+    raw = "" if sys.stdin.isatty() else sys.stdin.read()
+    try:
+        req = _read_json_object(raw, '{"title": "…", "body": "…"}') if raw.strip() else {}
+        for key in ("title", "body"):
+            if not isinstance(req.get(key, ""), str):
+                raise ValueError(f'입력은 {{"title": "…", "body": "…"}} 형식이어야 합니다')  # words-ok: 앱 계약 오류
+        d, t = notes.create_memo(home_dir() / "meetings", title or req.get("title"), req.get("body", ""))
+    except ValueError as e:
+        _fail(str(e), exit_code=2)
+    _sync_index_quietly(embed=False)
+    print(json.dumps({"meeting_id": t["meeting_id"], "meeting_dir": str(d.resolve())}, ensure_ascii=False))
+
+
+@note_app.command("save")
+def note_save(meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
+    """stdin의 {"body": "…"}로 메모의 내용을 통째로 바꾼다. 메모 노트는 본문, 녹음 노트는 transcript.json의 "memo"(오른쪽 패널 메모)를 쓴다 (비우면 "memo"를 지운다).
+    줄이 그대로면 줄 ID를 유지한다. stdout: {"saved": true, "segments": N, "changed": bool, "kind": "memo"|"recording"} (N: 메모의 줄 수)
+    잘못된 입력·20만 자·5,000줄 초과는 종료 코드 2 (아무것도 쓰지 않는다)."""
+    d = _note_dir(meeting)
+    try:
+        req = _read_json_object(sys.stdin.read(), '{"body": "…"}')
+        if not isinstance(req.get("body"), str):
+            raise ValueError('입력은 {"body": "…"} 형식이어야 합니다')  # words-ok: 앱 계약 오류
+        body = notes.clean_body(req["body"])
+
+        def fn(t: dict):
+            new, changed = notes.apply_body(t, body)
+            count = len(new["segments"]) if is_memo(new) else len(memo_lines(new))
+            return new, (changed, count, "memo" if is_memo(new) else "recording")
+
+        changed, count, kind = edit_transcript(d, fn)
+    except ValueError as e:
+        _fail(str(e), exit_code=2)
+    if changed:
+        _sync_index_quietly(embed=False)  # 바뀐 청크는 벡터 없이 키워드로만 찾힌다. 앱의 조용한 색인이 나중에 임베딩한다
+    print(json.dumps({"saved": True, "segments": count, "changed": changed, "kind": kind}))
+
+
+@note_app.command("title")
+def note_title(meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
+    """stdin의 {"title": "…"}로 노트(녹음·메모 모두) 제목을 바꾼다. 폴더 이름은 그대로 두고 transcript.json·md(·vtt)·요약 파일·검색 색인의 제목을 바꾼다.
+    stdout: {"title": "<정리된 제목>"}. 비었거나 120자를 넘으면 종료 코드 2."""
+    d = _note_dir(meeting)
+    try:
+        req = _read_json_object(sys.stdin.read(), '{"title": "…"}')
+        if not isinstance(req.get("title"), str):
+            raise ValueError('입력은 {"title": "…"} 형식이어야 합니다')  # words-ok: 앱 계약 오류
+        title = notes.clean_title(req["title"])
+        with note_lock(d):  # transcript.json과 요약 파일을 한 번에 바꾼다
+            edit_transcript(d, lambda t: (notes.apply_title(t, title), None))
+            notes.retitle_summary(d, title)
+    except ValueError as e:
+        _fail(str(e), exit_code=2)
+    _sync_index_quietly(embed=False)
+    print(json.dumps({"title": title}, ensure_ascii=False))
 
 
 glossary_app = typer.Typer(help="용어집($TRACTUS_HOME/glossary.md). 다음 전사부터 Qwen3-ASR hotwords로 들어간다")
@@ -1095,6 +1192,8 @@ def export_cmd(
         raise typer.Exit(1)
     try:
         write_bytes_atomic(out, render_export(d, fmt.value))
+    except UnsupportedFormat as e:  # 메모를 srt·vtt로
+        _fail(str(e), exit_code=2)
     except OSError as e:  # 임시 파일(.tmp) 경로 대신 사용자가 고른 경로를 알린다
         console.print(f"[red]{escape(str(out))}에 저장할 수 없습니다 ({escape(e.strerror or str(e))})[/red]")
         raise typer.Exit(1)

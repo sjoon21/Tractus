@@ -10,7 +10,7 @@ export function PrintSheet({ doc }: { doc: PrintDoc }) {
     <article className="print-sheet" lang="ko">
       <header className="print-head">
         <h1>{doc.title}</h1>
-        <p className="print-meta">{[doc.date, `길이 ${doc.duration}`, doc.speakers.length > 0 && `참석자 ${doc.speakers.length}명 (${doc.speakers.join(", ")})`].filter(Boolean).join(" · ")}</p>
+        <p className="print-meta">{[doc.date, !doc.memo && `길이 ${doc.duration}`, doc.speakers.length > 0 && `참석자 ${doc.speakers.length}명 (${doc.speakers.join(", ")})`].filter(Boolean).join(" · ")}</p>
       </header>
       {s && (
         <section className="print-summary">
@@ -22,11 +22,11 @@ export function PrintSheet({ doc }: { doc: PrintDoc }) {
         </section>
       )}
       <section>
-        <h2>대화 내용</h2>
-        <ol className="print-rows">
+        <h2>{doc.memo ? "메모" : "대화 내용"}</h2>
+        <ol className={`print-rows ${doc.memo ? "is-memo" : ""}`}>
           {doc.rows.map((r) => (
             <li key={r.id} className={r.speaker ? "is-turn" : undefined}>
-              <time>{r.time}</time>
+              {!doc.memo && <time>{r.time}</time>}
               <p>
                 {r.speaker && <strong>{r.speaker}</strong>}
                 {r.text}
@@ -35,6 +35,18 @@ export function PrintSheet({ doc }: { doc: PrintDoc }) {
           ))}
         </ol>
       </section>
+      {doc.memoLines.length > 0 && (
+        <section>
+          <h2>메모</h2>
+          <ol className="print-rows is-memo">
+            {doc.memoLines.map((l) => (
+              <li key={l.id}>
+                <p>{l.text}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
     </article>,
     document.body,
   );

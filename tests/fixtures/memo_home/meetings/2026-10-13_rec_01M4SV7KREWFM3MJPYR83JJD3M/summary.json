@@ -1,0 +1,60 @@
+{
+ "schema_version": 1,
+ "meeting_id": "01M4SV7KREWFM3MJPYR83JJD3M",
+ "provider": "upstage",
+ "model": "solar-pro4",
+ "generated_at": "2026-10-13T14:21:22+09:00",
+ "title": "다음 분기 예산 논의",
+ "summary": "참석자 1이 다음 분기 예산을 논의하며 서버 비용을 20% 절감하기로 확정했다. 새 견적은 하늘상사에서 받기로 했으며, 견적 마감은 다음 주 금요일로 정했다. 회의에서는 서버 비용 절감이 핵심 과제로 다뤄졌다.",
+ "topics": [
+  {
+   "title": "서버 비용 절감",
+   "segment_ids": [
+    "s0001",
+    "m0001"
+   ]
+  },
+  {
+   "title": "새 견적 수령",
+   "segment_ids": [
+    "s0001",
+    "m0002",
+    "m0003"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "text": "서버 비용을 20% 줄이기로 결정",
+   "segment_ids": [
+    "s0001",
+    "m0001"
+   ]
+  },
+  {
+   "text": "새 견적은 하늘상사에서 받기로 결정",
+   "segment_ids": [
+    "m0002"
+   ]
+  },
+  {
+   "text": "견적 마감은 다음 주 금요일로 결정",
+   "segment_ids": [
+    "s0001",
+    "m0003"
+   ]
+  }
+ ],
+ "action_items": [
+  {
+   "task": "하늘상사에서 새 견적 받기",
+   "owner": null,
+   "due": "다음 주 금요일",
+   "segment_ids": [
+    "s0001",
+    "m0002",
+    "m0003"
+   ]
+  }
+ ]
+}

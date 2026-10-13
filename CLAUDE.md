@@ -96,6 +96,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `diarize.py` | 화자 분리(Nemotron 3 `Diarizer`, fluid `FluidDiarizer` = `tractus-diar` 헬퍼), 단일 화자 평활(`smooth`), turn 정리(`_tidy`), 화자 경계로 청크 나누기(`split_chunks`) |
 | `asr.py` | `Transcriber`: 청크 전사, 토큰 상한, 반복 루프 재시도·보정 |
 | `align.py` | 단어 정렬(Qwen3-ForcedAligner): `tokenize`(soynlp 대체), `Aligner.align`, `align_segments`, 편집 뒤 시각 옮기기 `remap_words` |
+| `notes.py` | 직접 쓴 메모 노트(`kind: "memo"`, 오디오 없음)와 녹음 노트의 메모(`"memo"` 블록): 본문 → 줄(`derive_lines`, ID 유지·재사용 금지, `s####`/`m####`), 제목 정리, 요약 파일 제목 바꾸기 |
 | `store.py` | 회의 폴더, `.job.json`·`.chunks.jsonl`(이어하기, 목소리 제안 포함), transcript.json/md/vtt (schema_version 2: 화자), `apply_speaker_edit`(rename·set·merge·dismiss), `apply_suggestions`, `apply_text_edits`(words도 옮김), `seg_text`(표시 텍스트 = `corrected_text` 우선), `add_glossary_terms` |
 | `live.py` | 실시간 자막(미리보기): `WavTail`(커지는 WAV 꼬리 읽기), `Mixer`(트랙 합산·클립), `Resampler`(48k → 16k FIR), `Segmenter`(Silero feed, 0.5초 무음·8초 상한·3초 미리보기·쉼 미리 전사), `Live`(ASR·뒤처짐·정지), `SpeakerTrack`(선택) |
 | `voices.py` | 목소리 프로필: CAM++ 임베딩(onnxruntime + kaldi-native-fbank), 화자 구간 고르기, `voices.json`(0600, 원자적 쓰기), `match`(헝가리안 + 임계값 + 2위와 차이) |
@@ -108,9 +109,16 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `embed.py` | Qwen3-Embedding-0.6B (공식 가중치 bf16, mlx-lm), `LazyEmbedder` |
 | `index.py` | SQLite FTS5 음절 bigram + sqlite-vec, 증분 동기화(`stats()['pending']` = 지금 모델로 벡터가 없는 청크), strict 우선 + 가중 RRF |
 | `mcp_server.py` | MCP 서버 7개 도구 (`build_server(home, embedder)`) |
-| `cli.py` | `tractus transcribe`, `align`, `summarize`, `ask`, `index`, `search`, `speakers`, `voices`(`list --json`은 `model_present` 포함), `segments`, `render`, `glossary`, `export`, `mcp` |
+| `cli.py` | `tractus transcribe`, `align`, `summarize`, `ask`, `index`, `search`, `speakers`, `voices`(`list --json`은 `model_present` 포함), `segments`, `render`, `glossary`, `export`, `note`(`new`·`save`·`title`), `mcp` |
 
 환경변수는 `.env.example`에 모두 있다. 개발 중에는 저장소 루트의 `.env`(기본값)와 `.env.local`(API 키)을 CLI가 읽는다. 우선순위는 셸 > `.env.local` > `.env`.
+
+## 메모 노트·제목 규칙
+
+- 메모는 `transcript.json`의 `"kind": "memo"`다(`"kind"`가 없으면 녹음 노트, 옛 파일을 고치지 않는다). 오디오·vtt·asr가 없고 `audio.file`은 null이다. `store.is_memo(t)`로 가른다.
+- 세그먼트는 `body`에서 만든다(줄마다 하나, `start=end=0`, `line` = 본문 줄 번호). 메모 내용은 `tractus note save`로만 고친다(`segments edit`·`speakers`는 거절). 시각이 필요한 출력은 `store.stamp(s)`(메모는 `n번째 줄`)를 쓴다. `_hms(s['start'])`를 직접 쓰지 않는다.
+- **녹음 노트도 메모를 가진다**(오른쪽 패널 메모 탭, 선택 키 `"memo": {"body", "lines": [{"id": "m0001", "line", "text"}], "seq"}`). `tractus note save`가 메모 노트는 본문·세그먼트, 녹음 노트는 `memo` 블록만 쓴다(비우면 키를 지운다, ASR 세그먼트·단어·화자는 건드리지 않는다). 읽을 때는 항상 `store.memo_lines(t)`(키가 없거나 깨져도 빈 목록)·`store.memo_segments(t)`로 읽고 `t["memo"]`를 직접 읽지 않는다. 줄 ID `m####`는 ASR ID `s####`와 다른 번호 공간이고, 메모 줄은 `source: "memo"`로 ASR과 가른다(색인 청크·AI 질문 근거 블록 `[내가 적은 메모]`·요약 프롬프트 블록·내보내기 `메모` 절). 위치 표기는 `store.stamp`(`메모 n번째 줄`). 이 프롬프트를 바꾸면 `uv run pytest -m llm`과 `bench/ask_eval.py --memo`를 돌린다. 메모 없는 노트의 프롬프트는 바뀌면 안 된다.
+- 제목은 `tractus note title`(녹음·메모 공통)으로만 바꾼다. 폴더 이름은 그대로 두고 `transcript.json`·md·vtt·요약 파일 제목·색인이 바뀐다. 사용자에게 보이는 문구는 `WORDS.md`를 따르고 새 모듈 `notes.py`도 §5 검사 대상이다.
 
 ## 검색·MCP 규칙
 
@@ -146,9 +154,12 @@ uv run tractus speakers <meeting_id> list --json    # 화자 (rename S1 이름 /
 uv run tractus voices enroll <meeting_id> S1 --name 이름 --consent   # 목소리 등록 + 이름 확정 (list --json / forget / match)
 echo '{"edits":[{"id":"s0012","text":"새 문장"}]}' | uv run tractus segments <meeting_id> edit   # 텍스트 교정 → {"changed": N}
 uv run tractus glossary add 쿠버네티스 "Project Atlas"  # 용어집 추가 → {"added": N}
+uv run tractus note new [--title T]                  # 메모 만들기 → {"meeting_id","meeting_dir"} (stdin 선택: {"title","body"})
+echo '{"body":"…"}' | uv run tractus note save <meeting_id>   # 메모 본문 저장(메모 노트·녹음 노트) → {"saved":true,"segments":N,"changed":bool,"kind":"memo"|"recording"}
+echo '{"title":"…"}' | uv run tractus note title <meeting_id> # 제목 바꾸기 → {"title":"…"}
 uv run tractus export <meeting_id> --format docx --out 회의.docx [--force]   # txt|md|srt|vtt|csv|docx|bundle → {"path": …}
 uv run python bench/search_eval.py                  # 검색 평가 (가상)
-uv run python bench/ask_eval.py                     # 질의 평가 (가상 회의만 원격 LLM으로)
+uv run python bench/ask_eval.py [--memo]            # 질의 평가 (가상 회의만 원격 LLM으로, --memo: 메모가 달린 가상 노트 3건 + 메모 질문 6개)
 uv run tractus transcribe <파일> [--no-align] [--diarizer auto|nemotron|fluid]   # 전사 (+ 단어 타이밍)
 (cd recorder && swift build -c release && swift test)                # tractus-rec, tractus-diar (Swift 6.2+)
 uv run python bench/diar_eval.py der --engine nemotron fluid         # 화자 분리 DER (AI Hub 로컬 전용, 지표만)

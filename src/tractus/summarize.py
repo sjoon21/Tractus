@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from tractus.llm import Provider, complete_json
-from tractus.store import _hms, _write_atomic, seg_text, speaker_display
+from tractus.store import _hms, _write_atomic, is_memo, memo_lines, seg_text, speaker_display
 
 SCHEMA_VERSION = 1
 
@@ -22,6 +22,18 @@ SYSTEM_PROMPT = """너는 회의록 작성자다. 전사문만 근거로 회의�
 - 전사는 음성 인식 결과라 오인식이 있을 수 있다. 문맥상 명백한 오인식은 바로잡아 쓴다.
 - 결정 사항은 회의에서 합의·확정된 것만, 할 일은 누군가 하기로 한 구체적 행동만 넣는다. 없으면 빈 배열로 둔다.
 - 요약·결정 사항·할 일 문장에 '화자', '세그먼트', '전사', s0012 같은 말을 쓰지 않는다. 이름이 붙은 사람만 이름으로 쓰고, 아니면 '참석자 1'처럼 쓴다."""
+
+
+MEMO_PROMPT = """
+- 이 입력은 회의 전사가 아니라 사용자가 직접 쓴 메모다. 줄 앞에는 세그먼트 ID만 있고 시각·화자 표시는 없다. 담당자는 메모 본문에 이름이 나온 사람만 쓰고, '회의' 대신 '메모'라고 쓴다."""
+
+
+RECORDING_MEMO_PROMPT = """
+- 입력 끝의 '사용자가 적은 메모'는 사용자가 직접 쓴 글이라 음성 인식 결과가 아니다. 줄 앞에는 m으로 시작하는 ID만 있다. 메모는 사용자가 따로 챙겨 둔 내용이므로 요약·주제·할 일에 빠뜨리지 않고 반영하고, 그 항목의 segment_ids에 해당 메모 줄 ID(예: m0001)를 넣는다. 전사와 겹치면 전사 ID와 메모 ID를 함께 넣는다. 결정 사항은 전사에서 합의·확정된 것이 우선이고, 메모는 '결정'이라고 분명히 적은 것만 넣는다. 메모에 적힌 일은 하기로 한 사람이 분명하지 않아도 할 일(owner null)로 넣을 수 있다."""
+
+
+def system_prompt(transcript: dict) -> str:
+    return SYSTEM_PROMPT + (MEMO_PROMPT if is_memo(transcript) else RECORDING_MEMO_PROMPT if memo_lines(transcript) else "")
 
 
 class _Strict(BaseModel):
@@ -54,17 +66,24 @@ class MeetingSummary(_Strict):
 
 
 def build_prompt(transcript: dict) -> str:
+    if is_memo(transcript):
+        lines = [f"[{s['id']}] {seg_text(s)}" for s in transcript["segments"]]
+        return f"메모 제목: {transcript['title']}\n\n메모:\n" + "\n".join(lines)
+
     def who(s: dict) -> str:
         name = speaker_display(transcript, s.get("speaker"))
         return f" {name}" if name else ""
 
     lines = [f"[{s['id']} {_hms(s['start'])}{who(s)}] {seg_text(s)}" for s in transcript["segments"]]
-    return f"회의 제목(파일 기준): {transcript['title']}\n\n전사:\n" + "\n".join(lines)
+    prompt = f"회의 제목(파일 기준): {transcript['title']}\n\n전사:\n" + "\n".join(lines)
+    if memo := memo_lines(transcript):  # 사용자가 직접 쓴 메모: 전사와 따로 라벨을 붙이고 시각 없이 ID만
+        prompt += "\n\n사용자가 적은 메모:\n" + "\n".join(f"[{m['id']}] {m['text']}" for m in memo)
+    return prompt
 
 
 def check_segment_ids(summary: MeetingSummary, transcript: dict) -> None:
-    """근거가 비었거나 전사에 없는 세그먼트 ID를 쓴 항목이 있으면 ValueError (재요청 대상)."""
-    known = {s["id"] for s in transcript["segments"]}
+    """근거가 비었거나 전사(또는 사용자 메모 줄)에 없는 세그먼트 ID를 쓴 항목이 있으면 ValueError (재요청 대상)."""
+    known = {s["id"] for s in transcript["segments"]} | {m["id"] for m in memo_lines(transcript)}
     items = [*summary.topics, *summary.decisions, *summary.action_items]
     unknown = sorted({i for item in items for i in item.segment_ids} - known)
     if unknown:
@@ -96,19 +115,28 @@ def clean_owners(s: MeetingSummary, transcript: dict | None = None) -> MeetingSu
 
 def summarize(client, provider: Provider, model: str, transcript: dict) -> MeetingSummary:
     return clean_owners(complete_json(
-        client, provider, model, SYSTEM_PROMPT, build_prompt(transcript), MeetingSummary,
+        client, provider, model, system_prompt(transcript), build_prompt(transcript), MeetingSummary,
         validate=lambda s: check_segment_ids(s, transcript),
     ))
 
 
-def _span(ids: list[str], transcript: dict) -> str:
-    seg = {s["id"]: s for s in transcript["segments"]}
-    starts = [seg[i]["start"] for i in ids]
-    return _hms(min(starts))
+def _where(ids: list[str], transcript: dict, rng: bool = False) -> str:
+    """summary.md 항목 끝의 위치 ` [HH:MM:SS]`(rng면 `[시작–끝]`). 녹음 노트의 사용자 메모 줄은 시각 없이 `메모 n번째 줄`(여러 줄이면 `메모 n–m번째 줄`).
+    시각이 없는 메모 노트와 모르는 ID만 있는 항목은 빈 문자열."""
+    if is_memo(transcript):
+        return ""
+    seg = {x["id"]: x for x in transcript["segments"] if x["id"] in ids}
+    parts = []
+    if seg:
+        lo, hi = _hms(min(x["start"] for x in seg.values())), _hms(max(x["end"] for x in seg.values()))
+        parts.append(f"{lo}–{hi}" if rng else lo)
+    lines = sorted(m["line"] for m in memo_lines(transcript) if m["id"] in ids)
+    if lines:
+        parts.append(f"메모 {lines[0]}번째 줄" if lines[0] == lines[-1] else f"메모 {lines[0]}–{lines[-1]}번째 줄")
+    return f" [{', '.join(parts)}]" if parts else ""
 
 
 def render_summary_md(s: MeetingSummary, transcript: dict, provider: str, model: str, generated_at: str) -> str:
-    seg = {x["id"]: x for x in transcript["segments"]}
     out = [
         "---",
         f"meeting_id: {transcript['meeting_id']}",
@@ -125,14 +153,12 @@ def render_summary_md(s: MeetingSummary, transcript: dict, provider: str, model:
         "",
     ]
     for t in s.topics:
-        start = min(seg[i]["start"] for i in t.segment_ids)
-        end = max(seg[i]["end"] for i in t.segment_ids)
-        out += [f"### {t.title} [{_hms(start)}–{_hms(end)}]", ""]
-    out += ["## 결정 사항", ""] + ([f"- {d.text} [{_span(d.segment_ids, transcript)}]" for d in s.decisions] or ["- 없음"])
+        out += [f"### {t.title}{_where(t.segment_ids, transcript, rng=True)}", ""]
+    out += ["## 결정 사항", ""] + ([f"- {d.text}{_where(d.segment_ids, transcript)}" for d in s.decisions] or ["- 없음"])
     out += ["", "## 할 일", ""]
     for a in s.action_items:
         who = ", ".join(x for x in (a.owner, a.due) if x)
-        out.append(f"- [ ] {a.task}{' — ' + who if who else ''} [{_span(a.segment_ids, transcript)}]")
+        out.append(f"- [ ] {a.task}{' — ' + who if who else ''}{_where(a.segment_ids, transcript)}")
     if not s.action_items:
         out.append("- 없음")
     return "\n".join(out) + "\n"

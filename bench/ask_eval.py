@@ -3,6 +3,7 @@
     uv run python bench/ask_eval.py                     # 저장소 루트에서, TRACTUS_LLM_PROVIDER(.env)로
     uv run python bench/ask_eval.py --provider upstage --no-vector
 
+--memo: 사용자 메모가 달린 가상 녹음 노트 3건(tests/fixtures/eval/memo_meetings)과 답이 메모에만 있는 질문 6개(ask_memo_questions.jsonl)를 더한다.
 가상 회의만 원격 공급자로 보낸다. 사용자 회의($TRACTUS_HOME)나 AI Hub 데이터는 읽지 않는다(임시 홈에 복사해 색인).
 
 질문 유형: meeting(회의 범위, 전사 전체), cross(전체 범위), date(전체 범위 + 기간), none(답이 없음), follow(후속 질문, --followups).
@@ -87,6 +88,10 @@ def report(qs: list[dict], rs: list[dict], corpus: int) -> None:
         sub = [(q, r) for q, r in ans if q["type"] == t]
         if sub:
             print(f"  {t}: hit {sum(bool(r['cited'] & pairs(q['gold'])) for q, r in sub) / len(sub):.2f} (n={len(sub)})")
+    memo = [(q, r) for q, r in ans if all(sid.startswith("m") for _, sid in pairs(q["gold"]))]  # 답이 사용자 메모에만 있는 질문 (--memo)
+    if memo:
+        print(f"  memo(답이 메모에만 있음): hit {sum(bool(r['cited'] & pairs(q['gold'])) for q, r in memo) / len(memo):.2f} "
+              f"source_recall {sum(bool(r['sources'] & pairs(q['gold'])) for q, r in memo) / len(memo):.2f} (n={len(memo)})")
 
 
 def main() -> None:
@@ -95,6 +100,7 @@ def main() -> None:
     ap.add_argument("--model")
     ap.add_argument("--no-vector", action="store_true", help="임베딩 모델 없이 키워드 검색만")
     ap.add_argument("--followups", action="store_true", help="후속 질문(ask_followups.jsonl)도 함께")
+    ap.add_argument("--memo", action="store_true", help="메모가 달린 가상 노트와 메모 질문(ask_memo_questions.jsonl)도 함께")
     ap.add_argument("--alone", action="store_true", help="후속 질문 검색에 이전 질문을 쓰지 않는다 (v3.16 동작, 비교용)")
     ap.add_argument("-v", "--verbose", action="store_true", help="질문별 답을 출력")
     args = ap.parse_args()
@@ -103,11 +109,15 @@ def main() -> None:
     qs = [json.loads(line) for line in (EVAL / "ask_questions.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
     if args.followups:
         qs += [json.loads(line) for line in (EVAL / "ask_followups.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    if args.memo:
+        qs += [json.loads(line) for line in (EVAL / "ask_memo_questions.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
     embedder = None if args.no_vector else load_embedder(ROOT / "models")
 
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp)
         shutil.copytree(EVAL / "meetings", home / "meetings")
+        if args.memo:
+            shutil.copytree(EVAL / "memo_meetings", home / "meetings", dirs_exist_ok=True)
         transcripts = {t["meeting_id"]: t for t in (json.loads(p.read_text(encoding="utf-8")) for p in (home / "meetings").glob("*/transcript.json"))}
         idx = Index(home, embedder=embedder)
         idx.sync()

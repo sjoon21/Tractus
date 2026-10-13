@@ -1,0 +1,215 @@
+// 메모 본문 편집기와 노트 제목 편집기 (MeetingView가 쓴다). 메모 노트는 화면 가운데(page), 녹음 노트는 오른쪽 패널의 메모 탭(rail)에 같은 편집기를 둔다.
+// 순수 로직(자동 저장·제목 검사·줄 위치)은 memo.ts.
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, errDetail, errText, type MeetingDetail } from "./api";
+import type { Notify } from "./App";
+import { editQueue } from "./editQueue";
+import { isImeKey, type Segment } from "./lib";
+import { checkTitle, citedRange, createAutosave, registerMemo, SAVE_STATUS, TITLE_MAX, type Autosave, type SaveState } from "./memo";
+import { EDIT_BLOCKED } from "./remove";
+
+export interface MemoTarget {
+  /** 고를 줄. null이면 줄을 고르지 않고 본문 끝에 초점만 둔다 (탭을 눌러 연 경우) */
+  segId: string | null;
+  nonce: number;
+}
+
+export function MemoEditor({
+  id,
+  initial,
+  savedBody,
+  segments,
+  target,
+  notify,
+  onSaved,
+  onState,
+  variant = "page",
+}: {
+  id: string;
+  /** 처음 디스크에 있던 본문 */
+  initial: string;
+  /** 코어가 마지막으로 확인한 본문과 줄 (인용 줄 위치 계산용) */
+  savedBody: string;
+  segments: Segment[];
+  /** 검색·인용·요약 칩이 가리키는 줄: 그 줄을 골라 둔다 */
+  target: MemoTarget | null;
+  notify: Notify;
+  onSaved: (m: MeetingDetail) => void;
+  onState: (s: SaveState) => void;
+  /** page: 메모 노트의 본문(처음 열 때 초점을 둔다). rail: 녹음 노트의 메모 탭(탭 키보드가 초점을 가지므로 줄을 가리킬 때만 초점을 옮긴다) */
+  variant?: "page" | "rail";
+}) {
+  const [text, setText] = useState(initial);
+  const [state, setState] = useState<SaveState>({ status: "saved" });
+  const box = useRef<HTMLTextAreaElement>(null);
+  const textRef = useRef(text);
+  textRef.current = text;
+  const live = useRef({ notify, onSaved, onState });
+  live.current = { notify, onSaved, onState };
+  // 저장 실패를 알린 뒤에는 성공할 때까지 다시 알리지 않는다 (입력할 때마다 다시 시도하므로)
+  const settled = useRef<SaveState["status"]>("saved");
+
+  const auto = useRef<Autosave | null>(null);
+  if (!auto.current) {
+    auto.current = createAutosave({
+      initial,
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+      // 노트마다 한 줄(editQueue)에 세운다: 제목 바꾸기·내보내기·삭제와 순서가 맞는다. 삭제를 기다리는 중이면 저장하지 않고 실패로 둔다
+      save: async (body) => {
+        const r = await editQueue.run(id, () => api.noteSave(id, body));
+        if (!r) throw new Error(EDIT_BLOCKED);
+        live.current.onSaved(r.meeting);
+      },
+      onState: (s) => {
+        setState(s);
+        live.current.onState(s);
+        if (s.status === "failed" && settled.current !== "failed") live.current.notify({ text: errText(s.error), detail: errDetail(s.error), error: true });
+        if (s.status !== "saving") settled.current = s.status;
+      },
+    });
+  }
+  const a = auto.current;
+
+  // 화면을 옮기거나 창을 닫기 전에 저장을 마칠 수 있게 등록한다. 떠날 때(언마운트)에도 남은 글을 저장한다
+  useEffect(() => registerMemo(id, { flush: () => a.flush(), drop: () => a.dispose() }), [id, a]);
+  useEffect(() => () => void a.flush(), [a]);
+  useEffect(() => {
+    const hide = () => document.visibilityState === "hidden" && void a.flush();
+    document.addEventListener("visibilitychange", hide);
+    return () => document.removeEventListener("visibilitychange", hide);
+  }, [a]);
+
+  // 처음 열 때 본문에 초점을 둔다. 줄을 가리키면(target) 그 줄을 고른다 (focus가 고른 곳이 보이게 스크롤한다)
+  const place = useCallback(() => {
+    const el = box.current;
+    if (!el) return;
+    const r = target?.segId ? citedRange(textRef.current, savedBody, segments, target.segId) : null;
+    if (r) el.setSelectionRange(r.start, r.end);
+    else el.setSelectionRange(textRef.current.length, textRef.current.length);
+    el.focus();
+  }, [target, savedBody, segments]);
+  const placed = useRef<number | null>(null);
+  useEffect(() => {
+    const key = target?.nonce ?? 0;
+    if (placed.current === key) return;
+    placed.current = key;
+    if (variant === "rail" && !target) return; // 탭 키보드(←→)로 지나가는 중이면 초점을 빼앗지 않는다
+    place();
+  }, [target, place, variant]);
+
+  const flushSoon = () => void a.flush();
+  return (
+    <div className={`memo-pane ${variant === "rail" ? "is-rail" : ""}`}>
+      <textarea
+        ref={box}
+        className="memo-editor"
+        value={text}
+        placeholder="여기에 메모를 쓰세요. 쓰는 대로 자동으로 저장됩니다"
+        aria-label="메모 내용"
+        aria-keyshortcuts="Meta+S"
+        onChange={(e) => {
+          setText(e.target.value);
+          a.change(e.target.value);
+        }}
+        onBlur={flushSoon}
+        onKeyDown={(e) => {
+          // 한글 조합 중에는 아무것도 하지 않는다 (lib.isImeKey). ⌘S는 바로 저장
+          if (isImeKey(e.nativeEvent) || !(e.metaKey && e.code === "KeyS")) return;
+          e.preventDefault();
+          flushSoon();
+        }}
+      />
+      <p className={`memo-status ${state.status === "failed" ? "inline-error" : ""}`} role="status">
+        {SAVE_STATUS[state.status]}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * 노트 제목. 제목이나 `제목 수정` 단추를 누르면 입력창이 된다. Enter 저장, Esc 취소, 입력창을 벗어나면 저장.
+ * 한글 조합 중 Enter·Esc는 조합만 끝낸다 (lib.isImeKey). 빈 제목·너무 긴 제목은 저장하지 않고 이유를 보인다.
+ */
+export function TitleEditor({ title, onSave, onReject }: { title: string; onSave: (title: string) => void; onReject: (error: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const composing = useRef(false);
+  const input = useRef<HTMLInputElement>(null);
+  const done = useRef(false); // Esc·Enter 뒤에 따라오는 blur가 다시 저장하지 않게
+
+  const start = () => {
+    done.current = false;
+    setError(null);
+    setDraft(title);
+  };
+  useEffect(() => {
+    if (draft !== null && !done.current) input.current?.select();
+  }, [draft === null]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** 저장을 시도한다. 고칠 수 있는 오류면 입력창에 남고(Enter), 벗어나는 중(blur)이면 원래 제목으로 돌아가며 알린다 */
+  const commit = (leaving: boolean) => {
+    if (draft === null || done.current) return;
+    const c = checkTitle(draft);
+    if (!c.ok) {
+      if (!leaving) return setError(c.error);
+      done.current = true;
+      setDraft(null);
+      return onReject(c.error);
+    }
+    done.current = true;
+    setDraft(null);
+    if (c.title !== title) onSave(c.title);
+  };
+
+  if (draft === null)
+    return (
+      <h1 className="note-title">
+        <button className="title-button" onClick={start} title="제목 수정" aria-label={`제목 수정: ${title || "제목 없음"}`}>
+          <span>{title || "제목 없음"}</span>
+          <span className="title-pencil" aria-hidden>
+            수정
+          </span>
+        </button>
+      </h1>
+    );
+  return (
+    <div>
+      <h1 className="note-title">
+        <input
+          ref={input}
+          className="title-input"
+          value={draft}
+          maxLength={TITLE_MAX + 40} // 붙여 넣은 긴 글을 잘라 버리지 않고 문장으로 알린다
+          autoFocus
+          aria-label="노트 제목 (Enter 저장, Esc 취소)"
+          aria-invalid={!!error}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setError(null);
+          }}
+          onCompositionStart={() => (composing.current = true)}
+          onCompositionEnd={() => (composing.current = false)}
+          onKeyDown={(e) => {
+            if (isImeKey(e.nativeEvent, composing.current)) return;
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit(false);
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              done.current = true;
+              setDraft(null);
+            }
+          }}
+          onBlur={() => commit(true)}
+        />
+      </h1>
+      {error && (
+        <p className="inline-error title-error" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}

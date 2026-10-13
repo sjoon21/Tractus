@@ -26,8 +26,8 @@ _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 __all__ = [
     "Job", "Segment", "add_glossary_terms", "apply_speaker_edit", "apply_suggestions", "apply_text_edits", "edit_transcript", "find_job", "find_meeting_dir",
-    "forget_person", "load_glossary", "meeting_dir_name", "new_ulid", "note_lock", "read_transcript", "render_files", "render_markdown", "save_transcript",
-    "seg_text", "speaker_display", "speaker_name", "write_transcript",
+    "forget_person", "is_memo", "load_glossary", "meeting_dir_name", "memo_lines", "memo_segments", "new_ulid", "note_lock", "read_transcript", "render_files", "render_markdown", "save_transcript",
+    "seg_text", "speaker_display", "speaker_name", "stamp", "write_transcript",
 ]
 
 
@@ -222,7 +222,8 @@ def write_transcript(job: Job) -> dict:
 def render_files(d: Path, t: dict) -> None:
     """transcript.json은 그대로 두고 transcript.md·vtt만 t로 다시 만든다."""
     _write_atomic(d / "transcript.md", render_markdown(t, load_memos(d)))
-    _write_atomic(d / "transcript.vtt", render_vtt(t))
+    if not is_memo(t):  # 메모는 시각이 없어 자막(vtt)이 없다
+        _write_atomic(d / "transcript.vtt", render_vtt(t))
 
 
 def save_transcript(d: Path, t: dict) -> None:
@@ -459,6 +460,37 @@ def _hms(sec: float) -> str:
     return f"{sec // 3600:02d}:{sec % 3600 // 60:02d}:{sec % 60:02d}"
 
 
+def is_memo(t: dict) -> bool:
+    """직접 쓴 메모 노트(오디오 없음, docs/desktop.md §2.10). "kind"가 없는 옛 노트는 녹음에서 만든 노트다."""
+    return t.get("kind") == "memo"
+
+
+def stamp(s: dict) -> str:
+    """세그먼트(또는 근거·인용)의 위치 표기. 녹음 노트의 사용자 메모 줄(source "memo")은 '메모 n번째 줄',
+    메모 노트의 줄(line이 있는 것)은 'n번째 줄', 그 밖에는 HH:MM:SS."""
+    if s.get("source") == "memo" and s.get("line"):
+        return f"메모 {s['line']}번째 줄"
+    return f"{s['line']}번째 줄" if s.get("line") else _hms(s["start"])
+
+
+def memo_lines(t: dict) -> list[dict]:
+    """녹음 노트에 사용자가 적은 메모의 줄 [{id: "m0001", line, text}] (선택 키 "memo", docs/desktop.md §2.10).
+    키가 없거나 형식이 달라도(옛 노트·손상) 빈 목록이다. 메모 노트(kind memo)는 세그먼트가 메모라 여기서는 비어 있다."""
+    m = t.get("memo")
+    if is_memo(t) or not isinstance(m, dict) or not isinstance(m.get("lines"), list):
+        return []
+    return [
+        {"id": x["id"], "line": x["line"], "text": x["text"]} for x in m["lines"]
+        if isinstance(x, dict) and isinstance(x.get("id"), str) and re.fullmatch(r"m\d+", x["id"])
+        and isinstance(x.get("line"), int) and x["line"] >= 1 and isinstance(x.get("text"), str) and x["text"].strip()
+    ]
+
+
+def memo_segments(t: dict) -> list[dict]:
+    """memo_lines를 세그먼트 모양으로 (시각 0, source "memo"). 색인·질문 근거·요약 근거가 ASR 세그먼트와 섞이지 않게 source로 가른다."""
+    return [{"id": x["id"], "start": 0.0, "end": 0.0, "text": x["text"], "speaker": None, "line": x["line"], "source": "memo"} for x in memo_lines(t)]
+
+
 MEMOS_FILE = "memos.json"
 _MARK_LABEL = {"memo": "메모", "bookmark": "북마크"}
 
@@ -492,7 +524,12 @@ def render_vtt(t: dict) -> str:
 
 def render_markdown(t: dict, memos: list[dict] | None = None) -> str:
     """사람·에이전트용 전사. 줄마다 `[HH:MM:SS] **화자**: 텍스트` (화자를 모르면 생략).
-    frontmatter는 Obsidian 등에서 그대로 읽힌다. 메모·북마크는 시각 순으로 끼워 넣는다."""
+    frontmatter는 Obsidian 등에서 그대로 읽힌다. 메모·북마크는 시각 순으로 끼워 넣는다.
+    직접 쓴 메모 노트는 시각·길이 없이 줄마다 문단으로 쓴다. 사용자 메모가 있는 녹음 노트는 끝에 `## 메모` 절이 붙는다."""
+    if is_memo(t):
+        head = ["---", f"meeting_id: {t['meeting_id']}", f"title: {t['title']}", f"created_at: {t['created_at']}", "kind: memo", "---", "", f"# {t['title']}", ""]
+        paras = [seg_text(s) for s in t["segments"] if seg_text(s)]
+        return "\n".join(head + [x for p in paras for x in (p, "")][:-1]) + "\n"
     head = [
         "---",
         f"meeting_id: {t['meeting_id']}",
@@ -515,6 +552,8 @@ def render_markdown(t: dict, memos: list[dict] | None = None) -> str:
         text = f" {m['text']}" if m.get("text") else ""
         rows.append((m["t"], 1, f"[{_hms(m['t'])}] ({label}){text}"))
     lines = [r[2] for r in sorted(rows, key=lambda r: (r[0], r[1]))]
+    if memo := memo_lines(t):  # 사용자가 적은 메모: 대화 내용 뒤에 줄마다 문단으로
+        lines += ["", "## 메모", ""] + [x for m in memo for x in (m["text"], "")][:-1]
     return "\n".join(head + lines) + "\n"
 
 
