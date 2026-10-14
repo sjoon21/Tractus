@@ -7,16 +7,16 @@
 | `mic.wav` | `AVAudioEngine` 입력 노드 tap |
 | `system.wav` | Core Audio process tap(`CATapDescription` + `AudioHardwareCreateProcessTap`) → private aggregate device → IOProc |
 
-요구 사항: macOS 14.4 이상, Apple Silicon, Xcode(Swift 6.2 이상. 패키지 traits를 쓴다). 소스는 Swift 5 언어 모드로 빌드한다.
+요구 사항: macOS 14.4 이상, Apple Silicon, Xcode 15.3 이상(Swift 5.10 이상, 개발 기기의 Swift 6.4·Xcode 27에서만 빌드 확인). 소스는 Swift 5 언어 모드로 빌드한다.
 
-같은 패키지에 화자 분리 헬퍼 `tractus-diar`도 있다. 아래 [tractus-diar](#tractus-diar--9명-이상-화자-분리-헬퍼) 절을 본다.
+화자 분리 헬퍼 `tractus-diar`는 하위 폴더 `diar/`의 **별도 패키지**다(FluidAudio가 Swift 6.2 이상을 요구해서 나눴다. 이 패키지만 Xcode 26이 필요하다). 아래 [tractus-diar](#tractus-diar--9명-이상-화자-분리-헬퍼) 절을 본다.
 
 ## 빌드
 
 ```bash
 cd recorder
-swift build -c release     # → recorder/.build/release/tractus-rec, tractus-diar
-swift test                 # 단위 테스트 + --fake E2E (권한 불필요) + tractus-diar (모델이 없으면 실제 모델 테스트만 건너뜀)
+swift build -c release     # → recorder/.build/release/tractus-rec
+swift test                 # 단위 테스트 + --fake E2E (권한 불필요)
 ```
 
 `Info.plist`(`NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`)는 링커 옵션 `-sectcreate __TEXT __info_plist`로 실행 파일 안에 들어간다. 확인 방법은 다음과 같다.
@@ -129,19 +129,29 @@ tractus-rec check
 
 ## tractus-diar — 9명 이상 화자 분리 헬퍼
 
-Nemotron 3 Diarization은 화자 8명이 상한이다. `tractus-diar`는 [FluidAudio](https://github.com/FluidInference/FluidAudio) v0.17.5(커밋 `0b1f462`)의 `OfflineDiarizerManager`(pyannote community-1 파이프라인을 Core ML로 옮긴 것: 분할 → WeSpeaker 임베딩 → PLDA·VBx 군집)를 돌린다. 화자 수 상한이 없다. Python 코어가 `transcribe --diarizer auto|fluid`일 때 하위 프로세스로 부른다.
+Nemotron 3 Diarization은 화자 8명이 상한이다. `tractus-diar`(`recorder/diar/`, Swift 6.2 이상)는 [FluidAudio](https://github.com/FluidInference/FluidAudio) v0.17.5(커밋 `0b1f462`)의 `OfflineDiarizerManager`(pyannote community-1 파이프라인을 Core ML로 옮긴 것: 분할 → WeSpeaker 임베딩 → PLDA·VBx 군집)를 돌린다. 화자 수 상한이 없다. Python 코어가 `transcribe --diarizer auto|fluid`일 때 하위 프로세스로 부른다.
 
 | 항목 | 값 |
 | --- | --- |
-| 코드 | FluidAudio Apache-2.0 (`Package.resolved`로 고정). NeMo 텍스트 정규화 바이너리는 `traits: []`로 빼서 링크하지 않는다 |
+| 코드 | FluidAudio Apache-2.0 (`diar/Package.resolved`로 고정). NeMo 텍스트 정규화 바이너리는 `traits: []`로 빼서 링크하지 않는다 |
 | 모델 | `FluidInference/speaker-diarization-coreml` revision `df2625ac79a7ac6b65ad868fee6d80f320da4232` (FluidAudio가 고정), 21MB |
 | 모델 라이선스 | CC-BY-4.0 (pyannote community-1, WeSpeaker, BUT Speech@FIT PLDA, Fluid Inference 변환). 출처 표기는 저장소 `NOTICE` |
 | 로컬 경로 | `models/speaker-diarization` (FluidAudio가 정한 폴더 이름) |
 
+### 빌드
+
+```bash
+cd recorder/diar
+swift build -c release     # → recorder/diar/.build/release/tractus-diar (처음에는 FluidAudio를 받는다)
+swift test                 # 인수 해석·결과 이벤트 단위 테스트 + 실행 파일 오류 경로 (모델이 없으면 실제 모델 테스트만 건너뜀)
+```
+
+구조: `Sources/DiarKit`(FluidAudio에 의존하지 않는 순수 로직 + `Support.swift`, `../Sources/RecorderKit`에서 복사한 작은 함수 셋), `Sources/tractus-diar`(실행 파일), `Tests/DiarTests`.
+
 ### 모델 받기 (한 번)
 
 ```bash
-.build/release/tractus-diar download --models ../models/speaker-diarization
+.build/release/tractus-diar download --models ../../models/speaker-diarization
 ```
 
 - 라이선스 범위(CC-BY-4.0) 안의 파일만 받는다: `Segmentation`·`FBank`·`Embedding`·`PldaRho.mlmodelc`, `plda-parameters.json`, `xvector-transform.json`, `provenance.json`(SHA-256 목록). 같은 저장소의 레거시 파일(`pyannote_segmentation`, `wespeaker*`)은 받지 않는다.
@@ -151,7 +161,7 @@ Nemotron 3 Diarization은 화자 8명이 상한이다. `tractus-diar`는 [FluidA
 ### 실행
 
 ```bash
-.build/release/tractus-diar run --audio <16kHz mono wav> --models ../models/speaker-diarization [--max-speakers N]
+.build/release/tractus-diar run --audio <16kHz mono wav> --models ../../models/speaker-diarization [--max-speakers N]
 ```
 
 - **네트워크를 쓰지 않는다**(`ModelHub.offlineMode = true`). 모델이 없거나 revision이 다르거나 깨졌으면 받지 않고 `error`로 끝난다.

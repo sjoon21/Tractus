@@ -154,8 +154,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def fluid_bin() -> Path:
-    """$TRACTUS_DIAR_BIN, 없으면 저장소에서 빌드한 <repo>/recorder/.build/release/tractus-diar (앱의 tractus-rec와 같은 규칙)."""
-    return Path(os.environ.get("TRACTUS_DIAR_BIN") or REPO_ROOT / "recorder/.build/release/tractus-diar")
+    """$TRACTUS_DIAR_BIN, 없으면 저장소에서 빌드한 <repo>/recorder/diar/.build/release/tractus-diar (앱의 tractus-rec와 같은 규칙)."""
+    return Path(os.environ.get("TRACTUS_DIAR_BIN") or REPO_ROOT / "recorder/diar/.build/release/tractus-diar")
 
 
 def fluid_timeout(duration_s: float) -> float:
@@ -180,9 +180,9 @@ def fluid_hint(models_dir: Path) -> str:
     binary, path = fluid_bin(), models_dir / FLUID_DIR
     lines = []
     if not _executable(binary):
-        lines.append(f"  헬퍼 빌드: cd {REPO_ROOT / 'recorder'} && swift build -c release --product tractus-diar  (다른 위치면 TRACTUS_DIAR_BIN)")
+        lines.append(f"  헬퍼 빌드: cd {REPO_ROOT / 'recorder' / 'diar'} && swift build -c release  (Swift 6.2 이상, 다른 위치면 TRACTUS_DIAR_BIN)")
     if not _fluid_models_ok(path):
-        lines.append(f"  모델 받기: {binary} download --models {path}")
+        lines.append(f"  모델 받기: tractus models download fluid  (직접: {binary} download --models {path})")
     return "\n".join(lines)
 
 

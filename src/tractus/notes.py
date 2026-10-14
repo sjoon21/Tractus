@@ -141,8 +141,13 @@ def apply_title(t: dict, title: str) -> dict:
 
 
 def retitle_summary(d: Path, title: str) -> None:
-    """요약 파일(summary.json의 title, summary.md의 첫 제목 줄)을 새 제목으로 바꾼다. 요약이 없으면 아무것도 하지 않는다."""
-    sj, sm = d / "summary.json", d / "summary.md"
+    """요약 파일(summary.json의 title, summary.md의 첫 제목 줄)과 유형별 요약(summaries/*.json·md)을 새 제목으로 바꾼다. 요약이 없으면 아무것도 하지 않는다."""
+    _retitle_pair(d / "summary.json", d / "summary.md", title)
+    for sj in sorted((d / "summaries").glob("*.json")):
+        _retitle_pair(sj, sj.with_suffix(".md"), title)
+
+
+def _retitle_pair(sj: Path, sm: Path, title: str) -> None:
     try:
         data = json.loads(sj.read_text(encoding="utf-8"))
     except (OSError, ValueError):

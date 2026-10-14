@@ -1,6 +1,6 @@
 import FluidAudio
 import Foundation
-import RecorderKit
+import DiarKit
 
 // tractus-diar — 9명 이상 화자 분리 헬퍼. FluidAudio OfflineDiarizerManager(pyannote community-1 Core ML)를 돌린다.
 // stdout에는 JSON Lines 이벤트만 쓴다(progress…, 마지막에 result 또는 error). 로그는 stderr.

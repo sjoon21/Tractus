@@ -213,13 +213,13 @@ def test_load_fluid_needs_binary_and_models(tmp_path, monkeypatch):
 
 def test_fluid_bin_defaults_to_recorder_release_build(monkeypatch):
     monkeypatch.setenv("TRACTUS_DIAR_BIN", "")
-    assert diarize.fluid_bin() == diarize.REPO_ROOT / "recorder/.build/release/tractus-diar"
+    assert diarize.fluid_bin() == diarize.REPO_ROOT / "recorder/diar/.build/release/tractus-diar"
 
 
-REAL_BIN = diarize.REPO_ROOT / "recorder/.build/release/tractus-diar"
+REAL_BIN = diarize.REPO_ROOT / "recorder/diar/.build/release/tractus-diar"
 
 
-@pytest.mark.skipif(not REAL_BIN.exists(), reason="recorder/에서 swift build -c release 필요")
+@pytest.mark.skipif(not REAL_BIN.exists(), reason="recorder/diar/에서 swift build -c release 필요")
 def test_real_helper_contract_on_broken_models(tmp_path):
     """실제 헬퍼와의 계약 (모델 불필요): 인수를 받아들이고, 모델이 깨졌으면 받지 않고(offline) error 이벤트 + 종료 코드 1."""
     models = fluid_models(tmp_path)

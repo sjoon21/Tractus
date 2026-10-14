@@ -13,6 +13,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
+from tractus.summaries import DEFAULT_KEY, list_summaries, read_data, read_markdown
 from tractus.store import MEMOS_FILE, _hms, _vtt_time, is_memo, load_memos, memo_lines, one_line, render_markdown, render_vtt, seg_text, speaker_display
 
 FORMATS = ("txt", "md", "srt", "vtt", "csv", "docx", "bundle")
@@ -79,23 +80,53 @@ def _csv(t: dict) -> bytes:
     return buf.getvalue().encode("utf-8-sig")  # BOM: 한국어 Excel이 UTF-8로 연다
 
 
-def _md(d: Path, t: dict) -> str:
+def pick_summary(d: Path, key: str | None) -> str | None:
+    """내보낼 요약의 key. key를 주면 그대로(없으면 None이 아니라 호출한 쪽이 먼저 확인한다), 안 주면 기본 요약(meeting),
+    기본 요약이 없으면 처음 있는 요약(핵심 요약 같은 다른 유형만 있는 노트). 요약이 없으면 None."""
+    if key:
+        return key
+    have = [x["key"] for x in list_summaries(d)]
+    return DEFAULT_KEY if DEFAULT_KEY in have else (have[0] if have else None)
+
+
+def _md(d: Path, t: dict, key: str | None) -> str:
     md = render_markdown(t, load_memos(d))
-    summary = d / "summary.md"
-    if not summary.is_file():
+    summary = read_markdown(d, key) if key else None
+    if summary is None:
         return md
-    body = re.sub(r"\A---\n.*?\n---\n+", "", summary.read_text(encoding="utf-8"), flags=re.S)  # frontmatter는 문서 맨 앞에서만 frontmatter다
+    body = re.sub(r"\A---\n.*?\n---\n+", "", summary, flags=re.S)  # frontmatter는 문서 맨 앞에서만 frontmatter다
     return md + "\n---\n\n" + body
 
 
-def _load_summary(d: Path) -> dict | None:
-    try:
-        return json.loads((d / "summary.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+def _docx_summary(doc, s: dict, key: str) -> None:
+    """요약 한 개를 문서에 쓴다. 기본 요약(예전 스키마)은 요약·결정 사항·할 일, 유형별 요약은 개요와 섹션(목록 모양대로)."""
+    if "sections" not in s:
+        doc.add_heading("요약", 1)
+        doc.add_paragraph(str(s.get("summary") or ""))
+        doc.add_heading("결정 사항", 1)
+        for x in s.get("decisions") or [{"text": "없음"}]:
+            doc.add_paragraph(str(x.get("text") or ""), style="List Bullet")
+        doc.add_heading("할 일", 1)
+        for a in s.get("action_items") or [{"task": "없음"}]:
+            who = ", ".join(str(v) for v in (a.get("owner"), a.get("due")) if v)
+            doc.add_paragraph(f"{a.get('task') or ''}{' — ' + who if who else ''}", style="List Bullet")
+        return
+    doc.add_heading(f"요약 · {s.get('template_name') or key}", 1)
+    if str(s.get("overview") or "").strip():
+        doc.add_paragraph(str(s["overview"]))
+    for sec in s.get("sections") or []:
+        items = [i for i in sec.get("items") or [] if isinstance(i, dict)]
+        if not items:
+            continue
+        doc.add_heading(str(sec.get("heading") or ""), 1)
+        style = "List Number" if sec.get("style") == "numbered" else "List Bullet"
+        for i in items:
+            who = ", ".join(str(v) for v in (i.get("owner"), i.get("due")) if v)
+            mark = "☐ " if sec.get("style") == "checklist" else ""
+            doc.add_paragraph(f"{mark}{i.get('text') or ''}{' — ' + who if who else ''}", style=style)
 
 
-def _docx(d: Path, t: dict) -> bytes:
+def _docx(d: Path, t: dict, key: str | None) -> bytes:
     import docx
     from docx.oxml.ns import qn
     from docx.shared import Pt, RGBColor
@@ -114,16 +145,8 @@ def _docx(d: Path, t: dict) -> bytes:
     if names:
         doc.add_paragraph(f"참석자 {len(names)}명 ({', '.join(names)})")
 
-    if s := _load_summary(d):
-        doc.add_heading("요약", 1)
-        doc.add_paragraph(str(s.get("summary") or ""))
-        doc.add_heading("결정 사항", 1)
-        for x in s.get("decisions") or [{"text": "없음"}]:
-            doc.add_paragraph(str(x.get("text") or ""), style="List Bullet")
-        doc.add_heading("할 일", 1)
-        for a in s.get("action_items") or [{"task": "없음"}]:
-            who = ", ".join(str(v) for v in (a.get("owner"), a.get("due")) if v)
-            doc.add_paragraph(f"{a.get('task') or ''}{' — ' + who if who else ''}", style="List Bullet")
+    if key and (s := read_data(d, key)):
+        _docx_summary(doc, s, key)
 
     doc.add_heading("메모 내용" if memo else "대화 내용", 1)
     for seg, who, text in _rows(t):
@@ -156,15 +179,20 @@ def _bundle(d: Path) -> bytes:
                 z.writestr(f"{d.name}/{name}", json.dumps(t, ensure_ascii=False, indent=1))
             elif (d / name).is_file():
                 z.write(d / name, f"{d.name}/{name}")
+        for p in sorted((d / "summaries").glob("*")):  # 유형별 요약 (summaries/<key>.json·md)
+            if p.suffix in (".json", ".md") and p.is_file():
+                z.write(p, f"{d.name}/summaries/{p.name}")
     return buf.getvalue()
 
 
-def render_export(d: Path, fmt: str) -> bytes:
-    """회의 폴더 d를 fmt 형식(FORMATS)의 바이트로 만든다."""
+def render_export(d: Path, fmt: str, summary: str | None = None) -> bytes:
+    """회의 폴더 d를 fmt 형식(FORMATS)의 바이트로 만든다. md·docx에는 요약이 들어간다: summary(요약 key)를 주면 그 요약,
+    안 주면 기본 요약(없으면 처음 있는 요약). 있는지는 호출한 쪽이 먼저 확인한다 (summaries.read_data)."""
     t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+    key = pick_summary(d, summary)
     writers = {
-        "txt": lambda: _txt(t).encode("utf-8"), "md": lambda: _md(d, t).encode("utf-8"), "srt": lambda: _srt(t).encode("utf-8"),
-        "vtt": lambda: render_vtt(t).encode("utf-8"), "csv": lambda: _csv(t), "docx": lambda: _docx(d, t), "bundle": lambda: _bundle(d),
+        "txt": lambda: _txt(t).encode("utf-8"), "md": lambda: _md(d, t, key).encode("utf-8"), "srt": lambda: _srt(t).encode("utf-8"),
+        "vtt": lambda: render_vtt(t).encode("utf-8"), "csv": lambda: _csv(t), "docx": lambda: _docx(d, t, key), "bundle": lambda: _bundle(d),
     }
     if fmt not in writers:
         raise ValueError(f"지원하지 않는 형식입니다: {fmt} ({', '.join(FORMATS)})")

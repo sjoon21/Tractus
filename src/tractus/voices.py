@@ -93,7 +93,7 @@ def model_path(models_dir: Path) -> Path:
 
 def model_hint(models_dir: Path) -> str:
     p = model_path(models_dir)
-    return f"{p}\n  mkdir -p {p.parent} && curl -L -o {p} {MODEL_URL}\n  (sha256 {MODEL_SHA256})"
+    return f"{p}\n  tractus models download voices\n  (직접 받기: mkdir -p {p.parent} && curl -L -o {p} {MODEL_URL}  sha256 {MODEL_SHA256})"
 
 
 def model_present(models_dir: Path) -> bool:

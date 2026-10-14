@@ -70,7 +70,7 @@ def test_save_writes_memo_block_and_leaves_asr_data_untouched(rec):
     assert r.exit_code == 0 and json.loads(last_line(r)) == {"saved": True, "segments": 2, "changed": True, "kind": "recording"}
     t = read_transcript(rec)
     assert t["memo"] == {"body": MEMO_BODY, "seq": 2, "lines": [{"id": "m0001", "line": 1, "text": "예산은 동결합니다"}, {"id": "m0002", "line": 3, "text": "견적은 김철수 님이 받습니다"}]}
-    assert {k: v for k, v in t.items() if k != "memo"} == before and "kind" not in t  # segments·words·speakers·audio 그대로, 녹음 노트로 남는다
+    assert {k: v for k, v in t.items() if k not in ("memo", "updated_at")} == before and "kind" not in t and "updated_at" in t  # segments·words·speakers·audio 그대로, 녹음 노트로 남는다
     assert not (rec / "summary.json").exists() and (rec / "audio.ogg").read_bytes() == b"OggS fake audio"
 
 

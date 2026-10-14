@@ -13,6 +13,7 @@ import numpy as np
 
 MODEL_REPO = "Qwen/Qwen3-Embedding-0.6B"
 MODEL_REVISION = "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
+MODEL_DIR = "qwen3-embedding-0.6b"
 DIM = 1024
 BATCH_SIZE = 16
 MAX_TOKENS = 1024  # 청크는 500자(약 330토큰) 이하
@@ -84,7 +85,7 @@ class LazyEmbedder:
 
 def load_embedder(models_dir: Path) -> "LazyEmbedder | None":
     """모델 파일이 없으면 None (키워드 검색만 한다)."""
-    path = models_dir / "qwen3-embedding-0.6b"
+    path = models_dir / MODEL_DIR
     if not (path / "model.safetensors").exists():
         return None
     return LazyEmbedder(path)

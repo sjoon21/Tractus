@@ -206,7 +206,7 @@ export function answeredBy(s: AskState): string | null {
 }
 
 export function sendNotice(c: LlmConfig): { text: string; warn: boolean } {
-  if (!c.provider) return { text: "AI 서비스가 설정되지 않았습니다. .env.local에 TRACTUS_LLM_PROVIDER를 지정하세요", warn: true };
+  if (!c.provider) return { text: "AI 서비스가 설정되지 않았습니다. 설정에서 API 키를 등록하세요", warn: true };
   const p = PROVIDERS[c.provider];
   if (!p) return { text: `알 수 없는 AI 서비스입니다: ${c.provider}`, warn: true };
   if (c.local_only && !p.local) return { text: `로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 외부 AI 서비스(${p.label})로 보내지 않습니다`, warn: true };

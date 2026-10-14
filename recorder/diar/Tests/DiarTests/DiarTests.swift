@@ -1,5 +1,5 @@
 import Foundation
-import RecorderKit
+import DiarKit
 import XCTest
 
 final class DiarCommandTests: XCTestCase {
@@ -44,7 +44,7 @@ final class DiarBinaryTests: XCTestCase {
     /// TRACTUS_DIAR_MODELS, 없으면 <저장소>/models/speaker-diarization
     var models: String {
         ProcessInfo.processInfo.environment["TRACTUS_DIAR_MODELS"]
-            ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../models/speaker-diarization").standardizedFileURL.path
+            ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../models/speaker-diarization").standardizedFileURL.path
     }
 
     func run(_ args: [String]) throws -> (events: [[String: Any]], status: Int32) {
@@ -78,7 +78,8 @@ final class DiarBinaryTests: XCTestCase {
     func testMissingModelsDoesNotDownload() throws {
         let dir = try tempDir()
         let wav = dir.appendingPathComponent("a.wav")
-        try WavWriter(url: wav).close()
+        // 모델을 여는 데서 먼저 실패하므로 내용은 보지 않는다. 헤더만 있는 빈 WAV.
+        try Data("RIFF".utf8 + [36, 0, 0, 0] + "WAVEfmt ".utf8 + [16, 0, 0, 0, 1, 0, 1, 0, 0x80, 0x3E, 0, 0, 0, 0x7D, 0, 0, 2, 0, 16, 0] + "data".utf8 + [0, 0, 0, 0]).write(to: wav)
         let empty = dir.appendingPathComponent("models")
         try assertError(["run", "--audio", wav.path, "--models", empty.path])
         let fetched = (try? FileManager.default.contentsOfDirectory(atPath: empty.appendingPathComponent("speaker-diarization").path)) ?? []

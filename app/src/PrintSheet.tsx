@@ -3,9 +3,11 @@
 // Webview::print(WKWebView printOperation)로 바꿔 놓으므로 인쇄 대화상자의 'PDF로 저장'을 그대로 쓴다.
 import { createPortal } from "react-dom";
 import type { PrintDoc } from "./print";
+import { DEFAULT_NAME } from "./summaries";
 
 export function PrintSheet({ doc }: { doc: PrintDoc }) {
   const s = doc.summary;
+  const g = doc.generic;
   return createPortal(
     <article className="print-sheet" lang="ko">
       <header className="print-head">
@@ -19,6 +21,15 @@ export function PrintSheet({ doc }: { doc: PrintDoc }) {
           <PrintList title="결정 사항" items={s.decisions} />
           <PrintList title="할 일" items={s.actions} />
           <PrintList title="주제" items={s.topics} />
+        </section>
+      )}
+      {g && (
+        <section className="print-summary">
+          <h2>{g.name === DEFAULT_NAME ? "요약" : `요약 · ${g.name}`}</h2>
+          {g.lead.trim() && <p>{g.lead}</p>}
+          {g.sections.map((sec, i) => (
+            <PrintList key={i} title={sec.title} items={sec.items} />
+          ))}
         </section>
       )}
       <section>

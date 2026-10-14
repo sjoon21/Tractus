@@ -1,11 +1,16 @@
 //! Tractus 데스크톱 앱 (docs/desktop.md §3). 파일은 직접 읽고, 검색만 상주 `tractus mcp`로 한다.
 
 mod ask;
+mod attach;
+mod llm_key;
 mod mcp;
 mod media;
 mod meetings;
+mod models;
+mod organize;
 mod procs;
 mod removal;
+mod summaries;
 mod voices;
 
 use serde::{Deserialize, Serialize};
@@ -35,6 +40,11 @@ pub struct Settings {
     pub rec_mode: String,
     /// 녹음 중 실시간 자막 (Phase 7.2, `tractus live`). 기본 꺼짐: 메모리를 약 2 GB 더 쓴다 (실측 footprint 1.8 GB)
     pub live_captions: bool,
+    /// 노트 목록 정렬 (docs/desktop.md §2.12): created | updated | title | duration, asc | desc
+    pub list_sort: String,
+    pub list_order: String,
+    /// 시작 점검(docs/desktop.md §2.15)을 한 번 보여 줬는가. 처음 실행할 때만 저절로 열린다
+    pub checkup_done: bool,
 }
 
 impl Default for Settings {
@@ -50,6 +60,9 @@ impl Default for Settings {
             fake_recorder: false,
             rec_mode: "in_person".into(),
             live_captions: false,
+            list_sort: "updated".into(),
+            list_order: "desc".into(),
+            checkup_done: false,
         }
     }
 }
@@ -80,6 +93,10 @@ impl Settings {
         if !self.models_dir.is_empty() {
             env.push(("TRACTUS_MODELS_DIR".into(), expand(&self.models_dir).to_string_lossy().into_owned()));
         }
+        // `doctor`가 앱이 쓰는 녹음 프로그램을 보게 한다 (설정의 경로가 저장소 기본 경로와 다를 수 있다)
+        if !self.rec_bin.is_empty() {
+            env.push(("TRACTUS_REC_BIN".into(), expand(&self.rec_bin).to_string_lossy().into_owned()));
+        }
         env
     }
 
@@ -95,6 +112,19 @@ impl Settings {
     fn tractus<S: AsRef<OsStr>>(&self, args: &[S]) -> Command {
         let mut cmd = Command::new(expand(&self.tractus_bin));
         cmd.args(args).envs(self.child_env()).current_dir(self.tractus_cwd());
+        cmd
+    }
+
+    /// 요약·질문처럼 AI 서비스를 부르는 실행만 쓴다 (MCP·녹음·변환은 `tractus`). 저장된 API 키를 환경변수로만 넘긴다 (llm_key.rs)
+    fn tractus_llm<S: AsRef<OsStr>>(&self, args: &[S], config_dir: Option<&Path>) -> Command {
+        self.tractus_llm_with(args, config_dir, |k| std::env::var(k).ok())
+    }
+
+    fn tractus_llm_with<S: AsRef<OsStr>>(&self, args: &[S], config_dir: Option<&Path>, env: impl Fn(&str) -> Option<String>) -> Command {
+        let mut cmd = self.tractus(args);
+        let key = config_dir.and_then(llm_key::load);
+        let provider_set = ask::llm_config(&[&self.tractus_cwd(), &self.home()], &env).provider.is_some();
+        cmd.envs(llm_key::env(key.as_deref(), &env, provider_set));
         cmd
     }
 
@@ -197,6 +227,11 @@ impl AppState {
     fn settings(&self) -> Settings {
         self.settings.lock().unwrap().clone()
     }
+
+    /// 요약·질문 프로세스 (저장된 API 키 포함)
+    fn llm_cmd<S: AsRef<OsStr>>(&self, args: &[S]) -> Command {
+        self.settings().tractus_llm(args, self.config_path.parent())
+    }
 }
 
 /// 파일 읽기·MCP 대기를 블로킹 풀에서 돌린다 (UI·비동기 런타임 스레드를 막지 않게).
@@ -240,6 +275,24 @@ fn set_rec_mode(state: State<'_, AppState>, mode: String) -> Result<(), String> 
     }
     std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
     state.settings.lock().unwrap().rec_mode = mode;
+    Ok(())
+}
+
+/// 설정 파일의 불리언 키 하나만 바꾼다 (merge_rec_mode와 같은 방식: 환경변수 기본값이 파일에 굳지 않게)
+fn merge_flag(raw: Option<&str>, key: &str, value: bool) -> Result<String, String> {
+    let mut v: Value = raw.and_then(|r| serde_json::from_str(r).ok()).filter(Value::is_object).unwrap_or_else(|| json!({}));
+    v[key] = json!(value);
+    serde_json::to_string_pretty(&v).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_checkup_done(state: State<'_, AppState>, done: bool) -> Result<(), String> {
+    let raw = merge_flag(std::fs::read_to_string(&state.config_path).ok().as_deref(), "checkup_done", done)?;
+    if let Some(dir) = state.config_path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
+    state.settings.lock().unwrap().checkup_done = done;
     Ok(())
 }
 
@@ -325,16 +378,24 @@ fn stop_live(live: &LiveSlot) {
 }
 
 /// 녹음 시작. 이벤트는 "rec"로 보낸다. 반환값은 녹음 폴더.
+/// target: 글만 있는 노트의 ID. 있으면 그 노트에 녹음을 추가하는 녹음이다 (녹음 폴더에 attach.json을 쓰고, 녹음하는 동안 노트를 쓰는 중으로 표시한다. docs/desktop.md §2.11)
 #[tauri::command]
-fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>) -> Result<String, String> {
+fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>, target: Option<String>) -> Result<String, String> {
     check_rec_flags(&flags)?;
     let mut rec = state.rec.lock().unwrap();
     if rec.is_some() {
         return Err("이미 녹음 중입니다".into());
     }
     let s = state.settings();
+    if let Some(id) = &target {
+        attach::check_target(&s.home(), id, |t| is_busy(&state.busy, t))?;
+    }
     let dir = s.home().join("recordings").join(ulid::Ulid::new().to_string());
     std::fs::create_dir_all(dir.parent().unwrap()).map_err(|e| e.to_string())?;
+    if let Some(id) = &target {
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        attach::write_attach(&dir, id).inspect_err(|_| attach::discard(&dir))?;
+    }
     let mut cmd = Command::new(expand(&s.rec_bin));
     cmd.arg("record").arg("--out").arg(&dir).args(&flags).envs(s.child_env());
     if s.fake_recorder {
@@ -342,8 +403,10 @@ fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>) -> 
     }
     let (slot, live, live_dir) = (state.rec.clone(), state.live.clone(), dir.clone());
     let (busy, busy_key) = (state.busy.clone(), hold(&state.busy, &dir.to_string_lossy()));
+    let note_key = target.as_deref().map(|id| hold(&state.busy, id)); // 녹음하는 동안 그 노트는 삭제할 수 없다
     cancel_index(&state.index); // 실시간 변환 모델과 임베딩 모델이 함께 올라가지 않게
     let release_key = busy_key.clone();
+    let release_note = note_key.clone();
     // 실시간 자막은 녹음 헬퍼가 트랙 파일을 만든 뒤(started)에 띄운다. 설정은 녹음을 시작할 때의 값을 쓴다
     let live_settings = s.live_captions.then(|| s.clone());
     let started = procs::spawn_streaming(cmd, serde_json::Map::new(), move |ev| {
@@ -357,6 +420,9 @@ fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>) -> 
         if ev["event"] == "exit" {
             slot.lock().unwrap().take();
             release(&busy, &busy_key);
+            if let Some(k) = &note_key {
+                release(&busy, k);
+            }
         }
         let _ = app.emit("rec", ev);
     });
@@ -364,6 +430,12 @@ fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>) -> 
         Ok(s) => s,
         Err(e) => {
             release(&state.busy, &release_key);
+            if let Some(k) = &release_note {
+                release(&state.busy, k);
+            }
+            if target.is_some() {
+                attach::discard(&dir);
+            }
             return Err(e);
         }
     };
@@ -407,19 +479,25 @@ fn job_args(home: &Path, kind: &str, target: &str) -> Result<Vec<String>, String
 }
 
 /// 전사·요약·단어 타이밍 작업. 이벤트는 "job"으로 보내고 {job, kind}를 덧붙인다. job은 프론트엔드가 만든 ID.
+/// append_to: 글만 있는 노트의 ID. 있으면(transcribe·import만) 새 노트를 만들지 않고 그 노트에 녹음을 덧붙인다 (`--append-to`, docs/desktop.md §2.11). 작업하는 동안 그 노트는 삭제할 수 없다
 #[tauri::command]
-fn job_start(app: AppHandle, state: State<'_, AppState>, kind: String, target: String, job: String) -> Result<(), String> {
+fn job_start(app: AppHandle, state: State<'_, AppState>, kind: String, target: String, job: String, append_to: Option<String>) -> Result<(), String> {
     let s = state.settings();
-    let cmd = s.tractus(&job_args(&s.home(), &kind, &target)?);
+    let args = attach::with_target(job_args(&s.home(), &kind, &target)?, &kind, append_to.as_deref(), &s.home(), |t| is_busy(&state.busy, t))?;
+    let cmd = if kind == "summarize" { state.llm_cmd(&args) } else { s.tractus(&args) };
     let tag = json!({"job": job, "kind": kind}).as_object().unwrap().clone();
     // 노트·녹음을 쓰는 동안은 삭제를 거절한다. 가져오기는 대상이 아직 없어 IMPORT_TARGET으로 표시만 한다 (백그라운드 검색 정보 갱신이 비켜 간다)
     let held = if kind == "import" { IMPORT_TARGET } else { target.as_str() };
     let key = Some((state.busy.clone(), hold(&state.busy, held)));
+    let note = append_to.as_deref().map(|id| (state.busy.clone(), hold(&state.busy, id)));
     cancel_index(&state.index);
-    let slot = key.clone();
+    let (slot, note_slot) = (key.clone(), note.clone());
     // stdin은 쓰지 않으므로 바로 닫는다
     let started = procs::spawn_streaming(cmd, tag, move |ev| {
         if let (true, Some((busy, k))) = (ev["event"] == "exit", &slot) {
+            release(busy, k);
+        }
+        if let (true, Some((busy, k))) = (ev["event"] == "exit", &note_slot) {
             release(busy, k);
         }
         let _ = app.emit("job", ev);
@@ -427,7 +505,7 @@ fn job_start(app: AppHandle, state: State<'_, AppState>, kind: String, target: S
     match (started, key) {
         (Ok(_), _) => Ok(()),
         (Err(e), key) => {
-            if let Some((busy, k)) = key {
+            for (busy, k) in key.into_iter().chain(note) {
                 release(&busy, &k);
             }
             Err(e)
@@ -450,7 +528,7 @@ fn ask_start(
 ) -> Result<(), String> {
     let args = ask::ask_args(meeting.as_deref(), from.as_deref(), to.as_deref())?;
     let input = ask::ask_input(&question, &history)?;
-    let cmd = state.settings().tractus(&args);
+    let cmd = state.llm_cmd(&args);
     let tag = json!({ "job": job }).as_object().unwrap().clone();
     let (asks, key) = (state.asks.clone(), job.clone());
     // 한 노트에 묻는 동안은 그 노트 삭제를 거절한다
@@ -593,7 +671,8 @@ fn sync_index_later(mcp: Arc<mcp::McpClient>) {
 #[tauri::command]
 async fn llm_config(state: State<'_, AppState>) -> Result<ask::LlmConfig, String> {
     let s = state.settings();
-    blocking(move || Ok(ask::llm_config(&[&s.tractus_cwd(), &s.home()], |k| std::env::var(k).ok()))).await
+    let saved = state.config_path.parent().and_then(llm_key::load).is_some();
+    blocking(move || Ok(llm_key::with_saved_key(ask::llm_config(&[&s.tractus_cwd(), &s.home()], |k| std::env::var(k).ok()), saved))).await
 }
 
 fn is_meeting_id(id: &str) -> bool {
@@ -881,19 +960,24 @@ async fn note_title(state: State<'_, AppState>, id: String, title: String) -> Re
 const EXPORT_FORMATS: &[&str] = &["txt", "md", "srt", "vtt", "csv", "docx", "bundle"];
 
 /// `tractus export`. 경로는 저장 대화상자가 고른 절대 경로이고, 덮어쓰기는 대화상자가 이미 물었으므로 --force
-fn export_args(id: &str, format: &str, out: &Path) -> Result<Vec<String>, String> {
-    if !is_meeting_id(id) || !EXPORT_FORMATS.contains(&format) || !out.is_absolute() || out.file_name().is_none() {
+/// summary: md·docx에 넣을 요약의 key (화면에서 고른 요약). 없으면 코어가 기본 요약을 쓴다
+fn export_args(id: &str, format: &str, out: &Path, summary: Option<&str>) -> Result<Vec<String>, String> {
+    if !is_meeting_id(id) || !EXPORT_FORMATS.contains(&format) || !out.is_absolute() || out.file_name().is_none() || summary.is_some_and(|k| !summaries::is_summary_key(k)) {
         return Err(format!("잘못된 내보내기: {id} {format} {}", out.display()));
     }
     let out = out.to_string_lossy();
-    Ok(["export", id, "--format", format, "--out", &out, "--force"].map(String::from).to_vec())
+    let mut args: Vec<String> = ["export", id, "--format", format, "--out", &out, "--force"].map(String::from).to_vec();
+    if let Some(k) = summary {
+        args.push(format!("--summary={k}"));
+    }
+    Ok(args)
 }
 
 /// 내보내고 Finder에서 그 파일을 보여 준다. 반환값은 코어가 쓴 절대 경로
 #[tauri::command]
-async fn export_meeting(state: State<'_, AppState>, id: String, format: String, out: String) -> Result<String, String> {
+async fn export_meeting(state: State<'_, AppState>, id: String, format: String, out: String, summary: Option<String>) -> Result<String, String> {
     let s = state.settings();
-    let args = export_args(&id, &format, Path::new(&out))?;
+    let args = export_args(&id, &format, Path::new(&out), summary.as_deref())?;
     let guard = BusyGuard::new(&state.busy, &id);
     blocking(move || {
         let _guard = guard;
@@ -961,6 +1045,12 @@ pub fn run() {
             get_settings,
             save_settings,
             set_rec_mode,
+            set_checkup_done,
+            models::models_list,
+            models::doctor,
+            models::models_download,
+            models::models_cancel,
+            models::models_remove,
             list_meetings,
             list_recordings,
             load_meeting,
@@ -972,10 +1062,23 @@ pub fn run() {
             note_new,
             note_save,
             note_title,
+            organize::list_folders,
+            organize::note_meta,
+            organize::folders_create,
+            organize::folders_rename,
+            organize::folders_move,
+            organize::folders_delete,
+            organize::set_list_prefs,
             mcp_call,
             rec_start,
             rec_send,
             job_start,
+            summaries::summary_start,
+            summaries::summaries_list,
+            summaries::summaries_delete,
+            summaries::templates_list,
+            summaries::templates_save,
+            summaries::templates_delete,
             ask_start,
             ask_cancel,
             load_chat,
@@ -983,6 +1086,9 @@ pub fn run() {
             delete_recording,
             quit_ready,
             llm_config,
+            llm_key::llm_key_status,
+            llm_key::llm_key_save,
+            llm_key::llm_key_delete,
             voices::voices_list,
             voices::voices_enroll,
             voices::voices_forget
@@ -1003,6 +1109,7 @@ pub fn run() {
                 if let Some(p) = live {
                     p.kill();
                 }
+                models::stop_download(); // 모델 받기는 멈추고 받은 부분은 남긴다 (다시 받으면 이어서)
             }
         });
 }
@@ -1018,6 +1125,7 @@ mod tests {
         let env = s.child_env();
         assert!(env.iter().any(|(k, v)| k == "TRACTUS_HOME" && !v.starts_with('~')));
         assert!(!env.iter().any(|(k, _)| k == "TRACTUS_MODELS_DIR"));
+        assert!(env.iter().any(|(k, v)| k == "TRACTUS_REC_BIN" && v.ends_with("/recorder/.build/release/tractus-rec")));
         // typer의 rich 오류 상자 대신 평문 "Error: …" 한 줄 (앱은 stderr 마지막 줄을 보여 준다)
         assert!(env.iter().any(|(k, v)| k == "TYPER_USE_RICH" && v == "0"));
         // 저장소 .venv 실행 파일이면 저장소 루트에서 실행 (.env.local을 읽도록)
@@ -1026,6 +1134,45 @@ mod tests {
         assert_eq!(partial.home, "/x");
         assert!(!partial.rec_bin.is_empty());
         assert_eq!(partial.rec_mode, "in_person"); // 예전 설정 파일에는 녹음 방식이 없다
+    }
+
+    /// 저장된 API 키는 요약·질문 실행에만 들어간다 (llm_key.rs). MCP·녹음·변환 등은 키를 보지 못한다
+    #[test]
+    fn saved_key_reaches_only_llm_commands() {
+        let root = std::env::temp_dir().join(format!("tractus-llmenv-{}", std::process::id()));
+        let (home, cfg) = (root.join("home"), root.join("config"));
+        std::fs::create_dir_all(&home).unwrap();
+        let s = Settings { tractus_bin: "/x/tractus".into(), home: home.to_string_lossy().into_owned(), ..Default::default() };
+        let envs = |c: &Command| c.get_envs().filter_map(|(k, v)| Some((k.to_str()?.to_string(), v?.to_str()?.to_string()))).collect::<HashMap<_, _>>();
+        let none = |_: &str| None;
+        let key = || envs(&s.tractus_llm_with(&["summarize"], Some(&cfg), none));
+        // 키가 없으면 지금까지와 똑같다
+        assert_eq!(envs(&s.tractus_llm_with(&["summarize"], Some(&cfg), none)), envs(&s.tractus(&["summarize"])));
+        llm_key::save(&cfg, "test-key-123").unwrap();
+        let e = key();
+        assert_eq!((e["UPSTAGE_API_KEY"].as_str(), e["TRACTUS_LLM_PROVIDER"].as_str()), ("test-key-123", "upstage"));
+        // 공급자를 이미 정했으면(.env.local) 건드리지 않는다
+        std::fs::write(home.join(".env.local"), "TRACTUS_LLM_PROVIDER=openai\n").unwrap();
+        let e = key();
+        assert_eq!(e["UPSTAGE_API_KEY"], "test-key-123");
+        assert!(!e.contains_key("TRACTUS_LLM_PROVIDER"));
+        std::fs::remove_file(home.join(".env.local")).unwrap();
+        // 셸(앱 프로세스)의 값이 먼저다
+        let shell = |k: &str| match k {
+            "UPSTAGE_API_KEY" => Some("from-shell".to_string()),
+            "TRACTUS_LLM_PROVIDER" => Some("claude".to_string()),
+            _ => None,
+        };
+        assert!(envs(&s.tractus_llm_with(&["summarize"], Some(&cfg), shell)).keys().all(|k| !k.starts_with("UPSTAGE") && k != "TRACTUS_LLM_PROVIDER"));
+        // 키를 지우면 다시 들어가지 않는다
+        llm_key::delete(&cfg).unwrap();
+        assert_eq!(key(), envs(&s.tractus(&["summarize"])));
+        // 키가 있어도 일반 실행·MCP·녹음 환경에는 없다
+        llm_key::save(&cfg, "test-key-123").unwrap();
+        let has_key = |env: &[(String, String)]| env.iter().any(|(k, v)| k.contains("API_KEY") || v.contains("test-key-123"));
+        assert!(!has_key(&s.child_env()) && !has_key(&s.mcp_spawn().env));
+        assert!(!envs(&s.tractus(&["index"])).values().any(|v| v.contains("test-key-123")));
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -1197,13 +1344,15 @@ mod tests {
     fn export_command_args() {
         let out = Path::new("/Users/me/Desktop/2026-10-02_주간회의.docx");
         assert_eq!(
-            export_args("01ABC", "docx", out).unwrap(),
+            export_args("01ABC", "docx", out, None).unwrap(),
             ["export", "01ABC", "--format", "docx", "--out", out.to_str().unwrap(), "--force"] // 덮어쓰기는 저장 대화상자가 이미 물었다
         );
-        assert!(export_args("01ABC", "pdf", out).is_err());
-        assert!(export_args("01ABC", "--force", out).is_err());
-        assert!(export_args("01ABC", "txt", Path::new("rel.txt")).is_err());
-        assert!(export_args("../x", "txt", out).is_err());
+        assert!(export_args("01ABC", "pdf", out, None).is_err());
+        assert!(export_args("01ABC", "--force", out, None).is_err());
+        assert!(export_args("01ABC", "txt", Path::new("rel.txt"), None).is_err());
+        assert!(export_args("../x", "txt", out, None).is_err());
+        assert_eq!(export_args("01ABC", "md", out, Some("brief")).unwrap().last().unwrap(), "--summary=brief");
+        assert!(export_args("01ABC", "md", out, Some("../x")).is_err() && export_args("01ABC", "md", out, Some("--force")).is_err());
     }
 
     #[test]
@@ -1315,6 +1464,19 @@ mod tests {
         let v: Value = serde_json::from_str(&merge_rec_mode(Some(r#"{"home":"/x","rec_mode":"hybrid"}"#), "in_person").unwrap()).unwrap();
         assert_eq!(v, json!({"home": "/x", "rec_mode": "in_person"}));
         assert!(merge_rec_mode(None, "../etc").is_err());
+    }
+
+    #[test]
+    fn checkup_flag_saves_only_its_key_and_defaults_to_not_done() {
+        let v: Value = serde_json::from_str(&merge_flag(None, "checkup_done", true).unwrap()).unwrap();
+        assert_eq!(v, json!({"checkup_done": true}));
+        let v: Value = serde_json::from_str(&merge_flag(Some(r#"{"home":"/x","checkup_done":false}"#), "checkup_done", true).unwrap()).unwrap();
+        assert_eq!(v, json!({"home": "/x", "checkup_done": true}));
+        // 깨진 파일은 새로 쓴다 (설정을 읽지 못해도 점검 표시는 남는다)
+        assert_eq!(serde_json::from_str::<Value>(&merge_flag(Some("not json"), "checkup_done", true).unwrap()).unwrap(), json!({"checkup_done": true}));
+        // 예전 설정 파일에는 키가 없다: 아직 안 본 것으로 읽는다
+        let old: Settings = serde_json::from_str(r#"{"home":"/x"}"#).unwrap();
+        assert!(!old.checkup_done);
     }
 
     #[test]

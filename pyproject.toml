@@ -32,5 +32,6 @@ testpaths = ["tests"]
 markers = [
     "slow: 실제 모델을 돌리는 테스트 (`pytest -m slow`)",
     "llm: 실제 LLM API를 호출하는 테스트 (`pytest -m llm`, 키가 있는 공급자만)",
+    "network: 실제로 모델을 내려받는 테스트 (`pytest -m network`, 작은 VAD 모델만 임시 폴더에)",
 ]
-addopts = "-m 'not slow and not llm'"
+addopts = "-m 'not slow and not llm and not network'"

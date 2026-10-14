@@ -1,0 +1,162 @@
+{
+ "lecture": {
+  "title": "캐시 설계 기초 강의",
+  "segments": [
+   {
+    "id": "s0001",
+    "start": 0.0,
+    "end": 20.0,
+    "text": "오늘은 캐시 설계의 기초를 다루겠습니다. 캐시는 자주 쓰는 데이터를 빠른 저장소에 잠시 두는 기법이에요.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   },
+   {
+    "id": "s0002",
+    "start": 25.0,
+    "end": 45.0,
+    "text": "먼저 캐시 적중률, 영어로 cache hit ratio는 요청 중에 캐시에서 바로 답한 비율을 말합니다. 이 값이 높을수록 원본 DB 부하가 줄어요.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   },
+   {
+    "id": "s0003",
+    "start": 50.0,
+    "end": 70.0,
+    "text": "TTL은 time to live의 약자로, 캐시 항목이 유효한 시간입니다. TTL이 지나면 항목이 만료되고 다음 요청 때 원본에서 다시 가져옵니다.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   },
+   {
+    "id": "s0004",
+    "start": 75.0,
+    "end": 95.0,
+    "text": "예를 들어 상품 목록 API에 TTL 60초를 걸면, 상품 가격이 바뀌어도 최대 1분 동안은 옛 가격이 보일 수 있습니다.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   },
+   {
+    "id": "s0005",
+    "start": 100.0,
+    "end": 120.0,
+    "text": "쓰기 전략은 두 가지가 있어요. write-through는 쓸 때 캐시와 DB에 동시에 쓰는 방식이고, write-back은 캐시에만 먼저 쓰고 나중에 DB에 반영하는 방식입니다.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   },
+   {
+    "id": "s0006",
+    "start": 125.0,
+    "end": 145.0,
+    "text": "질문 있습니다. TTL을 아주 길게 잡으면 어떤 문제가 생기나요? 좋은 질문이에요. 데이터가 바뀌어도 오래된 값을 계속 보여 주는 정합성 문제가 생깁니다.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   },
+   {
+    "id": "s0007",
+    "start": 150.0,
+    "end": 170.0,
+    "text": "write-back은 빠르지만 캐시 서버가 죽으면 아직 DB에 쓰지 못한 데이터를 잃을 수 있다는 점이 단점이에요.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   },
+   {
+    "id": "s0008",
+    "start": 175.0,
+    "end": 195.0,
+    "text": "더 공부하실 분은 Martin Kleppmann의 Designing Data-Intensive Applications 5장을 읽어 보세요. 다음 시간에는 캐시 무효화 전략을 다루겠습니다.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   }
+  ]
+ },
+ "ideas": {
+  "title": "신규 앱 아이디어 논의",
+  "segments": [
+   {
+    "id": "s0001",
+    "start": 0.0,
+    "end": 20.0,
+    "text": "오늘은 신규 앱 아이디어를 자유롭게 던져 봅시다. 대상은 30대 직장인이에요.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   },
+   {
+    "id": "s0002",
+    "start": 25.0,
+    "end": 45.0,
+    "text": "첫 번째 아이디어는 음성 일기 앱이에요. 하루 끝에 1분 동안 말하면 자동으로 텍스트 일기와 감정 요약을 만들어 줍니다. 장점은 쓰는 부담이 없다는 거고요.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   },
+   {
+    "id": "s0003",
+    "start": 50.0,
+    "end": 70.0,
+    "text": "좋은데 음성 데이터를 서버로 보내는 게 개인정보 우려가 크겠네요. 기기 안에서만 처리하는 방식이 필요해 보입니다.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   },
+   {
+    "id": "s0004",
+    "start": 75.0,
+    "end": 95.0,
+    "text": "두 번째는 주간 리포트 메일이에요. 한 주 동안 기록한 걸 월요일 아침에 요약해서 보내 주는 거죠. 구현이 쉽고 재방문을 유도할 수 있다는 장점이 있습니다. 다만 스팸처럼 느껴질 수 있어요.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   },
+   {
+    "id": "s0005",
+    "start": 100.0,
+    "end": 120.0,
+    "text": "세 번째는 잠금 화면 위젯입니다. 탭 한 번으로 녹음이 시작돼요. 사용성은 최고인데 위젯 개발 공수가 만만치 않습니다.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   },
+   {
+    "id": "s0006",
+    "start": 125.0,
+    "end": 145.0,
+    "text": "그럼 우선 음성 일기를 기기 안에서 처리하는 프로토타입부터 해 보죠. 이수진 님이 다음 주 목요일까지 화면 스케치를 만들어 주세요.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   },
+   {
+    "id": "s0007",
+    "start": 150.0,
+    "end": 170.0,
+    "text": "네, 다음 주 목요일까지 스케치 공유하겠습니다. 위젯은 일단 보류하고 주간 리포트는 프로토타입 반응을 보고 결정하죠.",
+    "lang": "ko",
+    "speaker": null,
+    "corrected_text": null,
+    "words": null
+   }
+  ]
+ }
+}

@@ -12,6 +12,7 @@ import secrets
 import threading
 import time
 from contextlib import contextmanager
+from datetime import datetime
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -25,7 +26,7 @@ CHUNKS_FILE = ".chunks.jsonl"
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 __all__ = [
-    "Job", "Segment", "add_glossary_terms", "apply_speaker_edit", "apply_suggestions", "apply_text_edits", "edit_transcript", "find_job", "find_meeting_dir",
+    "Job", "Segment", "add_glossary_terms", "apply_speaker_edit", "apply_suggestions", "apply_text_edits", "META_KEYS", "edit_transcript", "find_job", "find_meeting_dir",
     "forget_person", "is_memo", "load_glossary", "meeting_dir_name", "memo_lines", "memo_segments", "new_ulid", "note_lock", "read_transcript", "render_files", "render_markdown", "save_transcript",
     "seg_text", "speaker_display", "speaker_name", "stamp", "write_transcript",
 ]
@@ -89,6 +90,7 @@ class Job:
     audio_file: str = "audio.opus"  # 새 작업은 audio.ogg. 값이 없는 예전 .job.json은 audio.opus
     diarizer: dict | None = None  # transcript.json의 diarization. None이면 화자 분리 안 함
     suggestions: dict = field(default_factory=dict)  # 목소리 제안 {라벨: {person_id, name, score}}. 이어하기 때 다시 맞추지 않는다
+    attach: bool = False  # True면 글만 있는 노트(meeting_id)에 녹음을 덧붙이는 작업이다 (attach.py). 폴더는 이미 transcript.json이 있는 그 노트
 
     def __post_init__(self) -> None:
         self.chunks = [(c[0], c[1], c[2] if len(c) > 2 else None) for c in self.chunks]  # 예전 작업의 [s, e]도 받는다
@@ -127,17 +129,18 @@ class Job:
         return cls(dir=d, **data)
 
 
-def find_job(meetings: Path, sha256: str) -> Job | None:
-    """같은 원본 파일로 시작했다가 끝나지 않은 작업을 찾는다."""
+def find_job(meetings: Path, sha256: str, append_to: str | None = None) -> Job | None:
+    """같은 원본 파일로 시작했다가 끝나지 않은 작업을 찾는다.
+    append_to(meeting_id)가 없으면 새 노트를 만드는 작업만, 있으면 그 노트에 녹음을 덧붙이는 작업(Job.attach)만 찾는다."""
     for p in sorted(meetings.glob(f"*/{JOB_FILE}")):
         try:
             job = Job.load(p.parent)
         except (OSError, ValueError, TypeError, KeyError):
             continue  # 다른 회의 폴더의 손상된 파일 때문에 전체가 막히지 않게 한다
-        if (p.parent / "transcript.json").is_file():
+        if (p.parent / "transcript.json").is_file() and not _append_pending(p.parent):
             _clean_stale_job(p.parent)  # 끝난 노트에 남은 작업 파일: 이어하기 대상이 아니다
             continue
-        if job.sha256 == sha256:
+        if job.sha256 == sha256 and (job.meeting_id == append_to if job.attach else append_to is None):
             return job
     return None
 
@@ -174,16 +177,28 @@ def find_meeting_dir(meetings: Path, ref: str) -> Path:
 def _clean_stale_job(d: Path) -> None:
     """transcript.json이 있으면 그 노트는 끝난 것이다. write_transcript가 transcript.json을 쓴 뒤 작업 파일을 지우기 전에 끊겼다면
     남아 있는 .job.json·.chunks.jsonl을 지운다 (이어하기·삭제 거절·'변환 대기 중' 표시를 막는다)."""
-    if (d / "transcript.json").is_file():
+    if (d / "transcript.json").is_file() and not _append_pending(d):
         for name in (JOB_FILE, CHUNKS_FILE):
             (d / name).unlink(missing_ok=True)
+
+
+def _append_pending(d: Path) -> bool:
+    """글만 있는 노트에 녹음을 덧붙이는 작업(Job.attach)이 아직 끝나지 않았다: .job.json이 attach이고 transcript.json이 아직 메모 노트다.
+    이 노트의 작업 파일은 transcript.json이 있어도 낡은 것이 아니다. 변환이 끝나 메모 노트가 아니게 되면 낡은 파일이 된다."""
+    try:
+        if not json.loads((d / JOB_FILE).read_text(encoding="utf-8")).get("attach"):
+            return False
+        return is_memo(read_transcript(d))
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 class IncompleteError(RuntimeError):
     """전사되지 않은 청크가 남아 transcript.json을 쓸 수 없다 (CLI가 code="incomplete"로 알린다)."""
 
 
-def write_transcript(job: Job) -> dict:
+def build_transcript(job: Job) -> dict:
+    """끝난 청크로 만든 새 transcript.json 내용 (쓰지 않는다). 끝나지 않은 청크가 있으면 IncompleteError."""
     done = job.done()
     missing = [i for i in range(len(job.chunks)) if i not in done]
     if missing:
@@ -214,6 +229,11 @@ def write_transcript(job: Job) -> dict:
         "diarization": job.diarizer,
         "segments": segments,
     }
+    return transcript
+
+
+def write_transcript(job: Job) -> dict:
+    transcript = build_transcript(job)
     save_transcript(job.dir, transcript)  # transcript.json이 마지막: 이 파일이 생기면 노트는 끝난 것이다
     _clean_stale_job(job.dir)  # 여기서 끊겨도 transcript.json이 이기고, 남은 작업 파일은 다음에 find_*가 지운다
     return transcript
@@ -221,7 +241,9 @@ def write_transcript(job: Job) -> dict:
 
 def render_files(d: Path, t: dict) -> None:
     """transcript.json은 그대로 두고 transcript.md·vtt만 t로 다시 만든다."""
-    _write_atomic(d / "transcript.md", render_markdown(t, load_memos(d)))
+    from tractus.organize import folder_name_for  # organize가 store를 불러오므로 여기서 불러온다
+
+    _write_atomic(d / "transcript.md", render_markdown(t, load_memos(d), folder_name_for(d, t)))
     if not is_memo(t):  # 메모는 시각이 없어 자막(vtt)이 없다
         _write_atomic(d / "transcript.vtt", render_vtt(t))
 
@@ -264,6 +286,13 @@ def read_transcript(d: Path) -> dict:
     return json.loads((d / "transcript.json").read_text(encoding="utf-8"))
 
 
+META_KEYS = ("favorite", "tags", "folder", "updated_at")  # 노트 정리 정보와 수정 시각 (organize.py). 내용이 아니다: 이 키만 바뀌면 updated_at을 올리지 않는다
+
+
+def _content(t: dict) -> dict:
+    return {k: v for k, v in t.items() if k not in META_KEYS}
+
+
 def edit_transcript(d: Path, fn: Callable[[dict], tuple[dict, object]]):
     """잠금 안에서 transcript.json을 읽고 fn(t) → (새 전사, 결과)로 고쳐 바뀌었을 때만 저장한다. 결과를 돌려준다.
     fn이 예외를 던지면 아무것도 쓰지 않는다."""
@@ -271,6 +300,8 @@ def edit_transcript(d: Path, fn: Callable[[dict], tuple[dict, object]]):
         t = read_transcript(d)
         new, result = fn(t)
         if new != t:
+            if _content(new) != _content(t) and new.get("updated_at") == t.get("updated_at"):
+                new = {**new, "updated_at": datetime.now().astimezone().isoformat(timespec="seconds")}  # 정리 정보(META_KEYS)만 바뀐 저장은 수정 시각을 올리지 않는다
             save_transcript(d, new)
         return result
 
@@ -522,21 +553,40 @@ def render_vtt(t: dict) -> str:
     return "WEBVTT\n\n" + "\n\n".join(cues) + "\n"
 
 
-def render_markdown(t: dict, memos: list[dict] | None = None) -> str:
+# YAML 1.1이 문자열이 아닌 값(참거짓·null·숫자·날짜·병합 키)으로 읽는 모양. 글자 그대로 문자열이 되도록 따옴표를 붙인다
+_YAML_NON_STRING = re.compile(
+    r"(?:y|n|yes|no|true|false|on|off|null|~|=|<<|[-+]?[\d_]*\.?[\d_]*(?:e[-+]?\d+)?|0[xob][0-9a-f_]+|\d{4}-\d\d?-\d\d?)", re.IGNORECASE
+)
+
+
+def _yaml_scalar(s: str) -> str:
+    """frontmatter 값: 평범한 글은 그대로, YAML 구분 문자가 있거나 문자열이 아닌 값처럼 읽힐 수 있으면 JSON 문자열로 감싼다."""
+    risky = not s or re.search(r"""[:#\[\]{},&*!|>'"%@`]|^\s|\s$|^[-?]""", s) or _YAML_NON_STRING.fullmatch(s)
+    return json.dumps(s, ensure_ascii=False) if risky else s
+
+
+def _meta_lines(t: dict, folder: str | None) -> list[str]:
+    """노트 정리 정보의 frontmatter 줄 (Obsidian이 tags를 읽는다): tags: [a, b], favorite: true, folder: 이름. 없으면 줄도 없다."""
+    tags = [x for x in t["tags"] if isinstance(x, str) and x] if isinstance(t.get("tags"), list) else []
+    return [*([f"tags: [{', '.join(_yaml_scalar(x) for x in tags)}]"] if tags else []), *(["favorite: true"] if t.get("favorite") is True else []), *([f"folder: {_yaml_scalar(folder)}"] if folder else [])]
+
+
+def render_markdown(t: dict, memos: list[dict] | None = None, folder: str | None = None) -> str:
     """사람·에이전트용 전사. 줄마다 `[HH:MM:SS] **화자**: 텍스트` (화자를 모르면 생략).
     frontmatter는 Obsidian 등에서 그대로 읽힌다. 메모·북마크는 시각 순으로 끼워 넣는다.
     직접 쓴 메모 노트는 시각·길이 없이 줄마다 문단으로 쓴다. 사용자 메모가 있는 녹음 노트는 끝에 `## 메모` 절이 붙는다."""
     if is_memo(t):
-        head = ["---", f"meeting_id: {t['meeting_id']}", f"title: {t['title']}", f"created_at: {t['created_at']}", "kind: memo", "---", "", f"# {t['title']}", ""]
+        head = ["---", f"meeting_id: {t['meeting_id']}", f"title: {_yaml_scalar(t['title'])}", f"created_at: {t['created_at']}", "kind: memo", *_meta_lines(t, folder), "---", "", f"# {t['title']}", ""]
         paras = [seg_text(s) for s in t["segments"] if seg_text(s)]
         return "\n".join(head + [x for p in paras for x in (p, "")][:-1]) + "\n"
     head = [
         "---",
         f"meeting_id: {t['meeting_id']}",
-        f"title: {t['title']}",
+        f"title: {_yaml_scalar(t['title'])}",
         f"created_at: {t['created_at']}",
         f"duration: {_hms(t['audio']['duration_sec'])}",
         f"asr_model: {t['asr']['model']}",
+        *_meta_lines(t, folder),
         "---",
         "",
         f"# {t['title']}",

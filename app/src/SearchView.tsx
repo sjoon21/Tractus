@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
 import { api, errDetail, errText, type SearchResponse } from "./api";
+import { showSearchNotice } from "./caps";
 import { ErrorDetail } from "./ErrorDetail";
+import { GateHint } from "./GatedButton";
+import { useCapabilities } from "./useCapabilities";
 import { dayParts, highlight } from "./lib";
 import { hitView } from "./memo";
 
 export function SearchView({ query, onOpen, memoIds }: { query: string; onOpen: (id: string, seek: { segId: string; t: number }) => void; memoIds?: ReadonlySet<string> }) {
   const [res, setRes] = useState<SearchResponse | null>(null);
   const [error, setError] = useState<{ text: string; detail: string | null } | null>(null);
+  const smart = useCapabilities().can("smart-search");
 
   useEffect(() => {
     let alive = true;
@@ -35,6 +39,7 @@ export function SearchView({ query, onOpen, memoIds }: { query: string; onOpen: 
           <p className="search-meta">
             결과 {res.hits.length}건 · {res.vector_used ? "스마트 검색" : "단어 일치로만 찾았습니다 (스마트 검색 준비 안 됨)"}
           </p>
+          {showSearchNotice(res.vector_used, smart) && <GateHint gate={smart} className="search-notice" />}
           <ol className="hits">
             {res.hits.map((h, i) => {
               const d = dayParts(h.date);

@@ -29,8 +29,8 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `FluidInference/speaker-diarization-coreml` (fluid, 9명 이상, 2026-10-07) | `df2625ac79a7ac6b65ad868fee6d80f320da4232` (FluidAudio 0.17.5가 고정) | `models/speaker-diarization` (폴더 이름은 FluidAudio가 정함) | CC-BY-4.0 (NOTICE 9번에 출처 표기) |
 
 - `mlx_audio.vad.load`로 프로세스 안에서 돈다. ASR 전에 회의 전체로 1회 돌리고, 화자가 바뀌는 지점에서 VAD 청크를 나눈다. 최대 8명.
-- **9명 이상은 fluid**(`transcribe --diarizer auto|nemotron|fluid`, 기본 auto): Swift 헬퍼 `tractus-diar`(`recorder/`, FluidAudio v0.17.5 = `0b1f462`, Apache-2.0)를 subprocess(인수 배열)로 부른다. auto는 Nemotron이 평활 뒤 8라벨을 모두 썼을 때만 다시 돌린다. 기본 엔진을 fluid로 바꾸지 않는다(7명 세션 195에서 조금 나쁨, ARCHITECTURE §2.4.1).
-- 헬퍼 위치: `$TRACTUS_DIAR_BIN`, 없으면 `<저장소>/recorder/.build/release/tractus-diar`. 실행은 오프라인(`ModelHub.offlineMode`)이고, 모델은 `tractus-diar download --models models/speaker-diarization`으로 한 번 받는다. 없으면 `diarizer_cap`(auto)·`fluid_missing`(fluid) 경고 후 Nemotron. 쓴 엔진은 `diarization.engine`.
+- **9명 이상은 fluid**(`transcribe --diarizer auto|nemotron|fluid`, 기본 auto): Swift 헬퍼 `tractus-diar`(`recorder/diar/`, 녹음 프로그램과 별도 패키지, FluidAudio v0.17.5 = `0b1f462`, Apache-2.0)를 subprocess(인수 배열)로 부른다. auto는 Nemotron이 평활 뒤 8라벨을 모두 썼을 때만 다시 돌린다. 기본 엔진을 fluid로 바꾸지 않는다(7명 세션 195에서 조금 나쁨, ARCHITECTURE §2.4.1).
+- 헬퍼 위치: `$TRACTUS_DIAR_BIN`, 없으면 `<저장소>/recorder/diar/.build/release/tractus-diar`. 실행은 오프라인(`ModelHub.offlineMode`)이고, 모델은 `tractus-diar download --models models/speaker-diarization`으로 한 번 받는다. 없으면 `diarizer_cap`(auto)·`fluid_missing`(fluid) 경고 후 Nemotron. 쓴 엔진은 `diarization.engine`.
 - FluidAudio 패키지는 `traits: []`로 NeMo 텍스트 정규화(Rust)를 빼고, 실행 파일 옆 `FluidAudio_FluidAudio.bundle`(espeak-ng에서 만든 TTS 사전)은 배포하지 않는다. `Package.resolved`의 새 의존성은 라이선스를 확인한다.
 - 화자 분리 모델은 ASR 모델을 올리기 전에 내린다(`del` + `mx.clear_cache()`).
 - 모델이 없거나 실패하면 화자 없이 전사하고 `warning` 이벤트 + stderr로 알린다. 이어하기는 화자 분리를 다시 돌리지 않는다.
@@ -96,16 +96,23 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `diarize.py` | 화자 분리(Nemotron 3 `Diarizer`, fluid `FluidDiarizer` = `tractus-diar` 헬퍼), 단일 화자 평활(`smooth`), turn 정리(`_tidy`), 화자 경계로 청크 나누기(`split_chunks`) |
 | `asr.py` | `Transcriber`: 청크 전사, 토큰 상한, 반복 루프 재시도·보정 |
 | `align.py` | 단어 정렬(Qwen3-ForcedAligner): `tokenize`(soynlp 대체), `Aligner.align`, `align_segments`, 편집 뒤 시각 옮기기 `remap_words` |
+| `attach.py` | 글만 있는 노트에 녹음 덧붙이기(`transcribe --append-to`, `finish_append`): 메모 노트 → 녹음 노트 변환, 세그먼트 ID(`s####` → `m####`) 옮김표로 요약(`summary.json`·`summaries/*.json`)·질문 기록 근거 옮기기, 녹음 폴더 `attach.json` 읽기 |
 | `notes.py` | 직접 쓴 메모 노트(`kind: "memo"`, 오디오 없음)와 녹음 노트의 메모(`"memo"` 블록): 본문 → 줄(`derive_lines`, ID 유지·재사용 금지, `s####`/`m####`), 제목 정리, 요약 파일 제목 바꾸기 |
+| `organize.py`, `organize_cli.py` | 노트 정리(즐겨찾기·태그·폴더, v3.20): 태그·폴더 규칙·한도, `note meta`·`folders`·`notes list`, `folders.json`(flock, 3단계), 목록 정렬·필터(`matching_ids` → 검색·MCP 필터) |
 | `store.py` | 회의 폴더, `.job.json`·`.chunks.jsonl`(이어하기, 목소리 제안 포함), transcript.json/md/vtt (schema_version 2: 화자), `apply_speaker_edit`(rename·set·merge·dismiss), `apply_suggestions`, `apply_text_edits`(words도 옮김), `seg_text`(표시 텍스트 = `corrected_text` 우선), `add_glossary_terms` |
 | `live.py` | 실시간 자막(미리보기): `WavTail`(커지는 WAV 꼬리 읽기), `Mixer`(트랙 합산·클립), `Resampler`(48k → 16k FIR), `Segmenter`(Silero feed, 0.5초 무음·8초 상한·3초 미리보기·쉼 미리 전사), `Live`(ASR·뒤처짐·정지), `SpeakerTrack`(선택) |
 | `voices.py` | 목소리 프로필: CAM++ 임베딩(onnxruntime + kaldi-native-fbank), 화자 구간 고르기, `voices.json`(0600, 원자적 쓰기), `match`(헝가리안 + 임계값 + 2위와 차이) |
 | `export.py` | 내보내기 txt·md·srt·vtt·csv(utf-8-sig)·docx(python-docx, `w:eastAsia`)·bundle(zip) |
 | `llm.py` | 공급자 표(`PROVIDERS`), `complete_json`: strict JSON + Pydantic 검증 + 1회 재요청, `stream_chat`: 평문 스트리밍 |
 | `summarize.py` | 요약 스키마, segment_ids 검증, summary.md/json |
+| `summary_templates.py` | 요약 유형: 기본(`templates/*.md`)·내 유형(`$TRACTUS_HOME/templates/u-*.md`) 로더·CRUD·검증 |
+| `summaries.py` | 유형별 요약(스키마 v2, `summaries/<key>.json`), 시스템 프롬프트 + 지침 구분자, 근거·owner 검증, 목록·삭제 |
 | `ask.py` | 회의 질의: 근거 모으기(회의 전사 전체 / 검색 8개 + 앞뒤 이웃), 프롬프트, 인용 대조·정리(`finalize`), 대화 기록 자르기, `chat.json` |
 | `env.py` | `.env` / `.env.local` 로더 |
 | `paths.py` | `TRACTUS_HOME`, `TRACTUS_MODELS_DIR` 해석 (CLI·MCP 공용) |
+| `models_registry.py` | **모델·기능 목록의 원본**: 저장소·리비전·폴더·파일 크기, 기능(`CAPABILITIES`), 설치 상태(`inspect`), 프리셋, 받기 안내 문구 |
+| `models_install.py` | `models download`(잠금·이어받기·sha256·오류 코드)·`remove` |
+| `doctor.py`, `models_cli.py` | `tractus doctor`, `tractus models list|download|remove` (docs/desktop.md §2.15) |
 | `embed.py` | Qwen3-Embedding-0.6B (공식 가중치 bf16, mlx-lm), `LazyEmbedder` |
 | `index.py` | SQLite FTS5 음절 bigram + sqlite-vec, 증분 동기화(`stats()['pending']` = 지금 모델로 벡터가 없는 청크), strict 우선 + 가중 RRF |
 | `mcp_server.py` | MCP 서버 7개 도구 (`build_server(home, embedder)`) |
@@ -118,7 +125,15 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - 메모는 `transcript.json`의 `"kind": "memo"`다(`"kind"`가 없으면 녹음 노트, 옛 파일을 고치지 않는다). 오디오·vtt·asr가 없고 `audio.file`은 null이다. `store.is_memo(t)`로 가른다.
 - 세그먼트는 `body`에서 만든다(줄마다 하나, `start=end=0`, `line` = 본문 줄 번호). 메모 내용은 `tractus note save`로만 고친다(`segments edit`·`speakers`는 거절). 시각이 필요한 출력은 `store.stamp(s)`(메모는 `n번째 줄`)를 쓴다. `_hms(s['start'])`를 직접 쓰지 않는다.
 - **녹음 노트도 메모를 가진다**(오른쪽 패널 메모 탭, 선택 키 `"memo": {"body", "lines": [{"id": "m0001", "line", "text"}], "seq"}`). `tractus note save`가 메모 노트는 본문·세그먼트, 녹음 노트는 `memo` 블록만 쓴다(비우면 키를 지운다, ASR 세그먼트·단어·화자는 건드리지 않는다). 읽을 때는 항상 `store.memo_lines(t)`(키가 없거나 깨져도 빈 목록)·`store.memo_segments(t)`로 읽고 `t["memo"]`를 직접 읽지 않는다. 줄 ID `m####`는 ASR ID `s####`와 다른 번호 공간이고, 메모 줄은 `source: "memo"`로 ASR과 가른다(색인 청크·AI 질문 근거 블록 `[내가 적은 메모]`·요약 프롬프트 블록·내보내기 `메모` 절). 위치 표기는 `store.stamp`(`메모 n번째 줄`). 이 프롬프트를 바꾸면 `uv run pytest -m llm`과 `bench/ask_eval.py --memo`를 돌린다. 메모 없는 노트의 프롬프트는 바뀌면 안 된다.
+- **글만 있는 노트에 녹음 추가**(`tractus transcribe … --append-to <노트>`, `attach.py`, docs/desktop.md §2.11): 대상은 `kind: "memo"`이고 오디오가 없는 노트뿐이다(아니면 종료 코드 2). 노트 폴더 안에서 변환하고, 끝날 때 `note_lock` 안에서 `kind`·`body`·`seg_seq`를 지우고 글을 `memo` 블록(`m####`)으로 옮긴다. 메모 노트의 `s####`는 새 ASR ID와 겹치므로 요약·질문 기록(`summary.json`·`chat.json`)의 근거를 `attach.id_map`으로 `m####`에 옮긴다 — **같은 일을 다시 해도 결과가 같아야 한다**(이미 `m####`면 그대로). 작업 파일 `.job.json`의 `attach: true`는 노트가 아직 메모 노트인 동안 낡은 것이 아니다(`store._append_pending`). `attach.json`만으로는 덧붙이지 않는다. 앱이 `--append-to`를 명시한다. 새 사용자 문구는 WORDS.md §4.11이고 `attach.py`도 §5 검사 대상이다.
+- **노트 정리**(선택 키 `favorite`·`tags`·`folder`·`updated_at`, docs/desktop.md §2.12): 쓰기는 `note meta`·`folders`만(`edit_transcript`/`note_lock`, 폴더는 `folders.json`+flock, 잠금 순서 폴더 → 노트). 이 키만 바뀐 저장은 `updated_at`을 올리지 않는다(`store.META_KEYS`): transcript.json을 통째로 새로 만드는 경로는 이 키를 옮겨 와야 한다. 폴더를 지워도 노트는 지우지 않고 상위로 올린다. 읽는 쪽은 키가 없거나 모양이 달라도 정리하지 않은 노트로 본다. 태그는 필터일 뿐 검색어가 아니다.
 - 제목은 `tractus note title`(녹음·메모 공통)으로만 바꾼다. 폴더 이름은 그대로 두고 `transcript.json`·md·vtt·요약 파일 제목·색인이 바뀐다. 사용자에게 보이는 문구는 `WORDS.md`를 따르고 새 모듈 `notes.py`도 §5 검사 대상이다.
+
+## 모델 목록 규칙
+
+- **모델을 쓰는 기능을 새로 만들면 `src/tractus/models_registry.py`에 모델(`MODELS`)과 기능(`CAPABILITIES`)을 선언하고, 앱에서 그 기능의 단추를 막는다**(없을 때 이유와 `모델 화면 열기`). 모델이 없어도 코어는 죽지 않고 그 단계를 건너뛰며 `code`가 있는 경고를 낸다. 필수 모델(VAD + 변환 엔진 하나)과 ffmpeg만으로 녹음·가져오기 → 텍스트 변환 → 요약이 돌아야 한다.
+- 저장소·리비전·폴더 상수는 한 곳에 둔다. `diarize`·`align`·`embed`·`voices`의 상수를 바꾸면 레지스트리가 따라가고(가져온다), ASR·VAD는 레지스트리가 원본이다. 파일 크기는 허브 API(`model_info(files_metadata=True)`)로 대조한다. 받기 안내 문구는 `registry.install_hint`로 만든다(`hf download …`를 직접 쓰지 않는다).
+- 코어는 모델 파일을 `tractus models remove`로만 지운다.
 
 ## 검색·MCP 규칙
 
@@ -136,18 +151,27 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 
 - 공급자는 OpenAI 호환 API 키 방식만 쓴다. `claude -p`, `codex exec`, `agy`를 공급자로 붙이지 않는다(약관, ARCHITECTURE.md §0).
 - 모든 추출 항목은 근거 `segment_ids`가 필수다. 프롬프트·스키마를 바꾸면 `uv run pytest -m llm`으로 확인한다.
+- **요약 유형·직접 프롬프트(v3.21).** 기본 유형(회의록)은 옛 스키마의 `summary.json`이고 다른 유형·직접 요약은 `summaries/<key>.json`(스키마 v2)이다. 요약 지침(유형 본문·내가 쓴 방법)은 시스템 규칙(`summaries.SYSTEM_PROMPT`)이 항상 이기고 `<요약 지침>`으로 감싼다. 새 유형 파일이나 시스템 프롬프트를 바꾸면 `uv run pytest -m llm -k template`을 돌린다(유형마다 스키마·근거·owner 라벨·한국어를 본다). 직접 요약이 내 유형으로 저장되는 것은 요약이 성공한 뒤다.
 - 화자는 자동 추정이다. owner에는 사용자가 이름을 붙인 화자만 쓰고 `S1` 같은 라벨은 쓰지 않는다. 프롬프트만으로는 새어 나와서 `summarize.clean_owners`가 null로 바꾼다.
 - **회의 질의(`ask`)는 원격 공급자로 질문, 최근 대화, 근거 세그먼트 텍스트만 보낸다.** 오디오·요약·근거 밖 전사는 보내지 않는다. 답의 인용은 `ask.finalize`가 근거와 대조해 없는 ID를 지운다. 프롬프트를 바꾸면 `uv run pytest -m llm`과 `bench/ask_eval.py`(가상 회의만)를 돌린다. 전체 범위 질의는 단독 질문에 keyword 일치가 없으면 직전 사용자 질문 2개를 보탠 검색을 섞는다(`ask._hits`). `done`·`chat.json`의 `no_evidence`는 인용이 하나도 안 남았다는 뜻이다(거절 문장과 같은 말이 아니다).
 - **AI Hub 데이터의 전사를 원격 LLM에 보내지 않는다.** 테스트는 `tests/fixtures/sample_meeting.json`(가상 회의)만 쓴다.
 - API 키를 코드·로그·커밋·대화에 남기지 않는다. `.env.local`에만 둔다.
+- **앱의 API 키는 앱 설정 폴더의 `llm_key` 파일(0600)에만 둔다**(`$TRACTUS_HOME`·`settings.json`·webview·인수·로그에 두지 않는다). 요약·질문을 돌리는 `tractus` 프로세스(`Settings::tractus_llm`)에만 환경변수로 넘기고 MCP·녹음 등에는 넘기지 않는다. 키를 로그·오류 문구에 찍지 않는다(`app/src-tauri/src/llm_key.rs`, docs/desktop.md §2.14).
 
 ## 자주 쓰는 명령
+
+개발 도구(Rust·Node·pnpm·uv·ffmpeg)는 `scripts/bootstrap.sh [--check] [--yes] [--with-install]`가 `Brewfile`로 빠진 것만 설치한다(Xcode 명령줄 도구·Homebrew는 안내만, sudo·curl|sh 없음). 설치(코어 + 녹음 프로그램 + 앱 빌드)는 `scripts/install.sh [--check] [--with-fluid] [--models <구성>] [--copy-app]`이고, 설치 안내는 `docs/setup.md`가 원본이다. 앱은 빌드한 저장소 안의 `.venv/bin/tractus`·`recorder/.build/release/tractus-rec`를 쓰므로(컴파일 때 경로가 들어간다) 설치 뒤 저장소를 옮기면 다시 설치한다. 필수 도구·버전 하한을 바꾸면 `Brewfile`, `scripts/bootstrap.sh`, `scripts/install.sh`, `docs/setup.md`를 같이 고친다. Swift 하한: `recorder/`(tractus-rec)는 tools 5.10(Xcode 15.3), `recorder/diar/`(tractus-diar, FluidAudio `traits: []`)는 tools 6.2(Xcode 26)이고 `--with-fluid`일 때만 요구한다. `recorder/`의 tools-version을 6.x로 올리지 않는다.
 
 ```bash
 uv run pytest                                       # 단위·CLI 테스트 (모델 불필요)
 uv run pytest -m slow                               # 실제 모델 테스트
 uv run pytest -m llm                                # 실제 LLM API 스모크 (키 있는 공급자만)
+uv run pytest -m network                            # 작은 VAD(1.3MB)를 임시 폴더에 실제로 받는다
+uv run tractus doctor [--json]                      # 시스템·도구·모델·기능 점검
+uv run tractus models list [--json]                 # 설치 상태 (download [ID…|--preset required|standard|lite|all] [--progress-json], remove ID --yes)
 uv run tractus summarize <meeting_id>               # 요약
+uv run tractus summarize <meeting_id> --template brief   # 요약 유형 (templates list --json). 직접: echo '{"prompt": "…"}' | … --custom
+uv run tractus summaries <meeting_id> list --json   # 노트의 요약들 (delete KEY)
 echo "질문" | uv run tractus ask [--meeting <id>] [--from/--to YYYY-MM-DD] [--save]   # 회의 질의 (앱: stdin JSON + --progress-json)
 uv run tractus index / search "<질의>"              # 색인, 검색
 uv run tractus speakers <meeting_id> list --json    # 화자 (rename S1 이름 / set s0012 S2|new / merge S3 S1 / dismiss S1)
@@ -157,11 +181,15 @@ uv run tractus glossary add 쿠버네티스 "Project Atlas"  # 용어집 추가 
 uv run tractus note new [--title T]                  # 메모 만들기 → {"meeting_id","meeting_dir"} (stdin 선택: {"title","body"})
 echo '{"body":"…"}' | uv run tractus note save <meeting_id>   # 메모 본문 저장(메모 노트·녹음 노트) → {"saved":true,"segments":N,"changed":bool,"kind":"memo"|"recording"}
 echo '{"title":"…"}' | uv run tractus note title <meeting_id> # 제목 바꾸기 → {"title":"…"}
-uv run tractus export <meeting_id> --format docx --out 회의.docx [--force]   # txt|md|srt|vtt|csv|docx|bundle → {"path": …}
+echo '{"favorite":true,"tags":["a"],"folder":"<폴더 ID>"|null}' | uv run tractus note meta <meeting_id>   # 즐겨찾기·태그·폴더 → 저장된 값
+uv run tractus folders list --json | create --name N [--parent ID] | rename ID --name N | move ID --parent ID|none | delete ID
+uv run tractus notes list --json [--favorite] [--tag T] [--folder ID|이름|none] [--sort created|updated|title|duration] [--order asc|desc]
+uv run tractus export <meeting_id> --format docx --out 회의.docx [--force] [--summary KEY]   # txt|md|srt|vtt|csv|docx|bundle → {"path": …}. md·docx에 넣을 요약(기본: meeting, 없으면 있는 것)
 uv run python bench/search_eval.py                  # 검색 평가 (가상)
 uv run python bench/ask_eval.py [--memo]            # 질의 평가 (가상 회의만 원격 LLM으로, --memo: 메모가 달린 가상 노트 3건 + 메모 질문 6개)
 uv run tractus transcribe <파일> [--no-align] [--diarizer auto|nemotron|fluid]   # 전사 (+ 단어 타이밍)
-(cd recorder && swift build -c release && swift test)                # tractus-rec, tractus-diar (Swift 6.2+)
+(cd recorder && swift build -c release && swift test)                # tractus-rec (Swift 5.10+)
+(cd recorder/diar && swift build -c release && swift test)           # tractus-diar (Swift 6.2+)
 uv run python bench/diar_eval.py der --engine nemotron fluid         # 화자 분리 DER (AI Hub 로컬 전용, 지표만)
 uv run tractus align <meeting_id> [--force]         # 단어 타이밍 채우기 → {"aligned": N, "failed": M, "skipped": K}
 echo stop | uv run tractus live --recording <녹음 폴더> --progress-json   # 녹음 중 실시간 자막 (stdin stop/EOF로 끝, 저장 안 함)

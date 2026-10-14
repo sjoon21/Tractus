@@ -72,10 +72,11 @@ Bundled in the desktop app (app/)
    https://github.com/orioncactus/pretendard
    License: SIL Open Font License 1.1 (OFL-1.1)
 
-Speaker diarization helper (recorder/, tractus-diar; optional)
+Speaker diarization helper (recorder/diar/, tractus-diar; optional)
 --------------------------------------------------------------
 
-The helper is built from source by the user (see recorder/README.md). With the
+The helper is a separate Swift package built from source by the user
+(see recorder/README.md). With the
 default `--diarizer auto` it runs only when Nemotron used all 8 speaker
 channels; `tractus transcribe --diarizer fluid` runs it always.
 

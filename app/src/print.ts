@@ -1,6 +1,7 @@
 // PDF 인쇄용 문서 (docs/roadmap.md §3 6.5). 화면 데이터를 인쇄 레이아웃에 맞게 다듬는다 (print.test.ts).
 // 레이아웃은 PrintSheet.tsx + styles.css @media print, 인쇄는 macOS 인쇄 대화상자의 'PDF로 저장'.
 import { isMemo, memoLineNumbers } from "./memo";
+import { printSummary, type PrintSummary, type SummaryDoc } from "./summaries";
 import { dayParts, evidenceLabel, fmtTime, segText, speakerName, speakerStats, type NoteMemo, type Segment, type Speakers, type SummaryLike } from "./lib";
 
 export interface PrintDoc {
@@ -17,19 +18,22 @@ export interface PrintDoc {
     actions: { text: string; meta: string; at: string | null }[];
     topics: { text: string; at: string | null }[];
   } | null;
+  /** 선택한 요약이 새 스키마(요약 유형)일 때 (옛 요약이면 null, summary가 대신 쓰인다) */
+  generic: PrintSummary | null;
   /** speaker: 발언이 바뀔 때만 (화자 없는 회의는 늘 null) */
   rows: { id: string; time: string; speaker: string | null; text: string }[];
   /** 녹음 노트에 사용자가 적은 메모의 줄 (대화 내용 뒤 `메모` 섹션). 없으면 빈 목록 */
   memoLines: { id: string; text: string }[];
 }
 
+/** selected: 요약 탭에서 고른 요약 하나만 인쇄한다 (null이면 요약 없이). 생략하면 d.summary (옛 요약) */
 export function printDoc(d: {
   info: { title: string; created_at: string; duration_sec: number; kind?: string };
   segments: Segment[];
   speakers: Speakers;
   summary: SummaryLike | null;
   note_memo?: NoteMemo | null;
-}): PrintDoc {
+}, selected?: SummaryDoc | null): PrintDoc {
   const p = dayParts(d.info.created_at.slice(0, 10));
   const hm = /T(\d{2}:\d{2})/.exec(d.info.created_at)?.[1];
   const memo = isMemo(d.info);
@@ -39,7 +43,8 @@ export function printDoc(d: {
   const at = (ids: string[]) => evidenceLabel(ids, starts, lineOf);
   const speakers = speakerStats(d.segments, d.speakers).map((s) => s.display);
   const diarized = speakers.length > 0;
-  const s = d.summary;
+  const s = selected === undefined ? d.summary : (selected?.legacy ?? null);
+  const generic = selected && !selected.legacy ? printSummary(selected, at) : null;
   return {
     title: d.info.title || "제목 없음",
     date: p.weekday ? `${p.month} ${p.day}일 (${p.weekday})${hm ? ` ${hm}` : ""}` : "",
@@ -52,6 +57,7 @@ export function printDoc(d: {
       actions: s.action_items.map((x) => ({ text: x.task, meta: [x.owner, x.due].filter(Boolean).join(" · "), at: at(x.segment_ids) })),
       topics: s.topics.map((x) => ({ text: x.title, at: at(x.segment_ids) })),
     },
+    generic,
     rows: d.segments.map((seg, i) => {
       const turn = diarized && (i === 0 || (d.segments[i - 1].speaker ?? null) !== (seg.speaker ?? null));
       return { id: seg.id, time: memo ? "" : fmtTime(seg.start), speaker: turn ? (speakerName(seg.speaker, d.speakers) ?? "알 수 없음") : null, text: segText(seg) };

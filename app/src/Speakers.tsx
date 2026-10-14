@@ -1,16 +1,19 @@
 // 화자 표시·편집 (docs/desktop.md §2.1). 편집은 전부 코어(`tractus speakers`)가 하고 앱은 고친 회의를 다시 받는다.
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "./api";
-import { ErrorDetail } from "./ErrorDetail";
-import { fmtTime, renameRequest, SPEAKER_INKS, suggestionText, VOICE_MODEL_MISSING, VOICE_MODEL_SETUP, voiceModelReady, type Segment, type SpeakerStat } from "./lib";
+import { FIX_MODELS, OK, type Decision } from "./caps";
+import { GateHint } from "./GatedButton";
+import { fmtTime, renameRequest, SPEAKER_INKS, suggestionText, VOICE_MODEL_MISSING, voiceModelReady, type Segment, type SpeakerStat } from "./lib";
+import { useCapabilities } from "./useCapabilities";
 
 /** 목소리 인식 파일을 쓸 수 있는지 한 번 물어 두고 잠시 기억한다 (코어를 띄우는 일이라 이름 바꾸기를 열 때마다 묻지 않는다). 읽지 못하면 쓸 수 있다고 본다 */
 const VOICE_MODEL_TTL_MS = 30_000;
 let voiceModelSeen: { at: number; ready: boolean } | null = null;
 
-function useVoiceModelReady(): boolean {
+function useLegacyVoiceReady(enabled: boolean): boolean {
   const [ready, setReady] = useState(voiceModelSeen?.ready ?? true);
   useEffect(() => {
+    if (!enabled) return;
     if (voiceModelSeen && Date.now() - voiceModelSeen.at < VOICE_MODEL_TTL_MS) return setReady(voiceModelSeen.ready);
     let alive = true;
     api.voicesList().then(
@@ -23,8 +26,17 @@ function useVoiceModelReady(): boolean {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [enabled]);
   return ready;
+}
+
+/** 목소리 등록을 쓸 수 있는가: 점검(caps "voices")이 기준이다. 점검을 못 읽는 옛 코어일 때만 `voices list`의 model_present를 쓴다 */
+function useVoicesGate(): Decision {
+  const caps = useCapabilities();
+  const hasDoctor = !!caps.report?.doctor;
+  const legacy = useLegacyVoiceReady(!hasDoctor);
+  if (hasDoctor) return caps.can("voices");
+  return legacy ? OK : { ok: false, reason: VOICE_MODEL_MISSING, missing: [], fix: FIX_MODELS };
 }
 
 /** 화자 색 (SpeakerStat.slot). 화자 미상이면 무채색. 슬롯 8..15는 같은 잉크에 속 빈 점(--spk-fill)·빗금 막대(--spk-bar).
@@ -90,7 +102,8 @@ export function RenameForm({
   const [remember, setRemember] = useState(false);
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const modelReady = useVoiceModelReady();
+  const voicesGate = useVoicesGate();
+  const modelReady = voicesGate.ok;
   const submit = () => {
     const r = renameRequest(input.current?.value ?? "", modelReady && remember, consent);
     if ("error" in r) setError(r.error);
@@ -121,20 +134,16 @@ export function RenameForm({
         <input
           type="checkbox"
           checked={modelReady && remember}
-          disabled={!modelReady}
+          aria-disabled={!modelReady || undefined}
           onChange={(e) => {
+            if (!modelReady) return; // 못 쓰는 동안은 아무 일도 하지 않는다 (이유는 아래 안내)
             setRemember(e.target.checked);
             setError(null);
           }}
         />
         이 참석자 목소리 등록 (다음 녹음에서 자동 인식)
       </label>
-      {!modelReady && (
-        <p className="spk-check-note" role="status">
-          {VOICE_MODEL_MISSING}
-          <ErrorDetail detail={VOICE_MODEL_SETUP} />
-        </p>
-      )}
+      <GateHint gate={voicesGate} className="spk-check-note" />
       {modelReady && remember && (
         <label className="spk-check is-consent">
           <input

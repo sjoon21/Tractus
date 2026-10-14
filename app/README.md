@@ -11,7 +11,7 @@ Tauri 2 + React + TypeScript + Vite로 만든 앱이다. 구성 요소 사이의
 ```bash
 cd app
 pnpm install
-pnpm test                                   # vitest: 시각 → 세그먼트 찾기, 시간 형식, 메모 끼워 넣기, MCP 응답 해석, 속도·무음 건너뛰기·찾아 바꾸기·되돌리기·가져오기·내보내기 이름, 질의 이벤트·인용 파싱·대화 기록 자르기·전송 안내(ask.test.ts), PDF 인쇄 문서(print.test.ts), 단어 찾기·단어 타이밍 검사·단어 클릭 시각(Phase 6.1·6.2), 목소리 제안 표시·기억하기 동의 검사(Phase 7.1), 실시간 자막 상태(`liveReduce`, Phase 7.2), 화자 9명 이상 색 슬롯·속 빈 점 스타일(Phase 7.3)
+pnpm test                                   # vitest: 시각 → 세그먼트 찾기, 시간 형식, 메모 끼워 넣기, MCP 응답 해석, 속도·무음 건너뛰기·찾아 바꾸기·되돌리기·가져오기·내보내기 이름, 질의 이벤트·인용 파싱·대화 기록 자르기·전송 안내(ask.test.ts), PDF 인쇄 문서(print.test.ts), 단어 찾기·단어 타이밍 검사·단어 클릭 시각(Phase 6.1·6.2), 목소리 제안 표시·기억하기 동의 검사(Phase 7.1), 실시간 자막 상태(`liveReduce`, Phase 7.2), 화자 9명 이상 색 슬롯·속 빈 점 스타일(Phase 7.3), 기능 잠금 판단(`caps.test.ts`)·구성·받기 진행·오류 문장(`models.test.ts`)·시작 점검 행(`checkupRows.test.ts`)
 pnpm build                                  # tsc + vite → dist/
 pnpm tauri dev                              # 개발 실행 (Vite 1420 포트)
 pnpm tauri build --debug --bundles app      # → src-tauri/target/debug/bundle/macos/Tractus.app
@@ -41,8 +41,25 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 | `fake_recorder` | `false` | 개발용. `record --fake`로 띄워 권한 없이 녹음 흐름을 시험한다 |
 | `rec_mode` | `in_person` | 마지막으로 고른 녹음 방식. 사이드바 녹음 버튼 아래 스위치로 바꾸고, 바꿀 때마다 이 값만 저장한다(다른 값은 설정 화면에서 저장할 때만 파일에 쓴다) |
 | `live_captions` | `false` | 녹음 중 실시간 자막(미리보기, Phase 7.2). 녹음을 시작할 때의 값을 쓴다 |
+| `checkup_done` | `false` | 시작 점검(아래)을 한 번 보여 줬는가. 처음 실행에만 저절로 열리고, 닫으면 `true`로 저장한다 |
 
-9명 이상 화자 분리 헬퍼 `tractus-diar`(Phase 7.3)는 앱 설정이 없다. 앱은 `--diarizer`를 넘기지 않아 코어 기본값 auto가 쓰이고, 코어가 `$TRACTUS_DIAR_BIN` 또는 `<저장소>/recorder/.build/release/tractus-diar`에서 헬퍼를 찾는다. 헬퍼나 모델이 없으면 8명까지로 전사하고 `diarizer_cap` 경고(빌드·받기 명령 포함)를 알림으로 보여 준다. 화자 색은 잉크 8개이고, 9–16번째 화자는 같은 잉크에 속 빈 점·빗금 막대로 구분한다.
+AI 서비스(Upstage) API 키는 `settings.json`이 아니라 같은 폴더의 `llm_key` 파일(권한 0600)에 저장한다. 설정 › `AI 요약·질문`에서 등록·삭제하고, 요약·AI 질문을 돌리는 프로세스에만 환경변수로 넘긴다(docs/desktop.md §2.14).
+
+9명 이상 화자 분리 헬퍼 `tractus-diar`(Phase 7.3)는 앱 설정이 없다. 앱은 `--diarizer`를 넘기지 않아 코어 기본값 auto가 쓰이고, 코어가 `$TRACTUS_DIAR_BIN` 또는 `<저장소>/recorder/diar/.build/release/tractus-diar`에서 헬퍼를 찾는다. 헬퍼나 모델이 없으면 8명까지로 전사하고 `diarizer_cap` 경고(빌드·받기 명령 포함)를 알림으로 보여 준다. 화자 색은 잉크 8개이고, 9–16번째 화자는 같은 잉크에 속 빈 점·빗금 막대로 구분한다.
+
+## 모델과 시작 점검 (v3.23)
+
+계약은 `docs/desktop.md` §2.15(코어)와 §3 `모델·점검의 앱 쪽`, 문구는 `WORDS.md` §4.15다. 필수 모델만 받아도 녹음·가져오기 → 텍스트 변환 → 요약이 돌고, 없는 모델이 필요한 기능은 단추마다 이유를 말하며 막힌다.
+
+| 기능 | 앱 | 코어 |
+| --- | --- | --- |
+| 모델 화면 | 사이드바 아래 `모델`. 구성 단추(표준·저사양·필수만), 모델 표(이름·크기·필수/권장/선택·상태·이 기능에 필요), 받기 진행·멈추기·오류 문장, 지우기 확인 | `tractus models list --json`, `models download … --progress-json`(`job` 이벤트 kind `models`), `models remove --yes` |
+| 시작 점검 | 처음 실행 때 한 번 저절로 열리고 설정·첫 화면에서 다시 연다. 시스템·도구·모델·권한 안내·AI 키 행과 고치는 길 | `tractus doctor --json` + 앱이 쓰는 실행 파일 경로 확인 |
+| 기능 잠금 | `useCapabilities()`의 `can(id)`가 `{ok}` 또는 `{ok: false, reason, fix}`를 준다. `GatedButton`(`aria-disabled` + 이유 팝오버)·`GateHint`(이유 한 줄)가 그린다. 점검을 못 읽으면 막지 않는다 | `doctor`의 `capabilities[].ready·missing` |
+
+- 새 기능이 모델을 쓰면 코어 `models_registry.py`에 선언하고 이 앱에서 `caps.ts`의 `decide`에 이유 문장을 더한 뒤 `GatedButton`·`GateHint`로 막는다(CLAUDE.md).
+- 개발 중에 Tauri 없이 화면을 보려면 `window.__TAURI_INTERNALS__.invoke`를 가짜로 채운 임시 HTML을 Vite로 띄워 Chrome 헤드리스로 찍는다(커밋하지 않는다). 받기는 가짜 `job` 이벤트를 `listen` 콜백에 흘려 확인한다.
+- Rust 테스트: `cargo test models`(인수 검증·느슨한 읽기·받기 한 번에 하나·SIGTERM 멈추기·실제 코어 출력 모양). 실제 코어를 띄우는 것은 `cargo test -- --ignored real_core`(임시 폴더만 쓴다), 작은 VAD(1.3 MB) 하나를 실제로 받는 것은 `cargo test -- --ignored real_core_download`(네트워크).
 
 ## 실시간 자막 (Phase 7.2)
 
@@ -128,6 +145,7 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 | 파일 | 역할 |
 | --- | --- |
 | `src-tauri/src/lib.rs` | 설정, Tauri 명령(`list_meetings`, `list_recordings`, `load_meeting`, `edit_speakers`, `edit_segments`, `glossary_add`, `export_meeting`, `delete_meeting`, `delete_recording`, `mcp_call`, `rec_start`, `rec_send`, `job_start`, `ask_start`, `ask_cancel`, `load_chat`, `llm_config`), 앱 종료 시 녹음 정지, 녹음과 함께 도는 실시간 자막(`start_live`, `stop_live`) |
+| `src-tauri/src/llm_key.rs`, `src/llmKey.ts`, `src/LlmKeySettings.tsx` | AI 키 파일 읽기·쓰기·검증, 요약·질문 프로세스에 넣을 환경변수 / 입력 검사·오류 문장 (`llmKey.test.ts`) / 설정 섹션 |
 | `src-tauri/src/voices.rs` | 목소리 프로필 명령(`voices_list`, `voices_enroll`, `voices_forget`)과 인수·목록 읽기 (Phase 7.1) |
 | `src-tauri/src/meetings.rs` | transcript.json, summary.json, memos.json 읽기. 손상된 노트는 건너뛴다. 전사 안 된 녹음(`recordings/<ULID>/recording.json`) 목록과 녹음 폴더 검사 |
 | `src-tauri/src/removal.rs` | 노트·변환 전 녹음을 휴지통으로 옮기는 검사와 호출(`trash_note`, `trash_recording`, `to_trash`). 검사만 단위 테스트하고, 실제 휴지통은 `--ignored real_trash`로 시험한다 |
@@ -200,3 +218,5 @@ TRACTUS_HOME=/path/to/synthetic-home src-tauri/target/debug/bundle/macos/Tractus
 - [ ] **단어 타이밍 만들기:** 예전 노트(words 없음)에서 버튼을 누른다. 진행률이 버튼에 보이고, 끝나면 버튼이 사라지고 단어 강조가 시작된다. 정렬 중에 문장을 하나 고쳐도 그 수정이 남아야 한다.
 - [ ] **질문 (노트):** '질문' 탭에서 한글로 묻고, 조합 중 Enter는 보내지 않는지, Shift+Enter는 줄바꿈인지 본다. 답이 흘러나오고 시각 칩을 누르면 이동한다. 노트를 다시 열면 지난 질문이 보인다. '멈추기'로 멈춘다.
 - [ ] **질문 (전체):** ⌘J로 열고 묻는다. 칩을 누르면 그 노트가 그 시각으로 열린다. Esc로 닫고 ⌘J로 다시 열면 대화가 남아 있다. 전송 안내 문구가 설정한 공급자와 맞는지 본다.
+- [ ] **AI 키 (설정):** 설정 › `AI 요약·질문`에서 가짜 키 `test-key-123`을 저장한다. 입력창이 비워지고 상태가 `키가 등록되어 있습니다`로 바뀌며 키가 어디에도 다시 보이지 않아야 한다. 터미널에서 `ls -l ~/Library/Application\ Support/dev.tractus.app/llm_key`가 `-rw-------`이고, `grep -c test-key ~/Library/Application\ Support/dev.tractus.app/settings.json`이 0이어야 한다. 한글 입력 상태에서도 Enter로 저장된다(조합 중 Enter는 무시). `삭제`는 앱 안 확인 대화상자가 뜨고 취소가 초점이며, 삭제하면 상태가 `등록된 키가 없습니다`가 되고 파일이 없어진다.
+- [ ] **AI 키로 요약·질문 (`.env.local` 없이):** 저장소의 `.env`·`.env.local`을 쓰지 않도록 앱을 `tractus_bin`이 저장소 밖(예: 임시 폴더의 `tractus` 심볼릭 링크)인 설정으로 띄우고, 임시 `TRACTUS_HOME`(가상 노트 하나)과 `UPSTAGE_API_KEY`·`TRACTUS_LLM_PROVIDER`가 없는 환경에서 `open`으로 실행한다. 진짜 Upstage 키를 등록하면 요약(모든 유형·직접 프롬프트)과 AI 질문이 돌아야 하고, 질문 전송 안내가 `Upstage(solar-pro4)로 전송됩니다`로 보여야 한다. 키를 삭제한 뒤 요약하면 `AI 키가 없어 요약할 수 없습니다. 설정에서 API 키를 등록하세요.`와 `설정 열기`가 보이고, 누르면 설정이 열려야 한다(질문은 `…답변할 수 없습니다…`). 가상 노트만 쓴다: 실제 `~/Tractus` 노트를 보내지 않는다.

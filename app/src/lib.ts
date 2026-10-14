@@ -1,4 +1,5 @@
 // 화면과 무관한 순수 로직. 전부 lib.test.ts에서 검사한다.
+import { ASR_FALLBACK_WARNING, MODEL_MISSING_ERROR } from "./caps";
 
 export interface Segment {
   id: string;
@@ -267,10 +268,8 @@ export function renameRequest(raw: string, remember: boolean, consent: boolean):
 /** 목소리 인식 파일을 쓸 수 있는가. `tractus voices list --json`의 model_present. 코어가 알리지 않으면(키 없음) 쓸 수 있다고 본다 */
 export const voiceModelReady = (list: { model_present?: boolean } | null | undefined): boolean => list?.model_present !== false;
 
-/** 목소리 인식 파일이 없을 때 이름 바꾸기의 '목소리 등록' 체크 아래 문장과 '자세히' (WORDS.md §4.4) */
+/** 목소리 인식 파일이 없을 때 이름 바꾸기의 '목소리 등록' 체크 아래 문장 (옛 코어에서 점검을 못 읽을 때만. 보통은 caps.ts의 문장, WORDS.md §4.4) */
 export const VOICE_MODEL_MISSING = "목소리 인식에 필요한 파일이 없어 목소리를 등록할 수 없습니다. 이름만 바꿀 수 있습니다.";
-export const VOICE_MODEL_SETUP =
-  "변환 엔진 위치(설정)의 3dspeaker-campplus-zh-en 폴더에 3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx 파일이 있어야 합니다. 받는 방법은 저장소 README의 ‘목소리 프로필’ 설치 절차를 따르세요.";
 
 export type RememberResult<M> =
   | { meeting: M; samples: number }
@@ -454,14 +453,16 @@ export const WARNING_TEXT: Record<string, string> = {
   voices_model_missing: "목소리 인식에 필요한 파일이 없어 등록된 참석자를 확인하지 않았습니다.",
   voices_failed: "등록된 참석자 목소리를 확인하지 못했습니다. 참석자 이름은 노트에서 직접 지정할 수 있습니다.",
   aligner_missing: "단어 싱크에 필요한 파일이 없어 단어 싱크 없이 저장했습니다.",
+  asr_track_fallback: ASR_FALLBACK_WARNING,
   aligner_failed: "단어 싱크를 맞추지 못했습니다. 노트의 ‘단어 싱크 맞추기’로 다시 시도할 수 있습니다.",
   chat_save_failed: "질문 기록을 저장하지 못했습니다. 답변은 그대로 볼 수 있습니다.",
+  append_remap_failed: "요약이나 질문 기록의 일부를 새 내용에 맞게 옮기지 못했습니다.",
   live_lagging: "실시간 텍스트 변환이 녹음을 따라가지 못해 일부 구간을 건너뜁니다. 녹음과 녹음 종료 후 변환에는 영향이 없습니다.",
   system_zero: "상대방 소리(시스템 오디오)가 5초 동안 들리지 않습니다. 시스템 설정 > 개인정보 보호 및 보안 > 화면 및 시스템 오디오 녹음 권한을 확인하세요.",
 };
 
 export const ERROR_TEXT: Record<string, string> = {
-  model_missing: "변환 엔진 파일이 없어 진행하지 못했습니다. 설정의 ‘변환 엔진 위치’를 확인하세요.",
+  model_missing: MODEL_MISSING_ERROR,
   audio_failed: "음성 파일을 읽지 못했습니다. 소리가 있는 오디오·동영상 파일인지 확인하세요.",
   ffmpeg_missing: "음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요.",
   recording_missing: "녹음된 소리가 없습니다. 마이크 권한과 입력 장치를 확인하세요.",
@@ -469,12 +470,15 @@ export const ERROR_TEXT: Record<string, string> = {
   incomplete: "변환이 끝나지 않은 구간이 있습니다. 다시 변환하면 멈춘 곳부터 이어서 진행합니다.",
   align_interrupted: "단어 싱크를 맞추다가 중단했습니다. 대화 내용은 저장했고, 노트의 ‘단어 싱크 맞추기’로 나중에 맞출 수 있습니다.",
   no_segments: "인식된 대화가 없어 요약할 수 없습니다.",
-  llm_config: "AI 서비스 설정이 없거나 잘못되었습니다. .env.local의 TRACTUS_LLM_PROVIDER, TRACTUS_LLM_MODEL과 API 키를 확인하세요.",
+  bad_input: "요약 유형이나 요약 방법을 확인해 주세요. 지운 유형이거나 입력이 올바르지 않을 수 있습니다.",
+  llm_config: "AI 서비스 설정이 없거나 잘못되었습니다. 설정에서 API 키를 등록하세요.",
   llm_local_only: "로컬 전용 모드에서는 외부 AI 서비스를 쓸 수 없습니다.",
   llm_api: "AI 서비스에 연결하지 못했습니다. 잠시 후 다시 시도하세요.",
   llm_invalid: "AI 응답이 형식에 맞지 않았습니다. 다시 시도해 주세요.",
   live_low_memory: "이 Mac은 메모리가 16 GB 미만이라 실시간 텍스트 변환을 켜지 않습니다. 녹음은 정상 진행되고, 녹음 종료 후 텍스트로 변환합니다.",
   live_failed: "실시간 텍스트 변환을 계속하지 못했습니다.",
+  append_has_audio: "이미 녹음이 있는 노트에는 녹음을 추가할 수 없습니다.",
+  append_note_missing: "노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.",
 };
 
 /** 코드가 없는 오류의 작업별 기본 문장 */
@@ -511,7 +515,7 @@ export function errorView(message: string | null, code: string | null | undefine
 export type JobEvent =
   | { job: string; event: "stage"; stage: string }
   | { job: string; event: "progress"; done: number; total: number }
-  | { job: string; event: "done"; meeting_id: string; meeting_dir: string }
+  | { job: string; event: "done"; meeting_id: string; meeting_dir: string; summary_key?: string }
   | { job: string; event: "warning"; code: string; message: string }
   | { job: string; event: "error"; message: string; code?: string }
   | { job: string; event: "exit"; code: number | null; stderr: string };

@@ -427,7 +427,7 @@ class Index:
             raise
 
     # ── 검색 ──────────────────────────────────────────────────────────
-    def _filters(self, date_from: str | None, date_to: str | None, meeting_id: str | None, date_col: str, mid_col: str) -> tuple[str, list]:
+    def _filters(self, date_from: str | None, date_to: str | None, meeting_id: str | None, date_col: str, mid_col: str, meeting_ids: set[str] | None = None) -> tuple[str, list]:
         """날짜·회의 조건은 준 것만 건다 (날짜가 없는 회의도 필터 없이는 검색되게)."""
         sql, args = "", []
         if date_from:
@@ -436,14 +436,16 @@ class Index:
             sql, args = sql + f" AND {date_col} <= ?", args + [date_to]
         if meeting_id:
             sql, args = sql + f" AND {mid_col} = ?", args + [meeting_id]
+        if meeting_ids is not None:  # 정리 필터(태그·폴더·즐겨찾기)에 맞는 노트들 (organize.matching_ids). 값 하나로 넘겨 개수 제한이 없다
+            sql, args = sql + f" AND {mid_col} IN (SELECT value FROM json_each(?))", args + [json.dumps(sorted(meeting_ids))]
         return sql, args
 
-    def _keyword(self, query: str, date_from=None, date_to=None, meeting_id=None) -> tuple[list[int], set[int]]:
+    def _keyword(self, query: str, date_from=None, date_to=None, meeting_id=None, meeting_ids=None) -> tuple[list[int], set[int]]:
         """(순위 목록, 모든 질의 단어가 들어 있는 strict 결과)."""
         strict = to_fts_query(query)
         if not strict:
             return [], set()
-        cond, cargs = self._filters(date_from, date_to, meeting_id, "m.date", "c.meeting_id")
+        cond, cargs = self._filters(date_from, date_to, meeting_id, "m.date", "c.meeting_id", meeting_ids)
         sql = (
             "SELECT f.rowid FROM chunks_fts f JOIN chunks c ON c.chunk_id = f.rowid JOIN meetings m ON m.meeting_id = c.meeting_id "
             f"WHERE chunks_fts MATCH ?{cond} ORDER BY bm25(chunks_fts) LIMIT ?"
@@ -470,9 +472,15 @@ class Index:
         sql = f"SELECT chunk_id, distance FROM chunks_vec WHERE embedding MATCH ? AND k = ?{cond} ORDER BY distance"
         return {r[0]: r[1] for r in self.db.execute(sql, (q, POOL, *cargs))}
 
-    def search(self, query: str, limit: int = 10, date_from: str | None = None, date_to: str | None = None, meeting_id: str | None = None) -> SearchResult:
-        kw, strict = self._keyword(query, date_from, date_to, meeting_id)
+    def search(self, query: str, limit: int = 10, date_from: str | None = None, date_to: str | None = None, meeting_id: str | None = None, meeting_ids: set[str] | None = None) -> SearchResult:
+        """meeting_ids: 이 노트들 안에서만 찾는다 (태그·폴더·즐겨찾기 필터, organize.matching_ids). 빈 집합이면 결과가 없다."""
+        if meeting_ids is not None and not meeting_ids:
+            return SearchResult(query=query, hits=[], vector_used=False)
+        kw, strict = self._keyword(query, date_from, date_to, meeting_id, meeting_ids)
         vec = self._vector(query, date_from, date_to, meeting_id) if query.strip() else None
+        if vec and meeting_ids is not None:  # ponytail: 벡터는 필터 없이 POOL개를 받아 거른다 (노트 집합이 작으면 벡터 후보가 줄어든다). 키워드 쪽은 SQL에서 이미 걸렀다
+            allowed = {r[0] for r in self.db.execute("SELECT chunk_id FROM chunks WHERE meeting_id IN (SELECT value FROM json_each(?))", (json.dumps(sorted(meeting_ids)),))}
+            vec = {c: dist for c, dist in vec.items() if c in allowed}
         order, score = fuse(kw, strict, vec)
         kw_set = set(kw)
         hits = []

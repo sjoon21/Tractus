@@ -83,6 +83,15 @@ struct Transcript {
     /// 메모 노트의 본문 (그대로). 녹음에는 없다
     #[serde(default)]
     body: Option<String>,
+    /// 노트 정리 (organize.py, docs/desktop.md §2.12): 즐겨찾기·태그·폴더 ID·수정 시각. 모양이 달라도 없는 것으로 읽는다
+    #[serde(default, deserialize_with = "lenient")]
+    favorite: Option<bool>,
+    #[serde(default, deserialize_with = "lenient_tags")]
+    tags: Vec<String>,
+    #[serde(default, deserialize_with = "lenient")]
+    folder: Option<String>,
+    #[serde(default, deserialize_with = "lenient")]
+    updated_at: Option<String>,
     /// 녹음 노트에 사용자가 적은 메모 `{body, lines, seq}`. 값이 어떤 모양이어도 읽는다 (`parse_note_memo`가 이상하면 없는 것으로 본다)
     #[serde(default)]
     memo: Option<serde_json::Value>,
@@ -91,6 +100,14 @@ struct Transcript {
     /// schema_version 2. v1에는 없고, 화자 분리를 끄면 {} (null도 받는다)
     #[serde(default, deserialize_with = "lenient_speakers")]
     speakers: BTreeMap<String, Speaker>,
+}
+
+/// 태그 목록: 목록이 아니면 없는 것으로, 문자열이 아닌 항목·빈 항목은 건너뛴다
+fn lenient_tags<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    Ok(match serde_json::Value::deserialize(d)? {
+        serde_json::Value::Array(a) => a.into_iter().filter_map(|v| v.as_str().filter(|s| !s.trim().is_empty()).map(String::from)).collect(),
+        _ => vec![],
+    })
 }
 
 /// 코어(store.speaker_name)처럼 너그럽게 읽는다. 이상한 값 하나로 회의 전체를 못 읽으면 목록에서 빠진다.
@@ -200,6 +217,12 @@ pub struct MeetingInfo {
     pub has_summary: bool,
     /// "recording" | "memo"
     pub kind: String,
+    /// 사용자가 정리한 정보 (없으면 즐겨찾기 아님·태그 없음·폴더 없음)
+    pub favorite: bool,
+    pub tags: Vec<String>,
+    pub folder: Option<String>,
+    /// 마지막으로 내용을 고친 시각. 옛 노트는 만든 시각
+    pub updated_at: String,
 }
 
 #[derive(Serialize, Debug)]
@@ -240,8 +263,12 @@ fn info(dir: &Path, t: &Transcript) -> MeetingInfo {
         created_at: t.created_at.clone(),
         duration_sec: t.audio.as_ref().and_then(|a| a.duration_sec).unwrap_or(0.0),
         segments: t.segments.len(),
-        has_summary: dir.join("summary.json").is_file(),
+        has_summary: crate::summaries::any_summary(dir),
         kind: kind_of(t).to_string(),
+        favorite: t.favorite == Some(true),
+        tags: t.tags.clone(),
+        folder: t.folder.clone().filter(|f| !f.is_empty()),
+        updated_at: t.updated_at.clone().filter(|u| !u.is_empty()).unwrap_or_else(|| t.created_at.clone()),
     }
 }
 
@@ -276,6 +303,8 @@ pub struct PendingRecording {
     pub started_at: String,
     /// 녹음 중이거나 비정상 종료된 녹음은 null. 트랙은 주기적으로 헤더를 갱신하므로 그래도 전사할 수 있다
     pub duration: Option<f64>,
+    /// 글만 있는 노트에 추가하려고 녹음한 것이면 그 노트의 ID (attach.json, docs/desktop.md §2.11). 노트가 아직 있는지는 앱이 목록에서 본다
+    pub attach_to: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -300,7 +329,7 @@ pub fn pending_recordings(home: &Path) -> Vec<PendingRecording> {
         .filter(|dir| is_recording_dir(home, dir))
         .filter_map(|dir| {
             let r: RecordingJson = read_json(&dir.join("recording.json")).ok()?;
-            Some(PendingRecording { dir: dir.to_string_lossy().into_owned(), started_at: r.started_at, duration: r.duration })
+            Some(PendingRecording { dir: dir.to_string_lossy().into_owned(), started_at: r.started_at, duration: r.duration, attach_to: crate::attach::read_attach(&dir) })
         })
         .collect();
     out.sort_by(|a, b| b.started_at.cmp(&a.started_at));
@@ -617,6 +646,44 @@ mod tests {
         let chat = load_chat(&home, id).unwrap();
         let c = &chat[0].citations[0];
         assert_eq!((c.segment_id.as_str(), c.source.as_deref(), c.line, c.start), ("m0002", Some("memo"), Some(3), 0.0));
+    }
+
+    /// 세 기능이 함께 만든 홈(tests/fixtures/trio_home: 글 노트에 태그·즐겨찾기·폴더 → 녹음 추가 → 요약 유형별 요약)을 앱 파서로 읽는다.
+    /// 목록 JSON은 list.json과 같아야 한다(웹 쪽 trio.test.ts가 같은 파일을 읽는다). 일부러 바꿨다면 UPDATE_TRIO_FIXTURE=1 cargo test로 다시 쓴다
+    #[test]
+    fn reads_the_trio_home_written_by_the_real_core() {
+        let home = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/trio_home");
+        let l = list(&home);
+        let mut v = serde_json::to_value(&l).unwrap();
+        for n in v.as_array_mut().unwrap() {
+            let name = Path::new(n["dir"].as_str().unwrap()).file_name().unwrap().to_string_lossy().into_owned();
+            n["dir"] = serde_json::json!(name); // 절대 경로는 기계마다 다르다
+        }
+        let json = serde_json::to_string_pretty(&v).unwrap() + "\n";
+        let want = home.join("list.json");
+        if std::env::var_os("UPDATE_TRIO_FIXTURE").is_some() {
+            fs::write(&want, &json).unwrap();
+        }
+        assert_eq!(json, fs::read_to_string(&want).unwrap());
+
+        let id = "01M4T7YEJWABPHP3GATPMX8MYT";
+        let a = l.iter().find(|i| i.id == id).unwrap();
+        assert_eq!((a.kind.as_str(), a.favorite, a.tags.clone(), a.folder.as_deref()), ("recording", true, vec!["장보기".to_string(), "급함".to_string()], Some("01M4T7YETDCCCY0Z1SZP4P098P")));
+        assert!(a.updated_at.as_str() > a.created_at.as_str(), "녹음을 더하면 수정 시각이 올라간다");
+        let old = l.iter().find(|i| i.id == "01LEGACY0000000000000000AB").unwrap();
+        assert_eq!((old.favorite, old.tags.len(), old.folder.clone(), old.updated_at.as_str()), (false, 0, None, old.created_at.as_str()), "옛 노트: 정리 정보 없음, 수정 시각은 만든 시각");
+
+        let m = load(&home, id).unwrap();
+        assert_eq!(m.note_memo.as_ref().unwrap().lines.len(), 3);
+        let docs = crate::summaries::read_docs(&find_dir(&home, id).unwrap());
+        let keys: Vec<_> = docs.iter().map(|d| d["key"].as_str().unwrap().to_string()).collect();
+        assert_eq!(keys, vec!["meeting", "todo", "brief", "u-83fc6d3d"], "기본 → 만든 시각 순 (화면이 기본 유형을 목록 순서로 다시 놓는다)");
+        assert_eq!(docs[1]["schema_version"], 2);
+        assert!(docs[1]["sections"][0]["items"][0]["segment_ids"].as_array().unwrap().iter().any(|x| x == "m0002"));
+        let old_docs = crate::summaries::read_docs(&find_dir(&home, "01LEGACY0000000000000000AB").unwrap());
+        assert_eq!(old_docs.len(), 1);
+        assert!(old_docs[0]["schema_version"] == 1 && old_docs[0].get("sections").is_none());
+        assert_eq!(crate::organize::load_folders(&home).iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), vec!["살림"]);
     }
 
     /// 메모 노트: 녹음 없음(audio.file null), kind·body. 옛 노트(kind 없음)는 녹음, audio가 null이어도 읽힌다

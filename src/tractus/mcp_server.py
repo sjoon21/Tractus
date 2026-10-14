@@ -18,9 +18,11 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 from pydantic import BaseModel, Field
 
+from tractus import organize
 from tractus.index import Index
 from tractus.store import find_meeting_dir, memo_segments, seg_text, speaker_name, stamp
 from tractus.summarize import MeetingSummary, check_segment_ids, write_summary
+from tractus.summaries import DEFAULT_KEY, has_any_summary, list_summaries, read_markdown
 
 log = logging.getLogger("tractus.mcp")
 
@@ -30,6 +32,7 @@ INSTRUCTIONS = """Tractus: 사용자의 로컬 회의 기록(음성 전사·요�
 - 결정 사항·할 일은 get_summary, list_action_items로 본다. 전사 원문은 get_transcript로 페이지 단위(next_offset)로 읽는다.
 - kind가 memo인 노트는 사용자가 직접 쓴 메모다. 오디오·시각이 없고 세그먼트는 본문의 한 줄이다. 시각 자리에는 'n번째 줄'이 붙는다.
 - 녹음 노트에는 사용자가 직접 적은 메모가 있을 수 있다(검색 결과의 source가 memo이고 id가 m0001 같은 줄). 메모 줄은 음성 인식이 아니라 사용자가 쓴 글이고 시각 대신 '메모 n번째 줄'이 붙는다. get_transcript는 전사 끝에 memo 구간으로 보여 준다. 근거로 쓸 때는 cite 값을 그대로 붙인다.
+- 노트에는 사용자가 정리한 즐겨찾기(favorite)·태그(tags)·폴더(folder)가 있을 수 있다. "태그 X 노트", "프로젝트 폴더의 노트"처럼 범위가 있으면 list_meetings·search_meetings의 tag·folder·favorite로 좁힌다 (folder는 이름 또는 folder_id, 하위 폴더 포함, none이면 폴더 없는 노트).
 - 전사는 음성 인식 결과라 오인식이 있을 수 있다. 화자는 목소리로 자동 추정한 값이다(틀릴 수 있음). S1·S2 같은 라벨은 사람 이름이 아니고, 이름으로 보이면 사용자가 지정한 것이다. 화자 표시가 없으면 모르는 것이다.
 - 요약을 만들어 달라는 요청이면 get_transcript로 전사를 끝까지 읽고, save_summary로 저장한다. 모든 항목에 근거 segment_ids를 넣는다."""
 
@@ -38,6 +41,9 @@ WRITES_SUMMARY = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idemp
 
 Date = Annotated[str | None, Field(description="YYYY-MM-DD (포함). 회의 날짜 기준", pattern=r"^\d{4}-\d{2}-\d{2}$")]
 MeetingRef = Annotated[str, Field(description="meeting_id (뒤 6–8자만 써도 됨) 또는 회의 폴더 경로")]
+Tag = Annotated[str | None, Field(description="이 태그가 붙은 노트만 (대소문자 구분 없음)")]
+FolderRef = Annotated[str | None, Field(description="폴더 이름 또는 folder_id (하위 폴더 포함), none이면 폴더 없는 노트")]
+Favorite = Annotated[bool, Field(description="true면 즐겨찾기한 노트만")]
 
 
 def _who(t: dict, s: dict) -> str:
@@ -82,6 +88,10 @@ class MeetingInfo(BaseModel):
     kind: str = Field(default="recording", description="recording(녹음에서 만든 노트) | memo(직접 쓴 메모, 오디오 없음)")
     segments: int
     has_summary: bool
+    favorite: bool = Field(default=False, description="사용자가 즐겨찾기한 노트")
+    tags: list[str] = Field(default_factory=list, description="사용자가 붙인 태그")
+    folder: str | None = Field(default=None, description="노트가 들어 있는 폴더 이름 (없으면 null)")
+    folder_id: str | None = None
 
 
 class MeetingList(BaseModel):
@@ -158,6 +168,13 @@ def build_server(home: Path, embedder) -> MCPServer:
         except (OSError, ValueError) as e:
             raise ToolError(f"{d.name}/transcript.json을 읽을 수 없습니다: {e}") from e
 
+    def only(tag: str | None, folder: str | None, favorite: bool) -> set[str] | None:
+        """태그·폴더·즐겨찾기 필터에 맞는 meeting_id 집합 (필터가 없으면 None). 없는 폴더는 ToolError."""
+        try:
+            return organize.matching_ids(home, favorite, [tag] if tag else [], folder)
+        except ValueError as e:
+            raise ToolError(str(e)) from e
+
     def in_range(date: str, lo: str | None, hi: str | None) -> bool:
         return (not lo or date >= lo) and (not hi or date <= hi)  # 기간을 주지 않으면 날짜 없는 회의도 포함
 
@@ -171,7 +188,7 @@ def build_server(home: Path, embedder) -> MCPServer:
         vector_search = idx.embedder is not None and st["vectors"] > 0
         hint = None
         if idx.embedder is None:
-            hint = "임베딩 모델이 없거나 올리지 못해 키워드 검색만 합니다 (TRACTUS_MODELS_DIR/qwen3-embedding-0.6b)"
+            hint = "임베딩 모델이 없거나 올리지 못해 키워드 검색만 합니다 (터미널에서 `tractus models download embedding`)"
         elif st["pending"]:
             hint = f"벡터가 없는 청크 {st['pending']}개: 터미널에서 `tractus index`를 실행하면 의미 검색에 포함됩니다"
         return Status(
@@ -186,11 +203,14 @@ def build_server(home: Path, embedder) -> MCPServer:
         date_from: Date = None,
         date_to: Date = None,
         meeting_id: Annotated[str | None, Field(description="특정 회의 안에서만 찾을 때")] = None,
+        tag: Tag = None,
+        folder: FolderRef = None,
+        favorite: Favorite = False,
     ) -> SearchResponse:
-        """과거 회의 전사를 키워드(한국어 음절 bigram)와 의미(로컬 임베딩)로 함께 검색한다."""
+        """과거 회의 전사를 키워드(한국어 음절 bigram)와 의미(로컬 임베딩)로 함께 검색한다. tag·folder·favorite로 사용자가 정리한 노트만 찾을 수 있다."""
         idx = synced()
         mid = meeting(meeting_id)[1]["meeting_id"] if meeting_id else None
-        res = idx.search(query, limit=limit, date_from=date_from, date_to=date_to, meeting_id=mid)
+        res = idx.search(query, limit=limit, date_from=date_from, date_to=date_to, meeting_id=mid, meeting_ids=only(tag, folder, favorite))
         return SearchResponse(
             query=query, vector_used=res.vector_used,
             hits=[
@@ -203,17 +223,24 @@ def build_server(home: Path, embedder) -> MCPServer:
         )
 
     @server.tool(annotations=READ_ONLY)
-    async def list_meetings(date_from: Date = None, date_to: Date = None, limit: Annotated[int, Field(ge=1, le=500)] = 100) -> MeetingList:
-        """회의 목록 (날짜순). 기간을 주면 그 기간의 회의만."""
+    async def list_meetings(
+        date_from: Date = None, date_to: Date = None, limit: Annotated[int, Field(ge=1, le=500)] = 100,
+        tag: Tag = None, folder: FolderRef = None, favorite: Favorite = False,
+    ) -> MeetingList:
+        """회의 목록 (날짜순). 기간을 주면 그 기간의 회의만, tag·folder·favorite를 주면 사용자가 정리한 노트만."""
+        allowed = only(tag, folder, favorite)
+        names = {f["id"]: f["name"] for f in organize.load_folders(home)}
         out = []
         for p in sorted(meetings_dir.glob("*/transcript.json")):
             try:  # 손상된 회의 하나 때문에 목록 전체가 실패하지 않게 건너뛴다
                 t = _load(p)
                 date = str(t.get("created_at") or "")[:10]
-                if in_range(date, date_from, date_to):
-                    out.append(MeetingInfo(meeting_id=t["meeting_id"], title=str(t.get("title") or ""), date=date,
+                meta = organize.meta_of(t)
+                fid = meta["folder"] if meta["folder"] in names else None
+                if in_range(date, date_from, date_to) and (allowed is None or t["meeting_id"] in allowed):
+                    out.append(MeetingInfo(favorite=meta["favorite"], tags=meta["tags"], folder=names.get(fid), folder_id=fid, meeting_id=t["meeting_id"], title=str(t.get("title") or ""), date=date,
                                            duration_sec=float((t.get("audio") or {}).get("duration_sec") or 0.0), kind=t.get("kind") or "recording", segments=len(t["segments"]),
-                                           has_summary=(p.parent / "summary.json").exists()))
+                                           has_summary=has_any_summary(p.parent)))
             except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
                 log.warning("list_meetings: %s 건너뜀: %s", p.parent.name, e)
         out.sort(key=lambda m: (m.date, m.meeting_id))
@@ -239,11 +266,21 @@ def build_server(home: Path, embedder) -> MCPServer:
         return "\n".join([head, *lines, *tail, *memo])
 
     @server.tool(annotations=READ_ONLY, structured_output=False)
-    async def get_summary(meeting_id: MeetingRef) -> str:
-        """회의 요약(summary.md): 요약, 주제, 결정 사항, 할 일과 각 항목의 타임스탬프."""
+    async def get_summary(
+        meeting_id: MeetingRef,
+        template: Annotated[str | None, Field(description="요약 유형 key (meeting, brief, todo, lecture, interview, ideas, u-…, c-…). 생략하면 기본 요약(meeting)")] = None,
+    ) -> str:
+        """회의 요약(summary.md): 요약, 주제, 결정 사항, 할 일과 각 항목의 타임스탬프. template을 주면 그 유형의 요약(summaries/<key>.md)을 읽는다."""
         d, t = meeting(meeting_id)
+        if template is not None and template != DEFAULT_KEY:
+            if text := read_markdown(d, template):
+                return text
+            have = ", ".join(x["key"] for x in list_summaries(d)) or "없음"
+            raise ToolError(f"{template!r} 요약이 없습니다. 이 회의의 요약: {have}")
         path = d / "summary.md"
         if not path.exists():
+            if others := [x["key"] for x in list_summaries(d)]:  # 기본 요약은 없지만 다른 유형의 요약이 있다 (save_summary는 기본 요약을 만든다)
+                return f"기본 요약(meeting)은 없지만 다른 요약이 있습니다: {', '.join(others)}. template=<key>로 읽을 수 있습니다 (meeting_id {t['meeting_id']})."
             return f"요약이 없습니다 (meeting_id {t['meeting_id']}). get_transcript로 전사를 읽고 save_summary로 저장할 수 있습니다."
         return path.read_text(encoding="utf-8")
 

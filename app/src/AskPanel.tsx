@@ -5,7 +5,9 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { api, errFull, errText, type ChatEntry } from "./api";
 import { ErrorDetail } from "./ErrorDetail";
 import { answeredBy, answerParts, askReduce, citeLabel, citeTarget, isAsking, isMemoCite, isNoteGone, isTaggedMemo, sendNotice, START_ASK, trimHistory, turnsHistory, type AskEvent, type AskSource, type AskState, type LlmConfig } from "./ask";
-import { APP_ERROR, errorView, fmtTime, isImeKey, JOB_ERROR } from "./lib";
+import { APP_ERROR, fmtTime, isImeKey } from "./lib";
+import { KEY_CHANGED, llmErrorView } from "./llmKey";
+import { OpenSettings } from "./OpenSettings";
 import { flushMemos } from "./memo";
 import { NOTE_GONE } from "./remove";
 
@@ -42,8 +44,11 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
   runningId.current = running?.id ?? null;
 
   useEffect(() => {
-    api.llmConfig().then(setLlm, () => setLlm(null));
-    if (!meetingId) return;
+    // 설정에서 키를 저장·삭제하면 보내기 전 안내를 다시 읽는다 (질문 서랍은 닫아도 계속 떠 있다)
+    const refetch = () => void api.llmConfig().then(setLlm, () => setLlm(null));
+    refetch();
+    window.addEventListener(KEY_CHANGED, refetch);
+    if (!meetingId) return () => window.removeEventListener(KEY_CHANGED, refetch);
     let alive = true;
     api.loadChat(meetingId).then(
       // 기록을 읽는 사이에 보낸 질문은 뒤에 둔다
@@ -52,6 +57,7 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
     );
     return () => {
       alive = false;
+      window.removeEventListener(KEY_CHANGED, refetch);
     };
   }, [meetingId]);
 
@@ -217,10 +223,11 @@ function TurnItem({ turn: { question, state: s }, scope, onCite, notes, memoIds 
 
 /** 실패: 코드 문장 또는 "답변을 받지 못했습니다" + 원래 문구(자세히) */
 function AskError({ error, code }: { error: string; code: string | null }) {
-  const e = errorView(error, code, JOB_ERROR.ask);
+  const e = llmErrorView("ask", error, code);
   return (
     <div className="inline-error ask-note" role="alert">
       {e.text}
+      {e.settings && <OpenSettings />}
       <ErrorDetail detail={e.detail} />
     </div>
   );

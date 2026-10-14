@@ -24,6 +24,7 @@ export function MemoEditor({
   onSaved,
   onState,
   variant = "page",
+  locked = null,
 }: {
   id: string;
   /** 처음 디스크에 있던 본문 */
@@ -38,6 +39,8 @@ export function MemoEditor({
   onState: (s: SaveState) => void;
   /** page: 메모 노트의 본문(처음 열 때 초점을 둔다). rail: 녹음 노트의 메모 탭(탭 키보드가 초점을 가지므로 줄을 가리킬 때만 초점을 옮긴다) */
   variant?: "page" | "rail";
+  /** 값이 있으면 읽기 전용이고 상태 줄에 이 문장을 보인다 (녹음 추가 중, attach.LOCK_NOTICE) */
+  locked?: string | null;
 }) {
   const [text, setText] = useState(initial);
   const [state, setState] = useState<SaveState>({ status: "saved" });
@@ -108,6 +111,7 @@ export function MemoEditor({
         placeholder="여기에 메모를 쓰세요. 쓰는 대로 자동으로 저장됩니다"
         aria-label="메모 내용"
         aria-keyshortcuts="Meta+S"
+        readOnly={!!locked}
         onChange={(e) => {
           setText(e.target.value);
           a.change(e.target.value);
@@ -121,7 +125,7 @@ export function MemoEditor({
         }}
       />
       <p className={`memo-status ${state.status === "failed" ? "inline-error" : ""}`} role="status">
-        {SAVE_STATUS[state.status]}
+        {locked ?? SAVE_STATUS[state.status]}
       </p>
     </div>
   );

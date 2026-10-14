@@ -102,7 +102,9 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 | `tractus segments` | 텍스트 편집. 아래 §2.2 |
 | `tractus glossary add` | 용어집 추가. 아래 §2.3 |
 | `tractus export` | 내보내기. 아래 §2.4 |
+| `tractus note meta`, `folders`, `notes list` (v3.20) | 즐겨찾기·태그·폴더와 목록 정렬·필터. 아래 §2.12 |
 | `tractus note` (v3.18) | 직접 쓰는 메모 노트(오디오 없음)와 노트 제목 바꾸기. 아래 §2.10 |
+| `tractus transcribe --append-to <노트>` (v3.19) | 글만 있는 노트에 녹음을 덧붙여 녹음 노트로 바꾼다. 아래 §2.11 |
 | `tractus ask` (Phase 6) | 회의 질의. 아래 §2.5 |
 | 단어 타이밍 (Phase 6) | `transcribe`가 전사 뒤 `segments[].words`를 채운다(`--no-align`으로 끔). 기존 회의는 `tractus align`. 아래 §2.6 |
 | 목소리 프로필 (Phase 7.1) | `transcribe`가 화자 분리 뒤 등록된 목소리와 맞춰 `speakers.S1.suggested`에 이름을 제안한다. `tractus voices`, `tractus speakers <회의> dismiss`. 아래 §2.7 |
@@ -121,6 +123,7 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 {"event":"warning","code":"fluid_short_clip","message":"…"}   // --diarizer fluid인데 클립이 60초보다 짧음 → 경고만 하고 fluid로 계속 (community-1이 짧은 클립에서 화자를 과하게 나눈다). auto는 이 경고가 없다(8명을 다 쓴 긴 노트에서만 fluid)
 {"event":"warning","code":"aligner_missing","message":"…"}    // 단어 정렬 모델이 없음 → words null로 완료 (aligner_failed: 실패 → words null로 완료). 모델이 있는데 한 세그먼트만 못 맞추면 경고 없이 단어를 고르게 편 words(approx)로 완료
 {"event":"warning","code":"voices_model_missing","message":"…"} // 등록된 목소리가 있는데 모델이 없음 → 제안 없이 계속 (voices_failed: 실패 → 제안 없이 계속)
+{"event":"warning","code":"asr_track_fallback","message":"…"}   // --track 없이 변환할 때 메모리가 권하는 트랙의 변환 엔진이 없고 다른 쪽이 있어 그쪽으로 변환 (§2.15)
 {"event":"warning","code":"duplicate","message":"…"}           // 이미 전사된 파일 → 바로 기존 회의의 done이 이어진다 (종료 코드 0)
 {"event":"done","meeting_id":"01K…","meeting_dir":"/…/meetings/2026-10-02_…"}
 {"event":"error","message":"…","code":"audio_failed"}   // 종료 코드 1 (중단은 130). code는 있을 때만
@@ -130,7 +133,7 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 
   | 코드 | 명령 | 언제 |
   | --- | --- | --- |
-  | `model_missing` | transcribe, live, align | ASR·VAD·단어 정렬 모델이 없음 (`message`에 `hf download …`) |
+  | `model_missing` | transcribe, live, align | ASR·VAD·단어 정렬 모델이 없음 (`message`에 `tractus models download <id>`와 `hf download …`, §2.15) |
   | `audio_failed` | transcribe, align | ffmpeg가 오디오를 읽지 못함, 소리 없는 파일 |
   | `ffmpeg_missing` | transcribe, align | ffmpeg가 설치되지 않음 (`brew install ffmpeg`) |
   | `recording_missing` | transcribe `--recording` | `recording.json`을 읽지 못함, 녹음된 트랙이 없음 |
@@ -144,6 +147,7 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
   | `llm_invalid` | summarize, ask | 요약 응답이 2회 연속 검증 실패(`message`는 짧은 문장, 원문은 stderr), 질의 답이 빔 |
   | `live_low_memory` | live | 메모리 16GB 미만, `--force` 없음 |
   | `live_failed` | live | 녹음 파일·WAV 형식 오류 등으로 실시간 전사를 멈춤 |
+  | `append_note_missing`, `append_has_audio` | transcribe `--append-to` | 대상 노트가 없음 / 글만 있는 노트가 아님 (종료 코드 2, §2.11). 경고 `append_remap_failed`: 요약·질문 기록의 근거를 옮기지 못함 |
 
   회의를 찾지 못한 오류(`resolve_meeting`)와 ask의 입력 오류에는 `code`가 없다.
 
@@ -445,6 +449,259 @@ Tauri 명령 (`src-tauri/src/removal.rs`, `lib.rs`):
 - **위치 표기:** `store.stamp(s)`는 `source == "memo"`면 `메모 n번째 줄`, 메모 노트의 줄(`line`만)이면 `n번째 줄`, 그 밖에는 `HH:MM:SS`.
 - **동시성:** 메모 저장과 문장 교정·참석자 편집·목소리 등록·정렬 병합이 모두 `note_lock` 안에서 읽고 쓴다. 다른 편집은 `{**t, …}`·`deepcopy`로 새 전사를 만들어 `memo` 키를 그대로 이어 가고(테스트로 고정), 녹음 노트의 `write_transcript`는 새 노트를 만들 때만 돈다.
 
+### 2.11 `tractus transcribe --append-to` (글만 있는 노트에 녹음 추가, v3.19)
+
+글만 있는 노트(메모 노트, §2.10)에 녹음을 더해 **평범한 녹음 노트로 바꾼다.** 노트의 폴더·제목·`meeting_id`·`created_at`은 그대로이고, 쓴 글은 녹음 노트의 메모(`memo` 블록)가 된다.
+
+```
+tractus transcribe <파일> --append-to <노트>            # 파일에서 추가 (앱 job kind import + appendTo)
+tractus transcribe --recording <녹음 폴더> --append-to <노트>   # 녹음으로 추가 (앱 job kind transcribe + appendTo)
+```
+
+- **대상 검사(처리 전, 종료 코드 2, 아무것도 쓰지 않는다).** `--progress-json`이면 먼저 `error` 이벤트(`message`는 WORDS 문장)를 내고, stderr 마지막 줄도 같은 문장이다.
+
+  | 코드 | 언제 | 문장 |
+  | --- | --- | --- |
+  | `append_note_missing` | 노트를 찾지 못함(없음·지워짐·ID가 모호함) | `‘{ref}’에 해당하는 노트가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.` |
+  | `append_has_audio` | 메모 노트가 아님(= 이미 녹음이 있음) 또는 `audio.file`이 있음. 한 번 추가한 노트에 다시 `--append-to`해도 같다 | `이미 녹음이 있는 노트에는 녹음을 추가할 수 없습니다.` |
+  | `append_remap_failed` (경고, 종료 코드 0) | 변환은 끝났지만 `summary.json`·`summaries/*.json`·`chat.json`이 깨져 있어 근거를 옮기지 못함 | `요약이나 질문 기록의 일부를 새 내용에 맞게 옮기지 못했습니다.` |
+
+- **이벤트는 `transcribe`와 같다**: `stage(decode)` → … → `done`(`meeting_id` = 대상 노트, `meeting_dir` = 그 노트 폴더). 중복 파일(이미 변환한 같은 오디오)이면 `stage(decode)` → `warning(duplicate)` → `done`(**다른** 노트의 `meeting_id`)이고 대상 노트는 건드리지 않는다(종료 코드 0). 대상 검사가 중복 검사보다 먼저다. `title`·`--keep-tracks` 등 다른 옵션은 그대로이고 `--title`은 무시한다(제목은 노트의 것).
+- **노트 폴더 안에서 돈다.** `audio.ogg`를 노트 폴더에 쓰고, `memos.json`(녹음 중 메모·북마크)은 새 녹음처럼 쓴다. 이어하기 파일 `.job.json`(새 필드 `attach: true`)·`.chunks.jsonl`도 그 폴더에 둔다. 평소 `store._clean_stale_job`은 `transcript.json`이 있으면 작업 파일을 낡은 것으로 지우지만, 노트가 **아직 메모 노트인 동안**(`store._append_pending`)은 지우지 않는다. 변환이 끝나 메모 노트가 아니게 되면 낡은 파일이 되어 지워진다. `find_job(meetings, sha, append_to=<meeting_id>)`는 그 노트에 덧붙이는 작업만, `append_to` 없이는 새 노트를 만드는 작업만 찾는다. 중단(종료 코드 130)해도 노트는 글만 있는 채 그대로이고 같은 명령으로 이어진다. 그 사이 앱·`tractus note save`로 글을 고쳐도 변환이 끝날 때 읽은 최신 글을 옮긴다.
+- **변환(`attach.finish_append`, `note_lock` 안).** 새 변환 결과(`store.build_transcript`)를 노트에 합친다:
+  - 쓰는 것: `schema_version`·`audio {file: "audio.ogg", duration_sec, source, sha256}`·`asr`·`speakers`·`diarization`·`segments`(ASR `s####`).
+  - 지우는 것: `kind`(없음 = 녹음)·`body`·`seg_seq`. 쓴 글이 비어 있지 않으면 `memo {body, lines[{id m####, line, text}], seq}`(`notes.derive_lines(body, None, 0, "m")`, 줄 번호는 본문 기준 그대로).
+  - 그대로 두는 것: `meeting_id`·`title`·`created_at`과 위에 없는 모든 키(다른 기능이 더한 선택 키 포함).
+  - 줄 ID 옮김표 `attach.id_map`: 메모 노트의 세그먼트 `s####` → 같은 줄(`line`)의 `m####`. `line`이 없는 아주 옛 세그먼트는 순서로 짝짓는다.
+  - **참조 옮기기.** 옮김표를 모르는 ID는 빠진다(그 인용 하나만. 항목·질문 기록은 남는다). 이미 `m####`인 ID는 그대로 둔다(끊긴 뒤 다시 돌아도 같은 결과).
+    - `summary.json`: `topics`·`decisions`·`action_items`의 `segment_ids`를 옮기고 `summary.md`를 새 전사로 다시 만든다(`[메모 3번째 줄]`). 근거가 모두 빠진 항목은 `segment_ids: []`로 남는다.
+    - `summaries/<key>.json`(§2.13 요약 유형별 요약): 모든 섹션 항목의 `segment_ids`를 같은 방식으로 옮기고 `.md`를 다시 만든다. 한 파일이 깨져 있어도 나머지는 옮긴다.
+    - `chat.json`: 인용의 `segment_id`(→ `m####`)·`source: "memo"`·`start: 0.0`(`line`은 그대로), 답 문장 속 `[s0003]`(→ `[m0003]`, 못 옮기면 그 표기만 지운다), 인용이 모두 빠지면 `no_evidence`를 `true`로 다시 정한다. 다른 노트의 인용(`[<다른 ID>#s0003]`)은 건드리지 않는다.
+    - 검색 색인: `transcript.json` 해시가 바뀌어 `sync`가 다시 만든다(메모 줄은 `source: "memo"` 청크, ASR 청크는 `transcript`). md·vtt는 `save_transcript`가 다시 쓴다(`## 메모` 절, vtt는 이제 만들어진다).
+  - **정리 정보(§2.12)**: `favorite`·`tags`·`folder`는 다른 키처럼 그대로 이어지고 `updated_at`만 지금으로 올린다(녹음이 붙은 것은 내용이 바뀐 것이다). md 머리말에는 그 값이 그대로 다시 쓰인다.
+  - **쓰기 순서**: `summary.json`·`summaries/`·`chat.json`을 먼저, `transcript.json`을 마지막에(완료 표시). 요약·질문 기록이 깨져 있으면 그 파일은 그대로 두고 `append_remap_failed` 경고만 낸다(노트는 변환된다).
+- **기존 녹음 경로는 그대로다.** `--append-to`가 없으면 `write_transcript`(= `build_transcript` + 쓰기)가 새 노트를 만든다.
+
+**녹음 폴더의 `attach.json`(앱이 쓴다).** `recordings/<ULID>/attach.json` = `{"meeting_id": "<대상 노트 ULID>"}`. 앱이 녹음을 시작하기 전에 쓰고, 녹음 헬퍼(`tractus-rec`)는 모른다. 코어는 읽기만 한다(`attach.read_attach_target(dir)`: 없거나 모양이 다르면 `None`). **`transcribe --recording`은 attach.json만 보고 덧붙이지 않는다**: 앱이 `--append-to`를 명시해 넘긴다(옛 앱·터미널 사용자가 모르는 새 노트 대신 기존 노트가 바뀌는 놀라움을 막는다). 변환이 성공하면 코어가 녹음 폴더의 파일을 모두 지우므로 attach.json도 사라진다.
+
+**Tauri 쪽 (`src-tauri/src/attach.rs`).**
+
+| 명령·구조 | 변경 |
+| --- | --- |
+| `rec_start(flags, target?)` | `target`(노트 ID)이 있으면 글만 있는 노트인지·쓰는 중이 아닌지 검사하고(`attach::check_target`), 녹음 폴더를 만들어 `attach.json`을 쓴 뒤 시작한다. 녹음하는 동안 그 노트를 쓰는 중(`busy`)으로 표시해 삭제를 거절한다. 시작하지 못하면 attach.json과 빈 폴더를 지운다 |
+| `job_start(kind, target, job, appendTo?)` | `appendTo`는 `transcribe`·`import`만 받고(`attach::with_target`), 같은 검사 뒤 인수에 `--append-to <ID>`를 붙인다. 그 노트도 작업이 끝날 때까지 쓰는 중으로 표시한다 |
+| `list_recordings` → `PendingRecording.attach_to` | attach.json의 노트 ID(없거나 형식이 다르면 null). 그 노트가 아직 있고 글만 있는지는 앱이 목록에서 본다(`attach.resolveTarget`) |
+
+**앱 흐름(`app/src/attach.ts`의 `attachReduce`).** `idle → recording → converting → idle`(파일에서 추가·남은 녹음은 `idle → converting`). 대상 노트가 `recording`·`converting`인 동안 글은 읽기 전용이고 삭제·요약은 막힌다. 녹음 추가: 쓰던 글을 저장(`flushMemos`) → `rec_start(target)` → 녹음 화면(`‘제목’ 노트에 녹음 추가 중`) → 정지하면 `job_start(transcribe, appendTo)` → `done`이면 그 노트를 다시 읽어(노트 화면 `key`) 녹음 노트 모습으로 연다. 파일에서 추가: 파일 선택 또는 글만 있는 노트에 파일 하나를 끌어 놓기(놓으면 `‘제목’ 노트에 파일을 추가할까요?` 확인 대화상자가 먼저 뜬다: 노트가 녹음 노트로 바뀌어 되돌릴 수 없고, 읽던 노트를 실수로 바꾸지 않게) → `job_start(import, appendTo)`. 실패하면 노트는 글만 있는 채 그대로이고 남은 녹음은 사이드바에 `‘제목’ 노트에 추가할 녹음`으로 남아 같은 노트에 이어서 추가한다(노트가 없어졌으면 새 노트로 변환한다). 녹음을 더한 노트를 열면 요약이 있을 때 낡았다는 안내가 뜬다.
+
+**테스트.** `tests/test_attach.py`(가짜 ASR·화자 분리 + 실제 FFmpeg, 18개 + `slow` 1개): 변환·ID 옮김(요약·질문 기록)·`memo` 블록·md/vtt·색인·알 수 없는 키 보존·빈 글·화자 분리, 오류(녹음 노트·두 번째 추가·없는 노트·중복·깨진 요약·변환하는 사이 다른 실행이 먼저 붙인 노트는 덮어쓰지 않음 — 종료 코드 2 `append_has_audio`), 이어하기(중간 글 수정 반영), 끝내지 못한 추가 뒤에 다른 파일을 추가하면 이전 파일의 청크를 이어받지 않고 모두 새로 전사(`_new_job`이 이전 `.job.json`·`.chunks.jsonl`을 비움), `find_job` 분리, `attach.json` 읽기와 비-자동 추가. `slow`는 실제 모델로 `say` 음성을 메모 노트에 덧붙인다. 앱: `attach.test.ts`(흐름 상태·대상 찾기·문구), `cargo test`(`attach.rs`: 대상 검사·attach.json·인수·남은 녹음).
+
+### 2.12 노트 정리: 즐겨찾기·태그·폴더·순서 (v3.20)
+
+노트에 즐겨찾기·태그·폴더를 붙이고 목록을 거르고 정렬한다. 모두 선택 키라 옛 노트는 그대로 열리고, 읽는 쪽은 키가 없거나 모양이 달라도 "정리하지 않은 노트"로 본다.
+
+**데이터 (transcript.json 최상위, 노트 종류 무관, `edit_transcript`로만 쓴다)**
+
+| 키 | 모양 | 규칙 |
+| --- | --- | --- |
+| `favorite` | `true` | 없으면 아님. `false`로 바꾸면 키를 지운다 |
+| `tags` | `["아이디어", …]` | 20개까지, 한 개 30자(글자 수)까지. 앞뒤 공백·앞의 `#`·제어 문자를 떼고 NFC로 합치며, 공백은 한 칸으로 줄인다. 쉼표는 거절한다. 폭 없는 공백·BOM 같은 보이지 않는 서식 문자(Cf)는 뺀다(눈에 같은 태그가 둘이 되지 않게. 이모지를 잇는 ZWJ는 남김). 대소문자 구분 없이 같은 태그는 먼저 쓴 모양 하나만 남긴다(쓴 모양 그대로 저장). 빈 목록이면 키를 지운다 |
+| `folder` | 폴더 ULID | 없으면 폴더 없음. 폴더 파일에 없는 ID(지워졌거나 손으로 고침)는 폴더 없음으로 읽는다 |
+| `updated_at` | ISO 시각 | `store.edit_transcript`가 **내용**이 바뀐 저장(본문·대화 내용 수정·메모·제목·참석자 등)에서 올린다. 위 세 키만 바뀐 저장(`store.META_KEYS`)은 올리지 않는다. 없으면 `created_at`, 그것도 없으면 파일 수정 시각 (앱은 `created_at`까지) |
+
+다른 쓰기 경로가 transcript.json을 통째로 새로 만들 때(예: 변환으로 노트를 바꿔 쓰기) `store.META_KEYS`의 키를 옮겨 와야 한다.
+
+**`$TRACTUS_HOME/folders.json`** `{"version": 1, "folders": [{"id", "name", "parent": ID|null, "order": int, "created_at"}]}`. 읽기는 너그럽다(깨졌으면 빈 목록, 읽을 수 없는 항목·겹친 ID는 버림, 없는 부모는 최상위, 고리는 끊음). 쓰기는 `$TRACTUS_HOME/.folders.lock`(flock) 안에서 원자적으로 하고, 깨진 파일은 `folders.json.corrupt`로 옆에 남긴 뒤 새로 쓴다. 이름은 한 줄 40자 이하(`/` 불가, NFC, 보이지 않는 글자는 뺌), `none`(대소문자 무관)은 쓸 수 없고(CLI·MCP의 폴더 인수 `none`이 `폴더 없음`이라 이름으로 고를 수 없다), 같은 위치에서 NFC·casefold로 겹치지 않고, 깊이는 3단계까지다. 잠금 순서는 폴더 → 노트다.
+
+**CLI (`organize.py`, `organize_cli.py`; 오류는 종료 코드 2 + WORDS 문장)**
+
+| 명령 | stdout |
+| --- | --- |
+| `tractus note meta <노트>` + stdin `{"favorite"?: bool, "tags"?: [..], "folder"?: "<ID>"\|null}` | `{"favorite": bool, "tags": [..], "folder": ID\|null}` (저장된 값). 준 키만 바뀐다. 모르는 키·잘못된 형식·없는 폴더·태그 한도 초과면 아무것도 쓰지 않는다 |
+| `tractus folders list [--json]` | `{"folders": [{id, name, parent, order, created_at}]}` (위치별 order·이름 순) |
+| `tractus folders create --name N [--parent ID\|이름]` | `{"folder": {…}}` |
+| `tractus folders rename ID --name N` | `{"folder": {…}}`. 이름만 바꾸고 그 폴더 노트의 transcript.md를 다시 만든다 |
+| `tractus folders move ID --parent ID\|none` | `{"folder": {…}}`. 새 위치의 맨 끝. 자기 후손 안으로·하위 가지를 포함해 3단계를 넘게·이름이 겹치게 옮기면 거절 |
+| `tractus folders delete ID` | `{"deleted": ID, "moved_notes": N, "moved_folders": M}`. 노트는 지우지 않는다: 노트는 상위 폴더(없으면 폴더 없음)로(노트별 `edit_transcript`), 하위 폴더는 한 단계 위로(이름이 겹치면 `이름 (2)`). 순서는 노트 → folders.json → md라 중간에 끊겨도 노트를 잃지 않고 같은 명령을 다시 하면 된다 |
+| `tractus notes list [--json] [--favorite] [--tag T]… [--folder ID\|이름\|none] [--sort created\|updated\|title\|duration] [--order asc\|desc]` | `{"notes": [{meeting_id, title, kind, created_at, updated_at, duration_sec, favorite, tags, folder}]}`. 기본은 `updated` 내림차순. 태그는 모두 붙은 노트(AND), 폴더는 하위 폴더 포함. 제목 순서는 NFC·casefold 비교(로케일 무관, 코드 포인트 순서), 같으면 만든 시각·ID. 앱의 사이드바 순서도 같은 규칙이다(`foldKey`는 `toUpperCase().toLowerCase()`로 `ß`→`ss` 같은 접기를 맞추고 `cmpCodePoints`로 비교한다. 이모지 같은 보충 평면 글자의 자리가 JS 기본 `<`와 다르기 때문. 파이썬 `sorted(key=casefold)`와 같은 순서임을 `organize.test.ts`가 본다) |
+| `tractus search … [--tag T]… [--folder …] [--favorite]` | 같은 필터로 검색 범위를 좁힌다. 태그는 필터일 뿐 검색어로 색인하지 않는다 (`Index.search(meeting_ids=)`, 키워드는 SQL, 벡터는 후보를 받아 거른다) |
+
+MCP: `list_meetings`는 `favorite`·`tags`·`folder`(이름)·`folder_id`를 싣고 `tag`·`folder`·`favorite` 필터를 받으며, `search_meetings`도 같은 세 필터를 받는다(없는 폴더는 `ToolError`). `transcript.md` frontmatter에는 `tags: [a, b]`·`favorite: true`·`folder: <이름>`이 있을 때만 붙는다(Obsidian이 읽는다. 폴더 이름은 렌더할 때 folders.json에서 찾으므로 이름을 바꾸면 그 폴더 노트만 다시 만든다).
+
+**앱 (`organize.rs`, `organize.ts`, `useOrganize.ts`, `NoteLibrary.tsx` 외)**
+
+- Rust: `meetings::list`가 `favorite`·`tags`·`folder`·`updated_at`을 너그럽게 읽는다(이상한 값은 없는 것). `list_folders`(folders.json을 직접 읽음), `note_meta`(노트를 쓰는 중으로 표시), `folders_create|rename|move|delete`(바뀐 폴더 목록을 돌려줌, 이름은 `--name=` 꼴), `set_list_prefs`(설정 파일의 `list_sort`·`list_order`만 바꿈). 인수·한도는 코어와 같은 문장으로 한 번 더 검사한다.
+- 사이드바: 제목 거르기 상자(⌘K 검색과 별개) + 순서 선택(최근 수정 순·만든 순·제목 순·길이 순)과 오름·내림 단추(설정에 저장, 기준을 바꾸면 처음 방향은 시각·길이 내림차순, 제목 오름차순) → `즐겨찾기`(있을 때) → `폴더`(나무, 접힘, 하위 폴더 포함 노트 수, `폴더 없음` 줄) → `태그`(칩과 노트 수, 여럿을 고르면 AND) → `전체 노트`(고른 폴더·태그로 걸러짐, `모두 해제`). 시각 순서는 그 시각의 날짜별로 묶고 제목·길이 순서는 묶지 않는다. 접힘은 `localStorage`(편의일 뿐, 없어도 동작).
+- 바꾸기: 노트 줄을 폴더 줄에 끌어 놓기(**포인터 이벤트**로 직접 한다: `noteDrag.ts`. Tauri 창은 파일 끌어 놓기(`onDragDropEvent`)가 켜져 있으면 macOS에서 창 안의 HTML5 `dragover`·`drop`을 먼저 가져가므로(`wry` `drag_drop.rs`가 핸들러가 true일 때 WebKit에 넘기지 않는다) `draggable`·`dataTransfer`를 쓰지 않는다. 5px 움직이면 끌기가 시작되고 따라오는 말풍선이 보이며, 폴더 줄(`data-folder-drop`) 위에서 놓으면 옮기고 Esc는 취소한다. 마우스·펜만, 터치는 스크롤이 먼저), 줄의 `…` 메뉴(가리키거나 초점이 갈 때 보임: 즐겨찾기·`폴더로 이동…`·`태그 편집…`), 노트 머리의 ★(`aria-pressed`)·폴더 단추·태그 편집기. 폴더 만들기·이름 바꾸기는 줄 안 입력창, 폴더 메뉴의 `다른 폴더로 옮기기…`는 폴더 고르기(그 폴더와 하위 폴더는 목록에서 뺀다. 깊이·이름 겹침은 코어가 거절하고 문장을 알린다), 삭제는 확인 대화상자(노트는 남는다고 말한다). 모두 낙관적으로 먼저 보이고 노트별 저장 줄(`editQueue`)에 세워 저장하며, 실패하면 바꾼 키만 되돌리고 알린다.
+- 태그 편집기: Enter·쉼표로 더하고 빈 칸에서 Backspace로 마지막 태그를 빼며 기존 태그를 제안한다(↑↓·Enter). 한글 조합 중에는 아무것도 하지 않는다(`isImeKey`, 쉼표는 조합이 끝난 뒤 처리).
+- 성능: 줄은 `memo`로 막고(컨텍스트를 읽지 않고, 메뉴는 열 때만 올림) CSS `content-visibility: auto`로 화면 밖은 그리지 않는다. 합성 노트 2,000개: Rust 목록 읽기 약 0.2초(디버그 빌드), 정렬·걸러내기·태그 집계·나무 합쳐 수십 ms, 서버 렌더 2,002줄 약 0.2초. **작은 노트로 잰 값이다.** 코어는 노트를 열 때 transcript.json 전체를 해석하므로 비용은 노트 크기에 비례한다(1시간짜리 단어 타이밍 포함 약 0.9MB 노트 300개: `list_notes` 약 2초, 즉 노트당 약 6.5ms). 필터를 건 `matching_ids`·`list_notes`는 그 키(`"tags"`·`"favorite"`·`"folder"`)가 글자로 없는 노트를, 폴더 이름 바꾸기·삭제는 그 폴더 ID가 글자로 없는 노트를 해석하지 않고 건너뛴다(필터가 없는 목록은 모든 노트의 제목이 필요해 건너뛸 수 없다). 노트 수천 개 × 큰 노트면 목록 캐시가 필요하다.
+
+**테스트.** `tests/test_organize.py`(38개: 태그·폴더 규칙·한도, 부분 갱신, 기본값이면 키 삭제, `updated_at`, 동시 편집·동시 폴더 만들기, 폴더 나무 연산·깊이·삭제 의미·이름 충돌, 깨진·이상한 파일, 목록·정렬(한글 제목)·필터, md frontmatter, 색인 필터, MCP, frontmatter가 YAML에서 문자열로 읽히는지). `app/src/organize.test.ts`(정렬(파이썬과 같은 순서)·나무·끌어 놓기 대상·태그·필터·낙관적 갱신·접힘·2,000개 성능), `noteDrag.test.ts`(포인터 끌기), `organizeView.test.ts`(서버 렌더), cargo `organize::tests`(폴더 읽기·인수·검증·설정 병합·목록 읽기·2,000개).
+
+**알려진 한계.** `tractus folders order`(폴더 순서 바꾸기)는 없다(만든 차례). 앱의 끌어 놓기(포인터 방식)는 WKWebView에서 손으로 확인하지 못했다(`noteDrag.test.ts`가 가짜 DOM으로 문턱·놓기·취소만 본다. 같은 일을 줄 메뉴·노트 머리로 할 수 있다). 내용을 저장하면 앱이 코어가 올린 `updated_at`을 목록에 바로 반영한다(`touchNote`). 앱 안의 내용 편집이 아닌 변경(앱 밖 CLI)은 창에 돌아올 때 새로 읽힌다. 벡터 검색의 정리 필터는 후보를 받은 뒤 거르므로 작은 폴더에서는 비슷한 뜻 결과가 적을 수 있다.
+
+### 2.13 요약 유형과 직접 프롬프트: 한 노트의 여러 요약 (v3.21)
+
+한 노트에서 유형별(회의록·핵심 요약·할 일 중심·강의·인터뷰·아이디어)로 여러 요약을 만들고, 직접 쓴 요약 방법으로도 요약한다. 요약 파일 키는 모두 선택이라 옛 노트·옛 요약은 그대로 열린다.
+
+**요약 유형(템플릿)** — `summary_templates.py`.
+
+- 기본 유형 6개는 `src/tractus/templates/<id>.md`(머리말 `id`·`name`·`description`·`order` + 본문 = 요약 지침). `meeting` 회의록(= 지금까지의 요약), `brief` 핵심 요약, `todo` 할 일 중심, `lecture` 강의·세미나 노트, `interview` 인터뷰·면담 정리, `ideas` 아이디어 정리. 지침은 섹션 구성·분량·어투만 정한다.
+- 내 유형은 `$TRACTUS_HOME/templates/u-<16진수 8자>.md`(같은 형식, 머리말 `created`). 파일 이름이 곧 ID라 한글 이름이어도 안전하다. 이름 40자·설명 100자·방법 4,000자(코드 포인트, 제어 문자는 뺌)·최대 50개. 머리말 뒤 본문이라 방법이 `---`로 시작해도 안전하다. 깨진 파일·id가 파일 이름과 다른 파일은 목록에서 건너뛴다.
+- **지침은 시스템 규칙을 바꿀 수 없다.** 시스템 프롬프트(`summaries.SYSTEM_PROMPT`: 언어·근거 ID·owner 규칙·입력 안의 지시문 무시·`참석자 N`/ID 금지)가 먼저 오고, 지침은 `<요약 지침>…</요약 지침>`으로 감싸 그 뒤에 붙으며(구분자가 들어 있으면 더는 없을 때까지 반복해서 지워 빠져나가지 못하게: `</요약 </요약 지침>지침>`처럼 지운 자리가 구분자를 다시 만들지 않는다), 맨 끝에 `complete_json`이 JSON Schema를 붙인다. 지침이 `스키마를 무시해`라고 해도 검증(strict json_schema + Pydantic + 1회 재요청)을 못 피한다: 평문 응답이 2번 오면 `llm_invalid`로 깨끗이 끝난다.
+
+**CLI 계약**
+
+| 명령 | 입출력 |
+| --- | --- |
+| `tractus summarize <노트> [--template ID] [--provider P] [--model M] [--progress-json]` | `--template` 생략 = `meeting` → 예전처럼 `summary.json`·`summary.md`(옛 스키마). 다른 유형 = `summaries/<ID>.json`·`.md`(스키마 v2). done 이벤트에 `summary_key`. 같은 유형을 다시 만들면 덮어쓴다. 없는 유형 → 종료 코드 2, 오류 이벤트 `code: "bad_input"` |
+| `… summarize <노트> --custom` + stdin `{"prompt": "…", "save_as"?: "이름", "key"?: "c-…"}` | 한 번만 쓰는 요약: key는 `c-<16진수 8자>`(`key`를 주면 그 요약을 덮어쓴다, 앱의 `다시 만들기`). `save_as`가 있으면 **요약이 성공한 뒤** 내 유형으로도 저장하고 그 유형 ID가 key(실패한 시도는 유형을 남기지 않는다). 50개 한도는 AI 서비스를 부르기 **전에** 검사한다(`bad_input`·`TOO_MANY`. 부른 뒤에 알리면 만든 요약까지 버려진다). `--template`과 함께 쓸 수 없다. 잘못된 입력은 종료 코드 2·`bad_input`(AI 서비스를 부르기 전) |
+| `tractus templates list [--json]` | `{"templates": [{id, name, description, prompt, builtin}]}` (기본 유형 → 내 유형) |
+| `tractus templates save --name N [--description D] [--id u-…]` + stdin `{"prompt"}` | 저장한 유형 하나(같은 키). `--id`는 고칠 내 유형. 기본 유형 ID·없는 ID·한도 초과는 종료 코드 2 + WORDS 문장 |
+| `tractus templates delete ID` | `{"deleted": ID}`. 기본 유형은 거절. 그 유형으로 만든 요약 파일은 남는다 |
+| `tractus summaries <노트> list [--json]` / `delete KEY` | `{"summaries": [{key, template, name, title, generated_at, provider, model, custom}]}` (기본 → 기본 유형 순서 → 내 유형·직접 요약 만든 순). 앱도 같은 순서다: Rust `read_docs`가 기본 다음 파일들을 `generated_at`(같으면 key) 순으로 돌려주고, 기본 유형은 `orderDocs`가 목록 순서로 다시 놓는다(내 유형·직접 요약의 key는 무작위라 파일 이름 순은 만든 순서가 아니다). key `meeting`은 `summary.json`. `delete`는 json+md를 지우고 `{"deleted": KEY}`, 없거나 모양이 틀린 key는 종료 코드 2 (경로 조작 불가: key는 `[a-z]{3,12}`·`u-…`·`c-…`만) |
+
+**요약 파일**
+
+- `summary.json`(+`.md`): 기본(회의록). 옛 스키마(`title`·`summary`·`topics`·`decisions`·`action_items`)를 그대로 쓰고 MCP `save_summary`도 여기에 쓴다. 옛 파일은 옮기지 않는다 — 읽는 쪽이 옛 스키마(`sections` 없음)를 `회의록`으로 본다.
+- `summaries/<key>.json`(+`.md`) 스키마 v2: `{"schema_version": 2, "meeting_id", "template", "template_name", "prompt_hash", "prompt"?, "provider", "model", "generated_at", "title", "overview", "sections": [{"heading", "style": "bullets"|"checklist"|"numbered", "items": [{"text", "segment_ids", "owner"|null, "due"|null}]}]}`. `prompt`는 기본 유형이 아닐 때만(직접 요약·내 유형: 앱이 `다시 만들기`·`템플릿으로 저장`에 쓴다), `prompt_hash`는 지침의 sha256 앞 12자. 모든 항목에 근거 ID(`s####` 대화, `m####` 메모, 노트에 있는 것만)가 필수이고 `clean_owners`(이름을 붙인 참석자만, `S1`·`참석자 N`·ID·확정되지 않은 목소리 제안 이름은 null)가 모든 섹션에 적용된다. 내용이 하나도 없는 응답(개요도 항목도 없음)은 재요청 대상이다. md는 `## 섹션`, 항목 끝 ` [00:00:03]`·` [메모 3번째 줄]`, 체크리스트 `- [ ] … — 담당, 기한`.
+- 제목 바꾸기(`note title`)는 모든 요약 파일의 `title`·md 첫 제목을 함께 바꾼다. 검색 색인에는 들어가지 않고(변경 없음), `bundle` 내보내기에는 `summaries/`의 json·md가 들어간다. 노트를 삭제하면 폴더째 휴지통이라 요약도 함께 간다. 노트 목록의 `요약 없음` 배지(`has_summary`)는 어느 요약이든 있으면 사라진다(Rust `summaries::any_summary`). MCP `list_meetings`의 `has_summary`도 같다(`summaries.has_any_summary`).
+- MCP: `get_summary(meeting_id, template?)`는 기본 요약 또는 지정한 key의 md(없으면 가진 key 목록과 함께 `ToolError`). 기본 요약이 없어도 다른 유형의 요약이 있으면 "없다" 대신 그 key들과 `template=<key>`로 읽을 수 있다고 알려 준다(에이전트가 `save_summary`로 덮어쓰지 않게). `save_summary`는 기본 요약만 쓴다. `list_action_items`는 **기본 요약만** 읽는다(유형별 요약의 체크리스트는 모으지 않는다 — 같은 할 일이 유형마다 되풀이될 수 있어서).
+- md·docx 내보내기는 요약 하나를 싣는다: `tractus export … --summary KEY`(앱은 요약 탭에서 고른 요약의 key를 넘긴다), 안 주면 기본 요약, 기본 요약이 없으면 처음 있는 요약. 없는 key는 종료 코드 2(`요약을 찾을 수 없습니다.`). docx는 기본 요약을 `요약`·`결정 사항`·`할 일`로, 유형별 요약을 `요약 · 이름`과 섹션(번호·체크 모양대로)으로 쓴다. txt·srt·vtt·csv에는 요약이 없고 bundle은 모든 요약을 싣는다.
+
+**개인정보.** 원격 AI 서비스로 나가는 것은 전과 같은 노트 내용(대화 내용 + 메모)에 요약 지침(내가 쓴 방법 포함)이 더해진 것뿐이다. 오디오·다른 노트·질문 기록은 나가지 않는다. 노트 안의 지시문은 요약할 내용일 뿐이다(모든 유형에서 주입 문구가 시스템 프롬프트에 섞이지 않음을 테스트로 고정).
+
+**측정 (solar-pro4, 가상 전사만, 2026-10-14).** `uv run pytest -m llm -k "template or custom_prompt"`(7개: 유형 5 + 직접 요약 스키마 방어 + 전사 속 지시문 무시, 이름 없는 화자 라벨 `S1`·`S2`를 붙인 어려운 입력 포함) 4회: 28/28 통과(지침 다듬기 전 2회 14/14, 다듬은 뒤 2회 14/14). 확인한 것: 스키마 통과, 모든 항목에 근거, owner에 `S#`·`참석자 N` 없음, 한국어, 유형별 형태(`brief`는 섹션 1개·항목 3–7개, `todo`는 체크리스트에 김민수·박지영, `lecture`는 TTL·write-back 포함, `interview`는 질문별 섹션 2개 이상, `ideas`는 아이디어별 섹션 + 다음 단계). 지침을 다듬은 것: 시스템 규칙에 `owner는 그 일을 하기로 한 사람, due는 그 일의 기한`(인터뷰에서 고객사 담당자가 후속 조치 담당으로 들어간 사례)과 `같은 내용을 되풀이하지 않는다`(아이디어의 다음 단계가 중복된 사례)를 더했다. 이 수치는 가상 전사 5건의 통과율이며 유형별 요약 품질(사람이 보는 정확도)은 재지 않았다.
+
+**앱 (`summaries.rs`, `summaries.ts`, `summaryQueue.ts`, `SummariesPanel.tsx`, `CustomSummaryDialog.tsx`, `TemplatesSettings.tsx`)**
+
+- Rust 명령: `templates_list|templates_save|templates_delete`(코어 `templates`를 부름, 이름·설명은 `--name=`·`--description=` 꼴), `summaries_list`(요약 파일을 직접 읽어 원본 JSON + `key`를 돌려줌, 깨진 파일·이상한 이름은 건너뜀), `summaries_delete`(`summaries <노트> delete`), `summary_start`(`job_start`와 같은 `job` 이벤트·노트 삭제 막기, `--template ID` 또는 `--custom` + stdin). 모든 ID·key는 모양을 검증해 인수에 넣는다.
+- `요약` 탭 맨 위: `요약 유형` 메뉴(체크박스 목록: 기본 유형 + 설명, 내 유형, `직접 프롬프트로 요약…`) + `요약 만들기`. 여러 유형을 고르면 **차례로** 하나씩(`summaryQueue.ts`) 돌고 진행 줄에 `n / N · 이름 · 단계`가 보인다. 하나가 실패하면 남은 것은 멈추고 실패한 유형 이름과 오류를 보인다. (기존 작업 UI에 취소가 없어 취소는 두지 않았다.)
+- 만든 요약은 탭(유형 이름)으로 고르고, 선택한 요약에 `요약 복사`·`다시 만들기`·`삭제`(앱 안 확인). 낡은 요약 안내는 요약마다 따로다(요약을 만들 때의 편집 횟수 기준). 새 요약은 개요 + 섹션(번호·체크리스트·글머리 스타일, 담당·기한, 시각·`메모 n번째 줄` 근거 칩), 옛 요약은 예전 모양 그대로. 복사·PDF 인쇄(`printDoc(detail, 고른 요약)`)는 고른 요약 하나만이다.
+- 직접 프롬프트 대화상자: 요약 방법 입력(글자 수 `n / 4,000`, 예시 placeholder), `템플릿으로 저장` + 이름. 네이티브 모달 `<dialog>`, Esc 취소, ⌘Enter가 만들기(Enter는 줄바꿈, 이름 칸은 Enter), 글자 조합(IME) 중에는 키를 가로채지 않는다.
+- 설정 › 요약 템플릿: 기본 유형(읽기 전용, `요약 방법 보기`, `복사해서 만들기`)과 내 유형(이름·설명·방법 고치기, 삭제는 앱 안 확인).
+
+**테스트.** `tests/test_templates.py`(42개: 로더·머리말, 내 유형 CRUD·한도·오류 문장·종료 코드·깨진 파일, 요약 저장 위치·덮어쓰기·목록 순서·삭제, 옛 요약 읽기, 직접 요약·`save_as`·`key` 덮어쓰기·실패 시 유형 미저장, 적대적 지침(구분자 닫기·평문 응답), 근거·owner 검증, md 렌더링, bundle, 제목 바꾸기, MCP `template` 인수, 모든 유형에서 주입 문구 분리). `tests/test_llm_smoke.py`의 `-m llm` 7개. `app/src/summaries.test.ts`(파일 읽기·순서·탭 이름·복사 md·인쇄 모델·유형 고르기·다시 만들기·입력 검사), `summaryQueue.test.ts`(차례 실행·실패 중단), `print.test.ts`, cargo `summaries::tests`(ID·인수·입력 검사·너그러운 읽기).
+
+**알려진 한계.** `list_action_items`는 기본 요약만 본다. 앱의 여러 유형 만들기는 취소할 수 없다(프로세스를 멈추는 UI가 작업에 없다). 지운 내 유형으로 만든 요약은 `prompt`가 파일에 남아 있어 `다시 만들기`가 새 직접 요약으로 만들어진다. 요약 유형 메뉴·직접 프롬프트 대화상자는 WKWebView에서 손으로 확인하지 못했다(vitest·cargo·tsc만). 요약 방법에 노트 밖의 내용을 지어내라는 지침을 써도 막지는 못한다(근거 ID 검증이 노트에 없는 ID와 근거 없는 항목만 거른다).
+
+### 2.14 AI 서비스 API 키 (앱 전용, 코어 변경 없음, v3.22)
+
+설정 › `AI 요약·질문`에서 Upstage API 키를 붙여 넣으면 `.env.local` 없이 요약·AI 질문이 돈다. 공개 배포 전 최소 구현이라 서비스는 Upstage 하나, 공급자·모델·주소 입력과 연결 확인 단추는 없다.
+
+- **파일.** 앱 설정 폴더(`settings.json`과 같은 폴더, macOS `~/Library/Application Support/dev.tractus.app/`)의 `llm_key`. 내용은 트림한 키 한 줄, 권한 `0600`(만들 때 `OpenOptions::mode`, 다시 쓸 때도 맞춘다), 임시 파일 + rename으로 바꾼다. `$TRACTUS_HOME`(노트 폴더)에는 두지 않는다. 동기화될 수 있기 때문이다.
+- **명령.** `llm_key_status` → `{"saved": bool}`, `llm_key_save(key)`(트림, 10~200자, 공백·제어 문자 없음), `llm_key_delete`(없어도 성공). 키는 webview로 돌아오지 않고 `settings.json`·인수·로그·진행 이벤트·오류 문구·`chat.json`에 들어가지 않는다.
+- **주입.** `Settings::tractus_llm`이 `tractus`와 같되 환경변수 `UPSTAGE_API_KEY=<키>`를 더한다. 앱 프로세스 환경에 `TRACTUS_LLM_PROVIDER`가 없고 `.env.local`·`.env`(`ask::llm_config`와 같은 순서)에도 없을 때만 `TRACTUS_LLM_PROVIDER=upstage`도 더한다. 앱 프로세스 환경에 `UPSTAGE_API_KEY`가 이미 있으면 넣지 않는다(셸 > 저장한 키 > `.env.local`·`.env`). **쓰는 곳은 AI 서비스를 부르는 실행뿐이다:** 요약 작업(`job_start` kind `summarize`, `summary_start`의 유형·직접 요약), `ask_start`. MCP·녹음·실시간·변환·정렬·검색 갱신·나머지 명령에는 넣지 않는다. 키가 없으면 지금까지와 똑같이 실행한다(개발용 `.env.local`이 그대로 동작).
+- **전송 안내.** `llm_config`는 키가 등록돼 있고 공급자 설정이 없으면 `provider: "upstage"`로 돌려준다.
+- **화면.** 요약·AI 질문이 코어 오류 코드 `llm_config`로 끝나면 `AI 키가 없어 요약할 수 없습니다. 설정에서 API 키를 등록하세요.`(질문은 `…답변할 수 없습니다…`)와 `설정 열기` 단추를 보인다(`llmKey.ts`). 코어 코드는 서비스 설정 없음·모델 지정 없음도 같은 코드로 알리므로 원래 문구는 `자세히`에 둔다. 키 입력창은 `type=password`, 저장하면 비우고 다시 채우지 않는다.
+- **테스트.** Rust `llm_key.rs`(검증, 0600 생성·덮어쓰기, 원자적 교체, 삭제 멱등, 환경 주입 규칙, 오류 문구에 키 없음)와 `lib.rs`(`saved_key_reaches_only_llm_commands`: 요약·질문 실행에만 들어가고 MCP·일반 실행 환경에는 없음), `llmKey.test.ts`.
+- **알려진 한계.** 키를 파일에 평문으로 둔다(Keychain 아님). 키가 틀려도 저장은 되고 첫 요약·질문에서 AI 서비스 오류로 드러난다.
+
+### 2.15 모델 받기·지우기와 시작 점검 (v3.23)
+
+개발자가 저장소를 받아 직접 빌드해 쓰는 배포를 전제로, 모델과 도구가 없을 때 **조용히 실패하지 않게** 한다. 필수 모델(VAD + 변환 엔진 하나)과 ffmpeg만 있으면 녹음·가져오기 → 텍스트 변환 → 요약이 돈다. 나머지 모델이 없으면 코어는 해당 단계를 건너뛰며 경고를 내고, 앱은 그 기능의 단추를 막고 이유와 `모델 화면 열기`를 보인다. **모델을 쓰는 기능을 새로 만들면 `src/tractus/models_registry.py`에 모델·기능을 선언하고 앱에서 막는다** (CLAUDE.md).
+
+**원본.** `src/tractus/models_registry.py` 하나다. 저장소·리비전·폴더·파일 목록과 크기·URL·sha256, 단계(`required`·`recommended`·`optional`), 기능(`CAPABILITIES`)이 여기 있다. `diarize`·`align`·`embed`·`voices`의 상수는 그대로 두고 레지스트리가 가져온다(`tests/test_models.py`가 일치를 검사한다). ASR·VAD의 저장소·리비전은 레지스트리가 원본이고 `cli.MODELS`·`VAD_MODEL`이 가져간다. 코어의 받기 안내 문구(`hf download … --revision … --local-dir …`와 `tractus models download <id>`)도 레지스트리에서 만든다. ASR·VAD도 리비전을 고정한다(2026-10-14 시점 HEAD, 파일 크기를 허브 API로 대조).
+
+| id | 모델 | 단계 | 크기 | 폴더 | 이게 없으면 못 쓰는 기능 |
+| --- | --- | --- | --- | --- | --- |
+| `vad` | Silero VAD v6 | 필수 | 1.2MB | `silero-vad-v6` | `convert`, `live` |
+| `asr-std` | Qwen3-ASR 1.7B 8bit | 필수(둘 중 하나) | 2.5GB | `qwen3-asr-1.7b-8bit` | `convert` (둘 다 없을 때) |
+| `asr-lite` | Qwen3-ASR 0.6B 8bit | 필수(둘 중 하나), 실시간은 항상 | 1.0GB | `qwen3-asr-0.6b-8bit` | `convert` (둘 다 없을 때), `live` |
+| `diarizer` | Nemotron-3 Diarization | 권장 | 0.2GB | `nemotron-3-diarization` | `diarize` |
+| `aligner` | Qwen3-ForcedAligner 0.6B 8bit | 선택 | 1.3GB | `qwen3-forcedaligner-0.6b-8bit` | `align` |
+| `embedding` | Qwen3-Embedding 0.6B | 선택 | 1.2GB | `qwen3-embedding-0.6b` | `smart-search` |
+| `voices` | 3D-Speaker CAM++ zh_en ONNX | 선택 | 28MB | `3dspeaker-campplus-zh-en` | `voices` |
+| `fluid` | FluidAudio 화자 분리 + 도우미 `tractus-diar` | 선택 | 22MB(+도우미 빌드) | `speaker-diarization` | `diarize-many` |
+
+크기 합계(GiB): `required` 2.3(16GB 이상, 미만이면 1.0), `standard` 4.8, `lite` 1.1, `all`(fluid 제외) 5.8.
+
+기능(`capabilities`): `record`(도구 `recorder`) · `convert`(`vad` + `asr-std`/`asr-lite` 중 하나 + 도구 `ffmpeg`) · `diarize`(`diarizer`) · `diarize-many`(`fluid`) · `align`(`aligner` + 도구 `ffmpeg`: 노트 오디오를 디코딩한다) · `smart-search`(`embedding`) · `live`(`vad` + `asr-lite` + 도구 `recorder` + 메모리 16GB 이상: **표준 엔진이 있어도 0.6B가 따로 필요하다**. 16GB 미만이면 `tractus live`가 `live_low_memory`로 거절하므로 `missing`에 `memory`가 든다) · `voices`(`voices` + 도구 `ffmpeg`). 요약·질문은 모델이 아니라 API 키라 코어 점검에 없다(앱이 키 상태를 더한다). 녹음 자체는 모델이 필요 없다: 변환 엔진이 없어도 녹음은 저장되고 앱은 `변환 대기 중인 녹음`으로 보인다.
+
+#### `tractus models list [--json]`
+
+네트워크를 쓰지 않는다. 설치 여부는 파일 존재와 **크기**(고정한 리비전의 값)로 판단한다. voices는 sha256까지 본다.
+
+```json
+{"models_dir": "/Users/me/Tractus/models", "disk_free_bytes": 199610109952, "download_active": false,
+ "models": [{"id": "asr-lite", "name": "변환 엔진 (가벼운 것)", "purpose": "…", "level": "required",
+             "size_bytes": 1010771234, "installed": false, "installed_bytes": 0, "state": "missing",
+             "needed_by": ["convert", "live"], "group": "convert", "path": "/Users/me/Tractus/models/qwen3-asr-0.6b-8bit",
+             "model_name": "Qwen3-ASR 0.6B (8bit 양자화)", "publisher": "Alibaba Qwen 팀", "converted_by": "mlx-community (MLX 변환본)",
+             "source": "mlx-community/Qwen3-ASR-0.6B-8bit", "revision": "89e96d92ba34aca20b3e29fb10cc284097d1219f",
+             "license": "Apache-2.0", "languages": "한국어·영어 등 30개 언어와 중국어 방언 22개", "params": "0.6B"}, …]}
+```
+
+- **모델 소개(2026-10-14, 추가 키만).** `model_name`(공식 이름을 풀어 쓴 것)·`publisher`(만든 곳)·`license`(Apache-2.0, MIT, OpenMDW-1.1, CC-BY-4.0 …)·`source`(내려받는 곳: HF 저장소 ID 또는 URL)는 항상 비어 있지 않은 문자열이다. `converted_by`(커뮤니티 변환본이면 변환한 곳, 공식 가중치 그대로면 `null`)·`revision`(고정한 리비전 전체. 고정하지 않은 voices·fluid는 `null`)·`languages`·`params`(카드에 적혀 있을 때만)는 `null`일 수 있다. 앱은 `revision`의 앞 8자만 보이고 전체는 `title`에 둔다. 값은 `models_registry.py`의 모델 줄 주석에 적은 모델 카드(HF API·README)·NOTICE로 2026-10-14에 확인했고, 확인하지 못한 값은 추측하지 않고 `null`이다(`tests/test_models.py`가 빈 값과 다운로드 상수와의 일치를 검사한다). 이름·만든 곳 같은 문구의 기준은 WORDS.md §4.14다.
+
+- `state`: `installed`(파일이 모두 있고 크기가 맞음) · `missing`(없음) · `partial`(일부만, 또는 받다 만 `.incomplete`·`.part`가 있음. `installed_bytes`에 받은 바이트) · `corrupt`(파일 크기가 다름, voices는 sha256 불일치). fluid는 모델 폴더와 도우미 프로그램이 모두 있어야 `installed`(모델만 있으면 `partial`).
+- `group`: `convert` · `speakers` · `words` · `search`. `level`: `required` · `recommended` · `optional`. `download_active`: 다른 프로세스가 이 폴더에서 받는 중.
+- 받기를 마치면 HF 모델 폴더에 `.tractus-model.json`(`{id, revision, files, completed_at}`)을 **맨 마지막에** 쓴다. 상태 판단은 파일 크기가 기본이고, 이 표시가 있으면 `revision`이 레지스트리와 같은지도 본다(다르면 `partial`: 다시 받으면 새 리비전으로 채운다). 표시가 없는 폴더(직접 받은 것)는 파일이 맞으면 설치로 본다. 내용 해시는 voices만 확인한다.
+
+#### `tractus models download [ID …] [--preset required|standard|lite|all] [--progress-json]`
+
+ID와 프리셋을 함께 주면 합친다(중복 제거, 레지스트리 순서). 이미 설치된 모델은 건너뛴다. HF 모델은 `huggingface_hub.snapshot_download(repo, revision, local_dir, allow_patterns=<레지스트리의 파일 목록>)`로 받고(이어받기), voices는 URL에서 받아 sha256을 검증하며(`.part`에서 Range로 이어받기. 이미 크기가 다 찬 `.part`는 요청 없이 sha256만 확인한다), fluid는 도우미 `tractus-diar download --models <폴더>`를 부른다.
+
+| 프리셋 | 모델 |
+| --- | --- |
+| `required` | `vad` + 메모리가 권하는 엔진(16GB 이상 `asr-std`, 미만 `asr-lite`) |
+| `standard` | `vad` `asr-std` `diarizer` `aligner` `embedding` `voices` (실시간 텍스트 변환을 쓰려면 `asr-lite`를 더한다) |
+| `lite` | `vad` `asr-lite` `diarizer` |
+| `all` | 전부. `tractus-diar`가 없으면 fluid는 건너뛰고 경고 `fluid_skipped` |
+
+- **받기 전 확인.** 받을 바이트(이미 받은 만큼 뺀 값)의 1.1배보다 남은 공간이 적으면 아무것도 받지 않고 `disk_full`. `corrupt`인 모델이 있으면 `corrupt`(받기는 아무것도 지우지 않는다: `models remove <id> --yes` 뒤에 다시 받는다).
+- **한 번에 하나.** 모델 폴더의 `.tractus-models.lock`을 `flock`으로 잡고 PID를 적는다. 이미 받는 중이면 `busy`. 프로세스가 죽으면 잠금은 저절로 풀린다. `models list`의 `download_active`는 잠금을 잡아 보지 않고 이 PID가 살아 있는지만 본다(확인이 받기를 막지 않는다).
+- **SIGTERM·SIGINT.** HF 받기는 `hf_xet`을 끄고(`HF_HUB_DISABLE_XET`) 일반 HTTP로 받는다: xet은 진행을 자기 스레드에서 알려서 취소가 전송을 멈추지 못한다. 받던 파일(`.incomplete`·`.part`)을 남기고 잠금을 놓고 `{"event":"cancelled"}`, 종료 코드 130. 같은 명령을 다시 돌리면 이어받는다. 두 번째 신호는 즉시 종료한다.
+- 종료 코드: 성공 0, 오류 1, 인수 오류 2, 중단 130.
+
+이벤트(`--progress-json`, stdout JSON Lines):
+
+```jsonc
+{"event":"warning","code":"fluid_skipped","message":"…"}                       // preset all인데 도우미가 없음
+{"event":"stage","stage":"download","model":"asr-std","index":2,"count":3,"size_bytes":2467856503}
+{"event":"progress","model":"asr-std","file":"model.safetensors","bytes_done":123456,"bytes_total":2467856503,
+ "overall_done":1361779,"overall_total":2469094826}                              // 0.25초에 한 번 이하. file은 최선(아직 덜 받은 가장 큰 파일, 없으면 null)
+{"event":"model_done","model":"asr-std"}
+{"event":"done","models":["vad","asr-std"],"already":["diarizer"]}              // models: 이번에 받음, already: 이미 설치돼 건너뜀
+{"event":"error","message":"…","code":"no_network","model":"asr-std"}           // model은 있을 때만. 종료 코드 1
+{"event":"cancelled"}                                                           // 종료 코드 130
+```
+
+오류 코드: `no_network`(연결·DNS·시간 초과·`HF_HUB_OFFLINE`) · `disk_full`(사전 확인 또는 `ENOSPC`) · `auth`(HTTP 401·403, 비공개·약관 동의가 필요한 저장소) · `hash_mismatch`(sha256 또는 받은 뒤 크기 불일치. voices는 받은 파일을 지운다) · `helper_missing`(fluid인데 `tractus-diar`가 없음, `message`에 빌드 명령) · `corrupt`(받기 거부, 먼저 remove) · `busy`(다른 받기 진행 중) · `bad_argument`(모르는 ID·프리셋, 종료 코드 2) · `unknown`. 오류 문구는 `자세히`에 접는다.
+
+#### `tractus models remove ID [--yes]`
+
+모델 폴더 하나를 지운다. 모델 폴더(`TRACTUS_MODELS_DIR`) 바로 아래의 실제 폴더만 지우고(심볼릭 링크나 바깥을 가리키면 `unsafe_path`. 폴더가 아닌 파일이어도 같다), 받기 잠금을 잡을 수 없으면 `busy`. `--yes` 없이는 확인한다. 출력: `{"id": "vad", "removed": true, "freed_bytes": 1238323}`(폴더가 없으면 `removed: false`). fluid는 모델 폴더만 지우고 도우미 프로그램은 그대로 둔다. 이 명령 말고는 코어가 모델 파일을 지우지 않는다.
+
+#### `tractus doctor [--json]`
+
+없는 것이 있어도 종료 코드 0이다. 앱은 시작할 때, 받기·지우기 뒤, 창에 초점이 돌아올 때 부른다.
+
+```json
+{"system": {"arch": "arm64", "macos_version": "15.2", "memory_gb": 16.0, "meets_min": true, "problems": [],
+            "standard_recommended": true, "disk_free_bytes": 199610109952, "models_dir": "…"},
+ "tools": {"brew": {"found": true, "path": "/opt/homebrew/bin/brew", "version": null},
+           "ffmpeg": {"found": true, "path": "/opt/homebrew/bin/ffmpeg", "version": "8.1.1"},
+           "recorder": {"found": true, "path": "…/recorder/.build/release/tractus-rec"},
+           "diar_helper": {"found": false, "path": "…/recorder/diar/.build/release/tractus-diar"}},
+ "models": [{"id": "vad", "level": "required", "state": "installed"}, …],
+ "capabilities": [{"id": "convert", "name": "텍스트로 변환", "ready": false, "missing": ["asr-std", "ffmpeg"],
+                   "hint": "tractus models download asr-std; brew install ffmpeg"}, …],
+ "recommended_track": "standard", "effective_track": null}
+```
+
+- 최소 사양: Apple Silicon(`arm64`), macOS 14.4 이상, 메모리 8GB 이상. 못 미치면 `meets_min: false`와 `problems`(`not_apple_silicon` · `macos_too_old` · `memory_low`). 표준 엔진은 16GB 이상을 권한다(`standard_recommended`).
+- 도구 위치: `brew`는 `PATH` 또는 `/opt/homebrew/bin`·`/usr/local/bin`(ffmpeg 설치 안내용, 기능에는 쓰지 않는다), `ffmpeg`는 `PATH`, `recorder`는 `$TRACTUS_REC_BIN` 또는 `<저장소>/recorder/.build/release/tractus-rec`, `diar_helper`는 `$TRACTUS_DIAR_BIN` 또는 `<저장소>/recorder/diar/.build/release/tractus-diar`. 앱이 다른 위치를 쓰면(설정의 녹음 프로그램 경로) 환경변수로 넘긴다. 마이크·시스템 오디오 권한은 macOS가 첫 녹음에서 물으므로 미리 확인할 방법이 없다.
+- `capabilities[].missing`은 채울 모델 ID와 도구 이름(`ffmpeg` · `recorder` · `diar_helper`), 그리고 못 채우는 `memory`(live, 16GB 미만)다. `vad`+엔진이 둘 다 없으면 엔진은 메모리가 권하는 쪽만 적는다. `partial`·`corrupt`인 모델은 없는 것으로 친다. `hint`는 개발자용 명령이다(`tractus models download <id>`, `brew install ffmpeg`, 빌드 명령).
+- `recommended_track`: 메모리가 권하는 트랙(`standard`|`lite`). `effective_track`: 지금 `--track` 없이 변환하면 쓸 트랙, 쓸 수 있는 엔진이 없으면 `null`.
+
+#### 변환 엔진 자동 선택 (`transcribe`)
+
+`--track`이 없으면 메모리가 권하는 트랙의 모델이 있으면 그것을 쓴다. 없고 다른 트랙의 모델이 있으면 그것으로 변환하고 경고 `{"event":"warning","code":"asr_track_fallback","message":"…"}`를 낸다(진행 중 작업의 이어하기는 기록된 트랙을 그대로 쓴다). 둘 다 없으면 지금처럼 `model_missing`(종료 코드 1, `message`에 `tractus models download <id>`와 `hf download …`). 고른 트랙은 지금처럼 `transcript.json`의 `asr.track`에 남는다. `--track`을 직접 주면 그 트랙만 쓴다. "쓸 수 있다"는 설치가 끝났거나(§위), 가중치 없이 `config.json`만 있는 폴더(직접 만든 폴더·테스트 픽스처)이고 받다 만 파일이 없는 경우다. `local_model`(변환·실시간이 모델을 열기 전)도 같은 검사를 하므로, 받다 만 모델은 트레이스백 대신 `model_missing`으로 알린다.
+
+- **테스트.** `tests/test_models.py`(가짜 폴더·로컬 HTTP 서버·시뮬레이션 오류, 실제 모델 불필요) + `@pytest.mark.network` 하나(`pytest -m network`: 작은 VAD를 임시 폴더에 받아 `list`가 설치됨으로 읽는지).
+- **알려진 한계.** 허브가 파일 이름을 알려 주지 않아 `progress.file`은 추정이다. 이어받기 때 `bytes_done`은 허브 막대의 값이라 이미 받은 바이트를 빼고 시작할 수 있다. `fluid`의 받기 진행은 도우미가 이벤트를 내지 않아 `stage`와 `model_done`뿐이다. 받는 중에 앱 프로세스가 강제 종료되면 `.incomplete`가 남는다(다시 받으면 이어받는다). 설치 판정은 크기만 보므로 같은 크기로 바뀐 가중치는 못 잡는다(voices는 sha256 확인, 리비전이 다른 폴더는 완료 표시로 잡는다).
+
 ## 3. Tauri 앱 (app/)
 
 - **스택:** Tauri 2 + React + TypeScript + Vite. 오디오는 자체 `media://` URI 스킴(`convertFileSrc(path, "media")`, MIME `audio/ogg`, HTTP Range 지원, `TRACTUS_HOME` 밖 경로 거부)으로 `<audio>`에 연결한다. Tauri 기본 asset protocol은 `.ogg`/`.opus`의 MIME과 Range 처리가 맞지 않아 쓰지 않는다(`app/README.md`).
@@ -457,7 +714,14 @@ Tauri 명령 (`src-tauri/src/removal.rs`, `lib.rs`):
 - **단어 싱크 상태:** 노트 ID별로 앱 전체 저장소(`alignStore.ts`)에 둔다. 작업 중에 노트를 닫았다 다시 열어도 진행이 보이고, 같은 노트의 단어 싱크를 또 시작하지 못한다. 끝났다는 알림은 노트가 열려 있지 않아도 App이 띄운다.
 - **가라오케(재생 중인 단어 강조):** 시작 시각이 같은 단어(실측 노트 하나에 132쌍)는 다음 다른 시작 시각까지를 균등하게 나눠 차례로 칠하고, 길이 0인 단어도 최소 0.12초는 칠한다(`lib.wordClock`, 단어 배열마다 캐시한 시작 시각 배열을 이진 탐색해 O(log n)). 마지막 단어는 `max(세그먼트 끝, wordClock.end)`까지 칠한다. 단어를 눌러 이동할 때도 같은 시각을 쓴다.
 - **삭제된 노트의 인용:** 전체 범위 AI 질문의 인용 칩은 노트 목록에 없는 노트를 가리키면(답을 쓰는 사이에 지워졌거나 지워진 뒤) 누를 수 없고 `삭제된 노트입니다`라는 설명만 보인다. 목록을 새로 읽을 때마다 다시 판단한다.
-- **목소리 등록 가능 여부:** 이름 바꾸기의 '목소리 등록' 체크는 `voices list --json`의 `model_present`가 `false`이면 끄고 이유(`목소리 인식에 필요한 파일이 없어 …`)와 설치 안내(`자세히`)를 보인다. 키가 없으면 쓸 수 있다고 본다. Rust `voices_list`가 이 값을 그대로 넘긴다(`VoiceList.model_present`).
+- **목소리 등록 가능 여부:** 이름 바꾸기의 '목소리 등록' 체크는 `doctor`의 기능 `voices`가 준비되지 않았으면 `aria-disabled`로 두고 이유와 `모델 설치`를 보인다(`useVoicesGate`). 점검을 못 읽는 옛 코어일 때만 `voices list --json`의 `model_present`(키가 없으면 쓸 수 있다고 본다)를 쓴다. Rust `voices_list`가 이 값을 그대로 넘긴다(`VoiceList.model_present`).
+
+#### 모델·점검의 앱 쪽 (§2.15를 쓴다, v3.23)
+
+- **Rust 명령** (`models.rs`, 모두 인수 배열): `models_list`(`models list --json`), `doctor`(`doctor --json` + 앱이 쓰는 `tractus`·`tractus-rec` 경로가 있는지), `models_download(job, ids, preset)`(`models download <id>… [--preset P] --progress-json`), `models_cancel`, `models_remove(id)`(`models remove <id> --yes`), `set_checkup_done(done)`(설정 파일의 `checkup_done`만 바꾼다). 모델 ID는 `^[a-z0-9-]{1,40}$`(처음은 `-`가 아님), 구성은 `required|standard|lite|all`만 받고, 한 번에 16개까지다. 응답은 느슨하게 읽는다: 모르는 키·이상한 항목은 버리고 빠진 키는 빈 값이다(`parse_models_list`·`parse_doctor`). 모델 소개 키(`model_name` 등)는 문자열일 때만 받고 아니면 없는 것으로 본다(옛 코어는 키가 없어 모델 화면이 이름 아래 한 줄과 `자세히`를 보이지 않는다). **`doctor`는 실패하지 않는다**: 코어를 못 불러도(경로가 틀림, `doctor`가 없는 옛 코어) `{doctor: null, core_error, tractus_bin(_exists), rec_bin(_exists)}`로 답한다.
+- **받기 작업.** `job` 이벤트(`kind: "models"`, `job`은 프론트엔드가 만든 ID)로 코어의 JSON 줄(§2.15 이벤트)과 마지막 `exit`를 그대로 보낸다. 받기는 앱 전체에서 한 번에 하나다(앱이 한 번 더 확인하고, 코어도 `busy`). `models_cancel`은 SIGTERM을 보내 코어가 받던 파일을 남기고 멈추게 하고(`cancelled` + 종료 코드 130), 10초 뒤에도 남아 있으면 SIGKILL한다. 앱을 끄면 받기에 SIGTERM을 보낸다. 상태는 `modelsJob.ts`(앱 전체 저장소)가 `models.downloadReduce`로 모으므로 모델 화면·시작 점검을 닫았다 열어도 진행이 이어진다. 코어가 알리는 `overall_done/overall_total`을 전체 진행률로 쓰고, 없으면 받을 모델의 크기 합으로 센다.
+- **기능 잠금 (`useCapabilities`, `caps.ts`).** App이 시작할 때, 받기·지우기·설정 저장 뒤에, 창 초점이 돌아올 때(0.6초 디바운스, 5초 이내 반복 없음) `doctor`를 불러 `CapsContext`로 내려 준다. `can(id)` → `{ok}` 또는 `{ok: false, reason, missing, fix}`. 점검 결과가 없거나 그 기능이 점검에 없으면 `ok`다(앱을 막지 않는다). 못 쓰는 단추는 `GatedButton`(`aria-disabled`, 누르면 이유 팝오버 + 고치는 단추)과 `GateHint`(이유 한 줄 + 단추)로 한 곳에서 그린다. 잠그는 곳: 변환(파일 가져오기·`파일에서 추가`·끌어 놓기·`변환 대기 중인 녹음`의 변환), 녹음 프로그램(녹음 시작·녹음 추가), 단어 싱크 맞추기, 실시간 텍스트 변환 체크, 목소리 등록 체크, 참석자 구분 안내(노트마다 한 번 닫기), 스마트 검색(설정 상태·⌘K 검색). 변환할 수 없는 동안 녹음은 저장만 하고 변환을 시작하지 않는다(`변환 대기 중인 녹음`으로 남는다).
+- **시작 점검 (`Checkup.tsx`, `checkupRows.ts`).** 설정의 `checkup_done`이 `false`(키가 없어도)인 처음 실행에 한 번 저절로 열린다. 닫으면(Esc·닫기·`점검 마치기`) `true`로 저장한다. 행은 `ok|warn|blocked|info`: 시스템(Apple Silicon·macOS 14.4+·메모리·디스크), 도구(앱이 쓰는 `tractus` 경로·`ffmpeg`+복사할 `brew install ffmpeg`·`tractus-rec` 경로·`tractus-diar`), 모델(필수·권장·선택 요약 + 구성 단추), 권한 안내(글), AI 키(`llm_key_status`). 디스크 기준: 표준 구성 약 5.2 GB, 저사양 약 1.2 GB(레지스트리 크기의 합).
 
 ### v1 화면
 

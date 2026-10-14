@@ -38,7 +38,6 @@ import {
   liveHaltView,
   splitMessage,
   VOICE_MODEL_MISSING,
-  VOICE_MODEL_SETUP,
   voiceModelReady,
   stderrTail,
   JOB_ERROR,
@@ -256,7 +255,6 @@ describe("jobReduce", () => {
     expect(voiceModelReady({})).toBe(true);
     expect(voiceModelReady(null)).toBe(true);
     expect(VOICE_MODEL_MISSING).toMatch(/파일이 없어 목소리를 등록할 수 없습니다/);
-    expect(VOICE_MODEL_SETUP).toContain("3dspeaker-campplus-zh-en");
   });
 });
 

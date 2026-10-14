@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { api, errDetail, errText, type McpStatus, type Settings, type VoiceList, type VoicePerson } from "./api";
 import { ErrorDetail } from "./ErrorDetail";
+import { CHECKUP_OPEN, MODELS_OPEN } from "./caps";
+import { GateHint } from "./GatedButton";
+import { useCapabilities } from "./useCapabilities";
 import { onIndexed } from "./indexer";
 import { recMode, statusLine, withRecMode } from "./lib";
+import { LlmKeySection } from "./LlmKeySettings";
+import { TemplatesSection } from "./TemplatesSettings";
 
-const FIELDS: { key: keyof Omit<Settings, "fake_recorder" | "rec_mode" | "live_captions">; label: string; hint: string }[] = [
+const FIELDS: { key: keyof Omit<Settings, "fake_recorder" | "rec_mode" | "live_captions" | "checkup_done" | "list_sort" | "list_order">; label: string; hint: string }[] = [
   { key: "home", label: "데이터 위치 (TRACTUS_HOME)", hint: "meetings/와 recordings/가 들어 있는 폴더" },
   { key: "models_dir", label: "변환 엔진 위치 (TRACTUS_MODELS_DIR)", hint: "비우면 데이터 위치의 models/" },
   { key: "tractus_bin", label: "tractus 실행 파일", hint: "전체 경로로 적습니다 (앱은 터미널의 PATH를 읽지 않습니다)" },
@@ -16,6 +21,8 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [msgDetail, setMsgDetail] = useState<string | null>(null); // 저장 실패의 원래 문구(OS 사유)
   const [status, setStatus] = useState<McpStatus | { text: string; detail: string | null } | null>(null);
+  const caps = useCapabilities();
+  const liveGate = caps.can("live");
 
   useEffect(() => {
     api.getSettings().then(setS, (e) => {
@@ -45,6 +52,14 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
     <section className="settings" aria-labelledby="settings-title">
       <p className="eyebrow">설정</p>
       <h1 id="settings-title">경로와 실행 파일</h1>
+      <p className="settings-setup">
+        <button type="button" className="ghost-button" onClick={caps.openCheckup}>
+          {CHECKUP_OPEN}
+        </button>
+        <button type="button" className="ghost-button" onClick={caps.openModels}>
+          {MODELS_OPEN}
+        </button>
+      </p>
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -75,12 +90,19 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
           </span>
         </label>
         <label className="check">
-          <input type="checkbox" checked={s.live_captions} onChange={(e) => setS({ ...s, live_captions: e.target.checked })} />
+          <input
+            type="checkbox"
+            checked={s.live_captions}
+            aria-disabled={!liveGate.ok && !s.live_captions ? true : undefined}
+            // 변환 엔진(0.6B)이 없으면 켤 수 없다. 이미 켜져 있던 것을 끄는 것은 언제나 된다. 이유는 아래 안내
+            onChange={(e) => (liveGate.ok || !e.target.checked) && setS({ ...s, live_captions: e.target.checked })}
+          />
           <span>
             녹음 중 실시간 텍스트 변환 (미리보기) — 말하는 동안 내용을 바로 보여 줍니다. 녹음 종료 후 고품질 텍스트로 정돈되며, 실시간 변환 내용은 저장하지 않습니다.
             녹음하는 동안 메모리를 약 2 GB 더 씁니다 (메모리 16 GB 미만 Mac에서는 켜지지 않습니다). 다음 녹음부터 적용됩니다.
           </span>
         </label>
+        <GateHint gate={liveGate} />
         <div className="settings-actions">
           <button className="primary-button" type="submit">
             저장
@@ -101,12 +123,17 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
               <ErrorDetail detail={status.detail} />
             </div>
           ) : (
-            <p>{statusLine(status)}</p>
+            <>
+              <p>{statusLine(status)}</p>
+              <GateHint gate={caps.can("smart-search")} />
+            </>
           )}
         </div>
       )}
 
+      <LlmKeySection />
       <VoicesSection home={s.home} />
+      <TemplatesSection />
     </section>
   );
 }

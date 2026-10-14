@@ -1,11 +1,32 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { JobState, LiveState, RecState } from "./api";
+import { RECORD_LABEL } from "./attach";
 import { ErrorDetail } from "./ErrorDetail";
+import { GateHint } from "./GatedButton";
+import { useCapabilities } from "./useCapabilities";
 import { errorView, fmtTime, JOB_ERROR, levelFraction, liveHaltView, liveHalted, REC_MODES, STAGE_LABEL, warningText } from "./lib";
 
 type Send = (cmd: "bookmark" | "memo" | "stop", text?: string) => Promise<void>;
 
-export function RecordView({ rec, captions, job, send, retry }: { rec: RecState; captions: LiveState; job: JobState; send: Send; retry: () => void }) {
+export function RecordView({
+  rec,
+  captions,
+  job,
+  send,
+  retry,
+  attachTitle = null,
+  unconverted = null,
+}: {
+  rec: RecState;
+  captions: LiveState;
+  job: JobState;
+  send: Send;
+  retry: () => void;
+  attachTitle?: string | null;
+  /** 변환 엔진이 없어 녹음만 저장했을 때의 안내 문장 (없으면 null). 변환 진행 줄 대신 보인다 */
+  unconverted?: string | null;
+}) {
+  const caps = useCapabilities();
   const [memo, setMemo] = useState("");
   // 한글 조합 중 Enter로 제출하고 입력을 비우면 조합 중인 글자가 다시 들어간다(한 글자짜리 메모가 하나 더 생김).
   // 조합 중에는 제출하지 않는다. 조합이 끝난 뒤의 Enter가 제출한다
@@ -23,6 +44,8 @@ export function RecordView({ rec, captions, job, send, retry }: { rec: RecState;
         {rec.phase === "error" && "녹음 오류"}
         {rec.phase === "idle" && "녹음"}
       </p>
+
+      {attachTitle !== null && <p className="record-attach">{RECORD_LABEL(attachTitle)}</p>}
 
       <time className={`record-clock tnum ${live ? "is-live" : ""}`} aria-live="off">
         {fmtTime(rec.t)}
@@ -87,7 +110,13 @@ export function RecordView({ rec, captions, job, send, retry }: { rec: RecState;
         </>
       )}
 
-      {(rec.phase === "stopped" || job.running || job.error) && <JobProgress job={job} retry={retry} />}
+      {unconverted && rec.phase === "stopped" && !job.running && (
+        <div className="job" role="status">
+          <p>{unconverted}</p>
+          <GateHint gate={caps.can("convert")} />
+        </div>
+      )}
+      {!(unconverted && rec.phase === "stopped" && !job.running) && (rec.phase === "stopped" || job.running || job.error) && <JobProgress job={job} retry={retry} />}
 
       {rec.marks.length > 0 && (
         <ol className="mark-list">

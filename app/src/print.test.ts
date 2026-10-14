@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { printDoc } from "./print";
+import { parseSummaryDoc } from "./summaries";
 
 const base = {
   info: { title: "주간 개발 회의", created_at: "2026-10-02T14:05:00+09:00", duration_sec: 3723 },
@@ -48,5 +49,40 @@ describe("PDF 인쇄 문서", () => {
     expect(d.speakers).toEqual([]);
     expect(d.summary).toBeNull();
     expect(d.rows).toEqual([{ id: "s0001", time: "0:00", speaker: null, text: "a" }]);
+  });
+});
+
+describe("PDF 인쇄: 고른 요약 하나만 (요약 유형)", () => {
+  const generic = parseSummaryDoc({
+    key: "brief",
+    template_name: "핵심 요약",
+    overview: "예산을 정했다.",
+    sections: [
+      { heading: "핵심 포인트", style: "bullets", items: [{ text: "예산 3억", segment_ids: ["s0003", "s0002"], owner: null, due: null }] },
+      { heading: "할 일", style: "checklist", items: [{ text: "견적 받기", segment_ids: [], owner: "김민수", due: "10/9" }] },
+      { heading: "비어 있음", style: "bullets", items: [] },
+    ],
+  })!;
+  test("새 요약은 generic으로, 옛 요약 칸은 비운다", () => {
+    const d = printDoc(base, generic);
+    expect(d.summary).toBeNull();
+    expect(d.generic).toEqual({
+      name: "핵심 요약",
+      lead: "예산을 정했다.",
+      sections: [
+        { title: "핵심 포인트", style: "bullets", items: [{ text: "예산 3억", meta: "", at: "0:10" }] },
+        { title: "할 일", style: "checklist", items: [{ text: "견적 받기", meta: "김민수 · 10/9", at: null }] },
+      ],
+    });
+  });
+  test("고른 것이 옛 요약이면 옛 칸 그대로, 고른 게 없으면(null) 요약 없이, 생략하면 d.summary", () => {
+    const legacy = parseSummaryDoc({ key: "meeting", summary: "옛 요약", decisions: [{ text: "결정", segment_ids: ["s0002"] }] })!;
+    const d = printDoc(base, legacy);
+    expect(d.generic).toBeNull();
+    expect(d.summary?.lead).toBe("옛 요약");
+    expect(d.summary?.decisions).toEqual([{ text: "결정", at: "0:10" }]);
+    expect(printDoc(base, null)).toMatchObject({ summary: null, generic: null });
+    expect(printDoc(base).summary?.lead).toBe("예산을 정했다.");
+    expect(printDoc(base).generic).toBeNull();
   });
 });

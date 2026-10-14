@@ -3,6 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Citation, ChatMessage, LlmConfig } from "./ask";
+import type { DoctorReport } from "./caps";
+import type { ModelsList } from "./models";
+import type { Folder, MetaPatch, NoteMeta, SortKey, SortOrder } from "./organize";
+import { parseSummaryDocs, type TemplateInfo } from "./summaries";
 import { APP_ERROR, DetailedError, IDLE_JOB, splitMessage, IDLE_LIVE, IDLE_REC, jobReduce, liveReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type LiveEvent, type LiveState, type Memo, type NoteMemo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
 
 export type { JobState, LiveState, RecState } from "./lib";
@@ -17,6 +21,13 @@ export interface MeetingInfo {
   has_summary: boolean;
   /** "memo": 녹음 없이 직접 쓴 노트 (길이 0). 없거나 다른 값이면 녹음 (memo.kindOf) */
   kind?: "recording" | "memo";
+  /** 사용자가 정리한 정보 (docs/desktop.md §2.12). 없으면 즐겨찾기 아님·태그 없음·폴더 없음 */
+  favorite?: boolean;
+  tags?: string[];
+  /** 폴더 ID. 지워진 폴더를 가리키면 폴더 없음으로 본다 (organize.folderOf) */
+  folder?: string | null;
+  /** 마지막으로 내용을 고친 시각. 정리 정보만 바꾼 것은 올리지 않는다. 옛 노트는 만든 시각 */
+  updated_at?: string;
 }
 
 export interface Summary {
@@ -70,6 +81,8 @@ export interface PendingRecording {
   dir: string;
   started_at: string;
   duration: number | null;
+  /** 글만 있는 노트에 추가하려고 녹음한 것이면 그 노트의 ID (attach.json). 노트가 아직 있는지는 attach.resolveTarget이 본다 */
+  attach_to?: string | null;
 }
 
 export interface Settings {
@@ -82,6 +95,11 @@ export interface Settings {
   rec_mode: string;
   /** 녹음 중 실시간 자막 (Phase 7.2). 기본 꺼짐. Rust가 녹음을 시작할 때 읽어 `tractus live`를 띄운다 */
   live_captions: boolean;
+  /** 노트 목록 순서 (organize.readSortPrefs로 읽는다) */
+  list_sort?: string;
+  list_order?: string;
+  /** 시작 점검(checkupRows.ts)을 한 번 보여 줬는가. 처음 실행할 때만 저절로 열린다 */
+  checkup_done?: boolean;
 }
 
 export interface SearchHit {
@@ -147,14 +165,33 @@ export const api = {
   indexRefresh: () => invoke<boolean>("index_refresh"),
   /** `tractus glossary add`. 새로 더한 개수 */
   glossaryAdd: (terms: string[]) => invoke<number>("glossary_add", { terms }),
+  /** `tractus templates list --json`: 기본 요약 유형 → 내 요약 유형 (docs/desktop.md §2.13) */
+  templatesList: () => invoke<TemplateInfo[]>("templates_list"),
+  /** `tractus templates save`: 내 요약 유형 만들기(id 없음)·고치기. 저장한 유형 */
+  templatesSave: (id: string | null, name: string, description: string, prompt: string) => invoke<TemplateInfo>("templates_save", { id, name, description, prompt }),
+  templatesDelete: (id: string) => invoke<void>("templates_delete", { id }),
+  /** 노트의 요약 전부(기본 + summaries/). 원본 JSON + key라 summaries.parseSummaryDocs로 읽는다 */
+  summariesList: async (id: string) => parseSummaryDocs(await invoke<unknown[]>("summaries_list", { id })),
+  summariesDelete: (id: string, key: string) => invoke<void>("summaries_delete", { id, key }),
   /** `tractus note new`: 새 메모 노트(기본 제목 `메모 HH:MM`). 만든 노트 ID */
   noteNew: (title?: string) => invoke<{ meeting_id: string }>("note_new", { title: title ?? null }),
   /** `tractus note save`: 메모 본문 전체를 저장한다 (메모 노트는 본문, 녹음 노트는 메모 탭의 글). 코어가 만든 줄 수와 고친 노트. 노트별 줄(editQueue)에 세워서 부른다 */
   noteSave: (id: string, body: string) => invoke<{ segments: number; meeting: MeetingDetail }>("note_save", { id, body }),
   /** `tractus note title`: 제목 바꾸기(녹음·메모). 폴더 이름은 그대로다. 코어가 정한 제목 */
   noteTitle: (id: string, title: string) => invoke<string>("note_title", { id, title }),
+  /** 노트 정리 (docs/desktop.md §2.12): `tractus note meta`. 준 키만 바뀌고, 코어가 저장한 값을 돌려준다. 노트별 줄(editQueue)에 세워서 부른다 */
+  noteMeta: (id: string, patch: MetaPatch) => invoke<NoteMeta>("note_meta", { id, patch }),
+  /** $TRACTUS_HOME/folders.json (읽기만. 깨졌거나 없으면 빈 목록) */
+  listFolders: () => invoke<Folder[]>("list_folders"),
+  /** `tractus folders create | rename | move | delete`. 모두 바뀐 폴더 목록을 돌려준다. delete는 노트를 지우지 않고 상위로 올린다 */
+  foldersCreate: (name: string, parent: string | null) => invoke<Folder[]>("folders_create", { name, parent }),
+  foldersRename: (id: string, name: string) => invoke<Folder[]>("folders_rename", { id, name }),
+  foldersMove: (id: string, parent: string | null) => invoke<Folder[]>("folders_move", { id, parent }),
+  foldersDelete: (id: string) => invoke<Folder[]>("folders_delete", { id }),
+  /** 노트 목록 순서를 설정에 저장한다 (다른 설정은 건드리지 않는다) */
+  setListPrefs: (sort: SortKey, order: SortOrder) => invoke<void>("set_list_prefs", { sort, order }),
   /** `tractus export` 후 Finder에서 보여 준다. 저장한 절대 경로 */
-  exportMeeting: (id: string, format: string, out: string) => invoke<string>("export_meeting", { id, format, out }),
+  exportMeeting: (id: string, format: string, out: string, summary?: string) => invoke<string>("export_meeting", { id, format, out, summary: summary ?? null }),
   /** 노트 폴더를 휴지통으로 옮긴다 (되돌릴 수 있다). 처리 중이거나 변환이 끝나지 않은 노트는 거절한다. 검색 색인은 백그라운드로 정리 */
   deleteMeeting: (id: string) => invoke<void>("delete_meeting", { id }),
   /** 변환하지 않은 녹음 폴더를 휴지통으로 옮긴다 */
@@ -168,6 +205,16 @@ export const api = {
   loadChat: (id: string) => invoke<ChatEntry[]>("load_chat", { id }),
   /** 보내기 전 안내용 공급자·모델 (셸 > .env.local > .env, 코어와 같은 순서) */
   llmConfig: () => invoke<LlmConfig>("llm_config"),
+  /** AI 서비스 API 키: 등록 여부만 알 수 있다. 키는 화면으로 돌아오지 않는다 (docs/desktop.md §2.14) */
+  llmKeyStatus: () => invoke<{ saved: boolean }>("llm_key_status"),
+  llmKeySave: (key: string) => invoke<void>("llm_key_save", { key }),
+  llmKeyDelete: () => invoke<void>("llm_key_delete"),
+  /** 모델·점검 (docs/desktop.md §2.15): `tractus models list --json` / `doctor --json`. doctor는 코어를 못 불러도 실행 파일 경로 확인 결과를 돌려준다 */
+  modelsList: () => invoke<ModelsList>("models_list"),
+  doctor: () => invoke<DoctorReport>("doctor"),
+  /** 받기는 modelsJob.ts가 시작한다 (job 이벤트 kind "models"). 지우기는 받는 중이면 코어가 거절한다 */
+  modelsRemove: (id: string) => invoke<void>("models_remove", { id }),
+  setCheckupDone: (done: boolean) => invoke<void>("set_checkup_done", { done }),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setRecMode: (mode: string) => invoke<void>("set_rec_mode", { mode }),
@@ -188,42 +235,61 @@ export const errFull = errRaw;
 
 type Warning = JobState["warnings"][number];
 
-/** 작업 하나를 실행하고 진행 이벤트를 상태로 모은다. 성공(exit 0 + done)하면 onDone(meeting_id, 경고들). */
-export function useJob(onDone: (meetingId: string, warnings: Warning[]) => void) {
+/** 작업 하나를 실행하고 진행 이벤트를 상태로 모은다. 성공(exit 0 + done)하면 onDone(meeting_id, 경고들, 요약 key), 실패하면 onFail().
+ * 요약 key는 요약 작업의 done 이벤트(summary_key)에만 있다 */
+export function useJob(onDone: (meetingId: string, warnings: Warning[], summaryKey: string | null) => void, onFail?: () => void) {
   const [state, setState] = useState<JobState>(IDLE_JOB);
   const jobId = useRef<string | null>(null);
   const doneId = useRef<string | null>(null);
+  const doneKey = useRef<string | null>(null);
   const warnings = useRef<Warning[]>([]);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+  const onFailRef = useRef(onFail);
+  onFailRef.current = onFail;
 
   useEffect(() => {
     const un = listen<JobEvent>("job", ({ payload: ev }) => {
       if (ev.job !== jobId.current) return;
       // 부수 효과는 상태 갱신 함수 밖에서 (StrictMode는 갱신 함수를 두 번 부른다)
-      if (ev.event === "done") doneId.current = ev.meeting_id;
+      if (ev.event === "done") {
+        doneId.current = ev.meeting_id;
+        doneKey.current = ev.summary_key ?? null;
+      }
       if (ev.event === "warning") warnings.current = [...warnings.current, { code: ev.code, message: ev.message }];
-      if (ev.event === "exit" && ev.code === 0 && doneId.current) onDoneRef.current(doneId.current, warnings.current);
+      if (ev.event === "exit") {
+        if (ev.code === 0 && doneId.current) onDoneRef.current(doneId.current, warnings.current, doneKey.current);
+        else onFailRef.current?.();
+      }
       setState((s) => jobReduce(s, ev));
     });
     return () => void un.then((f) => f());
   }, []);
 
-  const start = useCallback(async (kind: "transcribe" | "summarize" | "import" | "align", target: string) => {
+  /** 작업 명령 하나를 시작한다 (job_start, summary_start). 작업 ID(job)는 여기서 붙인다 */
+  const run = useCallback(async (command: string, args: Record<string, unknown>) => {
     setState({ ...IDLE_JOB, running: true });
     doneId.current = null;
+    doneKey.current = null;
     warnings.current = [];
     // 작업 ID는 여기서 만든다: 빨리 끝나는 작업의 이벤트가 invoke 응답보다 먼저 와도 놓치지 않게
     const job = crypto.randomUUID();
     jobId.current = job;
     try {
-      await invoke("job_start", { kind, target, job });
+      await invoke(command, { ...args, job });
     } catch (e) {
       setState({ ...IDLE_JOB, error: errFull(e), errorCode: APP_ERROR }); // 실행 실패 등 Rust 문장은 그대로 보인다
+      onFailRef.current?.();
     }
   }, []);
 
-  return { job: state, startJob: start };
+  /** appendTo: 글만 있는 노트의 ID. transcribe·import만: 새 노트를 만들지 않고 그 노트에 녹음을 덧붙인다 (`--append-to`) */
+  const start = useCallback(
+    (kind: "transcribe" | "summarize" | "import" | "align", target: string, appendTo?: string | null) => run("job_start", { kind, target, appendTo: appendTo ?? null }),
+    [run],
+  );
+
+  return { job: state, startJob: start, runJob: run };
 }
 
 // ── 녹음 (tractus-rec record) ──
@@ -257,11 +323,12 @@ export function useRecorder(onStopped: (dir: string) => void) {
     return () => clearInterval(id);
   }, [rec.phase]);
 
-  const start = useCallback(async (mode: RecMode) => {
+  /** target: 글만 있는 노트의 ID. 있으면 그 노트에 추가하는 녹음이다 (녹음 폴더에 attach.json) */
+  const start = useCallback(async (mode: RecMode, target?: string | null) => {
     setRec({ ...IDLE_REC, phase: "starting", mode });
     setLive(IDLE_LIVE);
     try {
-      await invoke<string>("rec_start", { flags: recFlags(mode) });
+      await invoke<string>("rec_start", { flags: recFlags(mode), target: target ?? null });
     } catch (e) {
       setRec({ ...IDLE_REC, mode, phase: "error", error: errText(e) });
     }

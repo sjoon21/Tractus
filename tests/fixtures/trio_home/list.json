@@ -1,0 +1,33 @@
+[
+  {
+    "created_at": "2026-10-13T18:01:55+09:00",
+    "dir": "2026-10-13_장보기_계획_01M4T7YEJWABPHP3GATPMX8MYT",
+    "duration_sec": 9.66,
+    "favorite": true,
+    "folder": "01M4T7YETDCCCY0Z1SZP4P098P",
+    "has_summary": true,
+    "id": "01M4T7YEJWABPHP3GATPMX8MYT",
+    "kind": "recording",
+    "segments": 1,
+    "tags": [
+      "장보기",
+      "급함"
+    ],
+    "title": "장보기 계획",
+    "updated_at": "2026-10-13T18:02:25+09:00"
+  },
+  {
+    "created_at": "2026-09-01T10:00:00+09:00",
+    "dir": "2026-09-01_옛노트_01LEGACY0000000000000000AB",
+    "duration_sec": 30.0,
+    "favorite": false,
+    "folder": null,
+    "has_summary": true,
+    "id": "01LEGACY0000000000000000AB",
+    "kind": "recording",
+    "segments": 1,
+    "tags": [],
+    "title": "옛 노트",
+    "updated_at": "2026-09-01T10:00:00+09:00"
+  }
+]

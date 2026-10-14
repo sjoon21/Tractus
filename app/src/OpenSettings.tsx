@@ -1,0 +1,10 @@
+import { requestSettings } from "./llmKey";
+
+/** 요약·질문 오류 옆의 `설정 열기` (AI 키가 없을 때). App이 설정 화면으로 간다 */
+export function OpenSettings() {
+  return (
+    <button type="button" className="text-button" onClick={requestSettings}>
+      설정 열기
+    </button>
+  );
+}

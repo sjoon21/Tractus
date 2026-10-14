@@ -3108,3 +3108,1400 @@ pre.inline-error {
     margin-left: 0;
   }
 }
+
+/* 글만 있는 노트에 녹음 추가 (docs/desktop.md §2.11) */
+.record-attach {
+  margin: -4px 0 12px;
+  max-width: 44rem;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* 요약 유형·여러 요약 (docs/desktop.md §2.13): 요약 탭 */
+.summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 14px;
+}
+
+.template-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.ghost-button.picker-button,
+.summary-bar .primary-button {
+  padding: 8px 12px;
+  font-size: var(--fs-sm);
+}
+
+.picker-button span:first-child {
+  overflow: hidden;
+  max-width: 12rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 6px;
+  width: min(21rem, calc(100vw - 48px));
+  max-height: min(70vh, 34rem);
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  background: var(--paper-3);
+  color: var(--ink);
+  box-shadow: 0 22px 44px -20px rgba(0, 0, 0, 0.45), 0 2px 6px -2px rgba(0, 0, 0, 0.12);
+  animation: pop 160ms var(--ease) both;
+}
+
+.template-menu > .field-hint {
+  margin: 0 2px 2px;
+  line-height: 1.5;
+}
+
+.pick-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pick-group legend {
+  padding: 6px 2px 2px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
+.pick-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 7px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pick-row:hover,
+.pick-row:focus-within {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.pick-row input {
+  flex: none;
+  margin-top: 3px;
+  accent-color: var(--ink);
+}
+
+.pick-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.pick-name {
+  font-size: var(--fs-sm);
+  font-weight: 620;
+}
+
+.pick-name em {
+  margin-left: 8px;
+  font-size: var(--fs-xs);
+  font-style: normal;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.pick-text small {
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+.menu-action {
+  margin-top: 4px;
+  padding: 9px 8px;
+  border: 0;
+  border-top: 1px solid var(--rule);
+  border-radius: 0 0 6px 6px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font-size: var(--fs-sm);
+  font-weight: 620;
+}
+
+.menu-action:hover:not(:disabled),
+.menu-action:focus-visible {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.menu-action:disabled {
+  color: var(--ink-3);
+}
+
+.summary-progress {
+  margin: 0 0 12px;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.summary-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 3px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+}
+
+.summary-tabs button {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  transition: background var(--fast), color var(--fast);
+}
+
+.summary-tabs button:hover {
+  color: var(--ink);
+}
+
+.summary-tabs button[aria-selected="true"] {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.summary-head {
+  gap: 16px;
+}
+
+.text-button.is-danger:hover:not(:disabled) {
+  text-decoration-color: var(--danger);
+}
+
+.text-button:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.rail-list.is-bullets li::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin: 10px 0 0 4px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+/* 직접 프롬프트 대화상자 */
+.summary-dialog {
+  width: min(560px, calc(100vw - 48px));
+}
+
+.summary-dialog > p {
+  margin-bottom: 16px;
+}
+
+.summary-dialog .check,
+.summary-dialog .field {
+  margin-top: 14px;
+}
+
+.summary-prompt {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 8px;
+  background: var(--paper);
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.summary-prompt:focus {
+  border-color: var(--ink);
+  outline: none;
+}
+
+.summary-prompt[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.summary-prompt-foot {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 1.4em;
+  margin-top: 4px;
+}
+
+.summary-prompt-foot .is-over {
+  color: var(--danger);
+}
+
+.summary-dialog .primary-button[aria-disabled="true"] {
+  opacity: 0.5;
+}
+
+.summary-dialog .field input {
+  width: 100%;
+}
+
+/* 설정 › 요약 템플릿 */
+.templates {
+  max-width: 40rem;
+  margin-top: 56px;
+  padding-top: 24px;
+  border-top: 1px solid var(--rule-strong);
+}
+
+.templates h2 {
+  margin: 0 0 8px;
+  font-size: var(--fs-read);
+  font-weight: 720;
+  letter-spacing: -0.02em;
+}
+
+.templates h3 {
+  margin: 22px 0 6px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.templates > .field-hint {
+  display: block;
+  margin: 0 0 8px;
+  line-height: 1.6;
+}
+
+.template-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.template-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--fs-sm);
+}
+
+.template-name {
+  font-weight: 650;
+}
+
+.template-desc {
+  flex: 1;
+  min-width: 10rem;
+  color: var(--ink-3);
+}
+
+.template-form {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0;
+  padding: 16px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  background: var(--paper-3);
+}
+
+.template-form .summary-prompt {
+  margin-top: 0;
+}
+
+.template-form-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* ── 노트 정리: 즐겨찾기·태그·폴더·순서 (docs/desktop.md §2.12) ── */
+
+.count {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+/* 목록 위 도구: 제목 거르기 + 순서. 스크롤해도 위에 붙어 있다 */
+.list-tools {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  gap: 6px;
+  padding: 6px 16px 8px;
+  background: var(--paper-2);
+}
+
+.list-filter {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 7px;
+  background: var(--paper-3);
+  font-size: var(--fs-sm);
+  transition: border-color var(--fast);
+}
+
+.list-filter:focus {
+  border-color: var(--ink);
+  outline: none;
+}
+
+.sort-control {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.sort-control select,
+.sort-order {
+  padding: 5px 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 7px;
+  background: var(--paper-3);
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.sort-control select {
+  max-width: 6.8rem;
+}
+
+.sort-order {
+  min-width: 28px;
+}
+
+.sort-control select:hover,
+.sort-order:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+/* 구역 제목: 즐겨찾기 · 폴더 · 태그 · 전체 노트 */
+.side-section {
+  margin-top: 4px;
+}
+
+.side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 16px 16px 4px 22px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule-strong);
+  font-size: var(--fs-xs);
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  color: var(--ink-2);
+}
+
+.side-head-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+.side-chevron {
+  width: 0.9em;
+  color: var(--ink-3);
+}
+
+.side-hint {
+  margin: 4px 22px 6px;
+}
+
+.side-add {
+  margin: 2px 0 4px 22px;
+  color: var(--ink-2);
+  font-weight: 560;
+}
+
+.flat-list {
+  list-style: none;
+  margin: 0;
+  padding: 2px 12px 2px 22px;
+}
+
+/* 노트 줄. 화면 밖의 줄은 그리지 않아(content-visibility) 노트가 2,000개여도 매끄럽다. 활성 표시와 그림자가 잘리지 않게 안쪽 여백을 둔다 */
+.note-row {
+  position: relative;
+  margin: 0 -8px;
+  padding: 0 8px 4px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}
+
+.note-row .meeting-link {
+  padding-right: 34px;
+}
+
+.row-star {
+  margin-right: 5px;
+  color: var(--memo);
+}
+
+.row-tag {
+  max-width: 6.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+
+.row-tag::before {
+  content: "#";
+  color: var(--ink-3);
+}
+
+.row-more {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  padding: 0 7px 3px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--paper-3);
+  color: var(--ink-2);
+  font-weight: 700;
+  line-height: 1.2;
+  opacity: 0;
+  transition: opacity var(--fast), border-color var(--fast);
+}
+
+.note-row:hover .row-more,
+.note-row:focus-within .row-more,
+.folder-row:hover .row-more,
+.folder-row:focus-within .row-more,
+.row-more[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.row-more:hover,
+.row-more:focus-visible {
+  border-color: var(--rule-strong);
+  color: var(--ink);
+}
+
+/* 폴더 나무 */
+.folder-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 12px 0 14px;
+}
+
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 7px;
+}
+
+.note-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  max-width: 240px;
+  padding: 4px 10px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--ink);
+  color: var(--on-ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 25%);
+}
+
+body.is-note-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.folder-row.is-over {
+  background: var(--accent-wash);
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+.folder-row.is-editing {
+  margin: 2px 0;
+  padding-right: 4px;
+}
+
+.folder-twisty {
+  flex: none;
+  width: 18px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.folder-name {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  text-align: left;
+  font-size: var(--fs-sm);
+  font-weight: 560;
+  transition: background var(--fast);
+}
+
+.folder-name:hover {
+  background: color-mix(in srgb, var(--paper-3) 70%, transparent);
+}
+
+.folder-name[aria-pressed="true"] {
+  background: var(--paper-3);
+  box-shadow: 0 1px 0 var(--rule);
+  font-weight: 700;
+}
+
+.folder-name.is-none {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.folder-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-row .row-more {
+  position: static;
+  flex: none;
+}
+
+/* CSS로 그린 작은 폴더 모양 */
+.folder-glyph {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 13px;
+  height: 9px;
+  margin-top: 3px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  color: var(--ink-3);
+}
+
+.folder-glyph::before {
+  content: "";
+  position: absolute;
+  top: -4.5px;
+  left: -1.5px;
+  width: 6px;
+  height: 3px;
+  border: 1.5px solid currentColor;
+  border-bottom: 0;
+  border-radius: 2px 2px 0 0;
+}
+
+/* 태그 칩 (사이드바 걸러내기와 노트 머리 편집기가 같이 쓴다) */
+.tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 9.5rem;
+  margin: 0;
+  padding: 4px 16px 4px 22px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.tag-chip.is-filter {
+  transition: background var(--fast), color var(--fast), border-color var(--fast);
+}
+
+.tag-chip.is-filter:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.tag-chip.is-on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.tag-chip.is-on .count {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.filter-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 16px 6px 22px;
+}
+
+.filter-chip {
+  padding: 2px 9px;
+  border: 1px solid var(--ink-3);
+  border-radius: 999px;
+  background: var(--paper-3);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.filter-chip:hover {
+  border-color: var(--ink);
+}
+
+/* 단추 옆에 뜨는 메뉴 (Popover.tsx) */
+.popover {
+  position: fixed;
+  z-index: 60;
+  min-width: 200px;
+  max-width: 300px;
+  max-height: min(60vh, 420px);
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  background: var(--paper-3);
+  color: var(--ink);
+  box-shadow: 0 22px 44px -20px rgba(0, 0, 0, 0.45), 0 2px 6px -2px rgba(0, 0, 0, 0.12);
+  animation: pop 160ms var(--ease) both;
+}
+
+.popover-items {
+  display: grid;
+}
+
+.popover-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font-size: var(--fs-sm);
+  font-weight: 560;
+}
+
+.popover-item:hover,
+.popover-item:focus-visible {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.popover-item[aria-disabled="true"] {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.popover-item.has-divider {
+  margin-top: 7px;
+}
+
+.popover-item.has-divider::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  right: 6px;
+  left: 6px;
+  border-top: 1px solid var(--rule);
+}
+
+.popover-item.is-danger {
+  color: var(--danger);
+}
+
+.popover-check {
+  flex: none;
+  width: 1em;
+  text-align: center;
+  color: var(--accent);
+}
+
+.popover-label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.popover-form {
+  padding: 4px;
+}
+
+/* 폴더 이름 입력창 */
+.name-input {
+  flex: 1;
+  min-width: 11rem;
+}
+
+.name-input input {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--ink);
+  border-radius: 7px;
+  background: var(--paper-3);
+  font-size: var(--fs-sm);
+}
+
+.name-input input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus) 55%, transparent);
+}
+
+.name-error {
+  margin: 4px 2px 0;
+  font-size: var(--fs-xs);
+}
+
+/* 노트 머리의 정리 줄: 즐겨찾기 · 폴더 · 태그 */
+.note-organize {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 0;
+}
+
+.note-organize-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.organize-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 5px 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  transition: border-color var(--fast), background var(--fast), color var(--fast);
+}
+
+.organize-button:hover,
+.organize-button[aria-expanded="true"] {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.favorite-button.is-on {
+  border-color: var(--memo);
+  background: var(--memo-wash);
+  color: var(--memo);
+}
+
+.folder-path {
+  min-width: 0;
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.tag-list {
+  display: contents;
+  list-style: none;
+}
+
+.tag-list .tag-chip {
+  padding: 3px 4px 3px 11px;
+  font-size: var(--fs-sm);
+}
+
+.tag-list .tag-chip button {
+  padding: 0 6px 1px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-3);
+  font-size: var(--fs-base);
+  line-height: 1.2;
+}
+
+.tag-list .tag-chip button:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.tag-input-wrap {
+  position: relative;
+  flex: 1 1 11rem;
+  min-width: 9rem;
+  max-width: 18rem;
+}
+
+.tag-input {
+  width: 100%;
+  padding: 4px 11px;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 999px;
+  background: transparent;
+  font-size: var(--fs-sm);
+  transition: border-color var(--fast);
+}
+
+.tag-input:focus {
+  border-style: solid;
+  border-color: var(--ink);
+  outline: none;
+}
+
+.tag-input[aria-invalid="true"] {
+  border-color: var(--accent);
+}
+
+.tag-suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  min-width: 12rem;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  background: var(--paper-3);
+  box-shadow: 0 18px 36px -18px rgba(0, 0, 0, 0.45);
+}
+
+.tag-suggest li {
+  padding: 6px 9px;
+  border-radius: 6px;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.tag-suggest li:hover,
+.tag-suggest li.is-active {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.tag-error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--fs-xs);
+}
+
+.template-prompt {
+  flex-basis: 100%;
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
+.template-prompt summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.template-prompt pre {
+  margin: 6px 0 0;
+  max-height: 14em;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: inherit;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+/* ── 모델·시작 점검·기능 잠금 (docs/desktop.md §2.15, WORDS.md §4.14) ── */
+
+/* 모델이 없어 못 쓰는 단추: 눌리면 이유 팝오버가 뜬다. disabled가 아니라 aria-disabled라 초점은 받는다 */
+.is-gated {
+  opacity: 0.62;
+  cursor: help;
+}
+
+.is-gated:focus-visible {
+  opacity: 1;
+}
+
+.gate-pop {
+  display: grid;
+  gap: 10px;
+  padding: 8px;
+}
+
+.gate-pop p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.gate-pop .ghost-button {
+  justify-self: start;
+  padding: 6px 12px;
+  font-size: var(--fs-sm);
+}
+
+.gate-hint {
+  max-width: 40rem;
+  margin: 8px 0 0;
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+.gate-hint .text-button {
+  font-size: var(--fs-xs);
+}
+
+.rec-notice {
+  margin: 8px 16px 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--memo);
+  background: var(--memo-wash);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.foot-links {
+  display: flex;
+  gap: 14px;
+}
+
+.welcome-setup,
+.settings-setup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 18px 0 0;
+}
+
+.settings-setup {
+  margin: 22px 0 0;
+}
+
+.speaker-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--memo);
+  background: var(--memo-wash);
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.search-notice {
+  margin: -8px 0 20px;
+}
+
+/* 모델 화면 */
+.models .models-lead {
+  max-width: 44rem;
+  margin: 14px 0 0;
+  line-height: 1.65;
+}
+
+.models .models-where {
+  margin: 10px 0 0;
+}
+
+.preset-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px 20px;
+  max-width: 56rem;
+  margin: 24px 0 0;
+}
+
+.preset {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.preset .primary-button,
+.preset .ghost-button {
+  justify-content: space-between;
+  width: 100%;
+}
+
+.preset .field-hint {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.preset-size {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.download-panel {
+  display: grid;
+  gap: 8px;
+  max-width: 44rem;
+  margin: 20px 0 0;
+  padding: 14px 16px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  background: var(--paper-3);
+  font-size: var(--fs-sm);
+}
+
+.download-panel p {
+  margin: 0;
+}
+
+.download-panel .ghost-button {
+  justify-self: start;
+  padding: 6px 14px;
+}
+
+.download-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.download-ok {
+  font-weight: 650;
+}
+
+.models-scroll {
+  margin: 28px 0 0;
+  overflow-x: auto;
+}
+
+.models-table {
+  width: 100%;
+  min-width: 46rem;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.models-table th,
+.models-table td {
+  padding: 12px 12px 12px 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+
+.models-table thead th {
+  border-bottom: 1px solid var(--rule-strong);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+}
+
+.models-table tbody th {
+  font-weight: 400;
+  max-width: 22rem;
+}
+
+.models-name {
+  display: block;
+  font-weight: 650;
+}
+
+.models-purpose {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  color: var(--ink-3);
+}
+
+.models-subtitle {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+/* 자세히는 이름 줄 바로 아래 행에 붙는다 (이름 칸 안에 두지 않는다) */
+.models-table tr.has-more > th,
+.models-table tr.has-more > td {
+  border-bottom: 0;
+}
+
+.models-detail-row > td {
+  padding-top: 0;
+}
+
+.models-more {
+  margin-top: 0;
+  max-width: 40rem;
+  font-size: var(--fs-xs);
+}
+
+.models-more summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--ink-3);
+}
+
+.models-more summary:hover {
+  color: var(--ink);
+}
+
+.models-more summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.models-facts {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 4px;
+  /* 값을 고르고 복사할 수 있게 (주소는 열지 않는다) */
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.models-fact {
+  display: grid;
+  grid-template-columns: 5.5em minmax(0, 1fr);
+  gap: 0 10px;
+  line-height: 1.5;
+}
+
+.models-fact dt {
+  color: var(--ink-3);
+}
+
+.models-fact dd {
+  margin: 0;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.badge.level-required {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.badge.level-recommended {
+  border-color: var(--memo);
+  color: var(--memo);
+}
+
+.model-state {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.model-state.is-installed {
+  color: var(--spk-2);
+}
+
+.model-state.is-missing {
+  color: var(--ink-3);
+}
+
+.model-state.is-partial {
+  color: var(--memo);
+}
+
+.model-state.is-corrupt {
+  color: var(--danger);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.models-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.models-actions .ghost-button {
+  padding: 5px 12px;
+  font-size: var(--fs-sm);
+}
+
+/* 시작 점검 */
+.checkup {
+  width: min(640px, calc(100vw - 48px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+
+.checkup h3 {
+  margin: 0 0 6px;
+  font-size: var(--fs-sm);
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+}
+
+.checkup-section {
+  margin: 22px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule-strong);
+}
+
+.checkup-rows {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checkup-row {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.checkup-icon {
+  font-weight: 800;
+  text-align: center;
+}
+
+.checkup-row.is-ok .checkup-icon {
+  color: var(--spk-2);
+}
+
+.checkup-row.is-warn .checkup-icon {
+  color: var(--memo);
+}
+
+.checkup-row.is-blocked .checkup-icon {
+  color: var(--danger);
+}
+
+.checkup-row.is-info .checkup-icon {
+  color: var(--ink-3);
+}
+
+.checkup .checkup-label {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 650;
+  font-size: var(--fs-sm);
+}
+
+.checkup .checkup-detail {
+  margin: 2px 0 0;
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+
+.checkup .checkup-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 6px 0 0;
+}
+
+.checkup-copy code {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  font-size: var(--fs-sm);
+  user-select: all;
+}
+
+.checkup .preset-row {
+  margin-top: 12px;
+}
+
+.checkup .download-panel {
+  max-width: none;
+}
