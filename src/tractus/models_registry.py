@@ -17,6 +17,7 @@ from pathlib import Path
 from tractus import align, diarize, embed, voices
 
 LEVELS = ("required", "recommended", "optional")
+ONE_OF = "one_of"  # level_note: 같은 기능의 필수 모델 여럿 중 하나만 있으면 된다 (`level`은 그대로 required라 옛 소비자는 그대로 읽는다)
 PRESETS = ("required", "standard", "lite", "all")
 ID_RE = re.compile(r"^[a-z0-9-]+$")
 MARKER = ".tractus-model.json"  # 받기를 마친 뒤 맨 마지막에 쓴다 (id·revision·files)
@@ -51,6 +52,7 @@ class Model:
     converted_by: str | None = None  # 커뮤니티 변환본이면 변환한 곳
     languages: str | None = None
     params: str | None = None
+    level_note: str | None = None  # None | ONE_OF (화면은 `필수 (둘 중 하나)`, docs/desktop.md §2.15)
 
     @property
     def source(self) -> str:
@@ -92,14 +94,14 @@ MODELS: tuple[Model, ...] = (
         {"config.json": 463, "model.safetensors": 1237860},
         # 카드 mlx-community/silero-vad-v6: license mit, base_model snakers4/silero-vad, "~309K" 파라미터. 원 저장소 README: Silero Team, MIT. 6000개 넘는 언어 말뭉치로 학습했다고만 적혀 있고 지원 언어 목록은 없어 languages는 None
         model_name="Silero VAD v6", publisher="Silero", converted_by=MLX, license="MIT", params="309K"),
-    _hf("asr-std", "변환 엔진 (표준)", "음성을 텍스트로 바꿉니다. 가장 정확하고 메모리 16GB 이상을 권합니다.", "required", "convert",
+    _hf("asr-std", "변환 엔진 (표준)", "가장 정확합니다. 메모리 16GB 이상을 권합니다.", "required", "convert",
         "mlx-community/Qwen3-ASR-1.7B-8bit", "a8379a2e2f9e313c9292cdf1af4055ab56d50d55", "qwen3-asr-1.7b-8bit",
-        _qwen_asr(7188, 2463307541, 78968),
+        _qwen_asr(7188, 2463307541, 78968), level_note=ONE_OF,
         # 카드 mlx-community/Qwen3-ASR-1.7B-8bit: Qwen/Qwen3-ASR-1.7B에서 mlx-audio 0.3.1로 변환, apache-2.0. 원본 카드(HF 조직 Qwen): 30개 언어 + 중국어 방언 22개, ko·en 포함
         model_name="Qwen3-ASR 1.7B (8bit 양자화)", publisher="Alibaba Qwen 팀", converted_by=MLX, license="Apache-2.0", languages="한국어·영어 등 30개 언어와 중국어 방언 22개", params="1.7B"),
-    _hf("asr-lite", "변환 엔진 (가벼운 것)", "음성을 텍스트로 바꿉니다. 메모리를 덜 쓰고, 실시간 텍스트 변환에도 이 엔진을 씁니다.", "required", "convert",
+    _hf("asr-lite", "변환 엔진 (가벼운 것)", "메모리를 덜 쓰는 가벼운 엔진입니다. 실시간 텍스트 변환에는 이 엔진이 따로 필요합니다.", "required", "convert",
         "mlx-community/Qwen3-ASR-0.6B-8bit", "89e96d92ba34aca20b3e29fb10cc284097d1219f", "qwen3-asr-0.6b-8bit",
-        _qwen_asr(7187, 1006229426, 71815),
+        _qwen_asr(7187, 1006229426, 71815), level_note=ONE_OF,
         # 카드 mlx-community/Qwen3-ASR-0.6B-8bit: Qwen/Qwen3-ASR-0.6B에서 변환, apache-2.0. 언어는 1.7B와 같은 원본 카드 표
         model_name="Qwen3-ASR 0.6B (8bit 양자화)", publisher="Alibaba Qwen 팀", converted_by=MLX, license="Apache-2.0", languages="한국어·영어 등 30개 언어와 중국어 방언 22개", params="0.6B"),
     _hf("diarizer", "참석자 구분", "누가 말했는지 나눕니다. 8명까지 구분합니다.", "recommended", "speakers",

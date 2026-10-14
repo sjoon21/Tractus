@@ -62,7 +62,7 @@ def system(root: Path) -> dict:
 
 def model_row(m: reg.Model, root: Path) -> dict:
     st = reg.inspect(m.id, root)
-    return {"id": m.id, "name": m.name, "purpose": m.purpose, "level": m.level, "size_bytes": m.size_bytes, "installed": st.installed,
+    return {"id": m.id, "name": m.name, "purpose": m.purpose, "level": m.level, "level_note": m.level_note, "size_bytes": m.size_bytes, "installed": st.installed,
             "installed_bytes": st.installed_bytes, "state": st.state, "needed_by": list(m.needed_by), "group": m.group,
             "path": str(root / m.local_dir), "model_name": m.model_name, "publisher": m.publisher, "converted_by": m.converted_by,
             "source": m.source, "revision": m.revision, "license": m.license, "languages": m.languages, "params": m.params}
@@ -86,7 +86,7 @@ def report(root: Path) -> dict:
     return {
         "system": system(root),
         "tools": t,
-        "models": [{"id": m.id, "level": m.level, "state": states[m.id]} for m in reg.MODELS],
+        "models": [{"id": m.id, "level": m.level, "level_note": m.level_note, "state": states[m.id]} for m in reg.MODELS],
         "capabilities": reg.capability_status(states, {k: v["found"] for k, v in t.items()}, memory),
         "recommended_track": TRACK_OF[reg.preferred_asr(memory)],
         "effective_track": effective_track(root, memory),

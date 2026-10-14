@@ -28,6 +28,7 @@ import { RecordView } from "./RecordView";
 import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, recordingLabel, type DeleteTarget } from "./remove";
 import { SearchView } from "./SearchView";
 import { SettingsView } from "./SettingsView";
+import { createTraySender, deriveTrayState, routeTrayAction } from "./tray";
 import { NoteLibrary } from "./NoteLibrary";
 import { touchNote as touchNoteIn, type Folder } from "./organize";
 import { OrganizeContext, useOrganizeState } from "./useOrganize";
@@ -225,7 +226,7 @@ export function App() {
   };
   const askDelete = useCallback((target: DeleteTarget) => dispatchDel({ type: "ask", target }), []);
   // 변환 엔진이 없을 때 녹음은 저장만 한다: 변환을 시작하지 않고 `변환 대기 중인 녹음`에 남긴다 (준비되면 사이드바에서 변환)
-  const { rec, live, startRec, sendRec, resetRec } = useRecorder((dir) => {
+  const { rec, live, startRec, sendRec, resetRec, startedAtMs } = useRecorder((dir) => {
     if (!capsRef.current.can("convert").ok) {
       setUnconverted(true);
       dispatchAttach({ type: "abort" });
@@ -331,12 +332,17 @@ export function App() {
     return () => void un.then((f) => f());
   }, [enqueue]);
 
-  // 창을 닫으면 앱이 끝난다: 전사 중이거나 대기 중인 파일이 있으면 묻는다.
+  // 창을 닫으면 앱이 끝난다(메뉴 막대에 남기기가 꺼져 있을 때): 전사 중이거나 대기 중인 파일이 있으면 묻는다.
   // ponytail: ⌘Q는 묻지 않는다(쓰던 메모만 저장하고 끝낸다: quit-requested). 남은 전사 프로세스는 stdout이 닫혀 다음 진행 이벤트에서 끝난다
   const busyRef = useRef("");
   busyRef.current = !(transcribing || imp.job.running || queue.length) ? "" : queue.length ? `진행 중인 변환과 대기 중인 파일 ${queue.length}개가 취소됩니다.` : "진행 중인 변환이 취소됩니다.";
   useEffect(() => {
     const un = getCurrentWindow().onCloseRequested(async (e) => {
+      // 메뉴 막대에 남기는 설정이면 Rust가 창을 숨기기만 한다: 앱이 계속 돌아 녹음·변환이 이어지므로 묻지 않는다. 쓰던 메모는 저장해 둔다
+      if (await api.trayHidesOnClose().catch(() => false)) {
+        await flushMemos();
+        return e.preventDefault();
+      }
       // 저장하지 못한 메모가 있으면 묻는다 (⌘Q는 묻지 않고 저장만 마친다: quit-requested)
       if (!(await flushMemos()) && !(await ask("저장하지 못한 메모가 있습니다. 그래도 닫을까요?", { title: "Tractus 닫기", kind: "warning", okLabel: "저장하지 않고 닫기", cancelLabel: "계속 쓰기" }))) return e.preventDefault();
       if (busyRef.current && !(await ask(`${busyRef.current} 그래도 닫을까요?`, { title: "Tractus 닫기", kind: "warning", okLabel: "닫기", cancelLabel: "계속 변환" }))) e.preventDefault();
@@ -419,6 +425,42 @@ export function App() {
     }
     void go({ kind: "record" });
   };
+
+  // 메뉴 막대 아이콘 (tray.ts, docs/desktop.md §3.1): 상태를 Rust에 밀어 주고, 메뉴에서 온 동작은 위 단추와 같은 함수로 처리한다
+  const traySend = useRef(createTraySender((p) => api.trayUpdate(p)));
+  const trayState = useMemo(
+    () => deriveTrayState({ rec: { phase: rec.phase }, startedAtMs, job: { running: transcribe.job.running, done: transcribe.job.done, total: transcribe.job.total }, waiting: waitDir !== null, importing: { active: imp.job.running || queue.length > 0 || attach.phase === "converting", done: imp.job.done, total: imp.job.total }, recordOk: recordGate.ok, notes: meetings }),
+    [rec.phase, startedAtMs, transcribe.job.running, transcribe.job.done, transcribe.job.total, waitDir, imp.job.running, imp.job.done, imp.job.total, queue.length, attach.phase, recordGate.ok, meetings],
+  );
+  const trayRef = useRef(trayState);
+  trayRef.current = trayState;
+  const trayKey = JSON.stringify(trayState);
+  useEffect(() => void traySend.current(trayRef.current), [trayKey]); // 숨은 창에서도 늦지 않게 타이머 없이 바로 보낸다
+  // 메뉴 막대에서 시작한 녹음이 숨은 창에서 실패하거나 경고가 생기면 창을 꺼내 알린다 (오류·경고는 녹음 화면에만 보인다). 보이는 창은 그대로 둔다
+  const recWarns = rec.warnings.length;
+  useEffect(() => {
+    if (rec.phase === "error" || recWarns > 0) void api.trayShowIfHidden().catch(() => {});
+  }, [rec.phase, recWarns]);
+  const recPhaseRef = useRef(rec.phase);
+  recPhaseRef.current = rec.phase;
+  const trayAct = useRef<(raw: unknown) => void>(() => {});
+  trayAct.current = (raw) => {
+    const route = routeTrayAction(raw, { recPhase: recPhaseRef.current, transcribing });
+    if (!route) return;
+    // 메뉴를 빠르게 두 번 눌러도 다시 그리기 전에 두 번째가 들어올 수 있다: 보낸 즉시 단계를 앞당겨 둔다
+    if (route.kind === "start") {
+      if (recordGate.ok) recPhaseRef.current = "starting";
+      onRecordButton();
+    } else if (route.kind === "stop") {
+      recPhaseRef.current = "stopping";
+      void sendRec("stop");
+    } else if (route.kind === "bookmark") void sendRec("bookmark");
+    else openMeeting(route.id);
+  };
+  useEffect(() => {
+    const un = listen("tray-action", (e) => trayAct.current(e.payload));
+    return () => void un.then((f) => f());
+  }, []);
 
   // 글만 있는 노트에 녹음 추가 (attach.ts, docs/desktop.md §2.11). 쓰던 글을 먼저 저장한다 (저장하지 못하면 시작하지 않는다: 오류는 편집기가 보인다)
   const startAttachRecord = useCallback(

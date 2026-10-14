@@ -98,6 +98,20 @@ def test_levels_and_needed_by():
     assert all(i in known for c in reg.CAPABILITIES for g in c.models for i in g)
 
 
+def test_level_note_one_of_marks_exactly_the_either_or_models():
+    """`필수 (둘 중 하나)`: 변환 엔진 둘에만 붙고, level은 그대로 required다 (옛 소비자 호환). 실시간 텍스트 변환은 가벼운 엔진만 쓴다 (docs/desktop.md §2.8)."""
+    either_or = {i for c in reg.CAPABILITIES for g in c.models if len(g) > 1 for i in g}
+    assert either_or == {"asr-std", "asr-lite"}
+    assert {m.id for m in reg.MODELS if m.level_note == reg.ONE_OF} == either_or
+    assert all(m.level == "required" for m in reg.MODELS if m.level_note)
+    assert all(m.level_note is None for m in reg.MODELS if m.id not in either_or)
+    assert "필수" not in reg.get("asr-std").purpose and "따로 필요" in reg.get("asr-lite").purpose and "16GB 이상을 권합니다" in reg.get("asr-std").purpose
+    # 엔진 하나만 있어도 텍스트 변환은 준비된다 (둘 다 요구하지 않는다)
+    ok = {"vad": "installed", "asr-lite": "installed"}
+    conv = next(c for c in reg.capability_status(ok, {"ffmpeg": True}, 16 * 1024**3) if c["id"] == "convert")
+    assert conv["ready"] and conv["missing"] == []
+
+
 def test_hints_come_from_registry(tmp_path):
     for m in reg.MODELS:
         h = reg.install_hint(m.id, tmp_path)
@@ -555,13 +569,17 @@ def test_doctor_cli_and_models_list_cli_json_shapes(root, monkeypatch):
     d = json.loads(r.stdout)
     assert {"models_dir", "disk_free_bytes", "models", "download_active"} <= set(d) and d["download_active"] is False
     by = {m["id"]: m for m in d["models"]}
-    assert set(by["vad"]) == {"id", "name", "purpose", "level", "size_bytes", "installed", "installed_bytes", "state", "needed_by", "group", "path",
+    assert set(by["vad"]) == {"id", "name", "purpose", "level", "size_bytes", "installed", "installed_bytes", "state", "needed_by", "group", "path", "level_note",
                               "model_name", "publisher", "converted_by", "source", "revision", "license", "languages", "params"}
     assert by["asr-std"]["model_name"] == "Qwen3-ASR 1.7B (8bit 양자화)" and by["asr-std"]["source"] == "mlx-community/Qwen3-ASR-1.7B-8bit"
     assert by["vad"]["installed"] is True and by["vad"]["state"] == "installed" and by["asr-lite"]["needed_by"] == ["convert", "live"]
     assert by["asr-std"]["installed"] is False and by["asr-std"]["installed_bytes"] == 0
+    assert (by["asr-std"]["level"], by["asr-std"]["level_note"], by["asr-lite"]["level_note"], by["vad"]["level_note"]) == ("required", "one_of", "one_of", None)
+    assert {m["id"]: m["level_note"] for m in json.loads(CliRunner().invoke(cli.app, ["doctor", "--json"]).stdout)["models"]}["asr-lite"] == "one_of"
     plain = CliRunner().invoke(cli.app, ["models", "list"])
     assert plain.exit_code == 0 and "silero" not in plain.stdout and "vad" in plain.stdout
+    lines = {ln.split()[0]: ln for ln in plain.stdout.splitlines()[1:]}
+    assert "필수 (둘 중 하나)" in lines["asr-std"] and "필수 (둘 중 하나)" in lines["asr-lite"] and "둘 중 하나" not in lines["vad"]
 
 
 # ── CLI 이벤트 ───────────────────────────────────────────────────────────────

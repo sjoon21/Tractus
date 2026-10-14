@@ -65,7 +65,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 ## 실시간 자막 (Phase 7.2, 2026-10-07)
 
 - **미리보기 전용이다.** `tractus live`는 아무것도 저장하지 않는다(회의 폴더·색인·로그·stdout 외 어디에도 자막 텍스트를 쓰지 않는다). 정식 전사는 녹음을 멈춘 뒤 배치 `transcribe --recording`이 만든다. 앱은 `stop`을 보내 워커가 끝난 **뒤에** 배치 전사를 띄운다.
-- 모델은 Qwen3-ASR **0.6B** 8bit와 Silero `feed()`만 쓴다. 1.7B를 올리지 않는다. 물리 메모리 16GB 미만이면 `--force` 없이 거부한다.
+- 모델은 Qwen3-ASR **0.6B** 8bit와 Silero `feed()`만 쓴다. 1.7B를 올리지 않는다(`--engine std`는 개발·벤치 전용. 2026-10-14 실측으로 확정 지연 p95가 1.59–1.95초라 기준 1.0초를 넘어 실시간에 못 쓴다. 다시 따지려면 `bench/live_sim.py --engine std`로 다시 재고 docs/desktop.md §2.8의 표를 고친다). 물리 메모리 16GB 미만이면 `--force` 없이 거부한다.
 - 실시간 화자 라벨(`--speakers`, Nemotron 스트리밍 'low')은 기본으로 끈다. GPU 사용률 증가분(시스템 전체 − 시작 전 기준값)이 약 세 배(12–17%p → 42%p)라서다. `gpu_util_mean`은 시스템 전체 값이니 `gpu_util_delta`로 비교한다. 최종 라벨과 다를 수 있다.
 - **확정 규칙·임계값(`live.SILENCE_FRAMES`, `MAX_FRAMES`, `PARTIAL_FRAMES`, `TAIL_FRAMES`, 뒤처짐 상한)을 바꾸면 `uv run python bench/live_sim.py`(가상 `say` 대화, 실시간 약 75초)를 다시 돌려** `bench/results/live_summary.json`의 확정 지연·footprint·GPU를 비교한다. AI Hub 파일은 `--source`/`--reference`로 로컬에서만 재고 지표만 남긴다.
 - 테스트는 가짜 VAD·ASR로 돈다(`tests/test_live.py`). 실제 모델은 `pytest -m slow`의 `test_real_live_captions_follow_a_growing_recording`(2배속).
@@ -131,7 +131,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 
 ## 모델 목록 규칙
 
-- **모델을 쓰는 기능을 새로 만들면 `src/tractus/models_registry.py`에 모델(`MODELS`)과 기능(`CAPABILITIES`)을 선언하고, 앱에서 그 기능의 단추를 막는다**(없을 때 이유와 `모델 화면 열기`). 모델이 없어도 코어는 죽지 않고 그 단계를 건너뛰며 `code`가 있는 경고를 낸다. 필수 모델(VAD + 변환 엔진 하나)과 ffmpeg만으로 녹음·가져오기 → 텍스트 변환 → 요약이 돌아야 한다.
+- **모델을 쓰는 기능을 새로 만들면 `src/tractus/models_registry.py`에 모델(`MODELS`)과 기능(`CAPABILITIES`)을 선언하고, 앱에서 그 기능의 단추를 막는다**(없을 때 이유와 `모델 화면 열기`). 모델이 없어도 코어는 죽지 않고 그 단계를 건너뛰며 `code`가 있는 경고를 낸다. 변환 엔진 둘은 `필수 (둘 중 하나)`다: `Model.level_note = "one_of"`를 달고 `level`은 `required`로 둔다(둘 다 필수로 보이게 하지 않는다). 필수 모델(VAD + 변환 엔진 하나)과 ffmpeg만으로 녹음·가져오기 → 텍스트 변환 → 요약이 돌아야 한다.
 - 저장소·리비전·폴더 상수는 한 곳에 둔다. `diarize`·`align`·`embed`·`voices`의 상수를 바꾸면 레지스트리가 따라가고(가져온다), ASR·VAD는 레지스트리가 원본이다. 파일 크기는 허브 API(`model_info(files_metadata=True)`)로 대조한다. 받기 안내 문구는 `registry.install_hint`로 만든다(`hf download …`를 직접 쓰지 않는다).
 - 코어는 모델 파일을 `tractus models remove`로만 지운다.
 
@@ -157,6 +157,10 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - **AI Hub 데이터의 전사를 원격 LLM에 보내지 않는다.** 테스트는 `tests/fixtures/sample_meeting.json`(가상 회의)만 쓴다.
 - API 키를 코드·로그·커밋·대화에 남기지 않는다. `.env.local`에만 둔다.
 - **앱의 API 키는 앱 설정 폴더의 `llm_key` 파일(0600)에만 둔다**(`$TRACTUS_HOME`·`settings.json`·webview·인수·로그에 두지 않는다). 요약·질문을 돌리는 `tractus` 프로세스(`Settings::tractus_llm`)에만 환경변수로 넘기고 MCP·녹음 등에는 넘기지 않는다. 키를 로그·오류 문구에 찍지 않는다(`app/src-tauri/src/llm_key.rs`, docs/desktop.md §2.14).
+
+## 메뉴 막대 아이콘 (v3.24)
+
+- **메뉴 막대(트레이)의 녹음 시작·종료·북마크는 Rust가 하지 않는다.** Rust(`tray.rs`)는 메뉴·제목·아이콘만 그리고 `tray-action` 이벤트를 화면에 보내며, 화면이 창의 단추와 같은 함수로 처리한다(쓰던 메모 저장·권한·기능 잠금이 한 곳에 있게). 경과 시간은 화면 타이머가 아니라 Rust 틱이 센다(숨은 창은 타이머가 늦다). 창 닫기는 `should_hide_on_close`, 종료는 언제나 `begin_quit`이다 (docs/desktop.md §3.1, WORDS.md §4.16).
 
 ## 자주 쓰는 명령
 

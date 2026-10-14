@@ -511,7 +511,7 @@ def find_tracks(rec_dir: Path, stop: threading.Event, wait_s: float = WAIT_S) ->
 
 
 def load_models(vad_dir: Path, asr_dir: Path, diar_dir: Path | None, hotwords: list[str], warn, stop: threading.Event | None = None):
-    """→ (VAD 창 → 확률, 오디오 → 문장, SpeakerTrack | None). 1.7B는 올리지 않는다 (메모리).
+    """→ (VAD 창 → 확률, 오디오 → 문장, SpeakerTrack | None). 앱은 0.6B(lite)만 올린다 (메모리). 1.7B(std)는 `--engine std`로 재는 개발·벤치 전용.
     stop이 설정되면 모델 사이에서 멈추고 None을 돌려준다 (이미 올리는 중인 모델 하나는 끝까지 기다린다: VAD 약 0.3초, ASR 0.6B 약 1–2초).
     diar_dir가 None이면 화자를 붙이지 않는다 (기본). 실측(M3, 68초 가상 대화, ARCHITECTURE §2.6): 화자 스트리밍을 켜면
     GPU 사용률 증가분(시스템 전체 − 시작 전 기준값) 약 12–17%p → 42%p, footprint 1.8 → 3.0–3.2GB. 인코더가 0.72초마다 화자 캐시(최대 528프레임) 전체를 다시 돌리기 때문이다."""

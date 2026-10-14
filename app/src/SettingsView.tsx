@@ -8,8 +8,9 @@ import { onIndexed } from "./indexer";
 import { recMode, statusLine, withRecMode } from "./lib";
 import { LlmKeySection } from "./LlmKeySettings";
 import { TemplatesSection } from "./TemplatesSettings";
+import { TRAY_KEEP_HINT, TRAY_KEEP_LABEL, TRAY_SHOW_HINT, TRAY_SHOW_LABEL } from "./trayText";
 
-const FIELDS: { key: keyof Omit<Settings, "fake_recorder" | "rec_mode" | "live_captions" | "checkup_done" | "list_sort" | "list_order">; label: string; hint: string }[] = [
+const FIELDS: { key: keyof Omit<Settings, "fake_recorder" | "rec_mode" | "live_captions" | "checkup_done" | "list_sort" | "list_order" | "tray_enabled" | "keep_in_tray">; label: string; hint: string }[] = [
   { key: "home", label: "데이터 위치 (TRACTUS_HOME)", hint: "meetings/와 recordings/가 들어 있는 폴더" },
   { key: "models_dir", label: "변환 엔진 위치 (TRACTUS_MODELS_DIR)", hint: "비우면 데이터 위치의 models/" },
   { key: "tractus_bin", label: "tractus 실행 파일", hint: "전체 경로로 적습니다 (앱은 터미널의 PATH를 읽지 않습니다)" },
@@ -39,6 +40,21 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
   const checkStatus = () => {
     setStatus({ text: "확인 중…", detail: null });
     api.status().then(setStatus, (e) => setStatus({ text: errText(e), detail: errDetail(e) }));
+  };
+
+  // 메뉴 막대 아이콘 설정은 저장 단추를 기다리지 않고 바로 적용한다 (Rust가 아이콘을 만들거나 없앤다). 옛 설정 파일에는 값이 없고, 없으면 켜짐이다
+  const trayOn = s?.tray_enabled !== false;
+  const keepOn = s?.keep_in_tray !== false;
+  const setTray = async (show: boolean, keep: boolean) => {
+    try {
+      await api.setTrayPrefs(show, keep);
+      setS((cur) => cur && { ...cur, tray_enabled: show, keep_in_tray: keep });
+      setMsg(null);
+      setMsgDetail(null);
+    } catch (err) {
+      setMsg(errText(err));
+      setMsgDetail(errDetail(err));
+    }
   };
 
   if (!s) return (
@@ -103,6 +119,18 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
           </span>
         </label>
         <GateHint gate={liveGate} />
+        <label className="check">
+          <input type="checkbox" checked={trayOn} onChange={(e) => void setTray(e.target.checked, keepOn)} />
+          <span>
+            {TRAY_SHOW_LABEL} — {TRAY_SHOW_HINT}
+          </span>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={keepOn && trayOn} disabled={!trayOn} onChange={(e) => void setTray(trayOn, e.target.checked)} />
+          <span>
+            {TRAY_KEEP_LABEL} — {TRAY_KEEP_HINT}
+          </span>
+        </label>
         <div className="settings-actions">
           <button className="primary-button" type="submit">
             저장

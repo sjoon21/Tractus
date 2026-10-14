@@ -15,7 +15,8 @@ import {
   fmtBytes,
   installedSummary,
   installLabel,
-  LEVEL_LABEL,
+  engineSummary,
+  levelLabel,
   modelDetailRows,
   modelSubtitle,
   MODEL_DETAIL_LABEL,
@@ -231,6 +232,7 @@ export function ModelsView() {
   };
 
   const sum = list ? installedSummary(list.models) : null;
+  const engine = list ? engineSummary(list.models) : null;
   const dialog = asking && removeDialog(asking);
   return (
     <section className="settings models" aria-labelledby="models-title">
@@ -249,6 +251,11 @@ export function ModelsView() {
           !error && "불러오는 중…"
         )}
       </p>
+      {engine && (
+        <p className={`field-hint models-required${engine.ok ? " is-ok" : ""}`} role="status">
+          {engine.text}
+        </p>
+      )}
       {error && (
         <div className="inline-error" role="alert">
           {error.text}
@@ -295,7 +302,7 @@ export function ModelsView() {
                   </th>
                   <td className="tnum">{fmtBytes(m.size_bytes)}</td>
                   <td>
-                    <span className={`badge level-${m.level}`}>{LEVEL_LABEL[m.level]}</span>
+                    <span className={`badge level-${m.level}`}>{levelLabel(m)}</span>
                   </td>
                   <td>
                     <span className={`model-state is-${m.state}`}>{STATE_LABEL[m.state]}</span>

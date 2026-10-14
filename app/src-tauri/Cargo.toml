@@ -13,7 +13,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# tray-icon: 메뉴 막대 아이콘(MIT/Apache-2.0, 이미 Cargo.lock에 있던 tray-icon 0.25), image-png: 아이콘 PNG를 Image::from_bytes로 읽는다
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 percent-encoding = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

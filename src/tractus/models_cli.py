@@ -16,6 +16,7 @@ from tractus.paths import models_dir
 
 STATE_LABEL = {"installed": "설치됨", "missing": "없음", "partial": "일부만 받음", "corrupt": "손상"}
 LEVEL_LABEL = {"required": "필수", "recommended": "권장", "optional": "선택"}
+ONE_OF_LABEL = "필수 (둘 중 하나)"  # level_note가 one_of인 필수 모델 (변환 엔진)
 
 
 def _cli():
@@ -51,7 +52,7 @@ def register(app: typer.Typer) -> None:
             return _out(data)
         print(f"모델 폴더: {data['models_dir']}  (남은 공간 {_gb(data['disk_free_bytes'])})")
         for m in data["models"]:
-            print(f"{m['id']:<10} {STATE_LABEL[m['state']]:<7} {LEVEL_LABEL[m['level']]:<3} {_gb(m['size_bytes']):>7}  {m['name']} — {m['purpose']}")
+            print(f"{m['id']:<10} {STATE_LABEL[m['state']]:<7} {ONE_OF_LABEL if m.get('level_note') == 'one_of' else LEVEL_LABEL[m['level']]:<11} {_gb(m['size_bytes']):>7}  {m['name']} — {m['purpose']}")
 
     @models_app.command("download")
     def download_models(

@@ -6,7 +6,9 @@ import {
   downloadReduce,
   fmtBytes,
   IDLE_DOWNLOAD,
+  engineSummary,
   installedSummary,
+  levelLabel,
   installLabel,
   modelDetailRows,
   modelSubtitle,
@@ -94,6 +96,20 @@ describe("받을 것 계산", () => {
     expect(diskShort(plan, 1.09e9)).toContain("디스크 여유 공간이 부족합니다");
     expect(diskShort(plan, null)).toBeNull();
     expect(diskShort([], 0)).toBeNull();
+  });
+  test("구분 글자: 변환 엔진 둘은 `필수 (둘 중 하나)`, 나머지는 그대로", () => {
+    const eng = (id: string, installed = false) => row(id, { level: "required", level_note: "one_of", installed });
+    expect(levelLabel(eng("asr-std"))).toBe("필수 (둘 중 하나)");
+    expect(levelLabel(row("vad", { level: "required" }))).toBe("필수");
+    expect(levelLabel(row("vad", { level: "required", level_note: null }))).toBe("필수"); // 옛 코어
+    expect(levelLabel(row("aligner", { level: "optional" }))).toBe("선택");
+  });
+  test("필수 요약 줄: 변환 엔진 둘 중 하나라도 있으면 설치됨, 둘 다 없으면 안내, 옛 코어는 줄 없음", () => {
+    const eng = (id: string, installed: boolean) => row(id, { level: "required", level_note: "one_of", installed });
+    expect(engineSummary([row("vad", { level: "required" }), eng("asr-std", false), eng("asr-lite", true)])).toEqual({ ok: true, text: "변환 엔진: 설치됨" });
+    expect(engineSummary([eng("asr-std", true), eng("asr-lite", false)])?.ok).toBe(true);
+    expect(engineSummary([eng("asr-std", false), eng("asr-lite", false)])).toEqual({ ok: false, text: "변환 엔진: 없음 — 둘 중 하나를 설치하세요" });
+    expect(engineSummary([row("vad", { level: "required", installed: true })])).toBeNull();
   });
   test("installLabel·installedSummary·removeDialog", () => {
     expect(installLabel("missing")).toBe("받기");

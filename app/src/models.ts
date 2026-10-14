@@ -17,6 +17,8 @@ export interface ModelRow {
   /** 이 모델이 있어야 쓸 수 있는 기능 (CapId) */
   needed_by: string[];
   group: string;
+  /** 필수 모델 여럿 중 하나만 있으면 되면 "one_of" (변환 엔진 둘). 옛 코어는 보내지 않는다. level은 그대로 required다 */
+  level_note?: string | null;
   // 모델 소개 (코어 `models list --json`의 추가 키, §2.15). 옛 코어는 보내지 않고 모르는 값은 null이다
   model_name?: string | null;
   publisher?: string | null;
@@ -38,6 +40,17 @@ export interface ModelsList {
 }
 
 export const LEVEL_LABEL: Record<ModelLevel, string> = { required: "필수", recommended: "권장", optional: "선택" };
+export const ONE_OF_LABEL = "필수 (둘 중 하나)";
+/** 구분 칸 글자: 변환 엔진처럼 둘 중 하나만 있으면 되는 필수 모델은 `필수 (둘 중 하나)` */
+export const levelLabel = (m: Pick<ModelRow, "level" | "level_note">): string => (m.level === "required" && m.level_note === "one_of" ? ONE_OF_LABEL : LEVEL_LABEL[m.level]);
+
+/** 필수 요약 줄: 둘 중 하나인 필수 모델(변환 엔진) 중 어느 하나라도 있으면 설치됨. 그런 모델이 없으면(옛 코어) null */
+export function engineSummary(models: Pick<ModelRow, "level" | "level_note" | "installed">[]): { text: string; ok: boolean } | null {
+  const group = models.filter((m) => m.level === "required" && m.level_note === "one_of");
+  if (group.length === 0) return null;
+  const ok = group.some((m) => m.installed);
+  return { ok, text: ok ? "변환 엔진: 설치됨" : "변환 엔진: 없음 — 둘 중 하나를 설치하세요" };
+}
 export const STATE_LABEL: Record<ModelState, string> = { installed: "설치됨", missing: "없음", partial: "일부만 받음", corrupt: "손상" };
 
 /** 용량 표시: 맥 Finder처럼 1000 단위 (1.3 MB, 2.3 GB) */

@@ -487,6 +487,27 @@ def test_cli_live_runs_until_stop_and_emits_contract_events(rec, monkeypatch):
     assert res.exit_code == 0 and seen["diar"] == "nemotron-3-diarization"
 
 
+def test_cli_live_engine_std_loads_the_1_7b_dir_and_lite_stays_default(rec):
+    d, seen = rec
+    std = cli.models_dir() / "qwen3-asr-1.7b-8bit"
+    std.mkdir(parents=True)
+    (std / "config.json").write_text("{}")
+    assert CliRunner().invoke(cli.app, ["live", "--recording", str(d), "--progress-json", "--engine", "std"], input="stop\n").exit_code == 0
+    assert seen["asr"] == "qwen3-asr-1.7b-8bit"
+    assert CliRunner().invoke(cli.app, ["live", "--recording", str(d), "--progress-json", "--engine", "lite"], input="stop\n").exit_code == 0
+    assert seen["asr"] == "qwen3-asr-0.6b-8bit"
+    bad = CliRunner().invoke(cli.app, ["live", "--recording", str(d), "--progress-json", "--engine", "x"], input="stop\n")
+    assert bad.exit_code != 0
+
+
+def test_cli_live_engine_std_without_the_1_7b_fails_instead_of_falling_back_to_lite(rec):
+    d, seen = rec  # rec에는 0.6B와 VAD만 있다
+    res = CliRunner().invoke(cli.app, ["live", "--recording", str(d), "--progress-json", "--engine", "std"], input="stop\n")
+    assert res.exit_code != 0
+    assert json.loads(res.stdout.splitlines()[-1])["code"] == "model_missing"
+    assert "asr" not in seen
+
+
 def test_cli_live_restores_signal_handlers(rec):
     import signal
 

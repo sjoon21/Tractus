@@ -4177,6 +4177,15 @@ body.is-note-dragging {
   margin: 10px 0 0;
 }
 
+.models .models-required {
+  margin: 6px 0 0;
+  font-weight: 600;
+}
+
+.models .models-required.is-ok {
+  color: var(--spk-2);
+}
+
 .preset-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

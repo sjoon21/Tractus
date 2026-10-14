@@ -5,6 +5,10 @@ WAV를 실시간 속도로 쓰면서 `tractus live --progress-json`을 돌려 �
     uv run python bench/live_sim.py --source a.wav --reference a.txt  # 로컬 전용(AI Hub 등). 전사 텍스트는 출력하지 않는다
     uv run python bench/live_sim.py --speed 4                         # 배속 (지연 지표는 실시간에서만 의미 있음)
     uv run python bench/live_sim.py --speakers --out /tmp/x.json      # 실시간 화자 라벨을 켜고
+    uv run python bench/live_sim.py --engine std --out /tmp/x.json    # 표준 엔진(1.7B)으로 (tractus live --engine std, 개발·벤치 전용)
+    uv run python bench/live_sim.py --repeat 5 --engine std --out ...  # 가상 대화를 5번 이어 붙여 5분 넘게 (지속 지연·메모리 증가 확인)
+
+--out 파일은 행 목록(JSON 배열)이다. 이미 있으면 행을 덧붙이고, 예전 형식(행 하나)이면 engine "lite"를 달아 목록으로 바꾼 뒤 덧붙인다 (기존 수치는 덮어쓰지 않는다).
 
 지표 (bench/results/live_summary.json, 지표만):
   processing_p50/p95   final마다 0.5초 무음이 다 쓰인 순간부터 이벤트까지 (설계상 대기를 뺀 처리 지연)
@@ -18,6 +22,10 @@ WAV를 실시간 속도로 쓰면서 `tractus live --progress-json`을 돌려 �
   gpu_util_delta       mean − baseline. live 몫의 근사일 뿐이다 (실행 중 다른 작업이 바뀌면 틀린다). 프로세스별 몫은 powermetrics(sudo)가 필요해 재지 않는다
   cer                  final 문장을 이은 것과 참조의 CER (공백·문장부호 제외)
   stop_exit_sec        stdin `stop` → 프로세스 종료
+  engine               lite(0.6B) | std(1.7B)
+  footprint_series     "초=GB …" 약 10초 간격 (live 시작 기준). footprint_growth_median_pct / growth_peak_pct: _series 참고 (120초 넘는 실행만)
+  latency_first/second_half_p50  발화 앞 절반·뒤 절반의 확정 지연 p50 (지속 실행에서 지연이 늘어나는지)
+  load_avg_before/after, therm  실행 전후 load average와 `pmset -g therm` (sudo 불필요)
 """
 
 import argparse
@@ -64,20 +72,24 @@ def wav_header(data_bytes: int) -> bytes:
             + b"data" + struct.pack("<I", data_bytes))
 
 
-def synth(lines=LINES, gaps=GAPS) -> tuple[np.ndarray, list[tuple[float, float, str]]]:
-    """say로 만든 대화 (48k int16)와 발화 [(시작 초, 끝 초, 문장)]. 끝은 say 출력에서 마지막 소리 표본."""
+def synth(lines=LINES, gaps=GAPS, repeat: int = 1) -> tuple[np.ndarray, list[tuple[float, float, str]]]:
+    """say로 만든 대화 (48k int16)와 발화 [(시작 초, 끝 초, 문장)]. 끝은 say 출력에서 마지막 소리 표본.
+    repeat > 1이면 같은 대화를 쉼 길이를 돌려 가며(gaps가 문장 수와 다르면 어긋난다) 이어 붙인다. 문장마다 say는 한 번만 돈다."""
     parts, utts, t = [np.zeros(REC, np.int16)], [], REC  # 앞 1초 무음
+    clips = []
     with tempfile.TemporaryDirectory() as d:
         for i, line in enumerate(lines):
             p = Path(d) / f"{i}.wav"
             subprocess.run(["say", "-v", VOICES[i % 2], "-o", str(p), f"--data-format=LEI16@{REC}", line], check=True)
             x = np.frombuffer(_pcm(p), "<i2")
             loud = np.flatnonzero(np.abs(x) > 300)
-            x = x[loud[0]:loud[-1] + 1] if len(loud) else x
-            utts.append((t / REC, (t + len(x)) / REC, line))
-            gap = np.zeros(int(gaps[i % len(gaps)] * REC), np.int16)
-            parts += [x, gap]
-            t += len(x) + len(gap)
+            clips.append((x[loud[0]:loud[-1] + 1] if len(loud) else x, line))
+    for i in range(len(lines) * repeat):
+        x, line = clips[i % len(lines)]
+        utts.append((t / REC, (t + len(x)) / REC, line))
+        gap = np.zeros(int(gaps[i % len(gaps)] * REC), np.int16)
+        parts += [x, gap]
+        t += len(x) + len(gap)
     return np.concatenate(parts), utts
 
 
@@ -139,13 +151,16 @@ class Writer(threading.Thread):
         return self.log[-1][1]
 
 
-def _sample_memory(pid: int, peak: dict, stop: threading.Event) -> None:
+def _sample_memory(pid: int, peak: dict, stop: threading.Event, series: list | None = None) -> None:
     while not stop.is_set():
         try:
             out = subprocess.run(["footprint", "-p", str(pid)], capture_output=True, text=True, timeout=5).stdout
             m = re.search(r"Footprint:\s*([\d.]+)\s*(KB|MB|GB)", out)
             if m:
-                peak["footprint"] = max(peak.get("footprint", 0), float(m.group(1)) * {"KB": 1e3, "MB": 1e6, "GB": 1e9}[m.group(2)])
+                fp = float(m.group(1)) * {"KB": 1e3, "MB": 1e6, "GB": 1e9}[m.group(2)]
+                peak["footprint"] = max(peak.get("footprint", 0), fp)
+                if series is not None:
+                    series.append((time.monotonic(), fp))
             rss = subprocess.run(["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True, timeout=5).stdout.strip()
             if rss:
                 peak["rss"] = max(peak.get("rss", 0), int(rss) * 1024)
@@ -167,15 +182,21 @@ def _sample_gpu(samples: list, stop: threading.Event) -> None:
         stop.wait(0.5)
 
 
-def simulate(pcm: np.ndarray, speed: float = 1.0, tail_s: float = 1.5, tractus: str | None = None, speakers: bool = False) -> dict:
+def _therm() -> str:
+    out = subprocess.run(["pmset", "-g", "therm"], capture_output=True, text=True).stdout
+    return " | ".join(line.strip() for line in out.splitlines() if "=" in line or "No " in line) or "?"
+
+
+def simulate(pcm: np.ndarray, speed: float = 1.0, tail_s: float = 1.5, tractus: str | None = None, speakers: bool = False, engine: str = "lite") -> dict:
     """pcm(48k int16)을 녹음처럼 쓰면서 tractus live를 돌린다 → {events:[(monotonic, event)], writer, stop_exit_sec, peak, gpu, gpu_base}."""
     exe = tractus or str(Path(sys.executable).parent / "tractus")
+    load_before, therm_before = os.getloadavg(), _therm()
     gpu_base = [u for _ in range(4) if (u := gpu_util()) is not None and not time.sleep(0.25)]
     with tempfile.TemporaryDirectory() as d:
         rec_dir = Path(d) / "rec"
         rec_dir.mkdir()
         writer = Writer(rec_dir, pcm, speed)
-        proc = subprocess.Popen([exe, "live", "--recording", str(rec_dir), "--progress-json", *(["--speakers"] if speakers else [])], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        proc = subprocess.Popen([exe, "live", "--recording", str(rec_dir), "--progress-json", "--engine", engine, *(["--speakers"] if speakers else [])], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                 stderr=subprocess.DEVNULL, text=True, env={**os.environ, "TYPER_USE_RICH": "0"})
         writer.start()  # 앱처럼 녹음 시작과 같이 띄운다: 모델을 올리는 동안 쌓인 오디오를 따라잡아야 한다
         events: list[tuple[float, dict]] = []
@@ -186,8 +207,8 @@ def simulate(pcm: np.ndarray, speed: float = 1.0, tail_s: float = 1.5, tractus: 
 
         reader = threading.Thread(target=read, daemon=True)
         reader.start()
-        stop, peak, gpu = threading.Event(), {}, []
-        samplers = [threading.Thread(target=_sample_memory, args=(proc.pid, peak, stop), daemon=True),
+        stop, peak, gpu, series = threading.Event(), {}, [], []
+        samplers = [threading.Thread(target=_sample_memory, args=(proc.pid, peak, stop, series), daemon=True),
                     threading.Thread(target=_sample_gpu, args=(gpu, stop), daemon=True)]
         for s in samplers:
             s.start()
@@ -200,7 +221,8 @@ def simulate(pcm: np.ndarray, speed: float = 1.0, tail_s: float = 1.5, tractus: 
         stop_exit = time.monotonic() - t_stop
         reader.join(timeout=5)
         stop.set()
-    return {"events": events, "writer": writer, "stop_exit_sec": stop_exit, "exit_code": proc.returncode, "peak": peak, "gpu": gpu, "gpu_base": gpu_base}
+    return {"events": events, "writer": writer, "stop_exit_sec": stop_exit, "exit_code": proc.returncode, "peak": peak, "gpu": gpu, "gpu_base": gpu_base,
+            "series": series, "load_before": load_before, "load_after": os.getloadavg(), "therm_before": therm_before, "therm_after": _therm()}
 
 
 def _norm(text: str) -> str:
@@ -248,7 +270,30 @@ def pct(xs: list[float], q: float) -> float | None:
     return round(xs[min(len(xs) - 1, round(q * (len(xs) - 1)))], 3)
 
 
-def summarize(sim: dict, utts: list | None, reference: str | None, duration: float, speed: float, source: str, speakers: bool = False) -> dict:
+ENGINES = {"lite": "mlx-community/Qwen3-ASR-0.6B-8bit", "std": "mlx-community/Qwen3-ASR-1.7B-8bit"}
+
+
+def _series(sim: dict, t_live: float | None) -> dict:
+    """footprint 시계열 요약 (live 시작 기준). 증가는 두 가지로 본다.
+    growth_median_pct: 첫 60–120초의 중앙값 대비 마지막 60초의 중앙값 (정상 상태가 커졌는지). 120초 안 되면 None.
+    growth_peak_pct: 첫 1/3 구간의 최댓값 대비 마지막 1/3 구간의 최댓값 (ASR 순간 급등이 커졌는지).
+    ASR이 돌 때 MLX 버퍼가 잠깐 0.7GB쯤 치솟았다 내려오므로 구간 최댓값을 한 시점의 값과 비교하면 증가로 잘못 읽힌다."""
+    raw = sim.get("series") or []
+    t0 = t_live or (raw[0][0] if raw else 0.0)
+    pts = [(t - t0, fp / 1e9) for t, fp in raw if t >= t0]
+    thin = " ".join(f"{t:.0f}s={g:.2f}" for i, (t, g) in enumerate(pts) if i == 0 or t // 10 != pts[i - 1][0] // 10)  # 한 줄 문자열 (JSON 목록이 길어지지 않게)
+    out = {"series": thin, "growth_median_pct": None, "growth_peak_pct": None, "median_gb_first": None, "median_gb_last": None, "peak_gb_by_third": None}
+    if not pts or pts[-1][0] < 120:
+        return out
+    end = pts[-1][0]
+    first = statistics.median(g for t, g in pts if 60 <= t < 120)
+    last = statistics.median(g for t, g in pts if t >= end - 60)
+    thirds = [max((g for t, g in pts if end * k / 3 <= t <= end * (k + 1) / 3), default=0.0) for k in range(3)]
+    return {**out, "median_gb_first": round(first, 2), "median_gb_last": round(last, 2), "growth_median_pct": round((last / first - 1) * 100, 1),
+            "peak_gb_by_third": [round(x, 2) for x in thirds], "growth_peak_pct": round((thirds[2] / thirds[0] - 1) * 100, 1)}
+
+
+def summarize(sim: dict, utts: list | None, reference: str | None, duration: float, speed: float, source: str, speakers: bool = False, engine: str = "lite") -> dict:
     events = [e for _, e in sim["events"]]
     done = next((e for e in events if e.get("event") == "done"), {})
     stats = done.get("stats", {})
@@ -257,13 +302,21 @@ def summarize(sim: dict, utts: list | None, reference: str | None, duration: flo
     hyp = " ".join(e["text"] for _, e in finals(sim["events"]))
     t_live = next((t for t, e in sim["events"] if e.get("stage") == "live"), None)
     t0 = sim["writer"].log[0][1]
+    mem = _series(sim, t_live)
+    half = len(utts) // 2 if utts else 0
+    lat_a, lat_b = (latencies(sim, utts[:half]), latencies(sim, utts[half:])) if half else ([], [])
     return {
-        "date": date.today().isoformat(), "source": source, "speed": speed, "duration_sec": round(duration, 1),
-        "model": "mlx-community/Qwen3-ASR-0.6B-8bit", "vad": "silero-vad-v6 feed()", "speakers": "Nemotron-3-Diarization streaming low" if speakers else None,
+        "date": date.today().isoformat(), "engine": engine, "source": source, "speed": speed, "duration_sec": round(duration, 1),
+        "model": ENGINES[engine], "vad": "silero-vad-v6 feed()", "speakers": "Nemotron-3-Diarization streaming low" if speakers else None,
         "utterances": len(utts) if utts else None, "finals": stats.get("finals"), "partials": stats.get("partials"), "skipped_partials": stats.get("skipped_partials"),
         "latency_n": len(lat), "latency_p50": pct(lat, 0.5), "latency_p95": pct(lat, 0.95), "latency_max": pct(lat, 1.0),
         "processing_p50": pct(proc, 0.5), "processing_p95": pct(proc, 0.95),
+        "latency_first_half_p50": pct(lat_a, 0.5), "latency_second_half_p50": pct(lat_b, 0.5),
         "load_sec": round(t_live - t0, 2) if t_live else None,
+        "asr_sec": stats.get("asr_sec"), "asr_calls": stats.get("asr_calls"), "dropped_finals": stats.get("dropped_finals"),
+        "footprint_series": mem.pop("series"), **{f"footprint_{k}": v for k, v in mem.items()},
+        "load_avg_before": [round(x, 2) for x in sim.get("load_before", ())], "load_avg_after": [round(x, 2) for x in sim.get("load_after", ())],
+        "therm": {"before": sim.get("therm_before"), "after": sim.get("therm_after")},
         "asr_rtf": stats.get("asr_rtf"), "peak_mlx_gb": stats.get("peak_memory_gb"),
         "peak_footprint_gb": round(sim["peak"]["footprint"] / 1e9, 2) if "footprint" in sim["peak"] else None,
         "peak_rss_gb": round(sim["peak"]["rss"] / 1e9, 2) if "rss" in sim["peak"] else None,
@@ -277,25 +330,35 @@ def summarize(sim: dict, utts: list | None, reference: str | None, duration: flo
     }
 
 
+def append_row(path: Path, row: dict) -> None:
+    """행을 덧붙인다. 없으면 새로 만들고, 예전 형식(행 하나)이면 engine "lite"를 달아 목록으로 바꾼다. 기존 행은 바꾸지 않는다."""
+    rows = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+    if isinstance(rows, dict):
+        rows = [{"engine": "lite", **rows}]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps([*rows, row], ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", type=Path, help="로컬 오디오 (기본: say 가상 대화)")
     ap.add_argument("--reference", type=Path, help="--source의 참조 전사 (CER용, 출력하지 않음)")
     ap.add_argument("--speed", type=float, default=1.0)
     ap.add_argument("--speakers", action="store_true", help="tractus live --speakers (실시간 화자 라벨)")
-    ap.add_argument("--out", type=Path, default=OUT)
+    ap.add_argument("--engine", choices=sorted(ENGINES), default="lite", help="tractus live --engine (std = 1.7B, 개발·벤치 전용)")
+    ap.add_argument("--repeat", type=int, default=1, help="가상 대화를 N번 이어 붙인다 (5 → 약 5분 40초)")
+    ap.add_argument("--out", type=Path, default=OUT, help="행 목록(JSON 배열). 있으면 덧붙인다")
     args = ap.parse_args()
     if args.source:
         pcm, utts, source = load_source(args.source), None, "local"
         reference = args.reference.read_text(encoding="utf-8") if args.reference else None
     else:
-        pcm, utts = synth()
+        pcm, utts = synth(gaps=GAPS + (0.6,) if args.repeat > 1 else GAPS, repeat=args.repeat)
         reference, source = " ".join(u[2] for u in utts), "synthetic"
     duration = len(pcm) / REC
     print(f"{source}: {duration:.1f}초, 속도 {args.speed}x", file=sys.stderr)
-    summary = summarize(simulate(pcm, args.speed, speakers=args.speakers), utts, reference, duration, args.speed, source, args.speakers)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(summary, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    summary = summarize(simulate(pcm, args.speed, speakers=args.speakers, engine=args.engine), utts, reference, duration, args.speed, source, args.speakers, args.engine)
+    append_row(args.out, summary)
     print(json.dumps(summary, ensure_ascii=False, indent=1))
 
 

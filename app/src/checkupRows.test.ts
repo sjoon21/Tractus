@@ -99,6 +99,8 @@ describe("checkupSections: 모델·권한·AI", () => {
     expect(row(sec(list("vad")), "required").detail).toContain("변환 엔진");
     expect(row(sec(list("asr-lite")), "required").detail).toContain("목소리 구간 감지");
     expect(row(sec(list("vad", "asr-lite")), "required").status).toBe("ok");
+    expect(row(sec(list("vad", "asr-std")), "required").status).toBe("ok"); // 엔진은 둘 중 하나면 된다
+    expect(row(sec(list("vad")), "required").detail).toContain("표준·가벼운 것 중 하나");
   });
   test("권장: 참석자 구분이 없으면 경고", () => {
     expect(row(sec(list("vad", "asr-std")), "recommended").status).toBe("warn");

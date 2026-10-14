@@ -7,6 +7,7 @@ import type { DoctorReport } from "./caps";
 import type { ModelsList } from "./models";
 import type { Folder, MetaPatch, NoteMeta, SortKey, SortOrder } from "./organize";
 import { parseSummaryDocs, type TemplateInfo } from "./summaries";
+import type { TrayWire } from "./tray";
 import { APP_ERROR, DetailedError, IDLE_JOB, splitMessage, IDLE_LIVE, IDLE_REC, jobReduce, liveReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type LiveEvent, type LiveState, type Memo, type NoteMemo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
 
 export type { JobState, LiveState, RecState } from "./lib";
@@ -100,6 +101,10 @@ export interface Settings {
   list_order?: string;
   /** 시작 점검(checkupRows.ts)을 한 번 보여 줬는가. 처음 실행할 때만 저절로 열린다 */
   checkup_done?: boolean;
+  /** 메뉴 막대에 Tractus 아이콘을 둔다 (tray.ts, docs/desktop.md §3.1). 없으면(옛 설정) 켜짐 */
+  tray_enabled?: boolean;
+  /** 창을 닫아도 앱을 끝내지 않고 메뉴 막대에 남긴다. 아이콘이 떠 있을 때만 뜻이 있다. 없으면 켜짐 */
+  keep_in_tray?: boolean;
 }
 
 export interface SearchHit {
@@ -215,6 +220,14 @@ export const api = {
   /** 받기는 modelsJob.ts가 시작한다 (job 이벤트 kind "models"). 지우기는 받는 중이면 코어가 거절한다 */
   modelsRemove: (id: string) => invoke<void>("models_remove", { id }),
   setCheckupDone: (done: boolean) => invoke<void>("set_checkup_done", { done }),
+  /** 메뉴 막대 아이콘 설정 두 개를 바로 적용하고 저장한다 (다시 시작하지 않아도 된다) */
+  setTrayPrefs: (trayEnabled: boolean, keepInTray: boolean) => invoke<void>("set_tray_prefs", { trayEnabled, keepInTray }),
+  /** 메뉴 막대에 보일 상태 (tray.ts createTraySender가 같은 값을 다시 보내지 않게 거른다) */
+  trayUpdate: (payload: TrayWire) => invoke<void>("tray_update", { payload }),
+  /** 지금 창을 닫으면 숨기기만 하는가 (메뉴 막대에 남기기) */
+  trayHidesOnClose: () => invoke<boolean>("tray_hides_on_close"),
+  /** 숨었거나 최소화한 창을 꺼낸다 (보이는 창은 그대로). 메뉴 막대에서 시작한 녹음이 실패했을 때 오류를 보이려고 쓴다 */
+  trayShowIfHidden: () => invoke<void>("tray_show_if_hidden"),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setRecMode: (mode: string) => invoke<void>("set_rec_mode", { mode }),
@@ -302,10 +315,15 @@ export function useRecorder(onStopped: (dir: string) => void) {
   const onStoppedRef = useRef(onStopped);
   onStoppedRef.current = onStopped;
   const startedAt = useRef(0);
+  /** 녹음이 시작된 시각(epoch ms). 메뉴 막대가 경과 시간을 이 값으로 센다 (화면 타이머는 숨은 창에서 늦어진다) */
+  const startedAtMs = useRef<number | null>(null);
 
   useEffect(() => {
     const un = listen<RecEvent>("rec", ({ payload: ev }) => {
-      if (ev.event === "started") startedAt.current = performance.now();
+      if (ev.event === "started") {
+        startedAt.current = performance.now();
+        startedAtMs.current = Date.now();
+      }
       if (ev.event === "stopped") onStoppedRef.current(ev.dir);
       setRec((s) => recReduce(s, ev));
     });
@@ -348,5 +366,5 @@ export function useRecorder(onStopped: (dir: string) => void) {
     setLive(IDLE_LIVE);
   }, []);
 
-  return { rec, live, startRec: start, sendRec: send, resetRec: reset };
+  return { rec, live, startRec: start, sendRec: send, resetRec: reset, startedAtMs: startedAtMs.current };
 }

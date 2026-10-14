@@ -54,6 +54,11 @@ class Track(str, Enum):
     lite = "lite"
 
 
+class LiveEngine(str, Enum):  # `tractus live --engine` (개발·벤치 전용)
+    lite = "lite"
+    std = "std"
+
+
 class DiarizerEngine(str, Enum):
     auto = "auto"
     nemotron = NEMOTRON
@@ -523,8 +528,9 @@ def live_cmd(
     force: bool = typer.Option(False, "--force", help="메모리 16GB 미만 기기에서도 실행한다"),
     speakers: bool = typer.Option(False, "--speakers", help="실시간 화자 라벨(S1…, 미리보기 전용). GPU 사용률이 약 두 배가 된다"),
     progress_json: bool = typer.Option(False, "--progress-json", help="자막 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
+    engine: LiveEngine = typer.Option(LiveEngine.lite, "--engine", help="개발·벤치 전용: lite(0.6B, 기본) | std(1.7B). 앱은 쓰지 않는다 (bench/live_sim.py --engine)"),
 ) -> None:
-    """녹음 중 실시간 자막(미리보기). Qwen3-ASR 0.6B로 발화마다 전사해 내보내고 아무것도 저장하지 않는다.
+    """녹음 중 실시간 자막(미리보기). Qwen3-ASR 0.6B(--engine std는 개발·벤치 전용 1.7B)로 발화마다 전사해 내보내고 아무것도 저장하지 않는다.
     stdin에 `stop` 줄, stdin EOF, SIGTERM이면 마무리하고 종료 코드 0으로 끝난다. 정식 전사는 녹음을 멈춘 뒤 `transcribe --recording`.
     --progress-json 없이 실행하면 확정된 자막을 `\\[mm:ss] 문장` 줄로 stdout에 찍는다."""
     import signal
@@ -536,7 +542,7 @@ def live_cmd(
     if memory < STANDARD_MIN_MEMORY and not force:
         _fail(f"실시간 텍스트 변환은 메모리 16GB 이상에서만 켭니다 (이 Mac {memory / 1024**3:.0f}GB). 녹음과 함께 약 2GB를 더 써서 녹음 뒤 변환이 느려지거나 메모리가 부족할 수 있습니다. 그래도 쓰려면 --force", code="live_low_memory")
     try:
-        vad_dir, asr_dir = local_model(VAD_MODEL), local_model(MODELS[Track.lite])
+        vad_dir, asr_dir = local_model(VAD_MODEL), local_model(MODELS[Track.standard if engine is LiveEngine.std else Track.lite])
     except typer.BadParameter as e:
         _fail(str(e), code="model_missing")
 

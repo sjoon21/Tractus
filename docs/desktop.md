@@ -334,7 +334,7 @@ transcript.json은 그대로 두고 transcript.md·vtt만 다시 만든다. 표�
 ### 2.8 `tractus live` (실시간 자막, Phase 7.2)
 
 ```text
-tractus live --recording <녹음 폴더> [--progress-json] [--speakers] [--force]
+tractus live --recording <녹음 폴더> [--progress-json] [--speakers] [--force] [--engine lite|std]
 ```
 
 녹음하는 동안 자막을 **미리보기로만** 보여 준다. Qwen3-ASR 0.6B로 발화마다 전사하고 아무것도 저장하지 않는다. 정식 전사는 녹음을 멈춘 뒤 지금처럼 `transcribe --recording`이 만든다 (ARCHITECTURE.md §2.6).
@@ -344,7 +344,21 @@ tractus live --recording <녹음 폴더> [--progress-json] [--speakers] [--force
 - **정지:** stdin `stop` 줄, stdin EOF, SIGTERM이면 남은 오디오를 마무리하고 `done`을 낸 뒤 종료 코드 0으로 끝난다(실측 0.2초, 상한 약 2초). **모델을 올리는 중에 정지가 오면** VAD·ASR 모델 사이에서 멈춘다: 아직 시작하지 않은 모델은 올리지 않고(ASR 0.6B 로드가 1–2초라 이것이 상한을 지킨다), 자막 없이 `done`(`audio_sec` 0)으로 끝난다. 이미 올리는 중인 모델 하나는 끝나기를 기다린다. 앱은 녹음을 멈출 때 먼저 `stop`을 보내고 끝나기를 기다린다(5초 넘으면 kill). 그다음 지금과 같이 `transcribe --recording`을 시작한다. 앱이 죽으면 stdin EOF로 같이 끝난다.
 - **밀림 방어:** 루프는 step마다 디스크의 오디오를 모두 읽는다. 라이브 끝에서 `MAX_LAG_S`(10초)보다 뒤처진 발화는 **ASR을 돌리기 전에** 건너뛴다(`live_lagging` 경고 한 번, `done.stats.dropped_finals`). 보이던 `partial`이 있으면 그 문장으로 `final`을 내 화면에 `partial`이 남지 않게 한다. 그러므로 `final`이 나올 때 그 발화는 라이브 끝에서 약 10초 + ASR 한 번 안에 있다. 쌓인 양이 step 끝에서도 10초를 넘으면 밀린 오디오를 통째로 건너뛴다.
 - **터미널:** `--progress-json` 없이 실행하면 이벤트를 내지 않고 확정된 자막만 `[mm:ss] 문장`(화자가 있으면 `[mm:ss] S1: 문장`) 줄로 stdout에 찍는다. `SIGINT`·`SIGTERM` 핸들러는 실행하는 동안만 걸고 끝나면 원래대로 되돌린다.
-- **메모리:** 물리 메모리 16GB 미만이면 `--force` 없이는 `error`(`code: live_low_memory`), 종료 코드 1이다. 1.7B는 올리지 않는다(실측 최대 footprint 1.8GB).
+- **`--engine lite|std` (개발·벤치 전용, 앱은 쓰지 않는다):** 기본 `lite`(0.6B)가 위 동작 그대로다. `std`는 표준 엔진(1.7B)으로 같은 코드 경로를 돌려 실시간이 가능한지 재는 용도다(`bench/live_sim.py --engine std`, 결과는 `bench/results/live_summary.json`의 `engine`·`run`). 기능 잠금(`capabilities`의 `live`)은 여전히 0.6B를 요구한다.
+- **표준 엔진(1.7B)으로도 되는지 잰 결과 (2026-10-14, M3 16GB): 안 된다 (`not_feasible`). 그래서 실시간 텍스트 변환은 계속 가벼운 엔진(0.6B)만 쓴다.** 같은 코드 경로를 `bench/live_sim.py --engine std`로 가상 `say` 대화(68초 두 번, 334초 한 번, 실시간)에 돌렸다. 판정 기준은 (a) `live_lagging` 경고·버려진 `final` 없음, (b) 확정 지연 p95 1.0초 이하(+25%인 1.25초까지는 단서를 달고 가능), (c) ASR 시간/오디오 길이 0.5 이하, (d) 최대 footprint 4.5GB 이하, (e) 5분 실행 중 메모리 증가 10% 이하이고 전부 통과해야 가능이다.
+
+  | 지표 | 가벼운 엔진 (0.6B) | 표준 엔진 (1.7B) | 기준 |
+  | --- | --- | --- | --- |
+  | 확정 지연 p95 | 0.80–1.01초 (조용할 때 0.76초) | **1.59 · 1.73 · 1.95초** (68초 두 번·334초). p50 0.99–1.22초. 68초 실행의 p95는 발화 9개의 최댓값에 가까워 334초(발화 45개) 값이 더 믿을 만하다 | 1.0초 이하. **+59% ~ +95%라 단서 한도 1.25초도 넘는다** |
+  | ASR 시간 / 오디오 길이 | 0.14–0.17 (조용할 때 0.118) | 0.29–0.33 | 0.5 이하, 통과 |
+  | 최대 footprint | 1.85GB | 3.42–3.43GB (정상 상태 2.58GB, 순간 최대 3.4GB) | 4.5GB 이하, 통과 |
+  | 켠 직후 점유(무음 30초) | 1.14GB | 2.54GB (**+1.40GB**) | — |
+  | 334초 동안 메모리 증가 | +0.1% | +0.0% (구간별 최대 3.43 → 3.42GB) | 10% 이하, 통과 |
+  | `live_lagging`·버려진 `final` | 0 · 0 | 0 · 0 (건너뛴 `partial` 2 · 2 · 9) | 없음, 통과 |
+  | CER (`say` 대본 대비) | 0.150 (68초) · 0.164 (334초) | 0.186 (68초) · 0.178 (334초) | 참고. 표준이 더 낫지 않다 |
+
+  이유: 1.7B는 호출마다 ASR 시간이 약 두 배(0.3 대 0.15)이고, 확정 지연은 설계상 무음 대기 0.51초에 ASR 한 번이 더해진다. 표준 엔진의 처리 지연 p95(무음 대기를 뺀 값)가 1.03–1.59초로 가벼운 엔진의 0.24–0.89초보다 길다. 실시간 속도(RTF)와 메모리는 문제가 없고 **확정 지연만 기준을 넘는다.** 품질에서 얻는 것도 없다(이 가상 음성 기준). 실행 중 부하 평균이 3–6이었다(백그라운드 보안 프로그램). 가벼운 엔진도 조용할 때보다 느려졌지만(p95 0.76 → 0.80–1.01초) 표준 엔진의 초과는 그걸로 설명되지 않는 크기라 다시 재지 않았다. 다시 따져 볼 길은 무음 대기를 늘리거나 미리보기 주기를 줄이는 것, 조용한 Mac에서 다시 재는 것이다. 결과 전체는 `bench/results/live_summary.json`의 `engine`·`run`.
+- **메모리:** 물리 메모리 16GB 미만이면 `--force` 없이는 `error`(`code: live_low_memory`), 종료 코드 1이다. 앱과 기본 경로는 1.7B를 올리지 않는다(가벼운 엔진의 실측 최대 footprint 1.85GB. 표준 엔진은 위 실측대로 지연 때문에 쓰지 않는다).
 - **화자:** 기본은 `speaker: null`이다. `--speakers`를 주면 Nemotron 스트리밍으로 `"S1"`…을 붙인다. 미리보기 안에서만 쓰는 라벨이라 최종 전사의 라벨과 다를 수 있다. GPU 사용률 증가분이 약 세 배가 되므로 앱은 쓰지 않는다(ARCHITECTURE.md §2.6).
 - 모델(`silero-vad-v6`, `qwen3-asr-0.6b-8bit`)이 없으면 `error`(`code: model_missing`, 메시지에 `hf download …`), 종료 코드 1.
 
@@ -606,8 +620,8 @@ MCP: `list_meetings`는 `favorite`·`tags`·`folder`(이름)·`folder_id`를 싣
 | id | 모델 | 단계 | 크기 | 폴더 | 이게 없으면 못 쓰는 기능 |
 | --- | --- | --- | --- | --- | --- |
 | `vad` | Silero VAD v6 | 필수 | 1.2MB | `silero-vad-v6` | `convert`, `live` |
-| `asr-std` | Qwen3-ASR 1.7B 8bit | 필수(둘 중 하나) | 2.5GB | `qwen3-asr-1.7b-8bit` | `convert` (둘 다 없을 때) |
-| `asr-lite` | Qwen3-ASR 0.6B 8bit | 필수(둘 중 하나), 실시간은 항상 | 1.0GB | `qwen3-asr-0.6b-8bit` | `convert` (둘 다 없을 때), `live` |
+| `asr-std` | Qwen3-ASR 1.7B 8bit | 필수 (둘 중 하나) | 2.5GB | `qwen3-asr-1.7b-8bit` | `convert` (둘 다 없을 때) |
+| `asr-lite` | Qwen3-ASR 0.6B 8bit | 필수 (둘 중 하나), 실시간은 항상 | 1.0GB | `qwen3-asr-0.6b-8bit` | `convert` (둘 다 없을 때), `live` |
 | `diarizer` | Nemotron-3 Diarization | 권장 | 0.2GB | `nemotron-3-diarization` | `diarize` |
 | `aligner` | Qwen3-ForcedAligner 0.6B 8bit | 선택 | 1.3GB | `qwen3-forcedaligner-0.6b-8bit` | `align` |
 | `embedding` | Qwen3-Embedding 0.6B | 선택 | 1.2GB | `qwen3-embedding-0.6b` | `smart-search` |
@@ -616,7 +630,7 @@ MCP: `list_meetings`는 `favorite`·`tags`·`folder`(이름)·`folder_id`를 싣
 
 크기 합계(GiB): `required` 2.3(16GB 이상, 미만이면 1.0), `standard` 4.8, `lite` 1.1, `all`(fluid 제외) 5.8.
 
-기능(`capabilities`): `record`(도구 `recorder`) · `convert`(`vad` + `asr-std`/`asr-lite` 중 하나 + 도구 `ffmpeg`) · `diarize`(`diarizer`) · `diarize-many`(`fluid`) · `align`(`aligner` + 도구 `ffmpeg`: 노트 오디오를 디코딩한다) · `smart-search`(`embedding`) · `live`(`vad` + `asr-lite` + 도구 `recorder` + 메모리 16GB 이상: **표준 엔진이 있어도 0.6B가 따로 필요하다**. 16GB 미만이면 `tractus live`가 `live_low_memory`로 거절하므로 `missing`에 `memory`가 든다) · `voices`(`voices` + 도구 `ffmpeg`). 요약·질문은 모델이 아니라 API 키라 코어 점검에 없다(앱이 키 상태를 더한다). 녹음 자체는 모델이 필요 없다: 변환 엔진이 없어도 녹음은 저장되고 앱은 `변환 대기 중인 녹음`으로 보인다.
+기능(`capabilities`): `record`(도구 `recorder`) · `convert`(`vad` + `asr-std`/`asr-lite` 중 하나 + 도구 `ffmpeg`) · `diarize`(`diarizer`) · `diarize-many`(`fluid`) · `align`(`aligner` + 도구 `ffmpeg`: 노트 오디오를 디코딩한다) · `smart-search`(`embedding`) · `live`(`vad` + `asr-lite` + 도구 `recorder` + 메모리 16GB 이상: **표준 엔진이 있어도 0.6B가 따로 필요하다.** 1.7B로 실시간을 재 봤으나 확정 지연 p95가 1.59–1.95초로 기준(1.0초)을 넘어 쓰지 않는다, §2.8. 16GB 미만이면 `tractus live`가 `live_low_memory`로 거절하므로 `missing`에 `memory`가 든다) · `voices`(`voices` + 도구 `ffmpeg`). 요약·질문은 모델이 아니라 API 키라 코어 점검에 없다(앱이 키 상태를 더한다). 녹음 자체는 모델이 필요 없다: 변환 엔진이 없어도 녹음은 저장되고 앱은 `변환 대기 중인 녹음`으로 보인다.
 
 #### `tractus models list [--json]`
 
@@ -624,7 +638,7 @@ MCP: `list_meetings`는 `favorite`·`tags`·`folder`(이름)·`folder_id`를 싣
 
 ```json
 {"models_dir": "/Users/me/Tractus/models", "disk_free_bytes": 199610109952, "download_active": false,
- "models": [{"id": "asr-lite", "name": "변환 엔진 (가벼운 것)", "purpose": "…", "level": "required",
+ "models": [{"id": "asr-lite", "name": "변환 엔진 (가벼운 것)", "purpose": "…", "level": "required", "level_note": "one_of",
              "size_bytes": 1010771234, "installed": false, "installed_bytes": 0, "state": "missing",
              "needed_by": ["convert", "live"], "group": "convert", "path": "/Users/me/Tractus/models/qwen3-asr-0.6b-8bit",
              "model_name": "Qwen3-ASR 0.6B (8bit 양자화)", "publisher": "Alibaba Qwen 팀", "converted_by": "mlx-community (MLX 변환본)",
@@ -635,7 +649,7 @@ MCP: `list_meetings`는 `favorite`·`tags`·`folder`(이름)·`folder_id`를 싣
 - **모델 소개(2026-10-14, 추가 키만).** `model_name`(공식 이름을 풀어 쓴 것)·`publisher`(만든 곳)·`license`(Apache-2.0, MIT, OpenMDW-1.1, CC-BY-4.0 …)·`source`(내려받는 곳: HF 저장소 ID 또는 URL)는 항상 비어 있지 않은 문자열이다. `converted_by`(커뮤니티 변환본이면 변환한 곳, 공식 가중치 그대로면 `null`)·`revision`(고정한 리비전 전체. 고정하지 않은 voices·fluid는 `null`)·`languages`·`params`(카드에 적혀 있을 때만)는 `null`일 수 있다. 앱은 `revision`의 앞 8자만 보이고 전체는 `title`에 둔다. 값은 `models_registry.py`의 모델 줄 주석에 적은 모델 카드(HF API·README)·NOTICE로 2026-10-14에 확인했고, 확인하지 못한 값은 추측하지 않고 `null`이다(`tests/test_models.py`가 빈 값과 다운로드 상수와의 일치를 검사한다). 이름·만든 곳 같은 문구의 기준은 WORDS.md §4.14다.
 
 - `state`: `installed`(파일이 모두 있고 크기가 맞음) · `missing`(없음) · `partial`(일부만, 또는 받다 만 `.incomplete`·`.part`가 있음. `installed_bytes`에 받은 바이트) · `corrupt`(파일 크기가 다름, voices는 sha256 불일치). fluid는 모델 폴더와 도우미 프로그램이 모두 있어야 `installed`(모델만 있으면 `partial`).
-- `group`: `convert` · `speakers` · `words` · `search`. `level`: `required` · `recommended` · `optional`. `download_active`: 다른 프로세스가 이 폴더에서 받는 중.
+- `group`: `convert` · `speakers` · `words` · `search`. `level`: `required` · `recommended` · `optional`. `level_note`(추가 키, 2026-10-14): 같은 기능의 필수 모델 여럿 중 하나만 있으면 될 때 `"one_of"`, 아니면 `null`. 지금은 `asr-std`·`asr-lite`만 `one_of`이고(레지스트리의 `ONE_OF`, `tests/test_models.py`가 `CAPABILITIES`의 둘 중 하나 묶음과 일치를 검사한다) `level`은 그대로 `required`다: **`level` 값을 바꾸지 않아 옛 소비자는 그대로 읽는다.** 앱은 `level: required` + `level_note: one_of`를 `필수 (둘 중 하나)`로 보이고, 둘 중 하나라도 설치됐으면 `변환 엔진: 설치됨`으로 본다(WORDS.md §4.15). `tractus models list`(사람용 출력)도 같은 글자를 쓴다. `doctor`의 `models` 항목에도 같은 키가 있다. `download_active`: 다른 프로세스가 이 폴더에서 받는 중.
 - 받기를 마치면 HF 모델 폴더에 `.tractus-model.json`(`{id, revision, files, completed_at}`)을 **맨 마지막에** 쓴다. 상태 판단은 파일 크기가 기본이고, 이 표시가 있으면 `revision`이 레지스트리와 같은지도 본다(다르면 `partial`: 다시 받으면 새 리비전으로 채운다). 표시가 없는 폴더(직접 받은 것)는 파일이 맞으면 설치로 본다. 내용 해시는 voices만 확인한다.
 
 #### `tractus models download [ID …] [--preset required|standard|lite|all] [--progress-json]`
@@ -645,7 +659,7 @@ ID와 프리셋을 함께 주면 합친다(중복 제거, 레지스트리 순서
 | 프리셋 | 모델 |
 | --- | --- |
 | `required` | `vad` + 메모리가 권하는 엔진(16GB 이상 `asr-std`, 미만 `asr-lite`) |
-| `standard` | `vad` `asr-std` `diarizer` `aligner` `embedding` `voices` (실시간 텍스트 변환을 쓰려면 `asr-lite`를 더한다) |
+| `standard` | `vad` `asr-std` `diarizer` `aligner` `embedding` `voices` (실시간 텍스트 변환을 쓰려면 `asr-lite`를 더한다: 표준 엔진은 실시간 지연이 길어 못 쓴다, §2.8) |
 | `lite` | `vad` `asr-lite` `diarizer` |
 | `all` | 전부. `tractus-diar`가 없으면 fluid는 건너뛰고 경고 `fluid_skipped` |
 
@@ -684,7 +698,7 @@ ID와 프리셋을 함께 주면 합친다(중복 제거, 레지스트리 순서
            "ffmpeg": {"found": true, "path": "/opt/homebrew/bin/ffmpeg", "version": "8.1.1"},
            "recorder": {"found": true, "path": "…/recorder/.build/release/tractus-rec"},
            "diar_helper": {"found": false, "path": "…/recorder/diar/.build/release/tractus-diar"}},
- "models": [{"id": "vad", "level": "required", "state": "installed"}, …],
+ "models": [{"id": "vad", "level": "required", "level_note": null, "state": "installed"}, …],
  "capabilities": [{"id": "convert", "name": "텍스트로 변환", "ready": false, "missing": ["asr-std", "ffmpeg"],
                    "hint": "tractus models download asr-std; brew install ffmpeg"}, …],
  "recommended_track": "standard", "effective_track": null}
@@ -722,6 +736,33 @@ ID와 프리셋을 함께 주면 합친다(중복 제거, 레지스트리 순서
 - **받기 작업.** `job` 이벤트(`kind: "models"`, `job`은 프론트엔드가 만든 ID)로 코어의 JSON 줄(§2.15 이벤트)과 마지막 `exit`를 그대로 보낸다. 받기는 앱 전체에서 한 번에 하나다(앱이 한 번 더 확인하고, 코어도 `busy`). `models_cancel`은 SIGTERM을 보내 코어가 받던 파일을 남기고 멈추게 하고(`cancelled` + 종료 코드 130), 10초 뒤에도 남아 있으면 SIGKILL한다. 앱을 끄면 받기에 SIGTERM을 보낸다. 상태는 `modelsJob.ts`(앱 전체 저장소)가 `models.downloadReduce`로 모으므로 모델 화면·시작 점검을 닫았다 열어도 진행이 이어진다. 코어가 알리는 `overall_done/overall_total`을 전체 진행률로 쓰고, 없으면 받을 모델의 크기 합으로 센다.
 - **기능 잠금 (`useCapabilities`, `caps.ts`).** App이 시작할 때, 받기·지우기·설정 저장 뒤에, 창 초점이 돌아올 때(0.6초 디바운스, 5초 이내 반복 없음) `doctor`를 불러 `CapsContext`로 내려 준다. `can(id)` → `{ok}` 또는 `{ok: false, reason, missing, fix}`. 점검 결과가 없거나 그 기능이 점검에 없으면 `ok`다(앱을 막지 않는다). 못 쓰는 단추는 `GatedButton`(`aria-disabled`, 누르면 이유 팝오버 + 고치는 단추)과 `GateHint`(이유 한 줄 + 단추)로 한 곳에서 그린다. 잠그는 곳: 변환(파일 가져오기·`파일에서 추가`·끌어 놓기·`변환 대기 중인 녹음`의 변환), 녹음 프로그램(녹음 시작·녹음 추가), 단어 싱크 맞추기, 실시간 텍스트 변환 체크, 목소리 등록 체크, 참석자 구분 안내(노트마다 한 번 닫기), 스마트 검색(설정 상태·⌘K 검색). 변환할 수 없는 동안 녹음은 저장만 하고 변환을 시작하지 않는다(`변환 대기 중인 녹음`으로 남는다).
 - **시작 점검 (`Checkup.tsx`, `checkupRows.ts`).** 설정의 `checkup_done`이 `false`(키가 없어도)인 처음 실행에 한 번 저절로 열린다. 닫으면(Esc·닫기·`점검 마치기`) `true`로 저장한다. 행은 `ok|warn|blocked|info`: 시스템(Apple Silicon·macOS 14.4+·메모리·디스크), 도구(앱이 쓰는 `tractus` 경로·`ffmpeg`+복사할 `brew install ffmpeg`·`tractus-rec` 경로·`tractus-diar`), 모델(필수·권장·선택 요약 + 구성 단추), 권한 안내(글), AI 키(`llm_key_status`). 디스크 기준: 표준 구성 약 5.2 GB, 저사양 약 1.2 GB(레지스트리 크기의 합).
+
+### 3.1 메뉴 막대 아이콘 (v3.24, 이슈 #1)
+
+macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음을 시작·종료하고, 북마크를 남기고, 최근 노트를 열고, 창을 닫아도 앱(녹음·변환)이 계속 돌게 한다. 코어(Python)는 바뀌지 않는다. 구현은 `app/src-tauri/src/tray.rs`(메뉴·제목·아이콘)와 `app/src/tray.ts`(화면 상태 → 메뉴 상태, 동작 라우팅), 문구는 WORDS.md §4.16이다.
+
+- **역할 나누기.** Rust는 그리기만 한다: 메뉴·아이콘·제목, 창 보이기·숨기기. 녹음 시작·종료·북마크는 Rust가 하지 않고 화면이 창의 단추와 **같은 함수**(`onRecordButton`·`sendRec`·`openMeeting`)로 처리한다. 그래서 쓰던 메모 저장, 마이크 권한 처리, 마지막으로 고른 녹음 방식, 기능 잠금 알림, 글만 있는 노트의 녹음 추가 흐름이 그대로 적용된다.
+- **상태 → Rust: 명령 `tray_update(payload)`.** 화면(`App.tsx`)이 `deriveTrayState`로 만든 값을 보낸다. 같은 값은 다시 보내지 않고(`createTraySender`), 최근 노트 목록은 바뀔 때만 싣는다(없으면 Rust가 이전 목록을 둔다). 타이머로 모으지 않는다: 숨은 webview의 `setTimeout`은 한참 늦어져 메뉴가 낡은 채로 남는다.
+
+  ```json
+  {"phase": "idle" | "recording" | "converting",
+   "started_at_ms": 1760000000000,   // recording만. 녹음 시작 시각 (epoch ms), 한 번
+   "progress_pct": 45,               // converting만. 총량을 모르면 없다
+   "can_record": true,               // 녹음 프로그램(caps `record`)이 있고 녹음·변환 중이 아닐 때만
+   "can_bookmark": false,            // 녹음 중일 때만
+   "recent": [{"id": "…", "title": "…"}]}   // 최근에 고친 순 5개 (updated_at, 없으면 만든 시각)
+  ```
+
+  Rust의 읽기는 관대하다(`parse_payload`): 모르는 `phase`는 `idle`, 이상한 타입은 기본값, `progress_pct`는 0~100으로 끌어 넣고, 객체가 아니어도 패닉하지 않는다(오래된 화면). 화면의 `starting`은 시각 없는 `recording`(`녹음 준비 중…`, 종료·북마크 막음), `stopping`은 `converting`으로 보낸다. 녹음을 변환하는 중(`stopping`·변환 작업·대기)에는 `can_record`가 `false`다: 사이드바 녹음 단추가 변환이 끝난 뒤에만 녹음을 시작하는 규칙과 같다. 파일 가져오기·노트에 파일 추가 변환(`imp.job.running`·대기 파일·attach `converting`)은 창의 녹음 단추를 막지 않으므로 `phase: "converting"`(상태 줄 `변환 중 N%`)이지만 `can_record`는 녹음 프로그램 유무 그대로다. Rust는 `녹음 시작`을 `녹음 중이 아니고 can_record`일 때 켠다.
+- **알림: 명령 `tray_show_if_hidden`.** 녹음 시작 실패(`rec.phase === "error"`)나 녹음 경고는 녹음 화면에만 보이므로, 화면이 이때 이 명령을 불러 숨었거나 최소화한 창을 꺼낸다(보이는 창은 그대로). 메뉴 막대에서 시작한 녹음이 숨은 창에서 조용히 실패하지 않게 한다. 북마크는 창을 숨긴 동안 따로 알리지 않는다(알려진 한계).
+- **동작 → 화면: 이벤트 `tray-action`** (메인 창에만 `emit_to`). `{"action": "record_start" | "record_stop" | "bookmark" | "open_note", "id"?: 노트 ID}`. 화면이 아직 준비되지 않았으면 이벤트는 조용히 버려진다. `routeTrayAction`이 지금 상태에서 뜻 없는 동작(이미 녹음 중인 시작, 녹음 중이 아닌 종료·북마크)을 무시하고, 메뉴를 빠르게 두 번 눌러도 두 번째가 들어오기 전에 단계를 앞당겨 `rec_start`가 두 번 불리지 않게 한다. `Tractus 열기`와 `open_note`는 Rust가 창을 직접 보이고(`show`+`unminimize`+`set_focus`) 숨은 창에서도 된다. `종료`는 ⌘Q와 같은 `begin_quit`이다(쓰던 메모 저장, 3초 안에 종료, 녹음에는 `stop`).
+- **경과 시간.** 화면 타이머를 쓰지 않는다. 화면이 녹음 시작 시각(`rec` 이벤트 `started`를 받은 `Date.now()`)을 한 번 보내고, Rust가 1초 틱(별도 스레드가 메인 스레드에 `sync`를 맡긴다)으로 상태 줄과 아이콘 옆 글자(`●12:34`, 한 시간이 넘으면 `●1:02:03`)를 고친다. 틱은 단계가 바뀌거나 아이콘을 끄거나 앱이 끝나면(`RunEvent::Exit`) 멈춘다. 메뉴는 줄이 바뀔 때만 다시 만들고, 경과 시간은 글자만 바꾼다.
+- **메뉴.** 상태 줄(눌리지 않음) · `녹음 시작` · `녹음 종료 및 변환` · `북마크 남기기` · 구분선 · `최근 노트` ▸ (최대 5개, 제목 40자, 클릭하면 노트 열기) · 구분선 · `Tractus 열기` · `종료`. 항목을 숨기지 않고 못 쓸 때는 비활성으로 둔다.
+- **설정** (`settings.json`, 없으면 기본값 — 옛 설정 파일 호환): `tray_enabled`(기본 `true`, `메뉴 막대에 Tractus 표시`), `keep_in_tray`(기본 `true`, `창을 닫아도 메뉴 막대에 남기기`, `tray_enabled`가 꺼지면 쓸 수 없다). 설정 화면의 두 스위치는 저장 단추를 기다리지 않고 `set_tray_prefs`로 바로 적용한다(그 두 키만 병합해 쓴다. `save_settings`도 같은 적용을 한다). 아이콘은 실행 중에 만들고 없앤다(다시 시작 없음). 끌 때 창이 숨어 있으면 다시 보인다(다시 찾을 길이 Dock뿐이라서).
+- **창 닫기.** `should_hide_on_close(settings, tray_exists)` = `tray_enabled && keep_in_tray && 아이콘이 실제로 떠 있음`. 참이면 Rust의 창 이벤트 핸들러가 `prevent_close` + `hide`한다. 화면의 닫기 핸들러는 `tray_hides_on_close`로 같은 판단을 물어 참이면 쓰던 메모만 저장하고 닫기를 막는다(숨기기만 하므로 변환 취소 경고를 띄우지 않는다). 거짓(설정이 꺼짐, OS가 아이콘을 거절)이면 기존 흐름 그대로다: 닫기 확인 → 마지막 창이 닫히며 `ExitRequested` → `defer_exit`. Dock 아이콘(`RunEvent::Reopen`)은 숨은 창을 다시 보인다. ⌘Q와 아이콘의 `종료`는 `begin_quit`이다.
+- **아이콘.** 검정 + 투명 배경 macOS 템플릿 이미지(18×18 @1x, 36×36 @2x: tray-icon이 macOS에서 모든 이미지를 높이 18pt로 맞추므로 그 크기로 그려 줄이지 않는다, `set_icon_as_template(true)`로 라이트·다크에 맞춘다). 쉬는 중은 소리 막대 5개, 녹음 중은 막대 3개 + 꽉 찬 점. `scripts/make_tray_icons.py`(표준 라이브러리만, 재현 가능)가 `app/src-tauri/icons/tray/`의 PNG 4개를 만든다. 자리표시자라 디자이너가 PNG를 바로 바꿔 끼우면 된다(코드는 `@2x`를 `include_bytes!`로 읽는다). macOS `set_icon`은 템플릿 표시를 지우므로 아이콘을 바꿀 때마다 다시 건다.
+- **견고함.** `tray_update`는 잠금이 오염돼도 패닉하지 않는다. 아이콘을 만들지 못하면(OS가 거절) 기록만 하고 앱은 계속 뜨며, 그때는 창을 닫으면 그대로 끝난다. 메뉴 이벤트 핸들러는 앱 전체에 하나만 둔다(아이콘을 다시 만들 때마다 쌓이지 않게). 트레이 핸들은 메인 스레드에서만 만지고 버린다.
+- **빌드.** Tauri 기능 `tray-icon`, `image-png`를 켰다. 새로 잠기는 크레이트: `image 0.25`(MIT OR Apache-2.0), `byteorder-lite`(Unlicense OR MIT), `moxcms`·`pxfm`(BSD-3-Clause OR Apache-2.0) — `image-png`가 PNG를 읽으려고 끌어온다. `tray-icon`(MIT OR Apache-2.0)은 이미 `Cargo.lock`에 있던 것이다.
 
 ### v1 화면
 

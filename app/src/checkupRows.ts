@@ -142,10 +142,10 @@ function modelRows(report: DoctorReport | null, models: ModelsList | null): Chec
   const rows: CheckupRow[] = [];
   const lack: string[] = [];
   if (!has("vad")) lack.push("목소리 구간 감지 파일");
-  if (!has("asr-std") && !has("asr-lite")) lack.push("변환 엔진(1.7B 또는 0.6B)");
+  if (!has("asr-std") && !has("asr-lite")) lack.push("변환 엔진(표준·가벼운 것 중 하나)");
   rows.push(
     lack.length === 0
-      ? { id: "required", label: "필수 모델", status: "ok", detail: "텍스트 변환에 필요한 모델이 모두 있습니다" }
+      ? { id: "required", label: "필수 모델", status: "ok", detail: "텍스트 변환에 필요한 모델이 모두 있습니다 (변환 엔진은 둘 중 하나면 됩니다)" }
       : { id: "required", label: "필수 모델", status: "blocked", detail: `${lack.join(", ")}이(가) 없어 텍스트로 변환할 수 없습니다. 녹음은 저장됩니다.`, fix: FIX_MODELS },
   );
   rows.push(

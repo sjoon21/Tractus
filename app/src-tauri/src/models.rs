@@ -112,6 +112,8 @@ pub struct ModelRow {
     pub state: String,
     pub needed_by: Vec<String>,
     pub group: String,
+    /// "one_of": 필수 모델 여럿 중 하나만 있으면 된다 (변환 엔진). 옛 코어에는 없으니 None
+    pub level_note: Option<String>,
     // 모델 소개 (코어 `models list --json`의 추가 키. 옛 코어에는 없으니 None)
     pub model_name: Option<String>,
     pub publisher: Option<String>,
@@ -153,6 +155,7 @@ fn model_row(v: &Value) -> Option<ModelRow> {
         state,
         needed_by: strings_of(v, "needed_by"),
         group: s_of(v, "group").unwrap_or_default(),
+        level_note: s_of(v, "level_note"),
         model_name: s_of(v, "model_name"),
         publisher: s_of(v, "publisher"),
         converted_by: s_of(v, "converted_by"),
@@ -476,11 +479,12 @@ mod tests {
     fn models_list_parses_full_shape() {
         let out = r#"{"models_dir":"/m","disk_free_bytes":123456789,"download_active":true,"models":[
             {"id":"vad","name":"음성 구간 분석","purpose":"p","level":"required","size_bytes":1300000,"installed":true,"installed_bytes":1300000,"state":"installed","needed_by":["convert","live"],"group":"asr"},
-            {"id":"asr-std","name":"x","level":"required","size_bytes":2300000000.0,"installed":false,"installed_bytes":400,"state":"partial","needed_by":["convert"]}]}"#;
+            {"id":"asr-std","name":"x","level":"required","size_bytes":2300000000.0,"installed":false,"installed_bytes":400,"state":"partial","needed_by":["convert"],"level_note":"one_of"}]}"#;
         let l = parse_models_list(out).unwrap();
         assert_eq!((l.models_dir.as_str(), l.disk_free_bytes, l.download_active), ("/m", Some(123_456_789), true));
         assert_eq!(l.models.len(), 2);
-        assert_eq!(l.models[0], ModelRow { id: "vad".into(), name: "음성 구간 분석".into(), purpose: "p".into(), level: "required".into(), size_bytes: 1_300_000, installed: true, installed_bytes: 1_300_000, state: "installed".into(), needed_by: vec!["convert".into(), "live".into()], group: "asr".into(), model_name: None, publisher: None, converted_by: None, source: None, revision: None, license: None, languages: None, params: None });
+        assert_eq!(l.models[1].level_note.as_deref(), Some("one_of")); // 변환 엔진은 `필수 (둘 중 하나)`: 새 키를 그대로 넘긴다
+        assert_eq!(l.models[0], ModelRow { id: "vad".into(), name: "음성 구간 분석".into(), purpose: "p".into(), level: "required".into(), size_bytes: 1_300_000, installed: true, installed_bytes: 1_300_000, state: "installed".into(), needed_by: vec!["convert".into(), "live".into()], group: "asr".into(), level_note: None, model_name: None, publisher: None, converted_by: None, source: None, revision: None, license: None, languages: None, params: None });
         assert_eq!((l.models[1].size_bytes, l.models[1].state.as_str(), l.models[1].installed), (2_300_000_000, "partial", false));
     }
 

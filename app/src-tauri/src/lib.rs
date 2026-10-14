@@ -11,6 +11,7 @@ mod organize;
 mod procs;
 mod removal;
 mod summaries;
+mod tray;
 mod voices;
 
 use serde::{Deserialize, Serialize};
@@ -45,6 +46,10 @@ pub struct Settings {
     pub list_order: String,
     /// 시작 점검(docs/desktop.md §2.15)을 한 번 보여 줬는가. 처음 실행할 때만 저절로 열린다
     pub checkup_done: bool,
+    /// 메뉴 막대에 Tractus 아이콘을 둔다 (docs/desktop.md §3.1). 켜져 있어야 `keep_in_tray`가 뜻이 있다
+    pub tray_enabled: bool,
+    /// 창을 닫아도 앱을 끝내지 않고 메뉴 막대에 남긴다 (아이콘이 실제로 떠 있을 때만)
+    pub keep_in_tray: bool,
 }
 
 impl Default for Settings {
@@ -63,6 +68,8 @@ impl Default for Settings {
             list_sort: "updated".into(),
             list_order: "desc".into(),
             checkup_done: false,
+            tray_enabled: true,
+            keep_in_tray: true,
         }
     }
 }
@@ -245,14 +252,15 @@ fn get_settings(state: State<'_, AppState>) -> Settings {
 }
 
 #[tauri::command]
-fn save_settings(state: State<'_, AppState>, settings: Settings) -> Result<(), String> {
+fn save_settings(app: AppHandle, state: State<'_, AppState>, tray: State<'_, tray::TrayState>, settings: Settings) -> Result<(), String> {
     if let Some(dir) = state.config_path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
     state.mcp.set_spawn(settings.mcp_spawn());
-    *state.settings.lock().unwrap() = settings;
+    *state.settings.lock().unwrap() = settings.clone();
+    tray.apply(&app, &settings); // 메뉴 막대 아이콘 설정은 다시 시작하지 않아도 바로 적용된다
     Ok(())
 }
 
@@ -1011,8 +1019,20 @@ pub fn run() {
     let builder = builder.menu(app_menu);
     builder
         .on_menu_event(|app, event| {
-            if event.id().as_ref() == QUIT_MENU_ID {
+            let id = event.id().as_ref();
+            if id == QUIT_MENU_ID {
                 begin_quit(app);
+            } else {
+                tray::on_menu_event(app, id); // 메뉴 막대 아이콘의 메뉴 (트레이 항목이 아니면 아무것도 하지 않는다)
+            }
+        })
+        // 창을 닫아도 메뉴 막대에 남기는 설정이면 끝내지 않고 숨긴다. 끄면 마지막 창이 닫히며 기존 종료 흐름(defer_exit)이 돈다
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" && tray::hides_on_close(window.app_handle()) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         // 회의 오디오: media://localhost/<경로> (media.rs). 파일 읽기는 UI 스레드 밖에서
@@ -1037,7 +1057,9 @@ pub fn run() {
                     eprintln!("MCP 예열 실패: {e}");
                 }
             });
-            app.manage(AppState { settings: Mutex::new(settings), config_path, mcp, rec: Arc::default(), asks: Arc::default(), live: Arc::default(), busy: Arc::default(), index: Arc::default() });
+            app.manage(AppState { settings: Mutex::new(settings.clone()), config_path, mcp, rec: Arc::default(), asks: Arc::default(), live: Arc::default(), busy: Arc::default(), index: Arc::default() });
+            app.manage(tray::TrayState::default());
+            app.state::<tray::TrayState>().apply(app.handle(), &settings); // 아이콘을 못 만들어도(OS가 거절) 앱은 계속 뜬다
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -1046,6 +1068,10 @@ pub fn run() {
             save_settings,
             set_rec_mode,
             set_checkup_done,
+            tray::tray_update,
+            tray::tray_hides_on_close,
+            tray::tray_show_if_hidden,
+            tray::set_tray_prefs,
             models::models_list,
             models::doctor,
             models::models_download,
@@ -1099,8 +1125,14 @@ pub fn run() {
             if let tauri::RunEvent::ExitRequested { api, .. } = &event {
                 defer_exit(app, api);
             }
+            // macOS Dock 아이콘: 창을 숨겨 둔 채(메뉴 막대에 남기기) 눌러도 다시 보인다
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = &event {
+                tray::reopen(app, *has_visible_windows);
+            }
             // 앱을 닫으면 녹음을 정상 종료시킨다 (WAV 헤더 마무리). 실시간 자막은 저장할 것이 없으므로 바로 끝낸다
             if let tauri::RunEvent::Exit = event {
+                app.state::<tray::TrayState>().shutdown(); // 메뉴 막대 시계 타이머를 멈춘다
                 let state = app.state::<AppState>();
                 if let Some(stdin) = state.rec.lock().unwrap().as_mut() {
                     let _ = stdin.write_all(b"stop\n").and_then(|_| stdin.flush());
