@@ -115,7 +115,7 @@ def register(app: typer.Typer, note_app: typer.Typer) -> None:
         sort: str = typer.Option("updated", "--sort", help="created | updated | title | duration"),
         order: str = typer.Option("desc", "--order", help="asc | desc"),
     ) -> None:
-        """노트 목록. --json: {"notes": [{meeting_id, title, kind, created_at, updated_at, duration_sec, favorite, tags, folder}]}"""
+        """노트 목록. --json: {"notes": [{meeting_id, title, kind, state, created_at, updated_at, duration_sec, favorite, tags, folder}]}"""
         try:
             rows = organize.list_notes(home_dir(), favorite, tag or (), folder, sort, order)
         except ValueError as e:

@@ -5,19 +5,34 @@ import { IDLE_JOB } from "./lib";
 function setup(opts: { fail?: string } = {}) {
   const started: { job: string; noteId: string }[] = [];
   let n = 0;
+  const cancelled: string[] = [];
   const store = createAlignStore({
     start: async (job, noteId) => {
       started.push({ job, noteId });
       if (opts.fail) throw opts.fail;
     },
     newId: () => `job${++n}`,
+    cancel: async (job) => void cancelled.push(job),
   });
   const finished: AlignFinish[] = [];
   store.onFinish((f) => finished.push(f));
-  return { store, started, finished };
+  return { store, started, finished, cancelled };
 }
 
 describe("단어 싱크 작업 저장소", () => {
+  test("cancel은 그 노트의 돌고 있는 작업만 멈춘다 (끝난 뒤·없는 노트는 아무 일 없다)", async () => {
+    const { store, cancelled } = setup();
+    await store.start("n1");
+    await store.start("n2");
+    store.cancel("n2");
+    expect(cancelled).toEqual(["job2"]);
+    store.dispatch({ job: "job2", event: "exit", code: null, stderr: "" }); // kill된 프로세스의 exit
+    expect(store.get("n2").running).toBe(false);
+    store.cancel("n2");
+    store.cancel("없는 노트");
+    expect(cancelled).toEqual(["job2"]);
+  });
+
   test("시작하면 그 노트가 running이고, 다시 열어 읽어도 진행이 보인다", async () => {
     const { store, started } = setup();
     expect(store.get("n1")).toBe(IDLE_JOB);

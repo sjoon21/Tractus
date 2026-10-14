@@ -2,6 +2,7 @@
 
 mod ask;
 mod attach;
+mod deferred;
 mod llm_key;
 mod mcp;
 mod media;
@@ -50,6 +51,8 @@ pub struct Settings {
     pub tray_enabled: bool,
     /// 창을 닫아도 앱을 끝내지 않고 메뉴 막대에 남긴다 (아이콘이 실제로 떠 있을 때만)
     pub keep_in_tray: bool,
+    /// 녹음을 끝내면: "ask"(매번 묻기) | "convert"(바로 텍스트로 변환) | "later"(노트로 저장만 하고 나중에 변환). 모르는 값은 화면이 "ask"로 읽는다 (docs/desktop.md §3.3)
+    pub after_record: String,
 }
 
 impl Default for Settings {
@@ -70,6 +73,7 @@ impl Default for Settings {
             checkup_done: false,
             tray_enabled: true,
             keep_in_tray: true,
+            after_record: "ask".into(),
         }
     }
 }
@@ -150,7 +154,7 @@ struct AppState {
     config_path: PathBuf,
     mcp: Arc<mcp::McpClient>,
     rec: Arc<Mutex<Option<ChildStdin>>>,
-    /// 진행 중인 질문 (작업 ID → 프로세스). 멈추기(ask_cancel)가 kill한다
+    /// 진행 중인 질문과 변환 전 노트의 변환 (작업 ID → 프로세스). 멈추기(ask_cancel)가 kill한다
     asks: Arc<Mutex<HashMap<String, Arc<Mutex<Child>>>>>,
     /// 녹음 중 실시간 자막 프로세스. 녹음이 끝나면(stopped·exit) 정식 전사보다 먼저 끝낸다
     live: LiveSlot,
@@ -1072,6 +1076,9 @@ pub fn run() {
             tray::tray_hides_on_close,
             tray::tray_show_if_hidden,
             tray::set_tray_prefs,
+            deferred::set_after_record,
+            deferred::recording_finish,
+            deferred::convert_note,
             models::models_list,
             models::doctor,
             models::models_download,
@@ -1166,6 +1173,7 @@ mod tests {
         assert_eq!(partial.home, "/x");
         assert!(!partial.rec_bin.is_empty());
         assert_eq!(partial.rec_mode, "in_person"); // 예전 설정 파일에는 녹음 방식이 없다
+        assert_eq!(partial.after_record, "ask"); // 예전 설정 파일에는 `녹음을 끝내면`이 없다: 매번 묻는다
     }
 
     /// 저장된 API 키는 요약·질문 실행에만 들어간다 (llm_key.rs). MCP·녹음·변환 등은 키를 보지 못한다

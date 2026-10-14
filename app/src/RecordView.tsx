@@ -4,9 +4,12 @@ import { RECORD_LABEL } from "./attach";
 import { ErrorDetail } from "./ErrorDetail";
 import { GateHint } from "./GatedButton";
 import { useCapabilities } from "./useCapabilities";
-import { errorView, fmtTime, JOB_ERROR, levelFraction, liveHaltView, liveHalted, REC_MODES, STAGE_LABEL, warningText } from "./lib";
+import { errorView, fmtTime, isRecLive, JOB_ERROR, levelFraction, liveHaltView, liveHalted, REC_MODES, STAGE_LABEL, warningText } from "./lib";
+import { AFTER_ASK } from "./afterRecord";
+import { PAUSE_LABEL, PAUSE_TITLE, PAUSED_NOTE, RESUME_LABEL, RESUME_TITLE } from "./pause";
+import { SAVE_DONE_TITLE, SAVE_FAILED_TITLE, SAVE_RETRY, SAVING } from "./recorded";
 
-type Send = (cmd: "bookmark" | "memo" | "stop", text?: string) => Promise<void>;
+type Send = (cmd: "bookmark" | "memo" | "stop" | "pause" | "resume", text?: string) => Promise<void>;
 
 export function RecordView({
   rec,
@@ -16,6 +19,8 @@ export function RecordView({
   retry,
   attachTitle = null,
   unconverted = null,
+  progressKind = "convert",
+  choosing = false,
 }: {
   rec: RecState;
   captions: LiveState;
@@ -25,20 +30,26 @@ export function RecordView({
   attachTitle?: string | null;
   /** 변환 엔진이 없어 녹음만 저장했을 때의 안내 문장 (없으면 null). 변환 진행 줄 대신 보인다 */
   unconverted?: string | null;
+  /** 진행 줄이 보이는 작업: 텍스트 변환 | 노트로 저장 (`recording finish`) */
+  progressKind?: "convert" | "save";
+  /** 녹음을 끝내고 `바로 변환 / 나중에 변환`을 묻는 중: 아직 아무 작업도 시작하지 않았으므로 진행 줄(옛 작업의 `완료`일 수 있다)을 가린다 */
+  choosing?: boolean;
 }) {
   const caps = useCapabilities();
   const [memo, setMemo] = useState("");
   // 한글 조합 중 Enter로 제출하고 입력을 비우면 조합 중인 글자가 다시 들어간다(한 글자짜리 메모가 하나 더 생김).
   // 조합 중에는 제출하지 않는다. 조합이 끝난 뒤의 Enter가 제출한다
   const composing = useRef(false);
-  const live = rec.phase === "recording";
+  const live = isRecLive(rec.phase); // 녹음 중이거나 일시정지: 끝내기·북마크·메모가 된다
+  const paused = rec.phase === "paused";
   const mode = REC_MODES.find((m) => m.mode === rec.mode);
 
   return (
     <section className="record" aria-labelledby="record-title">
       <p className="eyebrow" id="record-title">
         {rec.phase === "starting" && "녹음 준비 중"}
-        {live && "녹음 중"}
+        {rec.phase === "recording" && "녹음 중"}
+        {paused && "일시정지됨"}
         {rec.phase === "stopping" && "마무리하는 중"}
         {rec.phase === "stopped" && "녹음 끝"}
         {rec.phase === "error" && "녹음 오류"}
@@ -47,7 +58,7 @@ export function RecordView({
 
       {attachTitle !== null && <p className="record-attach">{RECORD_LABEL(attachTitle)}</p>}
 
-      <time className={`record-clock tnum ${live ? "is-live" : ""}`} aria-live="off">
+      <time className={`record-clock tnum ${rec.phase === "recording" ? "is-live" : ""} ${paused ? "is-paused" : ""}`} aria-live="off">
         {fmtTime(rec.t)}
       </time>
 
@@ -78,12 +89,20 @@ export function RecordView({
 
           <LivePane live={captions} recording={live} />
 
+          {paused && (
+            <p className="record-paused" role="status">
+              {PAUSED_NOTE}
+            </p>
+          )}
           <div className="record-controls">
+            <button className="ghost-button" onClick={() => send(paused ? "resume" : "pause")} disabled={!live} title={paused ? RESUME_TITLE : PAUSE_TITLE}>
+              {paused ? RESUME_LABEL : PAUSE_LABEL}
+            </button>
             <button className="ghost-button" onClick={() => send("bookmark")} disabled={!live}>
               북마크 <kbd>B</kbd>
             </button>
             <button className="stop-button" onClick={() => send("stop")} disabled={!live}>
-              <span aria-hidden className="stop-square" /> 녹음 종료 및 변환
+              <span aria-hidden className="stop-square" /> 녹음 종료
             </button>
           </div>
 
@@ -116,7 +135,12 @@ export function RecordView({
           <GateHint gate={caps.can("convert")} />
         </div>
       )}
-      {!(unconverted && rec.phase === "stopped" && !job.running) && (rec.phase === "stopped" || job.running || job.error) && <JobProgress job={job} retry={retry} />}
+      {choosing && rec.phase === "stopped" && (
+        <div className="job" role="status">
+          <p>{AFTER_ASK.pending}</p>
+        </div>
+      )}
+      {!choosing && !(unconverted && rec.phase === "stopped" && !job.running) && (rec.phase === "stopped" || job.running || job.error) && <JobProgress job={job} retry={retry} kind={progressKind} />}
 
       {rec.marks.length > 0 && (
         <ol className="mark-list">
@@ -209,13 +233,14 @@ function Meter({ label, db, present }: { label: string; db: number | null; prese
   );
 }
 
-function JobProgress({ job, retry }: { job: JobState; retry: () => void }) {
+function JobProgress({ job, retry, kind }: { job: JobState; retry: () => void; kind: "convert" | "save" }) {
   const pct = job.total ? Math.round((job.done / job.total) * 100) : null;
-  const err = job.error ? errorView(job.error, job.errorCode, JOB_ERROR.transcribe) : null;
+  const save = kind === "save";
+  const err = job.error ? errorView(job.error, job.errorCode, save ? JOB_ERROR.finish : JOB_ERROR.transcribe) : null;
   return (
     <div className="job" aria-live="polite">
       <div className="job-line">
-        <span>{job.error ? "텍스트 변환 실패" : job.running ? (STAGE_LABEL[job.stage ?? ""] ?? "변환 준비 중…") : "텍스트 변환 완료"}</span>
+        <span>{job.error ? (save ? SAVE_FAILED_TITLE : "텍스트 변환 실패") : job.running ? (STAGE_LABEL[job.stage ?? ""] ?? (save ? SAVING : "변환 준비 중…")) : save ? SAVE_DONE_TITLE : "텍스트 변환 완료"}</span>
         {pct !== null && job.running && (
           <span className="tnum">
             {job.done}/{job.total} · {pct}%
@@ -238,7 +263,7 @@ function JobProgress({ job, retry }: { job: JobState; retry: () => void }) {
             <ErrorDetail detail={err.detail} />
           </div>
           <button className="primary-button" onClick={retry}>
-            다시 변환
+            {save ? SAVE_RETRY : "다시 변환"}
           </button>
         </>
       )}

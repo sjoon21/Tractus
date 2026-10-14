@@ -27,7 +27,7 @@ _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 __all__ = [
     "Job", "Segment", "add_glossary_terms", "apply_speaker_edit", "apply_suggestions", "apply_text_edits", "META_KEYS", "edit_transcript", "find_job", "find_meeting_dir",
-    "forget_person", "is_memo", "load_glossary", "meeting_dir_name", "memo_lines", "memo_segments", "new_ulid", "note_lock", "read_transcript", "render_files", "render_markdown", "save_transcript",
+    "forget_person", "is_memo", "is_recorded", "load_glossary", "meeting_dir_name", "memo_lines", "memo_segments", "new_ulid", "note_lock", "read_transcript", "render_files", "render_markdown", "save_transcript",
     "seg_text", "speaker_display", "speaker_name", "stamp", "write_transcript",
 ]
 
@@ -91,6 +91,7 @@ class Job:
     diarizer: dict | None = None  # transcript.json의 diarization. None이면 화자 분리 안 함
     suggestions: dict = field(default_factory=dict)  # 목소리 제안 {라벨: {person_id, name, score}}. 이어하기 때 다시 맞추지 않는다
     attach: bool = False  # True면 글만 있는 노트(meeting_id)에 녹음을 덧붙이는 작업이다 (attach.py). 폴더는 이미 transcript.json이 있는 그 노트
+    convert: bool = False  # True면 "변환 전" 노트(meeting_id)를 그 자리에서 텍스트로 변환하는 작업이다 (deferred.py, `transcribe --into`). 폴더는 이미 transcript.json이 있는 그 노트
 
     def __post_init__(self) -> None:
         self.chunks = [(c[0], c[1], c[2] if len(c) > 2 else None) for c in self.chunks]  # 예전 작업의 [s, e]도 받는다
@@ -129,18 +130,19 @@ class Job:
         return cls(dir=d, **data)
 
 
-def find_job(meetings: Path, sha256: str, append_to: str | None = None) -> Job | None:
-    """같은 원본 파일로 시작했다가 끝나지 않은 작업을 찾는다.
-    append_to(meeting_id)가 없으면 새 노트를 만드는 작업만, 있으면 그 노트에 녹음을 덧붙이는 작업(Job.attach)만 찾는다."""
+def find_job(meetings: Path, sha256: str, append_to: str | None = None, into: str | None = None) -> Job | None:
+    """같은 원본 파일로 시작했다가 끝나지 않은 작업을 찾는다. 작업은 세 종류이고 서로 섞이지 않는다:
+    인수 없음 = 새 노트를 만드는 작업, append_to(meeting_id) = 그 노트에 녹음을 덧붙이는 작업(Job.attach), into(meeting_id) = 그 "변환 전" 노트를 변환하는 작업(Job.convert)."""
     for p in sorted(meetings.glob(f"*/{JOB_FILE}")):
         try:
             job = Job.load(p.parent)
         except (OSError, ValueError, TypeError, KeyError):
             continue  # 다른 회의 폴더의 손상된 파일 때문에 전체가 막히지 않게 한다
-        if (p.parent / "transcript.json").is_file() and not _append_pending(p.parent):
+        if (p.parent / "transcript.json").is_file() and not _job_pending(p.parent):
             _clean_stale_job(p.parent)  # 끝난 노트에 남은 작업 파일: 이어하기 대상이 아니다
             continue
-        if job.sha256 == sha256 and (job.meeting_id == append_to if job.attach else append_to is None):
+        want = job.meeting_id == append_to if job.attach else job.meeting_id == into if job.convert else append_to is None and into is None
+        if job.sha256 == sha256 and want:
             return job
     return None
 
@@ -149,8 +151,9 @@ def find_transcribed(meetings: Path, sha256: str) -> Path | None:
     """같은 원본 파일의 전사가 이미 끝난 회의 폴더."""
     for p in sorted(meetings.glob("*/transcript.json")):
         try:
-            found = json.loads(p.read_text(encoding="utf-8"))["audio"].get("sha256") == sha256
-        except (OSError, ValueError, TypeError, KeyError):
+            t = json.loads(p.read_text(encoding="utf-8"))
+            found = t["audio"].get("sha256") == sha256 and not is_recorded(t)  # "변환 전" 노트는 아직 변환한 것이 아니다
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
             continue
         if found:
             _clean_stale_job(p.parent)
@@ -177,18 +180,19 @@ def find_meeting_dir(meetings: Path, ref: str) -> Path:
 def _clean_stale_job(d: Path) -> None:
     """transcript.json이 있으면 그 노트는 끝난 것이다. write_transcript가 transcript.json을 쓴 뒤 작업 파일을 지우기 전에 끊겼다면
     남아 있는 .job.json·.chunks.jsonl을 지운다 (이어하기·삭제 거절·'변환 대기 중' 표시를 막는다)."""
-    if (d / "transcript.json").is_file() and not _append_pending(d):
+    if (d / "transcript.json").is_file() and not _job_pending(d):
         for name in (JOB_FILE, CHUNKS_FILE):
             (d / name).unlink(missing_ok=True)
 
 
-def _append_pending(d: Path) -> bool:
-    """글만 있는 노트에 녹음을 덧붙이는 작업(Job.attach)이 아직 끝나지 않았다: .job.json이 attach이고 transcript.json이 아직 메모 노트다.
-    이 노트의 작업 파일은 transcript.json이 있어도 낡은 것이 아니다. 변환이 끝나 메모 노트가 아니게 되면 낡은 파일이 된다."""
+def _job_pending(d: Path) -> bool:
+    """transcript.json이 있어도 이 노트의 작업 파일이 낡은 것이 아니다: 글만 있는 노트에 녹음을 덧붙이는 작업(Job.attach)은 transcript.json이 아직 메모 노트인 동안,
+    "변환 전" 노트를 변환하는 작업(Job.convert)은 transcript.json이 아직 변환 전(state recorded)인 동안 진행 중이다. 변환이 끝나면 낡은 파일이 된다."""
     try:
-        if not json.loads((d / JOB_FILE).read_text(encoding="utf-8")).get("attach"):
-            return False
-        return is_memo(read_transcript(d))
+        job = json.loads((d / JOB_FILE).read_text(encoding="utf-8"))
+        if job.get("attach"):
+            return is_memo(read_transcript(d))
+        return bool(job.get("convert")) and is_recorded(read_transcript(d))
     except (OSError, ValueError, AttributeError):
         return False
 
@@ -244,7 +248,7 @@ def render_files(d: Path, t: dict) -> None:
     from tractus.organize import folder_name_for  # organize가 store를 불러오므로 여기서 불러온다
 
     _write_atomic(d / "transcript.md", render_markdown(t, load_memos(d), folder_name_for(d, t)))
-    if not is_memo(t):  # 메모는 시각이 없어 자막(vtt)이 없다
+    if not is_memo(t) and not is_recorded(t):  # 메모는 시각이 없고 "변환 전" 노트는 대화가 없어 자막(vtt)이 없다
         _write_atomic(d / "transcript.vtt", render_vtt(t))
 
 
@@ -496,6 +500,16 @@ def is_memo(t: dict) -> bool:
     return t.get("kind") == "memo"
 
 
+RECORDED = "recorded"
+NOT_CONVERTED = "먼저 텍스트로 변환하세요."
+NOT_CONVERTED_NOTE = "아직 텍스트로 변환하지 않았습니다."
+
+
+def is_recorded(t: dict) -> bool:
+    """녹음은 했지만 아직 텍스트로 변환하지 않은 노트 ("변환 전", docs/desktop.md §2.16). kind는 그대로 녹음 노트이고 transcript.json에 "state": "recorded"가 있다. 변환이 끝나면 키가 없어진다."""
+    return t.get("state") == RECORDED
+
+
 def stamp(s: dict) -> str:
     """세그먼트(또는 근거·인용)의 위치 표기. 녹음 노트의 사용자 메모 줄(source "memo")은 '메모 n번째 줄',
     메모 노트의 줄(line이 있는 것)은 'n번째 줄', 그 밖에는 HH:MM:SS."""
@@ -585,12 +599,14 @@ def render_markdown(t: dict, memos: list[dict] | None = None, folder: str | None
         f"title: {_yaml_scalar(t['title'])}",
         f"created_at: {t['created_at']}",
         f"duration: {_hms(t['audio']['duration_sec'])}",
-        f"asr_model: {t['asr']['model']}",
+        *([f"asr_model: {t['asr']['model']}"] if isinstance(t.get("asr"), dict) else []),  # "변환 전" 노트에는 변환 엔진 정보가 없다
+        *(["state: recorded"] if is_recorded(t) else []),
         *_meta_lines(t, folder),
         "---",
         "",
         f"# {t['title']}",
         "",
+        *([NOT_CONVERTED_NOTE, ""] if is_recorded(t) else []),
     ]
     def who(s: dict) -> str:
         name = speaker_display(t, s.get("speaker"))

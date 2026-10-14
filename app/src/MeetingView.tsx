@@ -60,8 +60,12 @@ import { ExportMenu, FindBar, SegmentEditor, type FindState } from "./Transcript
 import { MemoEditor, TitleEditor, type MemoTarget } from "./MemoView";
 import { NoteOrganizer } from "./NoteOrganizer";
 import { ADD_FILE, ADD_FILE_TITLE, ADD_RECORDING, ADD_TITLE, LOCK_NOTICE, type AttachControls } from "./attach";
+import { ConvertPanel } from "./ConvertPanel";
+import { useConvertJob } from "./convertJobs";
+import { deleteBlockedWhileConverting, isRecorded, railNotice, RECORDED_BADGE, recordedStats, type ConvertControls } from "./recorded";
 import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type EditKind, type SaveState } from "./memo";
 import { RAIL_LABEL, railKey, railLabel, railTabs, validTab, type RailTab } from "./rail";
+import { PanelToggle, usePanels } from "./PanelToggle";
 import { releaseVoiceBoost, resumeVoiceBoost, setVoiceBoost, voiceBoostSupported } from "./voice";
 
 const RATE_KEY = "tractus.playbackRate";
@@ -81,6 +85,7 @@ export function MeetingView({
   notify,
   onDelete,
   attach,
+  convert,
   summaryStale = false,
 }: {
   id: string;
@@ -92,6 +97,8 @@ export function MeetingView({
   onDelete: (t: DeleteTarget) => void;
   /** 글만 있는 노트에 녹음 추가 (attach.ts). 없으면 단추도 잠금도 없다 */
   attach?: AttachControls;
+  /** 변환 전 노트의 변환 제어 (recorded.ts). 없으면 변환 단추가 동작하지 않는다 */
+  convert?: ConvertControls;
   /** 녹음을 방금 추가해 열었다: 요약이 있어도 아직 새 내용이 반영되지 않았다 */
   summaryStale?: boolean;
 }) {
@@ -112,6 +119,8 @@ export function MeetingView({
   const memoNote = !!detail && isMemo(detail.info);
   const memoRef = useRef(false);
   memoRef.current = memoNote;
+  const recordedRef = useRef(false); // 변환 전 노트: 대화가 없어 찾아 바꾸기를 열지 않는다
+  recordedRef.current = !!detail && isRecorded(detail.info);
   const [memoSave, setMemoSave] = useState<SaveState>({ status: "saved" });
   const [memoPick, setMemoPick] = useState<MemoTarget | null>(null); // 요약 칩으로 고른 줄
   const audio = useRef<HTMLAudioElement>(null);
@@ -190,6 +199,13 @@ export function MeetingView({
     if (alignWasRunning.current && !align.job.running && !align.job.error) void load();
     alignWasRunning.current = align.job.running;
   }, [align.job.running, align.job.error, load]);
+  // 변환 전 노트의 변환 (convertJobs.ts): 진행은 앱 저장소가 들고 있다. 끝나면 대화 내용을 다시 읽는다
+  const convertJob = useConvertJob(id);
+  const convertWasRunning = useRef(convertJob.running);
+  useEffect(() => {
+    if (convertWasRunning.current && !convertJob.running && !convertJob.error) void load();
+    convertWasRunning.current = convertJob.running;
+  }, [convertJob.running, convertJob.error, load]);
   const speakers = detail?.speakers ?? {};
   const stats = useMemo(() => speakerStats(segments, speakers), [detail]);
   const diarized = stats.length > 0;
@@ -393,6 +409,10 @@ export function MeetingView({
 
   // 오른쪽 레일: 요약 | AI 질문 (6.3) | 메모(녹음 노트만). 질문·메모 탭은 처음 열 때 만들고, 그 뒤에는 숨겨도 둔다(스트리밍·쓰던 글이 이어지게)
   const [tab, setTab] = useState<RailTab>("summary");
+  // 오른쪽 패널 접기 (PanelToggle.tsx): 접어도 내용은 그대로 두고 숨기기만 한다 (쓰던 메모·질문 스트림·요약 작업이 이어진다)
+  const { state: panels, reveal, registerRight } = usePanels();
+  useEffect(() => registerRight(), [registerRight]);
+  const railCollapsed = panels.right;
   const [askSeen, setAskSeen] = useState(false);
   const [memoSeen, setMemoSeen] = useState(false);
   const tabs = railTabs(memoNote);
@@ -412,9 +432,10 @@ export function MeetingView({
     if (!memoRef.current) {
       setTab("memo");
       setMemoSeen(true);
+      reveal({ kind: "memo-line", memoNote: false }); // 메모 탭이 접힌 패널 안에 있으면 펼친다
     }
     setMemoPick({ segId, nonce: Date.now() });
-  }, []);
+  }, [reveal]);
   const onCite = useCallback(
     (_m: string, segId: string, sec: number) => (memoRef.current || isMemoLineId(segId) ? openMemoLine(segId) : seekTo(sec)),
     [seekTo, openMemoLine],
@@ -551,6 +572,7 @@ export function MeetingView({
     const onKey = (e: KeyboardEvent) => {
       if (isImeKey(e) || memoRef.current) return; // 메모는 본문 편집기(textarea)가 키를 쓴다. 찾기·재생 단축키는 녹음 노트만
       if (e.metaKey && e.code === "KeyF") {
+        if (recordedRef.current) return;
         e.preventDefault();
         // 이미 열려 있으면 찾을 말을 고른다. 새로 열면 입력이 autoFocus로 초점을 받는다
         if (findInput.current) findInput.current.select();
@@ -616,6 +638,8 @@ export function MeetingView({
   if (!detail) return <p className="page-loading">불러오는 중…</p>;
 
   const { info } = detail;
+  const recorded = isRecorded(info);
+  const convertBlock = deleteBlockedWhileConverting(convert?.slot ?? (convertJob.running ? "running" : null));
   const created = info.created_at ? new Date(info.created_at) : null;
   // 메모: 대화 id → 본문 줄 번호 (요약·질문의 인용 칩 `n번째 줄`). 메모는 시각이 없어 시각 지도는 비운다
   const spans = memoNote ? segmentSpans(detail.body ?? "", segments) : null;
@@ -637,7 +661,7 @@ export function MeetingView({
   const noteBody = detail.note_memo?.body ?? "";
 
   return (
-    <div className="meeting">
+    <div className={`meeting${railCollapsed ? " is-rail-collapsed" : ""}`}>
       <article className="transcript-col" onWheel={() => playing && setFollow(false)} onScroll={() => menu && setMenu(null)}>
         {find && (
           <FindBar
@@ -658,6 +682,12 @@ export function MeetingView({
               {created?.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}
               {created && " · "}
               {created?.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+              {recorded && (
+                <>
+                  {" "}
+                  <span className="badge is-pending">{RECORDED_BADGE}</span>
+                </>
+              )}
             </p>
             <div className="head-actions">
               {!memoNote && segments.length > 0 && !hasWords && detail.audio_path && (
@@ -673,7 +703,7 @@ export function MeetingView({
                     : "단어 싱크 맞추기"}
                 </GatedButton>
               )}
-              {!memoNote && (
+              {!memoNote && !recorded && (
                 <button className="ghost-button head-button" onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
                   찾아 바꾸기
                 </button>
@@ -689,7 +719,7 @@ export function MeetingView({
                 </>
               )}
               <ExportMenu
-                formats={exportFormatsFor(memoNote)}
+                formats={exportFormatsFor(memoNote, recorded)}
                 onPick={(f) => void exportAs(f)}
                 onPrint={() => {
                   // 메모는 쓰던 글까지 인쇄한다
@@ -698,8 +728,8 @@ export function MeetingView({
               />
               <button
                 className="ghost-button head-button is-danger"
-                disabled={align.job.running || summaryRunning || !!attach?.lock}
-                title={align.job.running || summaryRunning || attach?.lock ? "작업이 끝난 뒤에 삭제할 수 있습니다" : "노트를 휴지통으로 옮깁니다"}
+                disabled={align.job.running || summaryRunning || !!attach?.lock || !!convertBlock}
+                title={convertBlock ?? (align.job.running || summaryRunning || attach?.lock ? "작업이 끝난 뒤에 삭제할 수 있습니다" : "노트를 휴지통으로 옮깁니다")}
                 onClick={() => onDelete({ kind: "note", id, title: info.title, dir: info.dir, memo: memoNote, withMemo: !memoNote && memoLines.size > 0 })}
               >
                 삭제
@@ -712,6 +742,8 @@ export function MeetingView({
             <p className="meeting-stats tnum">
               메모 · 줄 {info.segments}개 · {(detail.body ?? "").length.toLocaleString("ko-KR")}자
             </p>
+          ) : recorded ? (
+            <p className="meeting-stats tnum">{recordedStats(info.duration_sec, detail.memos.length)}</p>
           ) : (
             <p className="meeting-stats tnum">
               {fmtTime(info.duration_sec)} · 대화 {info.segments}개{detail.memos.length > 0 && ` · 녹음 중 메모 ${detail.memos.length}개`}
@@ -766,7 +798,8 @@ export function MeetingView({
         {memoNote && (
           <MemoEditor id={id} initial={detail.body ?? ""} savedBody={detail.body ?? ""} segments={segments} target={memoTarget} notify={notify} onSaved={onMemoSaved} onState={setMemoSave} locked={attach?.lock ? LOCK_NOTICE[attach.lock] : null} />
         )}
-        {!memoNote && segments.length === 0 && (
+        {!memoNote && recorded && convert && <ConvertPanel id={id} job={convertJob} controls={convert} />}
+        {!memoNote && !recorded && segments.length === 0 && (
           <div className="transcript-empty" role="status">
             <p className="eyebrow">인식된 대화가 없습니다</p>
             <p>이 녹음에서 말소리를 찾지 못했습니다. 아래 플레이어로 녹음된 소리를 확인해 보세요. 마이크가 멀었거나 녹음이 너무 짧았을 수 있습니다.</p>
@@ -902,6 +935,8 @@ export function MeetingView({
       </article>
 
       <aside className="summary-col" aria-label={railLabel(memoNote)}>
+        <PanelToggle side="right" />
+        <div id="rail-body" className="rail-body" hidden={railCollapsed}>
         <div
           className="rail-tabs"
           role="tablist"
@@ -923,6 +958,11 @@ export function MeetingView({
           ))}
         </div>
         <div id="panel-summary" role="tabpanel" aria-labelledby="tab-summary" hidden={tabNow !== "summary"}>
+          {recorded ? (
+            <p className="rail-pending" role="status">
+              {railNotice("summary", true)}
+            </p>
+          ) : (
           <SummariesPanel
             id={id}
             memoNote={memoNote}
@@ -940,10 +980,17 @@ export function MeetingView({
             onSelect={setSelectedSummary}
             onChanged={onChanged}
           />
+          )}
         </div>
         {askSeen && (
           <div id="panel-ask" role="tabpanel" aria-labelledby="tab-ask" className="rail-ask" hidden={tabNow !== "ask"}>
-            <AskPanel scope={{ kind: "meeting", id, starts, memoLines: memoLines.size > 0 ? memoLines : undefined, memoNote }} onCite={onCite} />
+            {recorded ? (
+              <p className="rail-pending" role="status">
+                {railNotice("ask", true)}
+              </p>
+            ) : (
+              <AskPanel scope={{ kind: "meeting", id, starts, memoLines: memoLines.size > 0 ? memoLines : undefined, memoNote }} onCite={onCite} />
+            )}
           </div>
         )}
         {memoSeen && !memoNote && (
@@ -952,6 +999,7 @@ export function MeetingView({
             <MemoEditor variant="rail" id={id} initial={noteBody} savedBody={noteBody} segments={memoSegs} target={memoTarget} notify={notify} onSaved={onMemoSaved} onState={setMemoSave} />
           </div>
         )}
+        </div>
       </aside>
       {printable && <PrintSheet doc={printable} />}
     </div>

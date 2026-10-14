@@ -19,7 +19,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
 import { bindIndexer } from "./indexer";
-import { baseName, errorView, isImeKey, IDLE_JOB, JOB_ERROR, fmtTime, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, STAGE_FALLBACK, STAGE_LABEL, warningText, type RecMode } from "./lib";
+import { baseName, errorView, isImeKey, isRecLive, IDLE_JOB, JOB_ERROR, fmtTime, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, STAGE_FALLBACK, STAGE_LABEL, warningText, type RecMode } from "./lib";
 import { MeetingView } from "./MeetingView";
 import type { NewNoteAction } from "./menu";
 import { NewNoteMenu } from "./NewNoteMenu";
@@ -29,9 +29,17 @@ import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE
 import { SearchView } from "./SearchView";
 import { SettingsView } from "./SettingsView";
 import { createTraySender, deriveTrayState, routeTrayAction } from "./tray";
+import { AfterRecordDialog } from "./AfterRecordDialog";
+import { afterRecord, ASK_BLOCKS_RECORD, effectiveChoice, rememberedChoice, stopAction, type AskChoice } from "./afterRecord";
+import { attachConvertJobs, convertStore, useConvertJob } from "./convertJobs";
+import { convertAdvance, convertEnqueue, convertProgress, convertSlot, IDLE_CONVERT, type ConvertQueue } from "./convertQueue";
+import { recButton } from "./pause";
+import { BULK_MIN, CONVERT_ALL, CONVERT_PAUSED, CONVERT_ALL_LINE, CONVERT_ALL_TITLE, CONVERT_FAIL, CONVERTED, isRecorded, noteLabel, recordedIds, SAVE_NOTE, SAVE_NOTE_TITLE, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
 import { NoteLibrary } from "./NoteLibrary";
 import { touchNote as touchNoteIn, type Folder } from "./organize";
 import { OrganizeContext, useOrganizeState } from "./useOrganize";
+import { PanelToggle, usePanels } from "./PanelToggle";
+import { RAIL_REC_LABEL, railPendingLabel, railRecState } from "./panels";
 
 export type Seek = { segId?: string; t?: number; nonce: number };
 export type View =
@@ -58,6 +66,16 @@ export function App() {
   // 노트 목록을 한 번이라도 읽었는지: 읽기 전에는 '삭제된 노트'를 판단하지 않는다 (AI 질문의 인용 칩)
   const [listLoaded, setListLoaded] = useState(false);
   const [view, setView] = useState<View>({ kind: "home" });
+  const panels = usePanels(); // 양쪽 패널 접기 (PanelToggle.tsx, docs/desktop.md §3.2): 왼쪽 노트 목록은 여기서, 오른쪽 패널은 노트 화면이 그린다
+  const panelsRef = useRef(panels);
+  panelsRef.current = panels;
+  const searchAfterReveal = useRef(false); // ⌘K로 접힌 목록을 펼쳤다: 그려진 뒤 검색창에 초점
+  useEffect(() => {
+    if (panels.state.left || !searchAfterReveal.current) return;
+    searchAfterReveal.current = false;
+    searchRef.current?.focus();
+    searchRef.current?.select();
+  }, [panels.state.left]);
   const searchRef = useRef<HTMLInputElement>(null);
   // 전체 회의에 질문 (6.3): 오른쪽 서랍. 닫아도 대화는 남는다(앱을 끄기 전까지)
   const [askOpen, setAskOpen] = useState(false);
@@ -186,6 +204,24 @@ export function App() {
     if (t && t.id === meetingId) setNoteEpoch((e) => ({ id: meetingId, n: e.n + 1, stale: true })); // 녹음을 덧붙인 노트: 열려 있으면 다시 읽는다
     void refresh().then(() => openMeeting(meetingId));
   });
+  // 녹음을 변환하지 않고 노트로 저장 (`recording finish`, docs/desktop.md §3.3): 끝나면 변환 전 노트를 연다. 실패하면 녹음 폴더가 남아 `변환 대기 중인 녹음`에 보인다 (녹음은 잃지 않는다)
+  const finish = useJob((meetingId) => void refresh().then(() => openMeeting(meetingId)));
+  const finishDir = useRef<string | null>(null);
+  const [progressKind, setProgressKind] = useState<"convert" | "save">("convert"); // 녹음 화면의 진행 줄이 보이는 작업 (마지막으로 시작한 것)
+  const finishRecording = useCallback(
+    (dir: string) => {
+      finishDir.current = dir;
+      setProgressKind("save");
+      setUnconverted(false);
+      void finish.runJob("recording_finish", { dir, title: null });
+    },
+    [finish.runJob],
+  );
+  // 변환 전 노트의 변환 줄 (convertQueue.ts): 노트 하나를 변환하는 것도, 모두 변환도 같은 줄이다. 한 번에 하나씩 (변환 엔진이 한 번에 하나만 올라간다)
+  const [convQ, setConvQ] = useState<ConvertQueue>(IDLE_CONVERT);
+  const convJob = useConvertJob(convQ.current);
+  const converting = convQ.current !== null;
+  const convertRunning = converting && convJob.running;
   // 마지막 전사 대상. "다시 전사"는 방금 녹음뿐 아니라 사이드바의 남은 녹음에도 쓴다.
   // 바로 시작하지 않고 waitDir에 둔다: 파일 가져오기가 돌고 있으면 끝난 뒤에 시작한다(전사 두 개가 모델을 따로 올리지 않게)
   const transcribeDir = useRef<string | null>(null);
@@ -194,6 +230,7 @@ export function App() {
   const startTranscribe = useCallback((dir: string, target?: AttachTarget | null) => {
     transcribeDir.current = dir;
     transcribeTarget.current = target ?? null;
+    setProgressKind("convert");
     setUnconverted(false);
     if (target) dispatchAttach({ type: "convert", target });
     setWaitDir(dir);
@@ -226,16 +263,27 @@ export function App() {
   };
   const askDelete = useCallback((target: DeleteTarget) => dispatchDel({ type: "ask", target }), []);
   // 변환 엔진이 없을 때 녹음은 저장만 한다: 변환을 시작하지 않고 `변환 대기 중인 녹음`에 남긴다 (준비되면 사이드바에서 변환)
-  const { rec, live, startRec, sendRec, resetRec, startedAtMs } = useRecorder((dir) => {
-    if (!capsRef.current.can("convert").ok) {
-      setUnconverted(true);
-      dispatchAttach({ type: "abort" });
-      void refresh();
-      return;
-    }
-    startTranscribe(dir, attachRef.current.phase === "recording" ? attachRef.current.target : null);
+  // 녹음이 끝났다: `녹음을 끝내면` 설정이 바로 변환 | 노트로 저장 | 묻기를 정한다 (afterRecord.stopAction). 어느 쪽이든 녹음은 남는다
+  const [afterAsk, setAfterAsk] = useState<{ dir: string; seconds: number } | null>(null);
+  const asking = afterAsk !== null; // 방금 끝낸 녹음을 어떻게 할지 묻는 중: 이 녹음이 정해질 때까지 새 녹음·변환 줄 시작을 막는다 (묻는 창이 다른 녹음의 것으로 바뀌지 않게)
+  const { rec, live, startRec, sendRec, resetRec, startedAtMs } = useRecorder((dir, seconds) => {
+    void (async () => {
+      const target = attachRef.current.phase === "recording" ? attachRef.current.target : null; // 글만 있는 노트에 추가하는 녹음
+      const settings = await api.getSettings().catch(() => null); // 설정 화면·묻는 창이 바꾼 값을 늘 새로 읽는다
+      const action = stopAction({ setting: afterRecord(settings?.after_record), convertOk: capsRef.current.can("convert").ok, attach: target !== null });
+      if (action.kind === "convert") startTranscribe(dir, target);
+      else if (action.kind === "later") finishRecording(dir);
+      else if (action.kind === "ask") {
+        setAfterAsk({ dir, seconds });
+        void api.trayShowIfHidden().catch(() => {}); // 메뉴 막대에서 끝냈다면 창을 꺼내 묻는다
+      } else {
+        setUnconverted(true);
+        dispatchAttach({ type: "abort" });
+        void refresh();
+      }
+    })();
   });
-  const recording = rec.phase === "recording" || rec.phase === "starting" || rec.phase === "stopping";
+  const recording = rec.phase === "recording" || rec.phase === "paused" || rec.phase === "starting" || rec.phase === "stopping";
 
   // 녹음 방식: 마지막으로 고른 값을 설정에 저장해 두고 다음에도 쓴다
   const [mode, setMode] = useState<RecMode>("in_person");
@@ -272,11 +320,58 @@ export function App() {
     notify({ text: dup ? `이미 텍스트로 변환한 파일입니다 — ${name}` : `텍스트 변환을 마쳤습니다 — ${name}`, action: { label: "열기", run: () => openMeeting(meetingId) } });
   });
   useEffect(() => {
-    if (!waitDir || imp.job.running) return;
+    if (!waitDir || imp.job.running || convertRunning || recording) return; // 새 녹음이 도는 동안에는 변환 엔진을 올리지 않는다
     setWaitDir(null);
     void transcribe.startJob("transcribe", waitDir, transcribeTarget.current?.id);
-  }, [waitDir, imp.job.running, transcribe.startJob]);
-  const transcribing = transcribe.job.running || waitDir !== null;
+  }, [waitDir, imp.job.running, convertRunning, recording, transcribe.startJob]);
+  // 노트로 저장하는 중·변환 전 노트를 변환하는 중도 `변환 중`으로 본다: 새 녹음·가져오기·창 닫기 확인이 같은 규칙을 쓴다
+  const transcribing = transcribe.job.running || waitDir !== null || finish.job.running || converting;
+  // 새 녹음을 막는 일. 변환 전 노트의 변환 줄은 막지 않는다: 새 녹음이 도는 변환을 멈추고(멈춘 곳부터 이어 할 수 있다) 녹음이 끝나면 이어서 한다 (pauseConvert)
+  const recordBlocked = transcribe.job.running || waitDir !== null || finish.job.running || asking;
+  const preempted = useRef<string | null>(null); // 새 녹음이 멈춘 변환의 노트
+  // 변환 줄의 첫 노트를 시작한다: 녹음·다른 변환·가져오기가 끝난 뒤에. 지워졌거나 다른 곳에서 이미 변환한 노트는 건너뛴다
+  const meetingsRef = useRef(meetings);
+  meetingsRef.current = meetings;
+  const startedConv = useRef<string | null>(null);
+  useEffect(() => {
+    const id = convQ.current;
+    if (id === null) {
+      startedConv.current = null;
+      return;
+    }
+    if (startedConv.current === id || !listLoaded) return;
+    const note = meetings.find((m) => m.id === id);
+    if (!note || !isRecorded(note)) return setConvQ(convertAdvance);
+    if (recording || asking || transcribe.job.running || waitDir !== null || finish.job.running || imp.job.running) return;
+    startedConv.current = id;
+    void convertStore.start(id);
+  }, [convQ.current, meetings, listLoaded, recording, asking, transcribe.job.running, waitDir, finish.job.running, imp.job.running, convJob.running]);
+  // 변환이 끝나면(성공이든 실패든) 알리고 줄을 넘긴다. 실패해도 줄은 이어진다. 노트가 열려 있지 않아도 알린다
+  useEffect(
+    () =>
+      attachConvertJobs(({ noteId, ok, state }) => {
+        // 새 녹음이 멈춘 변환: 실패로 알리지 않고 줄도 넘기지 않는다. 녹음이 끝나면 같은 노트를 이어서 시작한다
+        if (preempted.current === noteId) {
+          preempted.current = null;
+          if (!ok) {
+            startedConv.current = null;
+            return;
+          }
+        }
+        const title = meetingsRef.current.find((m) => m.id === noteId)?.title ?? "";
+        if (ok) {
+          const open = viewRef.current.kind === "meeting" && viewRef.current.id === noteId;
+          notify({ text: CONVERTED(title), action: open ? undefined : { label: "열기", run: () => openMeeting(noteId) } });
+          state.warnings.forEach((w) => notify({ text: warningText(w) }));
+        } else {
+          const e = errorView(state.error, state.errorCode, JOB_ERROR.convert);
+          notify({ text: CONVERT_FAIL(title, e.text === JOB_ERROR.convert ? "" : `. ${e.text}`), detail: e.detail, error: true });
+        }
+        void refresh();
+        setConvQ((q) => (q.current === noteId ? convertAdvance(q) : q));
+      }),
+    [notify, refresh, openMeeting],
+  );
   const enqueue = useCallback(
     (paths: string[]) => {
       if (!capsRef.current.can("convert").ok) return notifyBlocked(capsRef.current.can("convert")); // 끌어 놓은 파일: 실패하지 않고 이유를 알린다
@@ -404,9 +499,14 @@ export function App() {
         void newMemo();
       } else if (e.metaKey && e.code === "KeyK") {
         e.preventDefault();
+        if (panelsRef.current.state.left) {
+          // 검색창은 접힌 노트 목록 안에 있다: 펼친 뒤 그려지면 초점을 준다 (아래 effect)
+          searchAfterReveal.current = true;
+          panelsRef.current.reveal({ kind: "search" });
+        }
         searchRef.current?.focus();
         searchRef.current?.select();
-      } else if (e.code === "KeyB" && !e.metaKey && !e.ctrlKey && rec.phase === "recording" && !isTypingTarget(e.target)) {
+      } else if (e.code === "KeyB" && !e.metaKey && !e.ctrlKey && isRecLive(rec.phase) && !isTypingTarget(e.target)) {
         e.preventDefault();
         void sendRec("bookmark");
       }
@@ -416,9 +516,17 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [rec.phase, sendRec, newMemo]);
 
+  // 변환 전 노트를 변환하는 중에 녹음을 시작하면 변환을 멈춘다 (멈춘 곳부터 이어서 할 수 있다). 줄은 그대로라 녹음이 끝나면 이어서 한다
+  const pauseConvert = () => {
+    if (!convertRunning || convQ.current === null) return;
+    preempted.current = convQ.current;
+    convertStore.cancel(convQ.current);
+    notify({ text: CONVERT_PAUSED });
+  };
   const onRecordButton = () => {
-    if (!recording && !transcribing && !recordGate.ok) return notifyBlocked(recordGate); // 새 노트 메뉴의 `녹음 시작`
-    if (!recording && !transcribing) {
+    if (!recording && !recordBlocked && !recordGate.ok) return notifyBlocked(recordGate); // 새 노트 메뉴의 `녹음 시작`
+    if (!recording && !recordBlocked) {
+      pauseConvert();
       resetRec();
       setUnconverted(false);
       void startRec(mode);
@@ -428,9 +536,12 @@ export function App() {
 
   // 메뉴 막대 아이콘 (tray.ts, docs/desktop.md §3.1): 상태를 Rust에 밀어 주고, 메뉴에서 온 동작은 위 단추와 같은 함수로 처리한다
   const traySend = useRef(createTraySender((p) => api.trayUpdate(p)));
+  const trayJob = finish.job.running ? finish.job : transcribe.job; // 지금 도는 녹음 변환·저장 작업 (진행률)
+  const bgJob = convertRunning ? convJob : imp.job; // 녹음을 막지 않는 변환(가져오기, 변환 전 노트의 변환 줄)의 진행률
+  const pausedSec = rec.phase === "paused" ? rec.t : 0; // 일시정지 중에는 메뉴 막대 시계가 이 값으로 멈춘다 (타이머 없음)
   const trayState = useMemo(
-    () => deriveTrayState({ rec: { phase: rec.phase }, startedAtMs, job: { running: transcribe.job.running, done: transcribe.job.done, total: transcribe.job.total }, waiting: waitDir !== null, importing: { active: imp.job.running || queue.length > 0 || attach.phase === "converting", done: imp.job.done, total: imp.job.total }, recordOk: recordGate.ok, notes: meetings }),
-    [rec.phase, startedAtMs, transcribe.job.running, transcribe.job.done, transcribe.job.total, waitDir, imp.job.running, imp.job.done, imp.job.total, queue.length, attach.phase, recordGate.ok, meetings],
+    () => deriveTrayState({ rec: { phase: rec.phase }, startedAtMs, elapsedSec: pausedSec, job: { running: trayJob.running, done: trayJob.done, total: trayJob.total }, waiting: waitDir !== null || asking, importing: { active: imp.job.running || queue.length > 0 || attach.phase === "converting" || converting, done: bgJob.done, total: bgJob.total }, recordOk: recordGate.ok, notes: meetings }),
+    [rec.phase, startedAtMs, pausedSec, trayJob.running, trayJob.done, trayJob.total, waitDir, asking, converting, bgJob.done, bgJob.total, imp.job.running, queue.length, attach.phase, recordGate.ok, meetings],
   );
   const trayRef = useRef(trayState);
   trayRef.current = trayState;
@@ -445,7 +556,7 @@ export function App() {
   recPhaseRef.current = rec.phase;
   const trayAct = useRef<(raw: unknown) => void>(() => {});
   trayAct.current = (raw) => {
-    const route = routeTrayAction(raw, { recPhase: recPhaseRef.current, transcribing });
+    const route = routeTrayAction(raw, { recPhase: recPhaseRef.current, transcribing: recordBlocked });
     if (!route) return;
     // 메뉴를 빠르게 두 번 눌러도 다시 그리기 전에 두 번째가 들어올 수 있다: 보낸 즉시 단계를 앞당겨 둔다
     if (route.kind === "start") {
@@ -454,6 +565,10 @@ export function App() {
     } else if (route.kind === "stop") {
       recPhaseRef.current = "stopping";
       void sendRec("stop");
+    } else if (route.kind === "pause") {
+      void sendRec("pause");
+    } else if (route.kind === "resume") {
+      void sendRec("resume");
     } else if (route.kind === "bookmark") void sendRec("bookmark");
     else openMeeting(route.id);
   };
@@ -514,6 +629,51 @@ export function App() {
     else void pickFiles();
   };
 
+  // 변환 전 노트의 변환 (recorded.ts): 한 노트도, 모두도 같은 줄에 올린다. 못 쓰면 이유와 고치는 길을 알린다
+  const convertNote = useCallback(
+    (id: string) => {
+      const gate = capsRef.current.can("convert");
+      if (!gate.ok) return notifyBlocked(gate);
+      setConvQ((q) => convertEnqueue(q, [id]));
+    },
+    [notifyBlocked],
+  );
+  const bulkIds = useMemo(() => recordedIds(meetings), [meetings]);
+  const convertAll = () => {
+    if (!convertGate.ok) return notifyBlocked(convertGate);
+    setConvQ((q) => convertEnqueue(q, bulkIds));
+  };
+  const convertSlots = useMemo(() => {
+    const slots = new Map<string, "running" | "queued">();
+    for (const id of [convQ.current, ...convQ.pending]) {
+      const slot = id === null ? null : convertSlot(convQ, id, convertRunning);
+      if (id !== null && slot) slots.set(id, slot);
+    }
+    return slots;
+  }, [convQ, convertRunning]);
+  const waitReason = recording ? WAIT_RECORDING : WAIT_OTHER;
+  const convertControls: ConvertControls | undefined = view.kind === "meeting" ? { slot: convertSlot(convQ, view.id, convertRunning), waitReason, gate: convertGate, onConvert: convertNote } : undefined;
+  const convTitle = converting ? (meetings.find((m) => m.id === convQ.current)?.title ?? "") : "";
+  const convPct = convJob.total ? convJob.done / convJob.total : null;
+  const convProgress = convertProgress(convQ);
+  const railRec = railRecState({ recording, asking, busy: transcribe.job.running || waitDir !== null || finish.job.running || imp.job.running || queue.length > 0 });
+  const recButtonView = recButton({ phase: rec.phase, t: rec.t, saving: finish.job.running, converting: transcribe.job.running, waiting: waitDir !== null, asking });
+  // 녹음을 끝내고 묻는 창에서 고른 것: 바로 변환 | 노트로 저장. `다음부터 묻지 않기`를 체크했으면 그 선택을 설정에 남긴다
+  const chooseAfter = (choice: AskChoice, remember: boolean) => {
+    const a = afterAsk;
+    if (!a) return;
+    setAfterAsk(null);
+    const run = effectiveChoice(choice, capsRef.current.can("convert").ok); // 창이 뜬 사이 변환할 수 없게 됐다면 노트로 저장한다
+    const keep = rememberedChoice(run, remember);
+    if (keep) void api.setAfterRecord(keep).catch((e) => notify({ text: `설정을 저장하지 못했습니다: ${errText(e)}`, detail: errDetail(e), error: true }));
+    if (run === "convert") startTranscribe(a.dir, null);
+    else finishRecording(a.dir);
+  };
+  // 남은 녹음을 변환하지 않고 노트로 저장한다 (`노트로 저장`): 진행은 녹음 화면에 보인다. 글만 있는 노트에 추가하려던 녹음은 덧붙여야 하므로 이 길이 없다
+  const saveLeftover = (dir: string) => {
+    finishRecording(dir);
+    void go({ kind: "record" });
+  };
   const dialogText = del.target && deleteDialogText(del.target);
   // 보고 있는 노트가 글만 있는 노트면 녹음 추가 단추·잠금. 못 쓰는 동안(녹음·변환 중)에는 파일을 놓아도 새 노트 가져오기로 간다
   const viewNote = view.kind === "meeting" ? resolveTarget(view.id, meetings) : null;
@@ -528,30 +688,41 @@ export function App() {
   return (
     <CapsContext.Provider value={caps}>
     <OrganizeContext.Provider value={org}>
-    <div className="shell">
+    <div className={`shell${panels.state.left ? " is-left-collapsed" : ""}`}>
       <aside className="sidebar">
+        <PanelToggle side="left" />
+        {panels.state.left && (
+          <GatedButton
+            gate={recording || recordBlocked ? OK : recordGate}
+            className={`rail-rec ${recording ? "is-live" : ""}`}
+            onClick={onRecordButton}
+            aria-current={view.kind === "record"}
+            aria-label={RAIL_REC_LABEL[railRec]}
+            title={RAIL_REC_LABEL[railRec]}
+          >
+            <span className="rec-dot" aria-hidden />
+          </GatedButton>
+        )}
+        {panels.state.left && leftover.length > 0 && (
+          <span className="rail-badge" role="img" aria-label={railPendingLabel(leftover.length)} title={railPendingLabel(leftover.length)}>
+            {leftover.length}
+          </span>
+        )}
+        <div id="sidebar-body" className="sidebar-body" hidden={panels.state.left}>
         <header className="brand">
           <span className="wordmark">Tractus</span>
           <span className="brand-sub">노트와 녹음</span>
         </header>
 
         <div className="rec-row">
-          <GatedButton gate={recording || transcribing ? OK : recordGate} className={`rec-button ${recording ? "is-live" : ""}`} onClick={onRecordButton} aria-current={view.kind === "record"}>
+          <GatedButton gate={recording || recordBlocked ? OK : recordGate} className={`rec-button ${recButtonView.live ? "is-live" : ""} ${rec.phase === "paused" ? "is-paused" : ""}`} onClick={onRecordButton} aria-current={view.kind === "record"}>
             <span className="rec-dot" aria-hidden />
-            {recording ? (
-              <>
-                <span>녹음 중</span>
-                <time className="tnum">{fmtTime(rec.t)}</time>
-              </>
-            ) : transcribing ? (
-              <span>{transcribe.job.running ? "변환 중…" : "변환 대기 중…"}</span>
-            ) : (
-              <span>녹음 시작</span>
-            )}
+            <span>{recButtonView.text}</span>
+            {recButtonView.time && <time className="tnum">{recButtonView.time}</time>}
           </GatedButton>
           <NewNoteMenu
             onPick={onNewNote}
-            disabled={{ write: creating ? "만드는 중…" : undefined, record: recording ? "이미 녹음 중입니다" : transcribing ? "변환이 끝난 뒤에 녹음할 수 있습니다" : undefined }}
+            disabled={{ write: creating ? "만드는 중…" : undefined, record: recording ? "이미 녹음 중입니다" : asking ? ASK_BLOCKS_RECORD : recordBlocked ? "변환이 끝난 뒤에 녹음할 수 있습니다" : undefined }}
           />
         </div>
 
@@ -596,6 +767,24 @@ export function App() {
                   {warningText(w)}
                 </p>
               ))}
+          </section>
+        )}
+
+        {bulkIds.length >= BULK_MIN && !converting && (
+          <GatedButton gate={convertGate} className="import-button" disabled={transcribing || recording} onClick={convertAll} title={CONVERT_ALL_TITLE}>
+            {CONVERT_ALL(bulkIds.length)}
+          </GatedButton>
+        )}
+        {converting && (
+          <section className="import-status" aria-live="polite" aria-label="변환 전 노트 변환 진행">
+            <p className="import-file">{convProgress ? CONVERT_ALL_LINE(convProgress.n, convProgress.total, convTitle) : noteLabel(convTitle)}</p>
+            <p className="import-line tnum">
+              <span>{convertRunning ? (STAGE_LABEL[convJob.stage ?? ""] ?? STAGE_FALLBACK) : waitReason}</span>
+              <span>{convertRunning && convPct !== null ? `${Math.round(convPct * 100)}%` : ""}</span>
+            </p>
+            <div className="job-track">
+              <div className={`job-fill ${convPct === null || !convertRunning ? "is-indeterminate" : ""}`} style={{ transform: `scaleX(${convertRunning && convPct !== null ? convPct : 1})` }} />
+            </div>
           </section>
         )}
 
@@ -657,6 +846,11 @@ export function App() {
                         <span className="badge">{into ? ADD_BADGE : "변환하기"}</span>
                       </span>
                     </GatedButton>
+                    {!into && (
+                      <button className="row-delete row-save" disabled={transcribing || recording} aria-label={`${label} ${SAVE_NOTE}`} title={SAVE_NOTE_TITLE} onClick={() => saveLeftover(p.dir)}>
+                        {SAVE_NOTE}
+                      </button>
+                    )}
                     <button
                       className="row-delete"
                       disabled={transcribing}
@@ -673,7 +867,7 @@ export function App() {
             </section>
           )}
           {!listError && meetings.length === 0 && leftover.length === 0 && <p className="nav-note">아직 노트가 없습니다. 새 노트로 녹음을 시작하거나 글을 쓰거나, 설정에서 데이터 위치를 확인하세요.</p>}
-          <NoteLibrary notes={meetings} activeId={activeId} onOpen={openMeeting} />
+          <NoteLibrary notes={meetings} activeId={activeId} onOpen={openMeeting} convertSlots={convertSlots} onConvert={convertNote} />
         </nav>
 
         <footer className="sidebar-foot">
@@ -687,6 +881,7 @@ export function App() {
           </span>
           <span className="foot-note">노트 {meetings.length}개</span>
         </footer>
+        </div>
       </aside>
 
       <main className="main">
@@ -701,11 +896,12 @@ export function App() {
             notify={notify}
             onDelete={askDelete}
             attach={attachControls}
+            convert={convertControls}
             summaryStale={noteEpoch.stale && noteEpoch.id === view.id}
           />
         )}
         {view.kind === "search" && <SearchView key={view.q} query={view.q} onOpen={openMeeting} memoIds={memoIds} />}
-        {view.kind === "record" && <RecordView rec={rec} captions={live} job={waitDir ? { ...IDLE_JOB, running: true, stage: "wait_import" } : transcribe.job} send={sendRec} retry={() => transcribeDir.current && startTranscribe(transcribeDir.current, transcribeTarget.current)} unconverted={unconverted ? UNCONVERTED_SAVED : null} attachTitle={attach.phase !== "idle" ? (attach.target?.title ?? null) : null} />}
+        {view.kind === "record" && <RecordView rec={rec} captions={live} job={progressKind === "save" ? finish.job : waitDir ? { ...IDLE_JOB, running: true, stage: "wait_import" } : transcribe.job} progressKind={progressKind} choosing={afterAsk !== null} send={sendRec} retry={() => (progressKind === "save" ? finishDir.current && finishRecording(finishDir.current) : transcribeDir.current && startTranscribe(transcribeDir.current, transcribeTarget.current))} unconverted={unconverted ? UNCONVERTED_SAVED : null} attachTitle={attach.phase !== "idle" ? (attach.target?.title ?? null) : null} />}
         {view.kind === "settings" && <SettingsView onSaved={() => void Promise.all([refresh(), caps.refresh()])} />}
         {view.kind === "models" && <ModelsView />}
       </main>
@@ -745,6 +941,7 @@ export function App() {
           onConfirm={() => void confirmDelete()}
         />
       )}
+      {afterAsk && <AfterRecordDialog seconds={afterAsk.seconds} convert={convertGate} onChoose={chooseAfter} />}
       {dropAsk && (
         <ConfirmDialog
           title={DROP_CONFIRM.title(dropAsk.target.title)}
@@ -846,6 +1043,14 @@ function Welcome({ count }: { count: number }) {
         <div>
           <dt><kbd>⌘J</kbd></dt>
           <dd>AI 어시스턴트에게 질문</dd>
+        </div>
+        <div>
+          <dt><kbd>⌘B</kbd></dt>
+          <dd>노트 목록 접기·펼치기</dd>
+        </div>
+        <div>
+          <dt><kbd>⌥⌘B</kbd></dt>
+          <dd>오른쪽 패널 접기·펼치기</dd>
         </div>
       </dl>
       <p className="welcome-setup">

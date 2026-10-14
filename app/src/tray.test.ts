@@ -90,6 +90,37 @@ describe("deriveTrayState", () => {
     expect(deriveTrayState(input({ importing: { active: false, done: 2, total: 2 } })).phase).toBe("idle");
   });
 
+  test("일시정지: 일시정지한 순간의 경과를 싣고, 새 녹음·변환은 막고, 끝내기·북마크는 켠다", () => {
+    const p = deriveTrayState(input({ rec: { phase: "paused" }, startedAtMs: 1_700_000_000_000, elapsedSec: 754.9 }));
+    expect(p).toMatchObject({ phase: "paused", elapsed_ms: 754_900, can_record: false, can_bookmark: true });
+    // 시작 시각은 싣지 않는다: Rust가 시계를 읽어 흐르게 하지 않는다 (타이머가 멈춘다)
+    expect(p).not.toHaveProperty("started_at_ms");
+    expect(deriveTrayState(input({ rec: { phase: "paused" } }))).toMatchObject({ phase: "paused", elapsed_ms: 0 });
+    expect(deriveTrayState(input({ rec: { phase: "paused" }, elapsedSec: -3 })).elapsed_ms).toBe(0);
+    // 일시정지가 변환보다 먼저다
+    expect(deriveTrayState(input({ rec: { phase: "paused" }, job: { running: true, done: 1, total: 2 } })).phase).toBe("paused");
+  });
+
+  test("계속하면 시작 시각이 일시정지한 시간만큼 뒤로 옮겨져 같은 값으로 다시 흐른다", () => {
+    // 12:34(754초)에 일시정지했다가 10분 뒤(wall 1_000_600_000)에 계속하면 시작 시각 = wall - 754초
+    const resumedAt = 1_000_600_000;
+    const virtualStart = resumedAt - 754_000;
+    const p = deriveTrayState(input({ rec: { phase: "recording" }, startedAtMs: virtualStart }));
+    expect(p.started_at_ms).toBe(virtualStart);
+    expect(resumedAt - (p.started_at_ms ?? 0)).toBe(754_000); // Rust의 경과 = now - started → 계속한 순간 12:34
+  });
+
+  test("일시정지 → 계속 → 일시정지의 전송: 같은 상태만 다시 보내지 않는다", () => {
+    const send = vi.fn();
+    const push = createTraySender(send);
+    const paused = () => deriveTrayState(input({ rec: { phase: "paused" }, elapsedSec: 60 }));
+    expect(push(paused())).toBe(true);
+    expect(push(paused())).toBe(false);
+    expect(push(deriveTrayState(input({ rec: { phase: "recording" }, startedAtMs: 5 })))).toBe(true);
+    expect(push(deriveTrayState(input({ rec: { phase: "paused" }, elapsedSec: 61 })))).toBe(true);
+    expect(send.mock.calls.map((c) => c[0].phase)).toEqual(["paused", "recording", "paused"]);
+  });
+
   test("녹음 중이 변환보다 먼저다", () => {
     expect(deriveTrayState(input({ rec: { phase: "recording" }, job: { running: true, done: 1, total: 2 } })).phase).toBe("recording");
   });
@@ -159,6 +190,25 @@ describe("routeTrayAction", () => {
   test("이미 녹음 중이거나 시작·마무리하는 중이거나 변환 중이면 시작은 아무 일도 아니다 (두 번 누름)", () => {
     for (const recPhase of ["starting", "recording", "stopping"] as RecPhase[]) expect(routeTrayAction({ action: "record_start" }, { recPhase, transcribing: false })).toBeNull();
     expect(routeTrayAction({ action: "record_start" }, { recPhase: "idle", transcribing: true })).toBeNull();
+  });
+
+  test("일시정지는 녹음 중에만, 계속은 일시정지 중에만 (두 번 눌러도 한 번)", () => {
+    const paused = { recPhase: "paused" as RecPhase, transcribing: false };
+    expect(routeTrayAction({ action: "record_pause" }, rec)).toEqual({ kind: "pause" });
+    expect(routeTrayAction({ action: "record_resume" }, paused)).toEqual({ kind: "resume" });
+    expect(routeTrayAction({ action: "record_pause" }, paused)).toBeNull();
+    expect(routeTrayAction({ action: "record_resume" }, rec)).toBeNull();
+    for (const recPhase of ["idle", "starting", "stopping", "stopped", "error"] as RecPhase[]) {
+      expect(routeTrayAction({ action: "record_pause" }, { recPhase, transcribing: false })).toBeNull();
+      expect(routeTrayAction({ action: "record_resume" }, { recPhase, transcribing: false })).toBeNull();
+    }
+  });
+
+  test("일시정지 중에도 종료·북마크는 되고, 새 녹음 시작은 안 된다", () => {
+    const paused = { recPhase: "paused" as RecPhase, transcribing: false };
+    expect(routeTrayAction({ action: "record_stop" }, paused)).toEqual({ kind: "stop" });
+    expect(routeTrayAction({ action: "bookmark" }, paused)).toEqual({ kind: "bookmark" });
+    expect(routeTrayAction({ action: "record_start" }, paused)).toBeNull();
   });
 
   test("종료·북마크는 녹음 중에만", () => {

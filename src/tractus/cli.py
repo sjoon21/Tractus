@@ -35,11 +35,11 @@ from tractus.asr import SR, Transcriber  # noqa: E402
 from tractus.diarize import FLUID, FLUID_MIN_CLIP_S, MAX_SPEAKERS, NEMOTRON, MODEL_DIR as DIARIZER_DIR  # noqa: E402
 from tractus.diarize import fluid_hint, load_diarizer, load_fluid, split_chunks  # noqa: E402
 from tractus.export import FORMATS as EXPORT_FORMATS, UnsupportedFormat, render_export, write_bytes_atomic  # noqa: E402
-from tractus import attach, notes  # noqa: E402
+from tractus import attach, deferred, notes  # noqa: E402
 from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_suggestions, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
 from tractus.store import IncompleteError, load_glossary, meeting_dir_name, new_ulid, save_transcript, seg_text, speaker_name, write_transcript  # noqa: E402
 from tractus.store import CHUNKS_FILE, JOB_FILE, edit_transcript, forget_person, note_lock, read_transcript, render_files  # noqa: E402
-from tractus.store import _hms, is_memo, memo_lines, stamp  # noqa: E402
+from tractus.store import NOT_CONVERTED, _hms, is_memo, is_recorded, memo_lines, stamp  # noqa: E402
 from tractus.vad import find_chunks  # noqa: E402
 from tractus import models_cli, organize_cli  # noqa: E402
 from tractus import models_registry as registry  # noqa: E402
@@ -187,19 +187,24 @@ def transcribe(
     no_align: bool = typer.Option(False, "--no-align", help="단어 타이밍을 만들지 않는다 (segment.words = null, 나중에 `tractus align`)"),
     progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
     append_to: str = typer.Option(None, "--append-to", help="새 노트를 만드는 대신 글만 있는 노트(폴더 또는 meeting_id)에 이 녹음을 덧붙여 녹음 노트로 바꾼다 (docs/desktop.md §2.11)"),
+    into: str = typer.Option(None, "--into", help='녹음은 했지만 아직 변환하지 않은 노트("변환 전", 폴더 또는 meeting_id)를 그 자리에서 텍스트로 변환한다. 파일·--recording·--append-to와 함께 쓰지 않는다 (docs/desktop.md §2.16)'),
 ) -> None:
     """녹음을 전사해 노트 폴더(audio.ogg, transcript.json/md/vtt)를 만든다. 중단돼도 같은 명령으로 이어서 진행한다."""
     Events.enabled = progress_json
-    if (file is None) == (recording is None):
+    if into:
+        if file is not None or recording is not None or append_to:
+            raise typer.BadParameter("--into는 녹음 파일, --recording, --append-to와 함께 쓸 수 없습니다", param_hint="--into")
+    elif (file is None) == (recording is None):
         raise typer.BadParameter("녹음 파일 또는 --recording 폴더 중 하나만 지정하세요")
     append = _append_target(append_to) if append_to else None
+    convert = _into_target(into) if into else None
     try:
-        source = _source_from_file(file) if file else _source_from_recording(recording)
+        source = _source_from_note(*convert) if convert else _source_from_file(file) if file else _source_from_recording(recording)
     except typer.BadParameter as e:
-        _emit_error(str(e), code="recording_missing")
+        _emit_error(str(e), code="note_audio_missing" if convert else "recording_missing")  # 노트에 녹음 파일이 없으면 마이크 안내가 아니라 그 노트의 문장
         raise
     try:
-        _transcribe(source, title, track, language, term, keep_tracks, not no_diarize, max_speakers, not no_align, diarizer, append)
+        _transcribe(source, title, track, language, term, keep_tracks, not no_diarize, max_speakers, not no_align, diarizer, append, convert)
     except audio.FFmpegError as e:
         _fail_audio(e)
     except typer.BadParameter as e:  # local_model: 변환 엔진(모델) 파일 없음
@@ -222,29 +227,56 @@ def _append_target(ref: str) -> tuple[Path, dict]:
     return d, t
 
 
+def _into_target(ref: str) -> tuple[Path, dict]:
+    """--into 대상: "변환 전" 노트의 (폴더, transcript.json). 없으면 종료 코드 2(code 없음, 회의를 찾지 못한 오류와 같다), 변환 전이 아니면 code not_recorded + 종료 코드 2."""
+    try:
+        d = find_meeting_dir(home_dir() / "meetings", ref)
+        t = read_transcript(d)
+    except (LookupError, OSError, ValueError) as e:
+        _emit_error(str(e))
+        raise typer.BadParameter(str(e), param_hint="--into") from e
+    try:
+        deferred.check_recorded(t)
+    except ValueError as e:
+        _fail(str(e), code="not_recorded", exit_code=2)
+    return d, t
+
+
+def _source_from_note(d: Path, t: dict) -> Source:
+    """"변환 전" 노트의 변환 입력: tracks/의 원본 트랙, 없으면 audio.ogg (경고 tracks_missing). 둘 다 없으면 BadParameter(앱은 code recording_missing)."""
+    try:
+        paths, marks, lossless = deferred.note_tracks(d, t)
+    except deferred.RecordingError as e:
+        raise typer.BadParameter(str(e), param_hint="--into") from e
+    if not lossless:
+        _warn("tracks_missing", "녹음 원본 트랙이 없어 보관한 audio.ogg로 변환합니다 (음질이 조금 낮을 수 있습니다)")
+    created = datetime.fromisoformat(t["created_at"]).astimezone() if isinstance(t.get("created_at"), str) else datetime.now().astimezone()
+    return Source(paths=paths, name=str((t.get("audio") or {}).get("source") or d.name), title=t["title"], recorded=created, marks=marks)
+
+
 def _transcribe(
     source: Source, title: str | None, track: Track | None, language: Language, term: list[str], keep_tracks: bool, diarize: bool, max_speakers: int | None,
-    align: bool = True, engine: DiarizerEngine = DiarizerEngine.auto, append: tuple[Path, dict] | None = None,
+    align: bool = True, engine: DiarizerEngine = DiarizerEngine.auto, append: tuple[Path, dict] | None = None, into: tuple[Path, dict] | None = None,
 ) -> None:
     audio.require_ffmpeg()
     meetings = home_dir() / "meetings"
     meetings.mkdir(parents=True, exist_ok=True)
 
     Events.emit("stage", stage="decode")  # 큰 파일은 해시 계산에도 몇 초 걸린다. 앱이 바로 진행 표시를 하도록 먼저 알린다
-    digest = audio.sha256(source.paths)
-    if done_dir := find_transcribed(meetings, digest):
+    digest = (into[1]["audio"].get("sha256") if into else None) or audio.sha256(source.paths)  # 변환 전 노트는 저장할 때 잰 원본 트랙의 해시를 그대로 쓴다
+    if not into and (done_dir := find_transcribed(meetings, digest)):
         _warn("duplicate", f"이미 전사된 파일입니다: {done_dir}\n다시 전사하려면 이 폴더를 지우고 실행하세요.")
         Events.emit("done", meeting_id=json.loads((done_dir / "transcript.json").read_text(encoding="utf-8"))["meeting_id"], meeting_dir=str(done_dir))
         raise typer.Exit(0)
 
-    job = find_job(meetings, digest, append[1]["meeting_id"] if append else None)
+    job = find_job(meetings, digest, append[1]["meeting_id"] if append else None, into[1]["meeting_id"] if into else None)
     if job:
         if track and track.value != job.track:
             console.print(f"[yellow]진행 중인 작업의 트랙({job.track})으로 이어서 합니다.[/yellow]")
         console.print(f"이어서 진행합니다: {job.dir.name} ({len(job.done())}/{len(job.chunks)} 청크 완료)")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
         pcm = audio.decode(source.paths)
     else:
-        job, pcm = _new_job(source, meetings, digest, title, track or auto_track(), language, term, diarize, max_speakers, engine, append)
+        job, pcm = _new_job(source, meetings, digest, title, track or auto_track(), language, term, diarize, max_speakers, engine, append, into)
 
     _run(job, pcm, source, keep_tracks, align)
 
@@ -399,7 +431,7 @@ def _align(d: Path, t: dict, pcm) -> None:
 
 def _new_job(
     source: Source, meetings: Path, digest: str, title: str | None, track: Track, language: Language, terms: list[str], diarize: bool, max_speakers: int | None,
-    engine: DiarizerEngine = DiarizerEngine.auto, append: tuple[Path, dict] | None = None,
+    engine: DiarizerEngine = DiarizerEngine.auto, append: tuple[Path, dict] | None = None, into: tuple[Path, dict] | None = None,
 ):
     vad_dir, _ = local_model(VAD_MODEL), local_model(MODELS[track])  # 오래 걸리는 작업 전에 모델부터 확인
     with console.status("오디오 디코딩·VAD·화자 분리 중…"):
@@ -411,8 +443,8 @@ def _new_job(
         chunks = split_chunks(chunks, turns)
         suggestions = _suggest_voices(pcm, [{"start": s, "end": e, "speaker": spk} for s, e, spk in turns])
 
-    if append:  # 글만 있는 노트의 폴더·제목·id·만든 시각을 그대로 쓴다. 폴더에 transcript.json(메모)이 이미 있다
-        d, old = append
+    if append or into:  # 글만 있는 노트(또는 변환 전 노트)의 폴더·제목·id·만든 시각을 그대로 쓴다. 폴더에 transcript.json이 이미 있다
+        d, old = append or into
         meeting_id, title, created_at = old["meeting_id"], old["title"], old["created_at"]
         for name in (JOB_FILE, CHUNKS_FILE):  # 다른 파일로 끝내지 못한 이전 작업의 조각이 이번 전사에 섞이지 않게 비운다
             (d / name).unlink(missing_ok=True)
@@ -423,9 +455,10 @@ def _new_job(
         d.mkdir()
         created_at = source.recorded.isoformat(timespec="seconds")
     # ponytail: Opus 인코딩 중 강제 종료되면 .job.json 없는 폴더가 남는다. 다음 실행은 새 폴더로 처음부터 진행
-    with console.status("원본을 audio.ogg로 보관 중…"):
-        Events.emit("stage", stage="encode")
-        audio.encode_opus(source.paths, d / "audio.ogg")
+    if not (into and (d / "audio.ogg").is_file()):  # 변환 전 노트는 저장할 때 이미 audio.ogg를 만들었다 (트랙이 없어 audio.ogg로 변환하는 경우도 다시 만들지 않는다)
+        with console.status("원본을 audio.ogg로 보관 중…"):
+            Events.emit("stage", stage="encode")
+            audio.encode_opus(source.paths, d / "audio.ogg")
     if source.marks:
         (d / MEMOS_FILE).write_text(json.dumps(source.marks, ensure_ascii=False, indent=1), encoding="utf-8")
 
@@ -434,7 +467,7 @@ def _new_job(
         dir=d, meeting_id=meeting_id, sha256=digest, source=source.name, title=title,
         created_at=created_at, duration_sec=round(len(pcm) / SR, 2),
         model=MODELS[track], track=track.value, language=language.value, hotwords=hotwords, chunks=chunks, audio_file="audio.ogg",
-        diarizer=diarization, suggestions=suggestions, attach=bool(append),
+        diarizer=diarization, suggestions=suggestions, attach=bool(append), convert=bool(into),
     )
     job.save()
     n_spk = len({c[2] for c in chunks} - {None})
@@ -459,7 +492,13 @@ def _finish_recording(source: Source, meeting_dir: Path, keep_tracks: bool) -> N
 
 
 def _write_result(job: Job) -> dict:
-    """새 노트면 transcript.json을 쓰고, 글만 있는 노트에 덧붙이는 작업이면 그 노트를 녹음 노트로 바꾼다 (attach.finish_append)."""
+    """새 노트면 transcript.json을 쓰고, 글만 있는 노트에 덧붙이는 작업이면 그 노트를 녹음 노트로 바꾸고 (attach.finish_append),
+    변환 전 노트를 변환하는 작업이면 그 노트의 결과를 채운다 (deferred.finish_convert)."""
+    if job.convert:
+        try:
+            return deferred.finish_convert(job)
+        except ValueError as e:  # 변환하는 사이 다른 실행이 먼저 이 노트를 변환했다. 이 작업 파일은 낡은 것이 되어 다음에 지워진다
+            _fail(str(e), code="not_recorded", exit_code=2)
     if not job.attach:
         return write_transcript(job)
     try:
@@ -505,6 +544,8 @@ def _run(job: Job, pcm, source: Source, keep_tracks: bool, align: bool = True) -
     del transcriber
     _free_mlx()
     _finish_recording(source, job.dir, keep_tracks)  # 전사는 저장됐다. 정렬 중에 끊겨도 녹음 폴더가 남지 않게 먼저 정리한다
+    if job.convert and not keep_tracks:
+        deferred.drop_tracks(job.dir)  # 변환 전 노트가 보관하던 원본 트랙 (--keep-tracks면 노트의 tracks/에 남긴다)
     if align:
         try:
             _align(job.dir, t, pcm)
@@ -520,6 +561,50 @@ def _run(job: Job, pcm, source: Source, keep_tracks: bool, align: bool = True) -
         f"{job.dir / 'transcript.md'}"
     )
     Events.emit("done", meeting_id=job.meeting_id, meeting_dir=str(job.dir))
+
+
+recording_app = typer.Typer(help="tractus-rec 녹음 폴더를 변환하지 않고 노트로 저장 (docs/desktop.md §2.16)")
+app.add_typer(recording_app, name="recording")
+
+
+@recording_app.callback()
+def recording_main() -> None:
+    """녹음 폴더를 노트로 저장."""
+
+
+@recording_app.command("finish")
+def recording_finish(
+    recording: Path = typer.Argument(..., help="tractus-rec 녹음 폴더 (recordings/<ULID>)"),
+    title: str = typer.Option(None, "--title", help="노트 제목. 생략하면 '녹음 HH:MM' (녹음을 시작한 이 Mac의 시각)"),
+    progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
+) -> None:
+    """녹음을 텍스트로 변환하지 않고 "변환 전" 노트로 저장한다: audio.ogg(바로 들을 수 있다), 원본 트랙(tracks/), 녹음 중 메모·북마크(memos.json), transcript.json(state recorded).
+    나중에 `tractus transcribe --into <노트>`로 변환한다. 중단돼도 녹음 폴더는 그대로 남고 같은 명령으로 이어서 끝낸다.
+    stdout: {"meeting_id": "01K…", "meeting_dir": "<절대 경로>"} (--progress-json이면 done 이벤트)"""
+    Events.enabled = progress_json
+    try:
+        name = notes.clean_title(title) if title and title.strip() else None
+    except ValueError as e:
+        _fail(str(e), code="bad_input", exit_code=2)
+    if not recording.is_dir():
+        _fail(f"녹음 폴더를 찾지 못했습니다: {recording}", code="recording_missing", exit_code=2)
+    meetings = home_dir() / "meetings"
+    meetings.mkdir(parents=True, exist_ok=True)
+    try:
+        d, mid = deferred.finish_recording(recording, meetings, name, lambda stage: Events.emit("stage", stage=stage))
+    except deferred.RecordingError as e:
+        _fail(str(e), code=e.code, exit_code=2)
+    except audio.FFmpegError as e:
+        _fail_audio(e)
+    except OSError as e:  # 디스크 부족·권한 등. 녹음 폴더는 그대로 남아 있다 (같은 명령으로 다시 실행하면 이어서 끝낸다)
+        _fail(f"녹음을 저장하지 못했습니다: {e}", exit_code=1)
+    except KeyboardInterrupt:
+        console.print()
+        _fail("저장을 중단했습니다. 같은 명령으로 다시 실행하면 이어서 진행합니다.", code="interrupted", exit_code=130)
+    if progress_json:
+        Events.emit("done", meeting_id=mid, meeting_dir=str(d))
+    else:
+        print(json.dumps({"meeting_id": mid, "meeting_dir": str(d.resolve())}, ensure_ascii=False))
 
 
 @app.command("live")
@@ -593,6 +678,8 @@ def align_cmd(
     t = _read_transcript(d)
     if is_memo(t):
         _fail(notes.NO_AUDIO_ALIGN, code="no_audio", exit_code=2)
+    if is_recorded(t):
+        _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
     todo = {s["id"] for s in t["segments"] if force or s.get("words") is None}
     counts = {"aligned": 0, "approximate": 0, "failed": 0, "skipped": len(t["segments"])}
     if todo:
@@ -681,6 +768,8 @@ def summarize(
     except ValueError as e:
         _fail(str(e), code="bad_input", exit_code=2)
     transcript = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+    if is_recorded(transcript):
+        _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
     if not transcript["segments"]:
         _fail("메모가 비어 있어 요약할 수 없습니다" if is_memo(transcript) else "인식된 대화가 없어 요약할 수 없습니다", code="no_segments")
     try:
@@ -764,6 +853,8 @@ def ask(
             return search(date_from=date_from, date_to=date_to)
         t = _read_transcript(d)
         src = qa.transcript_sources(t)
+        if is_recorded(t) and not src:
+            _warn("not_converted", NOT_CONVERTED)  # 변환 전 노트: 대화 내용이 없고 메모도 없으면 LLM을 부르지 않고 '근거 없음'으로 끝난다
         return search(meeting_id=t["meeting_id"]) if qa.too_long(src) else src
 
     try:
@@ -882,8 +973,11 @@ def speakers_list(ctx: typer.Context, as_json: bool = typer.Option(False, "--jso
 
 
 def _edit_speakers(d: Path, op: str, *args: str) -> None:
-    if is_memo(_read_transcript(d)):
+    t = _read_transcript(d)
+    if is_memo(t):
         _fail("메모에는 참석자를 지정할 수 없습니다.", exit_code=2)
+    if is_recorded(t):
+        _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
     try:
         edit_transcript(d, lambda t: (apply_speaker_edit(t, op, *args), None))
     except ValueError as e:
@@ -992,6 +1086,8 @@ def voices_enroll(
     t = _read_transcript(d)
     if is_memo(t):
         _fail("녹음이 없는 노트라 목소리를 등록할 수 없습니다.", exit_code=2)
+    if is_recorded(t):
+        _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
     try:
         renamed = apply_speaker_edit(t, "rename", label, name)
     except ValueError as e:
@@ -1067,6 +1163,8 @@ def voices_match(
         _emit_error(str(e))
         raise
     t = _read_transcript(d)
+    if is_recorded(t):
+        _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
     speakers = t.get("speakers") or {}
     confirmed = {(v or {}).get("name") for v in speakers.values()} - {None}
     labels = [k for k, v in speakers.items() if not (v or {}).get("name")]
@@ -1123,8 +1221,11 @@ def segments_edit(ctx: typer.Context) -> None:
     """stdin의 JSON 한 개 {"edits": [{"id": "s0012", "text": "새 문장"}]}로 세그먼트 텍스트를 고친다.
     원문과 같으면 교정을 지운다. 없는 id·빈 텍스트가 하나라도 있으면 아무것도 쓰지 않고 종료 코드 1. stdout: {"changed": N}"""
     d = ctx.obj
-    if is_memo(_read_transcript(d)):
+    t = _read_transcript(d)
+    if is_memo(t):
         _fail(notes.MEMO_EDIT_HERE, exit_code=2)
+    if is_recorded(t):
+        _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
     try:
         req = json.loads(sys.stdin.read())
         edits = req.get("edits") if isinstance(req, dict) else None

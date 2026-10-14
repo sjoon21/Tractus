@@ -33,7 +33,21 @@ function SectionHead({ id, title, count, open, onToggle, children }: { id: strin
   );
 }
 
-export function NoteLibrary({ notes, activeId, onOpen }: { notes: MeetingInfo[]; activeId: string | null; onOpen: (id: string) => void }) {
+export function NoteLibrary({
+  notes,
+  activeId,
+  onOpen,
+  convertSlots,
+  onConvert,
+}: {
+  notes: MeetingInfo[];
+  activeId: string | null;
+  onOpen: (id: string) => void;
+  /** 변환 줄에 있는 노트의 차례 (변환 전 노트의 줄 배지). 없으면 아무 노트도 변환 중이 아니다 */
+  convertSlots?: ReadonlyMap<string, "running" | "queued">;
+  /** 변환 전 노트의 `텍스트로 변환` */
+  onConvert?: (id: string) => void;
+}) {
   const org = useOrganize();
   const [fold, setFold] = useState(readFold);
   useEffect(() => {
@@ -55,7 +69,7 @@ export function NoteLibrary({ notes, activeId, onOpen }: { notes: MeetingInfo[];
   const filtered = isFiltered(org.filter);
   const folderLabel = org.filter.folder === "none" ? "폴더 없음" : org.filter.folder ? folderPath(org.folders, org.filter.folder) : "";
 
-  const rows = (items: readonly MeetingInfo[]) => items.map((m) => <NoteRow key={m.id} m={m} active={m.id === activeId} onOpen={onOpen} />);
+  const rows = (items: readonly MeetingInfo[]) => items.map((m) => <NoteRow key={m.id} m={m} active={m.id === activeId} onOpen={onOpen} slot={convertSlots?.get(m.id) ?? null} onConvert={onConvert} />);
   const renderGroup = (g: ListGroup<MeetingInfo>, i: number, all: ListGroup<MeetingInfo>[]) => {
     if (g.day === null)
       return (

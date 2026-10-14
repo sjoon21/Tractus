@@ -31,8 +31,9 @@ export function noteTime(m: { kind?: string | null; duration_sec: number; create
   return /T(\d{2}:\d{2})/.exec(m.created_at)?.[1] ?? "";
 }
 
-/** 내보내기 메뉴 형식. 메모는 시각이 없어 SRT·WebVTT 자막은 없다 (코어도 거절한다) */
-export function exportFormatsFor(memo: boolean): typeof EXPORT_FORMATS {
+/** 내보내기 메뉴 형식. 메모는 시각이 없어 SRT·WebVTT 자막은 없다 (코어도 거절한다). 변환 전 녹음 노트(recorded)도 대화가 없어 자막이 될 수 없다 */
+export function exportFormatsFor(memo: boolean, recorded = false): typeof EXPORT_FORMATS {
+  if (recorded) return EXPORT_FORMATS.filter((f) => f.format !== "srt" && f.format !== "vtt");
   if (!memo) return EXPORT_FORMATS;
   const note: Record<string, string> = { txt: "메모 본문", md: "메모 + 요약", bundle: "메모 내용 + 요약" };
   return EXPORT_FORMATS.filter((f) => f.format !== "srt" && f.format !== "vtt").map((f) => ({ ...f, note: note[f.format] ?? f.note }));

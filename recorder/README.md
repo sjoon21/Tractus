@@ -40,12 +40,28 @@ tractus-rec check
 | 화상·하이브리드 회의 | `record --out <dir> --echo-cancel` | 마이크 + 시스템 오디오. 스피커로 나간 상대방 목소리가 마이크 트랙에 다시 섞이지 않게 macOS 에코 제거를 켠다 |
 
 - stdout에는 JSON Lines 이벤트만 나온다. 로그는 stderr로 간다.
-- stdin 명령은 `bookmark`, `memo <텍스트>`, `stop`이다. 모르는 명령은 stderr에 로그만 남긴다.
+- stdin 명령은 `bookmark`, `memo <텍스트>`, `pause`, `resume`, `stop`이다. 모르는 명령은 stderr에 로그만 남긴다.
 - `stop`, SIGINT, SIGTERM, **stdin EOF**는 모두 같은 마무리 절차를 밟는다. 파일을 닫고 `recording.json`에 `duration`을 채운 뒤 `stopped` 이벤트를 내고 종료 코드 0으로 끝난다. stdin EOF로 멈추는 이유는 부모 앱이 죽었을 때 녹음이 고아로 남지 않게 하려는 것이다. 그래서 하위 프로세스로 띄울 때는 stdin을 파이프로 열어 두어야 한다.
 - WAV 헤더는 0.25초 분량마다 갱신한다. `kill -9`로 죽어도 마지막 0.25초 이내까지는 재생된다.
 - `<dir>`에 `mic.wav`·`system.wav`·`recording.json`이 이미 있으면 덮어쓰지 않고 `error` 이벤트와 함께 종료 코드 1로 끝난다.
-- 트랙마다 첫 버퍼가 늦게 온 만큼 앞을 0으로 채워 두 트랙의 시작 시각을 맞춘다. 녹음 중에 끊긴 구간(장치 재연결, 0.5초 넘는 공백)도 0으로 채운다. 장치 간 클록 드리프트는 보정하지 않는다.
+- 일시정지 구간은 0으로 채우지 않는다(위 절). 트랙마다 첫 버퍼가 늦게 온 만큼 앞을 0으로 채워 두 트랙의 시작 시각을 맞춘다. 녹음 중에 끊긴 구간(장치 재연결, 0.5초 넘는 공백)도 0으로 채운다. 장치 간 클록 드리프트는 보정하지 않는다.
 - 각 WAV는 4 GiB(약 12.4시간)가 상한이다. 상한에 닿으면 파일을 닫고 `error` 이벤트와 함께 종료 코드 1로 끝난다.
+
+### 일시정지 (`pause` / `resume`)
+
+```text
+→ pause     ← {"event":"paused","elapsed":95.0}
+→ resume    ← {"event":"resumed","elapsed":95.0}
+```
+
+- **오디오 시계는 일시정지 시간을 뺀다.** `level.t`, `mark.t`, `elapsed`, `duration`, `recording.json`의 `marks[].t`·`pauses[].at`이 모두 이 시계다. WAV 길이 = `duration`.
+- 일시정지 중에는 두 트랙 표본을 모두 버린다. WAV에 일시정지 구간(무음)이 들어가지 않고 두 트랙은 계속 정렬된다. 계속하면 같은 오디오 시각에서 이어 쓴다.
+- **캡처 엔진은 멈추지 않는다.** 마이크를 놓지 않으므로 macOS 마이크 사용 표시(주황 점)는 일시정지 중에도 켜져 있다. (엔진을 껐다 켜면 장치 전환·권한·에코 제거 재설정을 다시 거쳐야 해서 쓰지 않았다.)
+- 일시정지 중에는 `level` 이벤트를 내지 않는다. `bookmark`·`memo`는 받아서 멈춘 오디오 시각에 찍는다.
+- 이미 일시정지 중인 `pause`, 일시정지 중이 아닌 `resume`은 조용히 무시한다(이벤트도 경고도 없다).
+- `stop`·SIGTERM·stdin EOF는 일시정지 중에도 정상 마무리한다. `duration`은 멈춘 시각이다.
+- `recording.json`의 `pauses`: `[{"at": <오디오 초>, "wall_start": iso, "wall_end": iso}]`. 끝난 일시정지만 들어가고(종료 때 열려 있던 것은 닫는다) 없으면 `[]`. 추가 키라 `schema_version`은 1 그대로다.
+- `--fake`도 똑같이 동작한다(합성 신호가 오디오 시계를 따라 이어진다).
 
 ### `--echo-cancel`
 

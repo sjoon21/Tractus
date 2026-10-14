@@ -4,6 +4,8 @@ import Foundation
 public enum Command: Equatable {
     case bookmark
     case memo(String)
+    case pause
+    case resume
     case stop
 
     public static func parse(_ line: String) -> Command? {
@@ -11,6 +13,8 @@ public enum Command: Equatable {
         switch s {
         case "bookmark": return .bookmark
         case "stop": return .stop
+        case "pause": return .pause
+        case "resume": return .resume
         default:
             guard s.hasPrefix("memo ") else { return nil }
             let text = s.dropFirst(5).trimmingCharacters(in: .whitespaces)
@@ -68,12 +72,25 @@ public struct Mark: Equatable {
     public var json: [String: Any] { ["t": t, "kind": kind, "text": text ?? NSNull()] }
 }
 
+/// 일시정지 한 번. `at`은 오디오 시각(일시정지 시간을 뺀 녹음 시계)이다.
+public struct Pause: Equatable {
+    public let at: Double
+    public let wallStart: String
+    public let wallEnd: String
+
+    public init(at: Double, wallStart: String, wallEnd: String) { self.at = at; self.wallStart = wallStart; self.wallEnd = wallEnd }
+
+    public var json: [String: Any] { ["at": at, "wall_start": wallStart, "wall_end": wallEnd] }
+}
+
 /// recording.json (docs/desktop.md §1). null 필드를 빠뜨리지 않으려고 Codable 대신 JSONSerialization을 쓴다.
 public struct RecordingInfo {
     public var startedAt: String
     public var duration: Double?
     public var tracks: [String: String]
     public var marks: [Mark] = []
+    /// 끝난 일시정지만 들어간다(진행 중인 것은 계속/종료 때 추가).
+    public var pauses: [Pause] = []
     public var echoCancel: Bool
 
     public init(startedAt: String, tracks: [String: String], echoCancel: Bool = false) {
@@ -87,6 +104,7 @@ public struct RecordingInfo {
             "duration": duration ?? NSNull(),
             "tracks": tracks,
             "marks": marks.map(\.json),
+            "pauses": pauses.map(\.json),  // 추가 키(2026-10-14). 읽는 쪽은 모르는 키를 무시하므로 schema_version은 1 그대로
             "echo_cancel": echoCancel,  // 계약 밖 키. 읽는 쪽은 모르는 키를 무시하므로 schema_version은 1 그대로
         ]
     }

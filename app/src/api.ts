@@ -2,9 +2,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { AfterRecord } from "./afterRecord";
 import type { Citation, ChatMessage, LlmConfig } from "./ask";
 import type { DoctorReport } from "./caps";
 import type { ModelsList } from "./models";
+import { clockAt, resumedStartMs, type ClockAnchor } from "./pause";
 import type { Folder, MetaPatch, NoteMeta, SortKey, SortOrder } from "./organize";
 import { parseSummaryDocs, type TemplateInfo } from "./summaries";
 import type { TrayWire } from "./tray";
@@ -29,6 +31,8 @@ export interface MeetingInfo {
   folder?: string | null;
   /** 마지막으로 내용을 고친 시각. 정리 정보만 바꾼 것은 올리지 않는다. 옛 노트는 만든 시각 */
   updated_at?: string;
+  /** "recorded": 변환 전 노트 (녹음만 있고 아직 텍스트로 변환하지 않았다). 없으면 평범한 노트 (recorded.isRecorded) */
+  state?: "recorded" | null;
 }
 
 export interface Summary {
@@ -105,6 +109,8 @@ export interface Settings {
   tray_enabled?: boolean;
   /** 창을 닫아도 앱을 끝내지 않고 메뉴 막대에 남긴다. 아이콘이 떠 있을 때만 뜻이 있다. 없으면 켜짐 */
   keep_in_tray?: boolean;
+  /** 녹음을 끝내면: "ask" | "convert" | "later". 없거나 모르는 값이면 매번 묻는다 (afterRecord.afterRecord) */
+  after_record?: string;
 }
 
 export interface SearchHit {
@@ -231,6 +237,8 @@ export const api = {
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setRecMode: (mode: string) => invoke<void>("set_rec_mode", { mode }),
+  /** `녹음을 끝내면` 설정만 바로 저장한다 (설정 화면, 끝낼 때 묻는 창의 `다음부터 묻지 않기`) */
+  setAfterRecord: (value: AfterRecord) => invoke<void>("set_after_record", { value }),
   search: async (query: string) =>
     parseToolResult<SearchResponse>(await invoke("mcp_call", { name: "search_meetings", arguments: { query, limit: 20 } })),
   status: async () => parseToolResult<McpStatus>(await invoke("mcp_call", { name: "status", arguments: {} })),
@@ -307,24 +315,31 @@ export function useJob(onDone: (meetingId: string, warnings: Warning[], summaryK
 
 // ── 녹음 (tractus-rec record) ──
 
-/** 녹음 상태는 App이 들고 있는다 (다른 화면으로 가도 녹음은 계속된다). 정지되면 onStopped(녹음 폴더).
+/** 녹음 상태는 App이 들고 있는다 (다른 화면으로 가도 녹음은 계속된다). 정지되면 onStopped(녹음 폴더, 녹음 길이 초: 일시정지한 시간은 뺀다).
  * 실시간 자막(live)도 여기서 모은다: Rust가 녹음과 함께 띄우고, stopped를 보내기 전에 끝낸다 */
-export function useRecorder(onStopped: (dir: string) => void) {
+export function useRecorder(onStopped: (dir: string, seconds: number) => void) {
   const [rec, setRec] = useState<RecState>(IDLE_REC);
   const [live, setLive] = useState<LiveState>(IDLE_LIVE);
   const onStoppedRef = useRef(onStopped);
   onStoppedRef.current = onStopped;
-  const startedAt = useRef(0);
-  /** 녹음이 시작된 시각(epoch ms). 메뉴 막대가 경과 시간을 이 값으로 센다 (화면 타이머는 숨은 창에서 늦어진다) */
+  /** 마지막으로 알린 녹음 시각(초)과 그때의 화면 시계. level 이벤트 사이에도 시계가 흐르게 한다 */
+  const anchor = useRef<ClockAnchor>({ t: 0, at: 0 });
+  /** 녹음이 시작된 시각(epoch ms). 메뉴 막대가 경과 시간을 이 값으로 센다 (화면 타이머는 숨은 창에서 늦어진다).
+   * 일시정지한 시간은 센 적이 없다: 계속할 때마다 `지금 - 경과`로 다시 맞춘다 */
   const startedAtMs = useRef<number | null>(null);
 
   useEffect(() => {
     const un = listen<RecEvent>("rec", ({ payload: ev }) => {
       if (ev.event === "started") {
-        startedAt.current = performance.now();
+        anchor.current = { t: 0, at: performance.now() };
         startedAtMs.current = Date.now();
+      } else if (ev.event === "level") anchor.current = { t: ev.t, at: performance.now() };
+      else if (ev.event === "paused") anchor.current = { t: ev.elapsed, at: performance.now() };
+      else if (ev.event === "resumed") {
+        anchor.current = { t: ev.elapsed, at: performance.now() };
+        startedAtMs.current = resumedStartMs(Date.now(), ev.elapsed);
       }
-      if (ev.event === "stopped") onStoppedRef.current(ev.dir);
+      if (ev.event === "stopped") onStoppedRef.current(ev.dir, ev.duration);
       setRec((s) => recReduce(s, ev));
     });
     const unLive = listen<LiveEvent>("live", ({ payload: ev }) => setLive((s) => liveReduce(s, ev)));
@@ -334,10 +349,10 @@ export function useRecorder(onStopped: (dir: string) => void) {
     };
   }, []);
 
-  // level 이벤트 사이에도 시계가 흐르게 한다
+  // level 이벤트 사이에도 시계가 흐르게 한다. 일시정지 중에는 멈춘다 (녹음 시각은 일시정지한 시간을 세지 않는다)
   useEffect(() => {
     if (rec.phase !== "recording") return;
-    const id = setInterval(() => setRec((s) => ({ ...s, t: Math.max(s.t, (performance.now() - startedAt.current) / 1000) })), 500);
+    const id = setInterval(() => setRec((s) => ({ ...s, t: Math.max(s.t, clockAt(anchor.current, performance.now())) })), 500);
     return () => clearInterval(id);
   }, [rec.phase]);
 
@@ -352,7 +367,7 @@ export function useRecorder(onStopped: (dir: string) => void) {
     }
   }, []);
 
-  const send = useCallback(async (cmd: "bookmark" | "memo" | "stop", text?: string) => {
+  const send = useCallback(async (cmd: "bookmark" | "memo" | "stop" | "pause" | "resume", text?: string) => {
     if (cmd === "stop") setRec((s) => ({ ...s, phase: "stopping" }));
     try {
       await invoke("rec_send", { cmd, text: text ?? null });

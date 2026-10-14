@@ -133,6 +133,172 @@ final class FakeModeTests: XCTestCase {
         XCTAssertEqual(Int(h.dataBytes), h.fileBytes - 44)
     }
 
+    // MARK: - 일시정지
+
+    func events(_ r: Run, _ name: String) -> [[String: Any]] { r.events.filter { $0["event"] as? String == name } }
+
+    func info(_ r: Run) throws -> [String: Any] {
+        try JSONSerialization.jsonObject(with: Data(contentsOf: r.dir.appendingPathComponent("recording.json"))) as! [String: Any]
+    }
+
+    func seconds(_ name: String, in r: Run) throws -> Double {
+        let h = try WavHeader(r.dir.appendingPathComponent(name))
+        XCTAssertEqual(Int(h.dataBytes), h.fileBytes - 44, "\(name) 종료 시 헤더 확정")
+        return Double(h.dataBytes) / 96_000
+    }
+
+    /// 마이크(440 Hz 사인파)에 0이 길게 이어지는 구간이 없어야 한다(일시정지를 0으로 메우지 않음).
+    func longestZeroRun(_ url: URL) throws -> Int {
+        let d = try Data(contentsOf: url).dropFirst(44)
+        var longest = 0, run = 0
+        d.withUnsafeBytes { raw in
+            for s in raw.bindMemory(to: Int16.self) {
+                run = s == 0 ? run + 1 : 0
+                longest = max(longest, run)
+            }
+        }
+        return longest
+    }
+
+    func testPauseExcludesPausedTimeFromTimeline() throws {
+        let r = try run([]) { _, stdin in
+            Thread.sleep(forTimeInterval: 0.7)
+            stdin.write(Data("pause\n".utf8))
+            Thread.sleep(forTimeInterval: 0.3)
+            stdin.write(Data("bookmark\nmemo 정지 중 메모\n".utf8))  // 일시정지 중에도 받고, 멈춘 오디오 시각을 찍는다
+            Thread.sleep(forTimeInterval: 1.2)
+            stdin.write(Data("resume\n".utf8))
+            Thread.sleep(forTimeInterval: 0.7)
+            stdin.write(Data("stop\n".utf8))
+        }
+        XCTAssertEqual(r.status, 0)
+        XCTAssertFalse(r.events.contains { $0["invalid"] != nil })
+
+        let paused = try XCTUnwrap(events(r, "paused").first)
+        let resumed = try XCTUnwrap(events(r, "resumed").first)
+        XCTAssertEqual(events(r, "paused").count, 1)
+        XCTAssertEqual(events(r, "resumed").count, 1)
+        let p = try XCTUnwrap(paused["elapsed"] as? Double)
+        XCTAssertEqual(resumed["elapsed"] as? Double ?? -1, p, accuracy: 0.03, "계속 시각 = 멈춘 오디오 시각")
+
+        // paused ~ resumed 사이에는 level 이벤트가 없고, 그 뒤 t는 멈춘 시각에서 이어진다.
+        let pi = try XCTUnwrap(r.events.firstIndex { $0["event"] as? String == "paused" })
+        let ri = try XCTUnwrap(r.events.firstIndex { $0["event"] as? String == "resumed" })
+        XCTAssertFalse(r.events[pi..<ri].contains { $0["event"] as? String == "level" }, "일시정지 중 level 없음")
+        let after = r.events[ri...].filter { $0["event"] as? String == "level" }.compactMap { $0["t"] as? Double }
+        XCTAssertFalse(after.isEmpty)
+        XCTAssertGreaterThanOrEqual(after.first!, p - 0.01)
+        XCTAssertLessThan(after.first!, p + 0.5, "벽시계(1.2초 점프)가 아니라 오디오 시계")
+
+        // 일시정지 중 북마크·메모는 멈춘 오디오 시각에 찍힌다.
+        let marks = events(r, "mark")
+        XCTAssertEqual(marks.map { $0["kind"] as? String }, ["bookmark", "memo"])
+        for m in marks { XCTAssertEqual(m["t"] as? Double ?? -1, p, accuracy: 0.011) }
+
+        let stopped = try XCTUnwrap(r.events.last)
+        let duration = try XCTUnwrap(stopped["duration"] as? Double)
+        XCTAssertEqual(duration, p + 0.7, accuracy: 0.25, "duration은 일시정지(1.5초)를 뺀 오디오 시계")
+        XCTAssertLessThan(duration, p + 1.2, "일시정지 시간이 들어가지 않는다")
+
+        // 두 트랙 모두 같은 길이(= duration)이고 일시정지를 0으로 메우지 않았다.
+        let mic = try seconds("mic.wav", in: r), system = try seconds("system.wav", in: r)
+        XCTAssertEqual(mic, duration, accuracy: 0.05)
+        XCTAssertEqual(system, duration, accuracy: 0.05)
+        XCTAssertEqual(mic, system, accuracy: 0.03, "트랙 정렬")
+        XCTAssertLessThan(try longestZeroRun(r.dir.appendingPathComponent("mic.wav")), 100)
+
+        let json = try info(r)
+        XCTAssertEqual(json["duration"] as? Double, duration)
+        let pauses = try XCTUnwrap(json["pauses"] as? [[String: Any]])
+        XCTAssertEqual(pauses.count, 1)
+        XCTAssertEqual(pauses[0]["at"] as? Double ?? -1, p, accuracy: 0.011)
+        let f = ISO8601DateFormatter()
+        let start = try XCTUnwrap(f.date(from: pauses[0]["wall_start"] as? String ?? ""))
+        let end = try XCTUnwrap(f.date(from: pauses[0]["wall_end"] as? String ?? ""))
+        XCTAssertEqual(end.timeIntervalSince(start), 1.5, accuracy: 0.9, "ISO는 초 단위라 오차를 넉넉히")
+        let saved = json["marks"] as! [[String: Any]]
+        XCTAssertEqual(saved.count, 2)
+    }
+
+    func testRedundantPauseAndResumeAreIgnored() throws {
+        let r = try run(["--no-system"]) { _, stdin in
+            Thread.sleep(forTimeInterval: 0.4)
+            stdin.write(Data("resume\n".utf8))  // 일시정지 중이 아님
+            Thread.sleep(forTimeInterval: 0.2)
+            stdin.write(Data("pause\n".utf8))
+            Thread.sleep(forTimeInterval: 0.2)
+            stdin.write(Data("pause\n".utf8))  // 이미 일시정지
+            Thread.sleep(forTimeInterval: 0.3)
+            stdin.write(Data("resume\nresume\n".utf8))
+            Thread.sleep(forTimeInterval: 0.3)
+            stdin.write(Data("stop\n".utf8))
+        }
+        XCTAssertEqual(r.status, 0)
+        XCTAssertEqual(events(r, "paused").count, 1)
+        XCTAssertEqual(events(r, "resumed").count, 1)
+        XCTAssertFalse(r.events.contains { $0["event"] as? String == "warning" || $0["event"] as? String == "error" })
+        XCTAssertEqual(((try info(r))["pauses"] as? [[String: Any]])?.count, 1)
+    }
+
+    func testStopWhilePausedFlushesAndClosesPause() throws {
+        let r = try run(["--no-system"]) { _, stdin in
+            Thread.sleep(forTimeInterval: 0.7)
+            stdin.write(Data("pause\n".utf8))
+            Thread.sleep(forTimeInterval: 0.6)
+            stdin.write(Data("stop\n".utf8))
+        }
+        XCTAssertEqual(r.status, 0)
+        let p = try XCTUnwrap(events(r, "paused").first?["elapsed"] as? Double)
+        XCTAssertTrue(events(r, "resumed").isEmpty)
+        let stopped = try XCTUnwrap(r.events.last)
+        XCTAssertEqual(stopped["event"] as? String, "stopped")
+        XCTAssertEqual(stopped["duration"] as? Double ?? -1, p, accuracy: 0.03, "duration에 일시정지가 들어가지 않는다")
+        XCTAssertEqual(try seconds("mic.wav", in: r), p, accuracy: 0.05)
+        let json = try info(r)
+        XCTAssertEqual(json["duration"] as? Double, stopped["duration"] as? Double)
+        XCTAssertEqual((json["pauses"] as? [[String: Any]])?.count, 1, "열린 일시정지는 종료 때 닫는다")
+    }
+
+    func testSigtermWhilePausedFlushes() throws {
+        let r = try run(["--no-system"]) { p, stdin in
+            Thread.sleep(forTimeInterval: 0.7)
+            stdin.write(Data("pause\n".utf8))
+            Thread.sleep(forTimeInterval: 0.5)
+            p.terminate()
+        }
+        XCTAssertEqual(r.status, 0)
+        XCTAssertEqual(r.events.last?["event"] as? String, "stopped")
+        let duration = try XCTUnwrap(r.events.last?["duration"] as? Double)
+        XCTAssertEqual(try seconds("mic.wav", in: r), duration, accuracy: 0.05)
+        XCTAssertEqual(((try info(r))["pauses"] as? [[String: Any]])?.count, 1)
+    }
+
+    /// 첫 표본이 오기 전(녹음 시작 직후)에 일시정지해도 타임라인이 맞는다.
+    func testPauseRightAfterStart() throws {
+        let r = try run(["--no-system"]) { _, stdin in
+            stdin.write(Data("pause\n".utf8))
+            Thread.sleep(forTimeInterval: 0.8)
+            stdin.write(Data("resume\n".utf8))
+            Thread.sleep(forTimeInterval: 0.7)
+            stdin.write(Data("stop\n".utf8))
+        }
+        XCTAssertEqual(r.status, 0)
+        let p = try XCTUnwrap(events(r, "paused").first?["elapsed"] as? Double)
+        XCTAssertLessThan(p, 0.3)
+        let duration = try XCTUnwrap(r.events.last?["duration"] as? Double)
+        XCTAssertEqual(duration, p + 0.7, accuracy: 0.25)
+        XCTAssertEqual(try seconds("mic.wav", in: r), duration, accuracy: 0.05)
+        XCTAssertLessThan(try longestZeroRun(r.dir.appendingPathComponent("mic.wav")), 100)
+    }
+
+    func testRecordingJsonHasEmptyPausesWhenNeverPaused() throws {
+        let r = try run(["--no-system"]) { _, stdin in
+            Thread.sleep(forTimeInterval: 0.4)
+            stdin.write(Data("stop\n".utf8))
+        }
+        XCTAssertEqual(((try info(r))["pauses"] as? [Any])?.count, 0)
+    }
+
     func testRefusesToOverwrite() throws {
         let dir = try tempDir()
         try Data().write(to: dir.appendingPathComponent("recording.json"))

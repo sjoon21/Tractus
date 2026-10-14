@@ -454,6 +454,7 @@ export const WARNING_TEXT: Record<string, string> = {
   voices_failed: "등록된 참석자 목소리를 확인하지 못했습니다. 참석자 이름은 노트에서 직접 지정할 수 있습니다.",
   aligner_missing: "단어 싱크에 필요한 파일이 없어 단어 싱크 없이 저장했습니다.",
   asr_track_fallback: ASR_FALLBACK_WARNING,
+  tracks_missing: "보관한 녹음 원본이 없어 저장된 오디오로 변환했습니다. 음질이 조금 낮을 수 있습니다.",
   aligner_failed: "단어 싱크를 맞추지 못했습니다. 노트의 ‘단어 싱크 맞추기’로 다시 시도할 수 있습니다.",
   chat_save_failed: "질문 기록을 저장하지 못했습니다. 답변은 그대로 볼 수 있습니다.",
   append_remap_failed: "요약이나 질문 기록의 일부를 새 내용에 맞게 옮기지 못했습니다.",
@@ -466,8 +467,11 @@ export const ERROR_TEXT: Record<string, string> = {
   audio_failed: "음성 파일을 읽지 못했습니다. 소리가 있는 오디오·동영상 파일인지 확인하세요.",
   ffmpeg_missing: "음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요.",
   recording_missing: "녹음된 소리가 없습니다. 마이크 권한과 입력 장치를 확인하세요.",
+  note_audio_missing: "이 노트의 녹음 파일을 찾을 수 없습니다.",
   interrupted: "변환을 중단했습니다. 다시 변환하면 멈춘 곳부터 이어서 진행합니다.",
   incomplete: "변환이 끝나지 않은 구간이 있습니다. 다시 변환하면 멈춘 곳부터 이어서 진행합니다.",
+  not_recorded: "이미 텍스트로 변환한 노트입니다.",
+  not_converted: "먼저 텍스트로 변환하세요.",
   align_interrupted: "단어 싱크를 맞추다가 중단했습니다. 대화 내용은 저장했고, 노트의 ‘단어 싱크 맞추기’로 나중에 맞출 수 있습니다.",
   no_segments: "인식된 대화가 없어 요약할 수 없습니다.",
   bad_input: "요약 유형이나 요약 방법을 확인해 주세요. 지운 유형이거나 입력이 올바르지 않을 수 있습니다.",
@@ -484,6 +488,8 @@ export const ERROR_TEXT: Record<string, string> = {
 /** 코드가 없는 오류의 작업별 기본 문장 */
 export const JOB_ERROR = {
   transcribe: "텍스트로 변환하지 못했습니다",
+  convert: "텍스트로 변환하지 못했습니다",
+  finish: "녹음을 저장하지 못했습니다",
   import: "텍스트로 변환하지 못했습니다",
   summarize: "요약하지 못했습니다",
   align: "단어 싱크를 맞추지 못했습니다",
@@ -564,6 +570,9 @@ export type RecEvent =
   | { event: "started"; dir: string; tracks: string[]; started_at: string }
   | { event: "level"; t: number; mic: number | null; system: number | null }
   | { event: "mark"; t: number; kind: string; text: string | null }
+  /** 일시정지·계속. elapsed는 일시정지한 시간을 뺀 녹음 시각(초) */
+  | { event: "paused"; elapsed: number }
+  | { event: "resumed"; elapsed: number }
   | { event: "warning"; code: string; message: string }
   | { event: "stopped"; dir: string; duration: number }
   | { event: "error"; message: string }
@@ -596,7 +605,10 @@ const WARNING_NOTE: Record<string, string> = {
 export const warningText = (w: { code: string; message: string }): string =>
   WARNING_TEXT[w.code] ?? (WARNING_NOTE[w.code] ? `${w.message} — ${WARNING_NOTE[w.code]}` : w.message);
 
-export type RecPhase = "idle" | "starting" | "recording" | "stopping" | "stopped" | "error";
+export type RecPhase = "idle" | "starting" | "recording" | "paused" | "stopping" | "stopped" | "error";
+
+/** 소리를 받고 있거나(녹음 중) 일시정지한 녹음: 끝내기·북마크·메모가 되고, 새 녹음은 시작하지 못한다 */
+export const isRecLive = (phase: RecPhase): boolean => phase === "recording" || phase === "paused";
 
 export interface RecState {
   phase: RecPhase;
@@ -619,7 +631,13 @@ export function recReduce(s: RecState, ev: RecEvent): RecState {
     case "started":
       return { ...s, phase: "recording", dir: ev.dir, tracks: ev.tracks };
     case "level":
-      return { ...s, t: ev.t, mic: ev.mic, system: ev.system };
+      // 일시정지 중에는 시계가 멈춘다: 헬퍼가 level을 계속 보내도 t는 일시정지한 시각 그대로
+      return s.phase === "paused" ? { ...s, mic: ev.mic, system: ev.system } : { ...s, t: ev.t, mic: ev.mic, system: ev.system };
+    case "paused":
+      // 헬퍼는 일시정지 중 level을 내지 않는다 (docs/desktop.md §1): 미터를 비우고 계속한 뒤 다시 받는다
+      return s.phase === "recording" ? { ...s, phase: "paused", t: ev.elapsed, mic: null, system: null } : s;
+    case "resumed":
+      return s.phase === "paused" || s.phase === "recording" ? { ...s, phase: "recording", t: ev.elapsed } : s;
     case "mark":
       return { ...s, marks: [...s.marks, { t: ev.t, kind: ev.kind, text: ev.text }] };
     case "warning":

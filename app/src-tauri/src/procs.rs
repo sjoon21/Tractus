@@ -81,7 +81,7 @@ pub fn spawn_streaming(
 /// 녹음 헬퍼 stdin 명령. 한 줄에 명령 하나이므로 메모의 줄바꿈은 공백으로 바꾼다.
 pub fn recorder_line(cmd: &str, text: Option<&str>) -> Result<String, String> {
     match (cmd, text) {
-        ("bookmark" | "stop", _) => Ok(format!("{cmd}\n")),
+        ("bookmark" | "stop" | "pause" | "resume", _) => Ok(format!("{cmd}\n")),
         ("memo", Some(t)) if !t.trim().is_empty() => Ok(format!("memo {}\n", t.split_whitespace().collect::<Vec<_>>().join(" "))),
         ("memo", _) => Err("메모가 비어 있습니다".into()),
         _ => Err(format!("알 수 없는 녹음 명령: {cmd}")),
@@ -206,9 +206,58 @@ mod tests {
         assert!(spawn_streaming(Command::new("/nonexistent/tractus-rec"), Map::new(), |_| {}).is_err());
     }
 
+    /// 실제 `tractus-rec --fake`에 앱이 보내는 줄(recorder_line)을 보내고, 받은 이벤트의 모양을 본다 (일시정지 중에는 level이 없다)
+    #[test]
+    #[ignore = "recorder/.build/release/tractus-rec가 필요하다 (cd recorder && swift build -c release)"]
+    fn real_recorder_pause_resume_events() {
+        use std::io::Write;
+        let rec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../recorder/.build/release/tractus-rec");
+        let out = std::env::temp_dir().join(format!("tractus-rec-pause-{}", std::process::id()));
+        let mut cmd = Command::new(rec);
+        cmd.arg("record").arg("--out").arg(&out).args(["--fake", "--no-system"]);
+        let (tx, rx) = channel();
+        let (mut stdin, _) = spawn_streaming(cmd, Map::new(), move |v| tx.send(v).unwrap()).unwrap();
+        let mut send = |cmd: &str| stdin.write_all(recorder_line(cmd, None).unwrap().as_bytes()).and_then(|_| stdin.flush()).unwrap();
+        let mut seen: Vec<Value> = vec![];
+        let mut wait = |event: &str| loop {
+            let v = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            seen.push(v.clone());
+            if v["event"] == event {
+                return v;
+            }
+        };
+        wait("started");
+        std::thread::sleep(Duration::from_millis(1200));
+        send("pause");
+        let paused = wait("paused");
+        assert!(paused["elapsed"].as_f64().unwrap() > 0.5, "{paused}");
+        send("bookmark");
+        let mark = wait("mark");
+        assert_eq!(mark["t"], paused["elapsed"]); // 일시정지 중 북마크는 멈춘 위치에 찍힌다
+        std::thread::sleep(Duration::from_millis(800));
+        send("resume");
+        let resumed = wait("resumed");
+        assert_eq!(resumed["elapsed"], paused["elapsed"]);
+        send("stop");
+        let stopped = wait("stopped");
+        assert!(stopped["duration"].as_f64().unwrap() >= paused["elapsed"].as_f64().unwrap());
+        assert_eq!(wait("exit")["code"], 0);
+        // paused와 resumed 사이에는 level이 없다
+        let names: Vec<&str> = seen.iter().map(|v| v["event"].as_str().unwrap()).collect();
+        let (a, b) = (names.iter().position(|n| *n == "paused").unwrap(), names.iter().position(|n| *n == "resumed").unwrap());
+        assert!(names[a..b].iter().all(|n| *n != "level"), "{names:?}");
+        let info: Value = serde_json::from_str(&std::fs::read_to_string(out.join("recording.json")).unwrap()).unwrap();
+        assert_eq!(info["pauses"].as_array().unwrap().len(), 1);
+        let _ = std::fs::remove_dir_all(&out);
+    }
+
     #[test]
     fn recorder_commands() {
         assert_eq!(recorder_line("bookmark", None).unwrap(), "bookmark\n");
+        // 일시정지·계속은 녹음 헬퍼의 stdin 명령이다 (recorder/README.md). 본문은 받지 않는다
+        assert_eq!(recorder_line("pause", None).unwrap(), "pause\n");
+        assert_eq!(recorder_line("resume", Some("x")).unwrap(), "resume\n");
+        assert!(recorder_line("Pause", None).is_err() && recorder_line("pause now", None).is_err());
         assert_eq!(recorder_line("memo", Some(" 예산\n다시  확인 ")).unwrap(), "memo 예산 다시 확인\n");
         assert!(recorder_line("memo", Some("  ")).is_err());
         assert!(recorder_line("rm -rf", None).is_err());

@@ -193,6 +193,7 @@ mark {
 /* ── 사이드바 ── */
 
 .sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1328,11 +1329,20 @@ mark {
 
 /* 요약 레일 */
 .summary-col {
-  overflow-y: auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
-  padding: var(--gutter) 30px 48px;
   border-left: 1px solid var(--rule);
   background: var(--paper-3);
+}
+
+/* 오른쪽 패널 내용: 접으면 hidden(내용은 그대로 둔다). 단추는 .summary-col 가장자리에 남는다 */
+.rail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--gutter) 30px 48px;
 }
 
 .summary-lead {
@@ -4513,4 +4523,209 @@ body.is-note-dragging {
 
 .checkup .download-panel {
   max-width: none;
+}
+
+/* ── 양쪽 패널 접기 (PanelToggle.tsx, docs/desktop.md §3.2) ──
+   너비를 애니메이션하지 않는다: 접고 펼치는 것은 한 번에 바뀐다 (레이아웃 속성은 움직이지 않는다) */
+:root {
+  --sidebar-rail: 56px;
+  --rail-collapsed: 52px;
+}
+
+.panel-toggle {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink-3);
+  transition: color var(--fast), background var(--fast), border-color var(--fast);
+}
+
+.panel-toggle:hover {
+  border-color: var(--rule-strong);
+  background: var(--rule);
+  color: var(--ink);
+}
+
+.panel-toggle.is-left {
+  top: 20px;
+  right: 12px;
+}
+
+.panel-toggle.is-right {
+  top: calc(var(--gutter) - 10px);
+  right: 10px;
+}
+
+.sidebar-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.shell.is-left-collapsed {
+  grid-template-columns: var(--sidebar-rail) minmax(0, 1fr);
+}
+
+.is-left-collapsed .panel-toggle.is-left {
+  top: 14px;
+}
+
+/* 접힌 왼쪽 띠: 펼치기 단추 아래에 녹음 단추만 둔다 (녹음은 한 번에 닿아야 한다) */
+.rail-rec {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  width: 40px;
+  height: 40px;
+  margin-top: 60px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--on-ink);
+  transition: transform var(--fast) var(--ease), background var(--fast);
+}
+
+.rail-rec:hover {
+  transform: translateY(-1px);
+}
+
+.rail-rec .rec-dot {
+  width: 12px;
+  height: 12px;
+}
+
+.rail-rec.is-live {
+  background: var(--accent);
+  color: #fff;
+}
+
+.rail-badge {
+  align-self: center;
+  margin-top: 10px;
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 11px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+.meeting.is-rail-collapsed {
+  grid-template-columns: minmax(0, 1fr) var(--rail-collapsed);
+}
+
+.is-rail-collapsed .panel-toggle.is-right {
+  top: 14px;
+}
+
+/* 좁은 창: 오른쪽 패널이 전사 아래로 간다. 접으면 단추 줄만 남는다 */
+@media (max-width: 1180px) {
+  .rail-body {
+    overflow: visible;
+  }
+  .is-rail-collapsed .summary-col {
+    min-height: 60px;
+  }
+}
+
+/* ── 녹음과 변환의 분리: 일시정지·변환 전 노트·녹음을 끝낸 뒤 묻는 창 (docs/desktop.md §3.3, WORDS.md §4.18) ── */
+
+/* 변환 전 배지: 메모 색으로 `요약 없음` 같은 회색 배지와 구분한다 */
+.badge.is-pending {
+  border-color: var(--memo);
+  color: var(--memo);
+}
+
+/* 일시정지: 시계는 멈추고 흐려진다 (붉은 점은 녹음 중에만 깜빡인다) */
+.record-clock.is-paused {
+  color: var(--ink-3);
+}
+
+.record-paused {
+  margin: 0 0 16px;
+  max-width: 46ch;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--memo);
+}
+
+/* 남은 녹음 줄의 `노트로 저장`은 `삭제` 왼쪽에 놓는다 */
+.row-delete.row-save {
+  right: 52px;
+}
+
+.row-delete.row-save:hover:not(:disabled),
+.row-delete.row-save:focus-visible {
+  border-color: var(--rule-strong);
+  color: var(--ink);
+}
+
+/* 변환 전 노트의 요약·AI 질문 탭 안내 */
+.rail-pending {
+  margin: 0;
+  padding: 12px 0;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.convert-panel .job-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0 8px;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.convert-panel .job-error {
+  margin: 4px 0 14px;
+}
+
+.convert-panel .primary-button {
+  margin-top: 4px;
+}
+
+/* 녹음을 끝낸 뒤 묻는 창 */
+.after-record .gate-hint {
+  margin: 12px 0 0;
+  font-size: var(--fs-sm);
+}
+
+.after-remember {
+  margin-top: 16px;
+}
+
+.after-remember small {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
+/* 설정: 녹음을 끝내면 (라디오) */
+.after-record-setting {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.after-record-setting legend {
+  padding: 0;
+  margin-bottom: 4px;
 }

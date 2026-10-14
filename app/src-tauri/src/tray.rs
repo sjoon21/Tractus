@@ -25,8 +25,12 @@ const RECENT_WIRE_MAX: usize = 20;
 const TICK: Duration = Duration::from_secs(1);
 /// 녹음 중 아이콘 옆 글자 (예: `●12:34`)
 const TITLE_DOT: &str = "●";
+/// 일시정지 중 아이콘 옆 글자 (예: `‖12:34`)
+const TITLE_PAUSE: &str = "‖";
 
 const ID_START: &str = "tray:record_start";
+const ID_PAUSE: &str = "tray:record_pause";
+const ID_RESUME: &str = "tray:record_resume";
 const ID_STOP: &str = "tray:record_stop";
 const ID_BOOKMARK: &str = "tray:bookmark";
 const ID_OPEN: &str = "tray:open";
@@ -40,9 +44,13 @@ const ID_NOTE: &str = "tray:note:";
 const STATUS_IDLE: &str = "대기 중";
 const STATUS_STARTING: &str = "녹음 준비 중…";
 const STATUS_CONVERTING: &str = "변환 중…";
+/// 뒤에 일시정지 시점의 경과가 붙는다 (예: `일시정지됨 12:34`)
+const STATUS_PAUSED: &str = "일시정지됨";
 const STATUS_NO_RECORDER: &str = "녹음 프로그램을 찾지 못해 녹음할 수 없습니다";
 const LABEL_START: &str = "녹음 시작";
-const LABEL_STOP: &str = "녹음 종료 및 변환";
+const LABEL_PAUSE: &str = "일시정지";
+const LABEL_RESUME: &str = "계속";
+const LABEL_STOP: &str = "녹음 종료";
 const LABEL_BOOKMARK: &str = "북마크 남기기";
 const LABEL_RECENT: &str = "최근 노트";
 const LABEL_OPEN: &str = "Tractus 열기";
@@ -58,6 +66,8 @@ pub enum Phase {
     #[default]
     Idle,
     Recording,
+    /// 일시정지: 앱은 계속 떠 있고 소리만 받지 않는다. 경과 시간은 멈춘다
+    Paused,
     Converting,
 }
 
@@ -73,6 +83,8 @@ pub struct Payload {
     pub ready: bool,
     pub phase: Phase,
     pub started_at_ms: Option<i64>,
+    /// 일시정지 중의 경과 (ms). 일시정지한 시간은 세지 않는다
+    pub elapsed_ms: Option<i64>,
     pub progress_pct: Option<u8>,
     pub can_record: bool,
     pub can_bookmark: bool,
@@ -81,12 +93,17 @@ pub struct Payload {
 
 impl Default for Payload {
     fn default() -> Self {
-        Payload { ready: false, phase: Phase::Idle, started_at_ms: None, progress_pct: None, can_record: false, can_bookmark: false, recent: Vec::new() }
+        Payload { ready: false, phase: Phase::Idle, started_at_ms: None, elapsed_ms: None, progress_pct: None, can_record: false, can_bookmark: false, recent: Vec::new() }
     }
 }
 
 fn as_millis(v: &Value) -> Option<i64> {
     v.as_i64().or_else(|| v.as_f64().filter(|f| f.is_finite()).map(|f| f as i64)).filter(|ms| *ms > 0)
+}
+
+/// 0 이상의 ms (경과는 0부터 센다). 음수·NaN은 없는 것으로 본다
+fn as_elapsed_ms(v: &Value) -> Option<i64> {
+    v.as_i64().or_else(|| v.as_f64().filter(|f| f.is_finite()).map(|f| f as i64)).filter(|ms| *ms >= 0)
 }
 
 fn parse_recent(v: &Value) -> Vec<Recent> {
@@ -106,6 +123,7 @@ fn parse_recent(v: &Value) -> Vec<Recent> {
 pub fn parse_payload(v: &Value, prev: &[Recent]) -> Payload {
     let phase = match v.get("phase").and_then(Value::as_str) {
         Some("recording") => Phase::Recording,
+        Some("paused") => Phase::Paused,
         Some("converting") => Phase::Converting,
         _ => Phase::Idle,
     };
@@ -113,6 +131,7 @@ pub fn parse_payload(v: &Value, prev: &[Recent]) -> Payload {
         ready: true,
         phase,
         started_at_ms: v.get("started_at_ms").and_then(as_millis),
+        elapsed_ms: v.get("elapsed_ms").and_then(as_elapsed_ms),
         progress_pct: v.get("progress_pct").and_then(Value::as_f64).filter(|f| f.is_finite()).map(|f| f.clamp(0.0, 100.0).round() as u8),
         can_record: v.get("can_record").and_then(Value::as_bool).unwrap_or(true),
         can_bookmark: v.get("can_bookmark").and_then(Value::as_bool).unwrap_or(false),
@@ -171,9 +190,12 @@ pub struct View {
 pub fn render(p: &Payload, now_ms: i64) -> View {
     let live = p.phase == Phase::Recording && p.started_at_ms.is_some();
     let elapsed = p.started_at_ms.map(|t| fmt_elapsed(elapsed_secs(t, now_ms)));
+    // 일시정지: 화면이 일시정지한 순간의 경과를 보낸다. 시계를 읽지 않으므로 멈춰 있고 타이머도 필요 없다
+    let paused = (p.phase == Phase::Paused).then(|| fmt_elapsed(p.elapsed_ms.map_or(0, |ms| (ms / 1000) as u64)));
     let status = match (p.phase, &elapsed) {
         (Phase::Recording, Some(e)) => format!("녹음 중 {e}"),
         (Phase::Recording, None) => STATUS_STARTING.into(),
+        (Phase::Paused, _) => format!("{STATUS_PAUSED} {}", paused.as_deref().unwrap_or("00:00")),
         (Phase::Converting, _) => p.progress_pct.map_or_else(|| STATUS_CONVERTING.into(), |n| format!("변환 중 {n}%")),
         (Phase::Idle, _) if p.ready && !p.can_record => STATUS_NO_RECORDER.into(),
         (Phase::Idle, _) => STATUS_IDLE.into(),
@@ -181,13 +203,15 @@ pub fn render(p: &Payload, now_ms: i64) -> View {
     let recent = p.recent.iter().take(RECENT_MAX).map(|n| (format!("{ID_NOTE}{}", n.id), recent_label(&n.title))).collect();
     View {
         status,
-        title: live.then(|| elapsed.map(|e| format!("{TITLE_DOT}{e}"))).flatten(),
+        title: if live { elapsed.map(|e| format!("{TITLE_DOT}{e}")) } else { paused.map(|e| format!("{TITLE_PAUSE}{e}")) },
         recording_icon: p.phase == Phase::Recording,
         ticking: live,
         entries: vec![
-            Entry::Item { id: ID_START, label: LABEL_START, enabled: p.ready && p.phase != Phase::Recording && p.can_record },
-            Entry::Item { id: ID_STOP, label: LABEL_STOP, enabled: live },
-            Entry::Item { id: ID_BOOKMARK, label: LABEL_BOOKMARK, enabled: live && p.can_bookmark },
+            Entry::Item { id: ID_START, label: LABEL_START, enabled: p.ready && !matches!(p.phase, Phase::Recording | Phase::Paused) && p.can_record },
+            // 일시정지 중에는 같은 자리가 `계속`이 된다
+            if p.phase == Phase::Paused { Entry::Item { id: ID_RESUME, label: LABEL_RESUME, enabled: true } } else { Entry::Item { id: ID_PAUSE, label: LABEL_PAUSE, enabled: live } },
+            Entry::Item { id: ID_STOP, label: LABEL_STOP, enabled: live || p.phase == Phase::Paused },
+            Entry::Item { id: ID_BOOKMARK, label: LABEL_BOOKMARK, enabled: (live || p.phase == Phase::Paused) && p.can_bookmark },
             Entry::Separator,
             Entry::Recent(recent),
             Entry::Separator,
@@ -259,6 +283,8 @@ fn emit_action(app: &AppHandle, action: &str, id: Option<&str>) {
 pub fn on_menu_event(app: &AppHandle, id: &str) {
     match id {
         ID_START => emit_action(app, "record_start", None),
+        ID_PAUSE => emit_action(app, "record_pause", None),
+        ID_RESUME => emit_action(app, "record_resume", None),
         ID_STOP => emit_action(app, "record_stop", None),
         ID_BOOKMARK => emit_action(app, "bookmark", None),
         ID_OPEN => show_main(app),
@@ -517,7 +543,8 @@ mod tests {
         assert_eq!(v.title, None);
         assert!(!v.recording_icon && !v.ticking);
         assert_eq!(item(&v, ID_START), ("녹음 시작", true));
-        assert_eq!(item(&v, ID_STOP), ("녹음 종료 및 변환", false));
+        assert_eq!(item(&v, ID_STOP), ("녹음 종료", false));
+        assert_eq!(item(&v, ID_PAUSE), ("일시정지", false));
         assert_eq!(item(&v, ID_BOOKMARK), ("북마크 남기기", false));
         assert_eq!(item(&v, ID_OPEN), ("Tractus 열기", true));
         assert_eq!(item(&v, ID_QUIT), ("종료", true));
@@ -536,6 +563,40 @@ mod tests {
         // 북마크를 못 남기는 상태면 눌리지 않는다
         let p = Payload { can_bookmark: false, ..recording(0) };
         assert!(!item(&render(&p, 0), ID_BOOKMARK).1);
+    }
+
+    #[test]
+    fn recording_menu_offers_pause() {
+        let v = render(&recording(0), 5_000);
+        assert_eq!(item(&v, ID_PAUSE), ("일시정지", true));
+        // 준비 중(시작 시각 없음)에는 일시정지도 못 누른다
+        assert!(!item(&render(&Payload { started_at_ms: None, ..recording(0) }, 0), ID_PAUSE).1);
+    }
+
+    #[test]
+    fn paused_menu_freezes_the_clock_and_swaps_pause_for_resume() {
+        // 경과는 화면이 보낸 값이다: 시계(now)가 아무리 흘러도 같다. 일시정지한 시간은 세지 않는다
+        let p = Payload { ready: true, phase: Phase::Paused, elapsed_ms: Some(754_900), can_bookmark: true, ..Payload::default() };
+        let (a, b) = (render(&p, 0), render(&p, 99_000_000));
+        assert_eq!(a, b);
+        assert_eq!(a.status, "일시정지됨 12:34");
+        assert_eq!(a.title.as_deref(), Some("‖12:34"));
+        assert!(!a.ticking, "타이머는 멈춘다");
+        assert!(!a.recording_icon, "붉은 점 아이콘은 녹음 중에만");
+        assert_eq!(item(&a, ID_RESUME), ("계속", true));
+        assert!(!a.entries.iter().any(|e| matches!(e, Entry::Item { id, .. } if *id == ID_PAUSE)), "같은 자리에서 일시정지가 계속으로 바뀐다");
+        assert!(!item(&a, ID_START).1, "일시정지 중에는 새 녹음을 시작하지 않는다");
+        assert!(item(&a, ID_STOP).1 && item(&a, ID_BOOKMARK).1, "끝내기·북마크는 일시정지 중에도 된다");
+        assert!(!item(&render(&Payload { can_bookmark: false, ..p.clone() }, 0), ID_BOOKMARK).1);
+        // 경과를 모르면 처음부터 센 것으로 본다 (옛 화면)
+        assert_eq!(render(&Payload { elapsed_ms: None, ..p.clone() }, 0).status, "일시정지됨 00:00");
+        // 한 시간이 넘어도 같은 모양이다
+        assert_eq!(render(&Payload { elapsed_ms: Some(3_723_000), ..p }, 0).title.as_deref(), Some("‖1:02:03"));
+        // 계속하면 다시 녹음 중이다: 화면이 시작 시각을 일시정지한 시간만큼 뒤로 옮겨 보낸다
+        let resumed = render(&recording(1_000_000), 1_000_000 + 754_000);
+        assert_eq!(resumed.status, "녹음 중 12:34");
+        assert!(resumed.ticking && resumed.recording_icon);
+        assert_eq!(item(&resumed, ID_PAUSE), ("일시정지", true));
     }
 
     #[test]
@@ -600,6 +661,14 @@ mod tests {
             &prev,
         );
         assert!(p.ready && p.phase == Phase::Recording && !p.can_record && p.can_bookmark);
+        // 일시정지: 경과(ms)를 싣는다. 음수·문자열은 없는 것으로, 0은 받는다
+        let paused = parse_payload(&json!({"phase": "paused", "elapsed_ms": 754_000.4}), &[]);
+        assert_eq!((paused.phase, paused.elapsed_ms), (Phase::Paused, Some(754_000)));
+        assert_eq!(parse_payload(&json!({"phase": "paused", "elapsed_ms": 0}), &[]).elapsed_ms, Some(0));
+        for bad in [json!(-1), json!("12"), json!(null), json!(f64::MAX / 1e300)] {
+            let got = parse_payload(&json!({"phase": "paused", "elapsed_ms": bad}), &[]).elapsed_ms;
+            assert!(got.is_none_or(|ms| ms >= 0), "{bad}");
+        }
         assert_eq!(p.started_at_ms, Some(1_700_000_000_000));
         assert_eq!(p.progress_pct, Some(100)); // 범위 밖은 끌어 넣는다
         assert_eq!(p.recent, vec![Recent { id: "x".into(), title: "새 노트".into() }]);

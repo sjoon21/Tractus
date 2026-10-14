@@ -3,5 +3,10 @@ import { createRoot } from "react-dom/client";
 import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "./styles.css";
 import { App } from "./App";
+import { PanelsProvider } from "./PanelToggle";
 
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  <PanelsProvider>
+    <App />
+  </PanelsProvider>,
+);

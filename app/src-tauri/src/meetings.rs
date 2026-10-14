@@ -92,6 +92,9 @@ struct Transcript {
     folder: Option<String>,
     #[serde(default, deserialize_with = "lenient")]
     updated_at: Option<String>,
+    /// "recorded": 변환 전 노트 (녹음만 있고 아직 텍스트로 변환하지 않았다, docs/desktop.md §2.16). 없거나 다른 값이면 평범한 노트
+    #[serde(default, deserialize_with = "lenient")]
+    state: Option<String>,
     /// 녹음 노트에 사용자가 적은 메모 `{body, lines, seq}`. 값이 어떤 모양이어도 읽는다 (`parse_note_memo`가 이상하면 없는 것으로 본다)
     #[serde(default)]
     memo: Option<serde_json::Value>,
@@ -223,6 +226,9 @@ pub struct MeetingInfo {
     pub folder: Option<String>,
     /// 마지막으로 내용을 고친 시각. 옛 노트는 만든 시각
     pub updated_at: String,
+    /// "recorded"(변환 전)일 때만 싣는다. 평범한 노트는 키가 없다
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -269,7 +275,13 @@ fn info(dir: &Path, t: &Transcript) -> MeetingInfo {
         tags: t.tags.clone(),
         folder: t.folder.clone().filter(|f| !f.is_empty()),
         updated_at: t.updated_at.clone().filter(|u| !u.is_empty()).unwrap_or_else(|| t.created_at.clone()),
+        state: recorded_state(t),
     }
+}
+
+/// 변환 전 노트만 "recorded". 메모 노트나 모르는 값은 평범한 노트다 (옛 파일을 옮기지 않는다)
+fn recorded_state(t: &Transcript) -> Option<String> {
+    (kind_of(t) == "recording" && t.state.as_deref() == Some("recorded")).then(|| "recorded".to_string())
 }
 
 /// $TRACTUS_HOME/meetings/*/transcript.json, 최신순. 손상된 회의 하나 때문에 목록 전체가 실패하지 않게 건너뛴다.
@@ -827,5 +839,68 @@ mod tests {
         fs::write(dir.join("chat.json"), "{깨짐").unwrap();
         assert!(load_chat(&home, "01CHAT").is_err());
         assert!(load_chat(&home, "../01CHAT").is_err());
+    }
+
+    /// 변환 전 노트(state "recorded"): 목록·상세에 state가 실리고, 오디오·메모는 그대로 읽힌다. 모르는 값·메모 노트는 평범한 노트다
+    #[test]
+    fn reads_recorded_state_leniently() {
+        let home = temp_home("recorded");
+        let write = |id: &str, extra: &str| {
+            let dir = home.join(format!("meetings/2026-10-14_녹음_{id}"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("transcript.json"),
+                format!(r#"{{"schema_version":2,"meeting_id":"{id}","title":"녹음 10:00","created_at":"2026-10-14T10:00:00+09:00","audio":{{"file":"audio.ogg","duration_sec":65.5}},"segments":[],"speakers":{{}}{extra}}}"#),
+            )
+            .unwrap();
+            fs::write(dir.join("audio.ogg"), b"OggS").unwrap();
+        };
+        write("01REC", r#","kind":"recording","state":"recorded""#);
+        write("01DONE", r#","kind":"recording""#);
+        write("01ODD", r#","state":7"#);
+        write("01WORD", r#","state":"queued""#);
+        write("01MEMO", r#","kind":"memo","state":"recorded""#);
+        let by_id = |id: &str| list(&home).into_iter().find(|m| m.id == id).unwrap();
+        assert_eq!(by_id("01REC").state.as_deref(), Some("recorded"));
+        assert_eq!((by_id("01REC").segments, by_id("01REC").duration_sec), (0, 65.5));
+        for id in ["01DONE", "01ODD", "01WORD", "01MEMO"] {
+            assert_eq!(by_id(id).state, None, "{id}");
+        }
+        let d = load(&home, "01REC").unwrap();
+        assert_eq!(d.info.state.as_deref(), Some("recorded"));
+        assert!(d.segments.is_empty() && d.audio_path.unwrap().ends_with("audio.ogg"));
+        // 평범한 노트는 JSON에 state 키가 없다 (프런트엔드가 없으면 변환한 노트로 읽는다)
+        assert!(serde_json::to_value(by_id("01DONE")).unwrap().get("state").is_none());
+        assert_eq!(serde_json::to_value(by_id("01REC")).unwrap()["state"], "recorded");
+    }
+
+    /// 실제 `tractus recording finish`가 쓴 transcript.json과 `tractus-rec`가 쓴 recording.json(pauses 포함)을 그대로 읽는다 (2026-10-14): kind·asr 키가 없고 diarization은 null이다
+    #[test]
+    fn reads_real_core_and_recorder_output() {
+        let home = temp_home("realjson");
+        let note = home.join("meetings/2026-10-14_녹음_17_44_01M4WSBRKTBY3NXVZB3CPXM9MT");
+        fs::create_dir_all(&note).unwrap();
+        fs::write(
+            note.join("transcript.json"),
+            r#"{"schema_version": 2, "state": "recorded", "meeting_id": "01M4WSBRKTBY3NXVZB3CPXM9MT", "title": "녹음 17:44", "created_at": "2026-10-14T17:44:12+09:00",
+ "audio": {"file": "audio.ogg", "duration_sec": 12.0, "source": "R1", "sha256": "ea1c"}, "speakers": {}, "diarization": null, "segments": []}"#,
+        )
+        .unwrap();
+        fs::write(note.join("audio.ogg"), b"OggS").unwrap();
+        let m = list(&home).into_iter().next().unwrap();
+        assert_eq!((m.state.as_deref(), m.segments, m.duration_sec), (Some("recorded"), 0, 12.0));
+        assert!(load(&home, "01M4WSBRKTBY3NXVZB3CPXM9MT").unwrap().segments.is_empty());
+
+        let rec = home.join("recordings/01R1");
+        fs::create_dir_all(&rec).unwrap();
+        fs::write(
+            rec.join("recording.json"),
+            r#"{"duration" : 12.01, "echo_cancel" : false, "marks" : [{"kind" : "bookmark", "t" : 6, "text" : null}],
+ "pauses" : [{"at" : 6, "wall_end" : "2026-10-14T17:44:21+09:00", "wall_start" : "2026-10-14T17:44:18+09:00"}],
+ "schema_version" : 1, "started_at" : "2026-10-14T17:44:12+09:00", "tracks" : {"mic" : "mic.wav", "system" : "system.wav"}}"#,
+        )
+        .unwrap();
+        let p = pending_recordings(&home);
+        assert_eq!((p.len(), p[0].duration), (1, Some(12.01))); // 일시정지를 뺀 길이
     }
 }

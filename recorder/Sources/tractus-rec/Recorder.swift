@@ -17,17 +17,22 @@ final class Recorder {
     private var writers: [Track: WavWriter] = [:]
     private var meters: [Track: LevelMeter] = [:]
     private var zero = ZeroDetector()
-    private var stopSources: [() -> Void] = []  // fake 모드용
+    private var flushSources: [() -> Void] = []  // fake 모드용
     private var sources: [Track: AudioSource] = [:]
     private var lastSampleAt: [Track: Double] = [:]
     private var realign: Set<Track> = []  // 재시작 뒤 첫 버퍼에서 끊긴 만큼 0으로 메울 트랙
     private var failing: Set<Track> = []  // 재시작 실패 경고를 한 번만 내기 위해
     private var timers: [DispatchSourceTimer] = []
     private var stopping = false
+    private var pausedSince: Double?  // 일시정지 시작 시 systemUptime. nil이면 녹음 중
+    private var pausedTotal = 0.0  // 끝난 일시정지의 벽시계 합(초)
+    private var pauseWallStart = Date()
+    private var pauseAt = 0.0  // 진행 중인 일시정지의 오디오 시각
 
     init(dir: URL, fake: Bool, echoCancel: Bool) { self.dir = dir; self.fake = fake; self.echoCancel = echoCancel }
 
-    private var elapsed: Double { ProcessInfo.processInfo.systemUptime - t0 }
+    /// 오디오 시계. 일시정지 시간을 뺀다(일시정지 중에는 멈춰 있다). 시각·길이·마커는 모두 이 값을 쓴다.
+    private var elapsed: Double { (pausedSince ?? ProcessInfo.processInfo.systemUptime) - t0 - pausedTotal }
 
     /// 메인 스레드에서 한 번 부른다. 실패한 트랙은 경고 후 빼고, 남은 트랙이 없으면 종료 코드 1.
     func start(_ requested: [Track]) {
@@ -74,7 +79,7 @@ final class Recorder {
         if fake {
             let source = FakeSource(frequency: track == .mic ? 440 : 660, gaps: track == .system)
             every(0.02) { [unowned self] in write(track, source.generate(upTo: elapsed)) }
-            stopSources.append { [unowned self] in write(track, source.generate(upTo: elapsed)) }
+            flushSources.append { [unowned self] in write(track, source.generate(upTo: elapsed)) }
             return
         }
         let onChange = { [unowned self] in q.async { self.restart(track, "장치가 바뀌었습니다") } }
@@ -104,7 +109,7 @@ final class Recorder {
         guard !stopping, let source = sources[track] else { return }
         let name = track == .mic ? "마이크" : "시스템 오디오"
         source.stop()
-        realign.insert(track)
+        if pausedSince == nil { realign.insert(track) }  // 일시정지 중에는 메울 끊김이 없다
         lastSampleAt[track] = elapsed  // 실패해도 stallSeconds 뒤에 다시 시도한다
         do {
             defer { syncEchoCancel(source) }
@@ -134,7 +139,8 @@ final class Recorder {
     }
 
     private func write(_ track: Track, _ samples: [Int16]) {
-        guard let writer = writers[track], !samples.isEmpty else { return }
+        // 일시정지 중에는 두 트랙 모두 표본을 버린다(캡처 엔진은 계속 돈다). 타임라인에는 무음도 남기지 않는다.
+        guard pausedSince == nil, let writer = writers[track], !samples.isEmpty else { return }
         do {
             // 첫 버퍼가 늦게 오거나 중간에 끊긴 만큼 0으로 채워 두 트랙의 시각을 맞춘다.
             // ponytail: 끊김만 맞춘다. 장치 간 클록 드리프트는 보정하지 않는다(1시간에 수십 ms 수준).
@@ -151,6 +157,7 @@ final class Recorder {
     }
 
     private func emitLevel() {
+        guard pausedSince == nil else { return }  // 일시정지 중에는 level 이벤트를 내지 않는다
         watchdog()
         emit(["event": "level", "t": round2(elapsed), "mic": meters[.mic]?.take() ?? NSNull(), "system": meters[.system]?.take() ?? NSNull()])
     }
@@ -162,9 +169,41 @@ final class Recorder {
         }
         switch command {
         case .stop: stop()
+        case .pause: pause()
+        case .resume: resume()
         case .bookmark: addMark(Mark(t: round2(elapsed), kind: "bookmark", text: nil))
         case let .memo(text): addMark(Mark(t: round2(elapsed), kind: "memo", text: text))
         }
+    }
+
+    /// 이미 일시정지 중이면 무시한다(이벤트도 없다).
+    private func pause() {
+        guard !stopping, info != nil, pausedSince == nil else { return }
+        flushSources.forEach { $0() }  // fake 모드: 일시정지 시각까지 쓴다
+        for writer in writers.values {
+            do { try writer.updateHeader() } catch { log("\(error)") }  // 일시정지 중 강제 종료돼도 여기까지는 재생된다
+        }
+        for track in meters.keys { _ = meters[track]?.take() }
+        let at = elapsed
+        pausedSince = ProcessInfo.processInfo.systemUptime
+        pauseWallStart = Date()
+        pauseAt = at
+        emit(["event": "paused", "elapsed": round2(at)])
+    }
+
+    /// 일시정지 중이 아니면 무시한다(이벤트도 없다). 쓰지 않은 구간은 0으로 메우지 않고 오디오 시계를 이어 붙인다.
+    private func resume() {
+        guard !stopping, let since = pausedSince else { return }
+        endPause(since: since)
+        emit(["event": "resumed", "elapsed": round2(pauseAt)])  // 멈춘 시계 그대로: 지금 시계를 다시 읽으면 ms 단위로 어긋나 paused와 다른 값이 나온다
+    }
+
+    /// 진행 중인 일시정지를 닫고 recording.json에 기록한다(계속·종료 공용).
+    private func endPause(since: Double) {
+        pausedTotal += ProcessInfo.processInfo.systemUptime - since
+        pausedSince = nil
+        info?.pauses.append(Pause(at: round2(pauseAt), wallStart: isoLocal(pauseWallStart), wallEnd: isoLocal(Date())))
+        saveInfo()
     }
 
     private func addMark(_ mark: Mark) {
@@ -178,7 +217,8 @@ final class Recorder {
     func stop(error: String? = nil) {
         guard !stopping else { return }
         stopping = true
-        stopSources.forEach { $0() }  // fake 모드는 여기서 마지막 표본까지 쓴다
+        flushSources.forEach { $0() }  // fake 모드는 여기서 마지막 표본까지 쓴다
+        if let since = pausedSince { endPause(since: since) }  // 일시정지 중 종료: 오디오 시계는 그대로(duration에 일시정지가 안 들어간다)
         sources.values.forEach { $0.stop() }
         timers.forEach { $0.cancel() }
         for writer in writers.values {

@@ -215,7 +215,7 @@ UPSTAGE_API_KEY=up_...
 <details open>
 <summary><b>노트 만들기</b></summary>
 
-- **녹음:** `새 노트` › `녹음 시작`. 녹음 방식은 `대면 녹음`과 `화상·하이브리드`(시스템 소리 포함) 중에서 고릅니다. 녹음 중에 메모를 쓰거나 `B`로 북마크를 남기고, `녹음 종료 및 변환`을 누르면 이 Mac에서 텍스트로 바꿉니다.
+- **녹음:** `새 노트` › `녹음 시작`. 녹음 방식은 `대면 녹음`과 `화상·하이브리드`(시스템 소리 포함) 중에서 고릅니다. 녹음 중에 메모를 쓰거나 `B`로 북마크를 남기고, `일시정지`로 잠시 멈췄다가 `계속`할 수 있습니다(멈춘 시간은 녹음에 들어가지 않습니다). `녹음 종료`를 누르면 설정 `녹음을 끝내면`에 따라 이 Mac에서 바로 텍스트로 바꾸거나, 노트(`변환 전`)로 저장만 해 두었다가 나중에 노트의 `텍스트로 변환`으로 바꿉니다(기본은 끝낼 때마다 묻습니다).
 - **파일 가져오기:** `새 노트` › `파일 가져오기`, 또는 창에 파일을 끌어 놓습니다. 오디오와 동영상을 받습니다. 여러 파일은 차례로 변환합니다.
 - **메모 쓰기:** `새 노트` › `글쓰기`(⌘N). 쓰는 대로 저장됩니다. 메모도 같은 노트라서 요약, AI 질문, 검색, 내보내기가 됩니다. 위치는 시각 대신 `3번째 줄`로 가리킵니다.
 - **글만 있는 노트에 녹음 붙이기:** 메모 머리의 `녹음 추가` 또는 `파일에서 추가`. 노트가 녹음 노트로 바뀌고 쓴 글은 `메모` 탭으로 옮겨집니다.
@@ -258,6 +258,8 @@ UPSTAGE_API_KEY=up_...
 | ⌘N | 글쓰기 (새 메모) |
 | ⌘K | 노트 검색 |
 | ⌘J | AI 어시스턴트에게 질문 (모든 노트) |
+| ⌘B | 노트 목록 접기·펼치기 |
+| ⌥⌘B | 오른쪽 패널(요약·AI 질문·메모) 접기·펼치기 |
 | ⌘F | 대화 내용에서 찾아 바꾸기 |
 | ⌘Z | 대화 내용 수정 되돌리기 |
 | ⌘S | 메모 바로 저장 (평소에도 자동 저장) |
@@ -273,6 +275,8 @@ UPSTAGE_API_KEY=up_...
 ```bash
 uv run tractus transcribe 주간회의.m4a --title "3분기 예산 회의" -t 김철수 -t "Project Atlas"
 uv run tractus transcribe 회의.m4a --append-to 01K6X3     # 글만 있는 노트에 녹음 추가
+uv run tractus recording finish ~/Tractus/recordings/01K… # 녹음만 저장 ("변환 전" 노트, 변환은 나중에)
+uv run tractus transcribe --into 01K6X3                    # 변환 전 노트를 그 자리에서 텍스트로 변환
 uv run tractus doctor                                      # 시스템·도구·모델·기능 점검 (--json)
 uv run tractus models list                                 # 모델 설치 상태 (download · remove)
 uv run tractus summarize 01K6X3                            # 회의록 요약
@@ -293,6 +297,7 @@ uv run tractus render --all                                # transcript.md·vtt�
 | `--language auto\|ko\|en` | 기본 `auto`. `ko`로 고정하면 영어 위주 말을 번역할 수 있어 권장하지 않습니다 |
 | `-t`, `--term` | 이 노트의 용어(참석자 이름, 제품명). 여러 번 지정할 수 있습니다 |
 | `--recording <폴더>` | `tractus-rec` 녹음 폴더를 변환(마이크·시스템 트랙을 섞음). `--keep-tracks`면 원본 트랙을 보관 |
+| `--into <노트>` | `tractus recording finish`로 저장해 둔 "변환 전" 노트를 그 자리에서 변환합니다. 제목·메모·태그·폴더는 그대로이고, 변환이 끝나면 원본 트랙(`tracks/`)을 지웁니다(`--keep-tracks`면 보관). 중단돼도 같은 명령으로 이어서 합니다 |
 | `--no-diarize`, `--max-speakers N` | 참석자 구분을 끄거나 상한을 둡니다 |
 | `--diarizer auto\|nemotron\|fluid` | 기본 `auto`: Nemotron으로 나누고 8명을 모두 쓰면 `tractus-diar`로 다시 나눕니다 |
 | `--no-align` | 단어 싱크를 만들지 않습니다 (나중에 `tractus align <노트>`) |

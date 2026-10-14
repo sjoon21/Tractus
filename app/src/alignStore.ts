@@ -15,6 +15,8 @@ export interface AlignDeps {
   /** Rust `job_start`. 실행조차 못 하면 거부 */
   start: (job: string, noteId: string) => Promise<void>;
   newId: () => string;
+  /** 돌고 있는 작업을 멈춘다 (프로세스를 kill, 이미 끝났으면 아무 일도 없다). 없으면 cancel은 아무것도 하지 않는다 */
+  cancel?: (job: string) => Promise<void>;
 }
 
 export function createAlignStore(deps: AlignDeps) {
@@ -60,6 +62,11 @@ export function createAlignStore(deps: AlignDeps) {
         finish(noteId, false);
       }
       return true;
+    },
+    /** 이 노트의 돌고 있는 작업을 멈춘다. 끝 상태(exit 이벤트)는 평소처럼 온다 */
+    cancel(noteId: string): void {
+      const job = [...jobs].find(([, n]) => n === noteId)?.[0];
+      if (job) void deps.cancel?.(job)?.catch(() => {});
     },
     /** `job` 이벤트 하나. 이 저장소가 시작한 작업의 것만 받는다 */
     dispatch(ev: JobEvent): void {

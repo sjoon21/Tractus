@@ -14,12 +14,13 @@ from datetime import datetime
 from pathlib import Path
 
 from tractus.summaries import DEFAULT_KEY, list_summaries, read_data, read_markdown
-from tractus.store import MEMOS_FILE, _hms, _vtt_time, is_memo, load_memos, memo_lines, one_line, render_markdown, render_vtt, seg_text, speaker_display
+from tractus.store import MEMOS_FILE, _hms, _vtt_time, is_memo, is_recorded, load_memos, memo_lines, one_line, render_markdown, render_vtt, seg_text, speaker_display
 
 FORMATS = ("txt", "md", "srt", "vtt", "csv", "docx", "bundle")
 BUNDLE_FILES = ("audio.ogg", "audio.opus", "transcript.json", "transcript.md", "transcript.vtt", "summary.md", "summary.json", MEMOS_FILE)
 MEMO_FORMATS = ("txt", "md", "csv", "docx", "bundle")  # 메모는 시각이 없어 자막(srt·vtt)으로 내보낼 수 없다
 NO_SUBTITLES = "메모는 자막 파일로 내보낼 수 없습니다."
+NO_SUBTITLES_RECORDED = "아직 텍스트로 변환하지 않아 자막 파일로 내보낼 수 없습니다. 먼저 텍스트로 변환하세요."  # "변환 전" 노트: 대화 내용이 없다
 EAST_ASIA_FONT = "Apple SD Gothic Neo"  # Word·Pages(macOS)에서 한글이 대체 글꼴로 깨지지 않게 w:eastAsia에 지정
 
 
@@ -198,6 +199,8 @@ def render_export(d: Path, fmt: str, summary: str | None = None) -> bytes:
         raise ValueError(f"지원하지 않는 형식입니다: {fmt} ({', '.join(FORMATS)})")
     if is_memo(t) and fmt not in MEMO_FORMATS:
         raise UnsupportedFormat(NO_SUBTITLES)
+    if is_recorded(t) and fmt in ("srt", "vtt"):
+        raise UnsupportedFormat(NO_SUBTITLES_RECORDED)
     return writers[fmt]()
 
 

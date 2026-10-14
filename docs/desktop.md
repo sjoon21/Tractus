@@ -9,6 +9,8 @@ B안(Tauri 데스크톱 앱)을 먼저 만들어 완성도를 보고, 부족하�
 │                         ├─ 파일 직접 읽기 (meetings/*, transcript.json, summary.json, memos.json, audio.ogg)
 │                         ├─ spawn: tractus-rec record ...   ── stdout JSON 이벤트 / stdin 명령
 │                         ├─ spawn: tractus transcribe --recording <dir> --progress-json
+│                         ├─ spawn: tractus recording finish <dir> --progress-json   (녹음만 저장, 변환 안 함 → "변환 전" 노트, §2.16)
+│                         ├─ spawn: tractus transcribe --into <id> --progress-json   (변환 전 노트를 나중에 변환, §2.16)
 │                         ├─ spawn: tractus summarize <id> --progress-json
 │                         ├─ spawn: tractus speakers <id> rename | set | merge   (화자 목록은 transcript.json을 직접 읽는다)
 │                         ├─ spawn: tractus ask [--meeting <id>] --progress-json   (stdin JSON, 대화 기록은 chat.json을 직접 읽는다)
@@ -43,7 +45,9 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 - **stdin**: 한 줄에 명령 하나.
   - `bookmark`: 지금 시각에 북마크
   - `memo <텍스트>`: 지금 시각에 메모
-  - `stop`: 녹음을 마무리하고 종료
+  - `pause`: 일시정지 (2026-10-14). 아래 "일시정지" 절을 본다
+  - `resume`: 일시정지를 풀고 이어서 녹음
+  - `stop`: 녹음을 마무리하고 종료 (일시정지 중에도 된다)
 - **stdin이 닫히면(EOF) `stop`과 같이 처리한다.** 앱은 녹음 내내 stdin 파이프를 열어 둬야 한다.
 - SIGINT·SIGTERM을 받아도 `stop`과 같이 파일을 닫고 종료한다. 강제 종료돼도 WAV 헤더가 깨지지 않게 주기적으로 헤더를 갱신한다(또는 CAF로 쓰고 종료 시 변환).
 
@@ -54,6 +58,8 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 {"event":"level","t":12.25,"mic":-23.1,"system":-41.7}        // 250ms마다, dBFS (트랙이 없으면 null)
 {"event":"mark","t":95.0,"kind":"bookmark","text":null}
 {"event":"mark","t":130.5,"kind":"memo","text":"예산 다시 확인"}
+{"event":"paused","elapsed":95.0}                             // 일시정지됨. elapsed = 멈춘 오디오 시각
+{"event":"resumed","elapsed":95.0}                            // 계속함. elapsed는 paused와 같은 오디오 시각에서 이어진다
 {"event":"warning","code":"system_zero","message":"시스템 오디오가 5초 동안 정확히 0입니다. 시스템 설정 > 개인정보 보호 > 화면 및 시스템 오디오 녹음 권한을 확인하세요"}
 {"event":"warning","code":"mic_denied","message":"마이크 권한이 없습니다"}
 {"event":"stopped","dir":"/…","duration":3605.2}
@@ -65,6 +71,16 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 - `level`: `-100`은 완전한 무음 또는 그 구간에 표본 없음, `null`은 녹음하지 않는 트랙이다. 장치가 끊긴 동안은 무음으로 채워 두 트랙 길이를 맞춘다.
 - 거부·종료: `<dir>`에 `mic.wav`·`system.wav`·`recording.json`이 이미 있으면 시작하지 않는다(`error`, 종료 코드 1). WAV 하나가 4 GiB(약 12.4시간)에 이르면 `error`를 내고 종료한다.
 - 이벤트 JSON의 키 순서는 정해져 있지 않다.
+
+#### 일시정지 (2026-10-14)
+
+- `pause`·`resume` 명령은 `paused`·`resumed` 이벤트로 확인한다(`elapsed`는 초, 소수 둘째 자리). **이미 일시정지 중인 `pause`와 일시정지 중이 아닌 `resume`은 아무 일도 없다**(이벤트·경고 없음). 앱은 이벤트가 올 때만 상태를 바꾼다.
+- **오디오 시계는 일시정지 시간을 뺀다.** `started` 이후 녹음된 시간만 센다. `level.t`, `mark.t`, `paused/resumed.elapsed`, `stopped.duration`, `recording.json`의 `duration`·`marks[].t`·`pauses[].at`이 모두 이 시계다. 앱은 `elapsed`를 이벤트에서만 받는다(벽시계 타이머로 세지 않는다).
+- 일시정지 중에는 **두 트랙의 표본을 모두 버린다.** WAV에는 일시정지 구간이 없고(0으로 메우지도 않는다) 두 트랙은 계속 같은 길이다. 계속하면 같은 오디오 시각에서 이어 쓴다. 캡처 엔진은 계속 돌므로 macOS 마이크 사용 표시(주황 점)는 일시정지 중에도 켜져 있다. 마이크를 놓지 않는다.
+- 일시정지 중에는 **`level` 이벤트를 내지 않는다**(`paused`와 `resumed` 사이에 없다). 앱은 `paused`를 받으면 미터를 비우고 `resumed` 뒤에 다시 받는다. 시스템 오디오 경고(`system_zero`)·장치 재연결 감시도 표본이 오는 동안만 동작한다.
+- 일시정지 중에도 `bookmark`·`memo`는 받고, **멈춘 오디오 시각**(= `paused.elapsed`)에 찍는다.
+- `stop`·SIGINT·SIGTERM·stdin EOF는 일시정지 중에도 똑같이 마무리한다(WAV 헤더 확정, `recording.json`, `stopped`). 이때 `duration`은 멈춘 오디오 시각이다. 일시정지 중에 강제 종료돼도 `pause` 시점까지는 WAV가 재생된다(헤더를 그때 갱신한다).
+- 녹음을 시작하자마자(첫 표본 전) `pause`해도 된다. 첫 표본은 오디오 시각에 맞춰 놓이므로 일시정지 시간이 앞에 들어가지 않는다.
 
 ### `tractus-rec check`
 
@@ -78,9 +94,12 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
   "started_at": "2026-10-02T14:00:00+09:00",
   "duration": 3605.2,                 // 종료 시 채움, 녹음 중에는 null
   "tracks": {"mic": "mic.wav", "system": "system.wav"},
-  "marks": [{"t": 95.0, "kind": "bookmark", "text": null}, {"t": 130.5, "kind": "memo", "text": "예산 다시 확인"}]
+  "marks": [{"t": 95.0, "kind": "bookmark", "text": null}, {"t": 130.5, "kind": "memo", "text": "예산 다시 확인"}],
+  "pauses": [{"at": 95.0, "wall_start": "2026-10-02T14:20:00+09:00", "wall_end": "2026-10-02T14:41:12+09:00"}]  // 추가 키(2026-10-14). 끝난 일시정지만 있고 없으면 []
 }
 ```
+
+- `duration`, `marks[].t`, `pauses[].at`은 **오디오 시계**(일시정지를 뺀 시각)다. 그래서 WAV 길이 = `duration`이고 WAV 위치 = `t`다. `pauses[].wall_start/wall_end`는 벽시계(로컬 오프셋 ISO, 초 단위)라서 일시정지가 실제로 언제였는지 알 수 있다. 일시정지 중에 종료하면 열려 있던 일시정지는 종료 때 닫힌다. `pauses`가 없는 옛 파일은 `[]`로 읽는다.
 
 ### 권한
 
@@ -104,6 +123,7 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 | `tractus export` | 내보내기. 아래 §2.4 |
 | `tractus note meta`, `folders`, `notes list` (v3.20) | 즐겨찾기·태그·폴더와 목록 정렬·필터. 아래 §2.12 |
 | `tractus note` (v3.18) | 직접 쓰는 메모 노트(오디오 없음)와 노트 제목 바꾸기. 아래 §2.10 |
+| `tractus recording finish`, `tractus transcribe --into <노트>` (v3.25) | 녹음과 변환을 나눈다: 녹음을 변환 없이 "변환 전" 노트로 저장하고 나중에 그 자리에서 변환한다. 아래 §2.16 |
 | `tractus transcribe --append-to <노트>` (v3.19) | 글만 있는 노트에 녹음을 덧붙여 녹음 노트로 바꾼다. 아래 §2.11 |
 | `tractus ask` (Phase 6) | 회의 질의. 아래 §2.5 |
 | 단어 타이밍 (Phase 6) | `transcribe`가 전사 뒤 `segments[].words`를 채운다(`--no-align`으로 끔). 기존 회의는 `tractus align`. 아래 §2.6 |
@@ -134,10 +154,11 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
   | 코드 | 명령 | 언제 |
   | --- | --- | --- |
   | `model_missing` | transcribe, live, align | ASR·VAD·단어 정렬 모델이 없음 (`message`에 `tractus models download <id>`와 `hf download …`, §2.15) |
-  | `audio_failed` | transcribe, align | ffmpeg가 오디오를 읽지 못함, 소리 없는 파일 |
-  | `ffmpeg_missing` | transcribe, align | ffmpeg가 설치되지 않음 (`brew install ffmpeg`) |
-  | `recording_missing` | transcribe `--recording` | `recording.json`을 읽지 못함, 녹음된 트랙이 없음 |
-  | `interrupted` | transcribe | 전사 중 중단 (종료 코드 130, 같은 명령으로 이어하기) |
+  | `audio_failed` | transcribe, align, recording finish | ffmpeg가 오디오를 읽지 못함, 소리 없는 파일 |
+  | `ffmpeg_missing` | transcribe, align, recording finish | ffmpeg가 설치되지 않음 (`brew install ffmpeg`) |
+  | `recording_missing` | transcribe `--recording`·`--into`, recording finish | `recording.json`을 읽지 못함, 녹음된 트랙이 없음. finish는 녹음 폴더가 없어도(종료 코드 2). `--into`는 아니다(아래 `note_audio_missing`) |
+  | `note_audio_missing` | transcribe `--into` | 변환 전 노트에 `tracks/`도 `audio.ogg`도 없음(종료 코드 2). 마이크 안내가 아니라 노트의 문장 `이 노트의 녹음 파일을 찾을 수 없습니다.` |
+  | `interrupted` | transcribe, recording finish | 전사·저장 중 중단 (종료 코드 130, 같은 명령으로 이어하기) |
   | `incomplete` | transcribe | 전사되지 않은 청크가 남아 transcript.json을 쓰지 못함 |
   | `align_interrupted` | transcribe | 단어 정렬 중 중단. 전사는 저장됨 (종료 코드 130) |
   | `no_segments` | summarize | 세그먼트가 없음 |
@@ -147,6 +168,9 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
   | `llm_invalid` | summarize, ask | 요약 응답이 2회 연속 검증 실패(`message`는 짧은 문장, 원문은 stderr), 질의 답이 빔 |
   | `live_low_memory` | live | 메모리 16GB 미만, `--force` 없음 |
   | `live_failed` | live | 녹음 파일·WAV 형식 오류 등으로 실시간 전사를 멈춤 |
+  | `bad_input` (추가) | recording finish | 제목이 비었거나 120자 초과 (종료 코드 2, 아무것도 만들지 않음) |
+  | `not_recorded` | transcribe `--into` | 대상이 "변환 전" 노트가 아님: 이미 변환했거나 메모 노트이거나, 변환하는 사이 다른 실행이 먼저 변환함 (종료 코드 2, §2.16) |
+  | `not_converted` | summarize, align, speakers·segments·voices의 편집 명령 | "변환 전" 노트라 대화 내용이 없음 (종료 코드 2). `ask`는 같은 코드의 **경고**만 내고 LLM을 부르지 않는다 (§2.16) |
   | `append_note_missing`, `append_has_audio` | transcribe `--append-to` | 대상 노트가 없음 / 글만 있는 노트가 아님 (종료 코드 2, §2.11). 경고 `append_remap_failed`: 요약·질문 기록의 근거를 옮기지 못함 |
 
   회의를 찾지 못한 오류(`resolve_meeting`)와 ask의 입력 오류에는 `code`가 없다.
@@ -481,7 +505,7 @@ tractus transcribe --recording <녹음 폴더> --append-to <노트>   # 녹음�
   | `append_remap_failed` (경고, 종료 코드 0) | 변환은 끝났지만 `summary.json`·`summaries/*.json`·`chat.json`이 깨져 있어 근거를 옮기지 못함 | `요약이나 질문 기록의 일부를 새 내용에 맞게 옮기지 못했습니다.` |
 
 - **이벤트는 `transcribe`와 같다**: `stage(decode)` → … → `done`(`meeting_id` = 대상 노트, `meeting_dir` = 그 노트 폴더). 중복 파일(이미 변환한 같은 오디오)이면 `stage(decode)` → `warning(duplicate)` → `done`(**다른** 노트의 `meeting_id`)이고 대상 노트는 건드리지 않는다(종료 코드 0). 대상 검사가 중복 검사보다 먼저다. `title`·`--keep-tracks` 등 다른 옵션은 그대로이고 `--title`은 무시한다(제목은 노트의 것).
-- **노트 폴더 안에서 돈다.** `audio.ogg`를 노트 폴더에 쓰고, `memos.json`(녹음 중 메모·북마크)은 새 녹음처럼 쓴다. 이어하기 파일 `.job.json`(새 필드 `attach: true`)·`.chunks.jsonl`도 그 폴더에 둔다. 평소 `store._clean_stale_job`은 `transcript.json`이 있으면 작업 파일을 낡은 것으로 지우지만, 노트가 **아직 메모 노트인 동안**(`store._append_pending`)은 지우지 않는다. 변환이 끝나 메모 노트가 아니게 되면 낡은 파일이 되어 지워진다. `find_job(meetings, sha, append_to=<meeting_id>)`는 그 노트에 덧붙이는 작업만, `append_to` 없이는 새 노트를 만드는 작업만 찾는다. 중단(종료 코드 130)해도 노트는 글만 있는 채 그대로이고 같은 명령으로 이어진다. 그 사이 앱·`tractus note save`로 글을 고쳐도 변환이 끝날 때 읽은 최신 글을 옮긴다.
+- **노트 폴더 안에서 돈다.** `audio.ogg`를 노트 폴더에 쓰고, `memos.json`(녹음 중 메모·북마크)은 새 녹음처럼 쓴다. 이어하기 파일 `.job.json`(새 필드 `attach: true`)·`.chunks.jsonl`도 그 폴더에 둔다. 평소 `store._clean_stale_job`은 `transcript.json`이 있으면 작업 파일을 낡은 것으로 지우지만, 노트가 **아직 메모 노트인 동안**(`store._job_pending`)은 지우지 않는다. 변환이 끝나 메모 노트가 아니게 되면 낡은 파일이 되어 지워진다. `find_job(meetings, sha, append_to=<meeting_id>)`는 그 노트에 덧붙이는 작업만, `append_to` 없이는 새 노트를 만드는 작업만 찾는다. 중단(종료 코드 130)해도 노트는 글만 있는 채 그대로이고 같은 명령으로 이어진다. 그 사이 앱·`tractus note save`로 글을 고쳐도 변환이 끝날 때 읽은 최신 글을 옮긴다.
 - **변환(`attach.finish_append`, `note_lock` 안).** 새 변환 결과(`store.build_transcript`)를 노트에 합친다:
   - 쓰는 것: `schema_version`·`audio {file: "audio.ogg", duration_sec, source, sha256}`·`asr`·`speakers`·`diarization`·`segments`(ASR `s####`).
   - 지우는 것: `kind`(없음 = 녹음)·`body`·`seg_seq`. 쓴 글이 비어 있지 않으면 `memo {body, lines[{id m####, line, text}], seq}`(`notes.derive_lines(body, None, 0, "m")`, 줄 번호는 본문 기준 그대로).
@@ -716,6 +740,67 @@ ID와 프리셋을 함께 주면 합친다(중복 제거, 레지스트리 순서
 - **테스트.** `tests/test_models.py`(가짜 폴더·로컬 HTTP 서버·시뮬레이션 오류, 실제 모델 불필요) + `@pytest.mark.network` 하나(`pytest -m network`: 작은 VAD를 임시 폴더에 받아 `list`가 설치됨으로 읽는지).
 - **알려진 한계.** 허브가 파일 이름을 알려 주지 않아 `progress.file`은 추정이다. 이어받기 때 `bytes_done`은 허브 막대의 값이라 이미 받은 바이트를 빼고 시작할 수 있다. `fluid`의 받기 진행은 도우미가 이벤트를 내지 않아 `stage`와 `model_done`뿐이다. 받는 중에 앱 프로세스가 강제 종료되면 `.incomplete`가 남는다(다시 받으면 이어받는다). 설치 판정은 크기만 보므로 같은 크기로 바뀐 가중치는 못 잡는다(voices는 sha256 확인, 리비전이 다른 폴더는 완료 표시로 잡는다).
 
+### 2.16 녹음과 변환 나누기: `tractus recording finish`, `tractus transcribe --into` (v3.25)
+
+지금까지는 녹음을 멈추면 곧바로 텍스트 변환이 돌았다. 이제 **저장**과 **변환**이 따로다: 녹음을 멈추고 변환 없이 노트로 저장해 두었다가(**변환 전** 노트) 나중에 같은 노트를 그 자리에서 텍스트로 변환한다. 바로 변환하는 길(`transcribe --recording <폴더>`)은 그대로이고 한 바이트도 달라지지 않는다.
+
+```
+tractus recording finish <녹음 폴더> [--title T] [--progress-json]     # 변환 없이 "변환 전" 노트로 저장
+tractus transcribe --into <노트> [--track …] [--language …] [--term …] [--keep-tracks] [--no-diarize] [--max-speakers N] [--diarizer …] [--no-align] [--progress-json]   # 변환 전 노트를 그 자리에서 변환
+```
+
+**"변환 전" 노트의 transcript.json** (schema_version 2, `kind`는 없다 = 녹음 노트):
+
+```jsonc
+{ "schema_version": 2, "state": "recorded",            // 선택 키. 변환이 끝나면 키가 없어진다. 판별은 store.is_recorded(t)
+  "meeting_id": "01K…", "title": "녹음 14:00", "created_at": "2026-10-02T14:00:00+09:00",   // created_at = 녹음 시작 시각
+  "audio": { "file": "audio.ogg", "duration_sec": 8.0, "source": "<녹음 폴더 이름>", "sha256": "<원본 트랙 해시>" },
+  "speakers": {}, "diarization": null, "segments": [] }  // asr 키는 없다 (변환 뒤에 생긴다)
+```
+
+노트 폴더: `audio.ogg`(Opus 32kbps, 바로 들을 수 있다), `memos.json`(녹음 중 메모·북마크, 있으면), `tracks/`(원본 `mic.wav`·`system.wav`·`recording.json`, 손실 없는 변환용), `transcript.json`, `transcript.md`(머리말 `state: recorded`, 본문은 `아직 텍스트로 변환하지 않았습니다.`와 녹음 중 메모·북마크·`## 메모`. **`transcript.vtt`는 없다**, 변환하면 생긴다). 변환이 끝나면 `state`가 사라지고 `tracks/`가 지워진다(`--keep-tracks`면 남긴다).
+
+#### `recording finish`
+
+- `<녹음 폴더>` = `tractus-rec`가 만든 폴더(`recordings/<ULID>`). `--title`이 없으면 `녹음 HH:MM`(녹음을 시작한 이 Mac의 시각), 폴더는 `meetings/<날짜>_<제목>_<새 ULID>/`. 제목은 `notes.clean_title`(공백 정리, 1–120자, 아니면 종료 코드 2 `bad_input`). 녹음 폴더의 `attach.json`(§2.11)은 보지 않는다: 항상 새 노트다(덧붙일 녹음은 앱이 `transcribe --recording --append-to`를 쓴다).
+- 이벤트: `stage(decode)`(원본 해시·길이 계산) → `stage(encode)`(`audio.ogg`가 이미 있으면 생략) → `done {meeting_id, meeting_dir}`. `--progress-json`이 없으면 stdout에 `{"meeting_id": "01K…", "meeting_dir": "<절대 경로>"}` 한 줄.
+- 오류(코드는 위 표): `recording_missing`(폴더 없음·소리 없음, 종료 코드 2), `bad_input`(2), `ffmpeg_missing`·`audio_failed`(1), `interrupted`(130). **오류가 나도 녹음 폴더는 지우지 않는다.**
+- **순서와 안전.** 노트 폴더 만들기(+표시 파일 `.finish.json` = 녹음 폴더 이름·`meeting_id`·제목·원본 해시·길이) → `audio.ogg`(`audio.part.ogg`로 만들어 이름 바꾸기) → `memos.json` → 트랙·`recording.json`을 `tracks/`로 **복사**(`.part`로 복사한 뒤 이름 바꾸기) → **`transcript.json`(마지막, 완료 표시)** → 녹음 폴더 비우기(원본은 여기서 지운다) → `.finish.json` 지우기. `transcript.json`이 없는 폴더는 노트가 아니다(목록·검색·`find_meeting_dir`에 나오지 않는다). 어디서 끊겨도(SIGKILL 포함) 같은 명령을 다시 실행하면 `.finish.json`으로 같은 노트 폴더를 찾아 이어서 끝낸다. 끊겨도 녹음 폴더는 온전해서(복사이므로) 앱의 `변환 대기 중인 녹음` 목록(`recording.json`이 있는 폴더)에서 사라지지 않고, 그 목록의 `변환`이 트랙 일부만 변환하는 일도 없다. 디스크 부족 같은 `OSError`는 코드 없는 오류 이벤트(`녹음을 저장하지 못했습니다: …`, 종료 코드 1)로 알린다. `transcript.json`까지 쓰고 끊겼으면 다시 실행했을 때 녹음 폴더 정리만 한다. 이미 정리된 녹음 폴더(없음)는 `recording_missing`이다.
+- 소리 길이는 녹음의 오디오 시계(`recording.json`의 `duration`과 같다, §1)가 아니라 트랙을 실제로 디코딩해 잰다(충돌한 녹음은 `duration`이 null일 수 있다). 일시정지(`pauses`, §1)는 WAV에 이미 빠져 있어 코어가 할 일이 없다: `memos.json`의 `t`는 `marks[].t` 그대로 오디오 시계이고 `audio.ogg`·원본 트랙과 같은 시각이다.
+- 끊긴 녹음 폴더(충돌로 `duration`이 null)도 그대로 저장한다. 바로 변환하는 길과 마찬가지로 `recording.json`의 `tracks`와 `started_at`만 필요하다.
+
+#### `transcribe --into <노트>`
+
+- `<노트>` = 폴더 또는 `meeting_id`(일부). 파일·`--recording`·`--append-to`와 함께 쓰면 종료 코드 2(`BadParameter`). `--title`은 무시한다(제목은 노트의 것). 나머지 옵션은 `transcribe`와 같다.
+- **입력.** `tracks/`의 원본 트랙을 `recording.json` 순서대로 `amix`(normalize=0)해 변환한다(바로 변환하는 길과 같은 소리 → 같은 결과). `tracks/`가 없거나 비었으면 `audio.ogg`를 디코딩해 변환하고 경고 `tracks_missing`을 낸다(음질이 조금 낮을 수 있다). 둘 다 없으면 `note_audio_missing`(종료 코드 2).
+- **검사(처리 전, 종료 코드 2, 아무것도 쓰지 않는다).** 노트를 못 찾으면 `code` 없는 `error`(`resolve_meeting`과 같다). 변환 전이 아니면 `code: not_recorded` + 문장 `이미 텍스트로 변환한 노트입니다.`(메모 노트는 `녹음이 없는 노트라 텍스트로 변환할 수 없습니다.`). 중복 파일 검사(`duplicate`)는 하지 않는다.
+- **이벤트는 `transcribe`와 같다**: `stage(decode)` → `vad` → (`diarize`) → (`voices`) → `load_model` → `transcribe` + `progress` → `align` → `index` → `done {meeting_id, meeting_dir}`. 이미 `audio.ogg`가 있으므로 `encode` 단계는 나오지 않는다. 중단하면 종료 코드 130 `interrupted`.
+- **노트 폴더 안에서 돈다.** 이어하기 파일 `.job.json`(새 필드 `convert: true`)·`.chunks.jsonl`을 그 폴더에 둔다. 변환 전 노트는 `transcript.json`이 있으므로 평소 `store._clean_stale_job`은 작업 파일을 낡은 것으로 지우지만, **노트가 아직 `state: recorded`인 동안**(`store._job_pending`, §2.11의 덧붙이기와 같은 방식)은 지우지 않는다. `find_job(meetings, sha, append_to=…, into=<meeting_id>)`는 작업을 세 종류(새 노트 / 덧붙이기 / 변환)로 가르므로 서로 이어받지 않는다. 중단해도 노트는 변환 전 그대로이고 같은 명령으로 이어진다(VAD·화자 분리·끝난 청크는 다시 하지 않는다). 해시는 저장할 때 잰 원본 트랙의 것을 쓴다.
+- **합치기(`deferred.finish_convert`, `note_lock` 안).** 끝난 청크로 만든 결과(`build_transcript`)의 `schema_version`·`audio`·`asr`·`speakers`·`diarization`·`segments`를 **다시 읽은** transcript.json에 쓰고 `state`를 지우고 `updated_at`을 올린다. 그 밖의 키(`title`·`memo`·`favorite`·`tags`·`folder`·알 수 없는 키)는 다시 읽은 쪽 그대로라서 **변환하는 동안 앱에서 고친 제목·메모·태그가 살아남는다**. `align`의 단어 시각 저장(`_save_words`)도 같은 방식이다. `transcript.json`이 마지막, 끝나면 `.job.json`·`.chunks.jsonl`을 지운다. 변환하는 사이 다른 실행이 먼저 변환했으면 덮어쓰지 않고 `not_recorded`(종료 코드 2)다.
+- **결과는 바로 변환한 노트와 같다.** 같은 녹음을 `transcribe --recording`으로 바로 변환한 노트와 `meeting_id`·`updated_at`을 뺀 transcript.json·`memos.json`·파일 구성이 같다(`tests/test_deferred.py`, `slow`는 실제 모델로 같은 `say` 음성을 비교).
+
+#### 변환 전 노트를 읽는 쪽 (대화 0개, 오디오 있음)
+
+| 기능 | 동작 |
+| --- | --- |
+| 검색·색인 | 대화가 없으니 **메모 줄만** 색인된다(§2.10 `source: "memo"`). 메모도 없으면 청크가 없다. 오류 없음 |
+| `summarize` | 종료 코드 2, `code: not_converted`, `먼저 텍스트로 변환하세요.` 파일은 만들지 않는다 |
+| `ask --meeting` | 근거가 메모 줄뿐(또는 없음). 근거가 없으면 경고 `not_converted`를 내고 LLM을 부르지 않고 `근거 없음` done(`provider`·`model` null)으로 끝난다. 메모가 있으면 메모로 답한다 |
+| `export` | `txt`·`md`·`csv`·`docx`·`bundle`은 된다(대화 내용은 비고 메모 절은 있다. `bundle`은 `audio.ogg`·transcript.json·md·memos.json이고 `tracks/`는 넣지 않는다). **`srt`·`vtt`는 종료 코드 2** + `아직 텍스트로 변환하지 않아 자막 파일로 내보낼 수 없습니다. 먼저 텍스트로 변환하세요.` (`export.NO_SUBTITLES_RECORDED`) |
+| MCP | `list_meetings`에 `state`(`"recorded"` 또는 null)가 있다. `get_transcript`는 `변환 전` 머리 줄 + 안내 한 줄 + 메모 구간을 돌려준다. `save_summary`는 ToolError |
+| `notes list --json` | 한 줄마다 `"state": "recorded" \| null`가 더해진다(`organize.note_row`) |
+| `render` | `transcript.md`만 다시 쓴다(vtt 없음). 몇 번 돌려도 같다. `asr` 블록이 없어도 죽지 않는다 |
+| `align`, `speakers rename/set/merge/dismiss`, `segments edit`, `voices enroll/match` | 종료 코드 2, `code: not_converted`, `먼저 텍스트로 변환하세요.` (`speakers list`는 빈 목록) |
+| `note save`, `note title`, `note meta`, `folders` | 그대로 된다. `note save`는 `memo` 블록을 쓴다(`kind: "recording"`) |
+| 삭제 | 폴더째 휴지통(§2.9)이라 `tracks/`도 함께 간다. 변환 중이던 작업이 끊겨 `.job.json`·`transcript.json`이 둘 다 있으면 "끝난 노트"로 보아 앱의 삭제 검사를 통과한다(§2.7.2) — 변환 중(실행 중)에는 앱의 `BusyGuard`가 막는다 |
+| `transcribe <파일>`·`--recording`·`--append-to` | 변환 전 노트의 해시는 `find_transcribed`(중복 검사)에서 제외된다. `--append-to`는 `append_has_audio`로 거절한다 |
+
+문장(`먼저 텍스트로 변환하세요.` 등)은 WORDS.md §4.7이고 코어는 `store.NOT_CONVERTED`·`store.NOT_CONVERTED_NOTE`·`deferred.NOT_RECORDED_*`·`export.NO_SUBTITLES_RECORDED`에 둔다.
+
+**"이어서 녹음"(`recording attach`)은 만들지 않았다.** 변환 전 노트에 녹음을 더하려면 트랙을 여러 부분(`tracks/part2/…`)으로 두고 `audio.ogg`·변환 입력·길이·`memos.json`의 시각(두 번째 녹음의 `t`에 첫 부분의 길이를 더해야 한다)을 이어 붙여야 한다. 일시정지 후 계속(§1)이 같은 녹음 안에서 "끊었다 이어서"를 이미 해결하므로 따로 두고 필요해지면 만든다.
+
+**테스트.** `tests/test_deferred.py`(가짜 ASR·화자 분리 + 실제 FFmpeg, 42개 + `slow` 1개): 저장(메모·북마크·md·`audio.ogg`·`tracks/`·길이·제목·stdout JSON), 잘못된 입력(제목·없는 폴더·소리 없음·ffmpeg 없음)과 중단 뒤 이어하기(transcript.json 직전 끊김, 인코딩 실패, 정리 직전 끊김), 변환(제자리 변환·`--keep-tracks`·화자·바로 변환과 같은 결과·중단 뒤 이어하기·바로 변환과 작업 파일 분리·변환 중 메모·제목·태그 수정이 살아남음·트랙 없이 `audio.ogg`로·`not_recorded`·옵션 충돌·덧붙이기 대상 거절·다른 실행이 먼저 변환), 읽는 쪽 전부(색인·검색·summarize·ask·내보내기 7형식·MCP·notes list·편집 명령 거절·note save/title/meta·render). `slow`는 실제 모델로 `say` 음성을 저장 → SIGKILL → 이어서 저장 → 변환 → SIGKILL → 이어서 변환하고 바로 변환한 결과와 대화 텍스트·시각·참석자를 비교한다.
+
 ## 3. Tauri 앱 (app/)
 
 - **스택:** Tauri 2 + React + TypeScript + Vite. 오디오는 자체 `media://` URI 스킴(`convertFileSrc(path, "media")`, MIME `audio/ogg`, HTTP Range 지원, `TRACTUS_HOME` 밖 경로 거부)으로 `<audio>`에 연결한다. Tauri 기본 asset protocol은 `.ogg`/`.opus`의 MIME과 Range 처리가 맞지 않아 쓰지 않는다(`app/README.md`).
@@ -745,24 +830,66 @@ macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음�
 - **상태 → Rust: 명령 `tray_update(payload)`.** 화면(`App.tsx`)이 `deriveTrayState`로 만든 값을 보낸다. 같은 값은 다시 보내지 않고(`createTraySender`), 최근 노트 목록은 바뀔 때만 싣는다(없으면 Rust가 이전 목록을 둔다). 타이머로 모으지 않는다: 숨은 webview의 `setTimeout`은 한참 늦어져 메뉴가 낡은 채로 남는다.
 
   ```json
-  {"phase": "idle" | "recording" | "converting",
-   "started_at_ms": 1760000000000,   // recording만. 녹음 시작 시각 (epoch ms), 한 번
+  {"phase": "idle" | "recording" | "paused" | "converting",
+   "started_at_ms": 1760000000000,   // recording만. 녹음 시작 시각 (epoch ms). 일시정지한 시간은 센 적이 없다: 계속할 때마다 `지금 - 경과`로 다시 보낸다 (§3.3)
+   "elapsed_ms": 754000,             // paused만. 일시정지한 순간의 경과 (녹음 시각, ms). 일시정지 중에는 시계를 읽지 않고 이 값으로 멈춘다
    "progress_pct": 45,               // converting만. 총량을 모르면 없다
    "can_record": true,               // 녹음 프로그램(caps `record`)이 있고 녹음·변환 중이 아닐 때만
    "can_bookmark": false,            // 녹음 중일 때만
    "recent": [{"id": "…", "title": "…"}]}   // 최근에 고친 순 5개 (updated_at, 없으면 만든 시각)
   ```
 
-  Rust의 읽기는 관대하다(`parse_payload`): 모르는 `phase`는 `idle`, 이상한 타입은 기본값, `progress_pct`는 0~100으로 끌어 넣고, 객체가 아니어도 패닉하지 않는다(오래된 화면). 화면의 `starting`은 시각 없는 `recording`(`녹음 준비 중…`, 종료·북마크 막음), `stopping`은 `converting`으로 보낸다. 녹음을 변환하는 중(`stopping`·변환 작업·대기)에는 `can_record`가 `false`다: 사이드바 녹음 단추가 변환이 끝난 뒤에만 녹음을 시작하는 규칙과 같다. 파일 가져오기·노트에 파일 추가 변환(`imp.job.running`·대기 파일·attach `converting`)은 창의 녹음 단추를 막지 않으므로 `phase: "converting"`(상태 줄 `변환 중 N%`)이지만 `can_record`는 녹음 프로그램 유무 그대로다. Rust는 `녹음 시작`을 `녹음 중이 아니고 can_record`일 때 켠다.
+  Rust의 읽기는 관대하다(`parse_payload`): 모르는 `phase`는 `idle`, 이상한 타입은 기본값, `progress_pct`는 0~100으로 끌어 넣고, 객체가 아니어도 패닉하지 않는다(오래된 화면). 화면의 `starting`은 시각 없는 `recording`(`녹음 준비 중…`, 종료·북마크 막음), `paused`는 `paused`(`일시정지됨 12:34`, 종료·북마크·계속은 켜고 새 녹음은 막음), `stopping`은 `converting`으로 보낸다. 노트로 저장하는 중(`recording finish`)과 변환 전 노트 변환도 `converting`이다. 녹음을 변환하는 중(`stopping`·변환 작업·대기)에는 `can_record`가 `false`다: 사이드바 녹음 단추가 변환이 끝난 뒤에만 녹음을 시작하는 규칙과 같다. 파일 가져오기·노트에 파일 추가 변환(`imp.job.running`·대기 파일·attach `converting`)은 창의 녹음 단추를 막지 않으므로 `phase: "converting"`(상태 줄 `변환 중 N%`)이지만 `can_record`는 녹음 프로그램 유무 그대로다. Rust는 `녹음 시작`을 `녹음 중이 아니고 can_record`일 때 켠다.
 - **알림: 명령 `tray_show_if_hidden`.** 녹음 시작 실패(`rec.phase === "error"`)나 녹음 경고는 녹음 화면에만 보이므로, 화면이 이때 이 명령을 불러 숨었거나 최소화한 창을 꺼낸다(보이는 창은 그대로). 메뉴 막대에서 시작한 녹음이 숨은 창에서 조용히 실패하지 않게 한다. 북마크는 창을 숨긴 동안 따로 알리지 않는다(알려진 한계).
-- **동작 → 화면: 이벤트 `tray-action`** (메인 창에만 `emit_to`). `{"action": "record_start" | "record_stop" | "bookmark" | "open_note", "id"?: 노트 ID}`. 화면이 아직 준비되지 않았으면 이벤트는 조용히 버려진다. `routeTrayAction`이 지금 상태에서 뜻 없는 동작(이미 녹음 중인 시작, 녹음 중이 아닌 종료·북마크)을 무시하고, 메뉴를 빠르게 두 번 눌러도 두 번째가 들어오기 전에 단계를 앞당겨 `rec_start`가 두 번 불리지 않게 한다. `Tractus 열기`와 `open_note`는 Rust가 창을 직접 보이고(`show`+`unminimize`+`set_focus`) 숨은 창에서도 된다. `종료`는 ⌘Q와 같은 `begin_quit`이다(쓰던 메모 저장, 3초 안에 종료, 녹음에는 `stop`).
-- **경과 시간.** 화면 타이머를 쓰지 않는다. 화면이 녹음 시작 시각(`rec` 이벤트 `started`를 받은 `Date.now()`)을 한 번 보내고, Rust가 1초 틱(별도 스레드가 메인 스레드에 `sync`를 맡긴다)으로 상태 줄과 아이콘 옆 글자(`●12:34`, 한 시간이 넘으면 `●1:02:03`)를 고친다. 틱은 단계가 바뀌거나 아이콘을 끄거나 앱이 끝나면(`RunEvent::Exit`) 멈춘다. 메뉴는 줄이 바뀔 때만 다시 만들고, 경과 시간은 글자만 바꾼다.
-- **메뉴.** 상태 줄(눌리지 않음) · `녹음 시작` · `녹음 종료 및 변환` · `북마크 남기기` · 구분선 · `최근 노트` ▸ (최대 5개, 제목 40자, 클릭하면 노트 열기) · 구분선 · `Tractus 열기` · `종료`. 항목을 숨기지 않고 못 쓸 때는 비활성으로 둔다.
+- **동작 → 화면: 이벤트 `tray-action`** (메인 창에만 `emit_to`). `{"action": "record_start" | "record_pause" | "record_resume" | "record_stop" | "bookmark" | "open_note", "id"?: 노트 ID}`. 화면이 아직 준비되지 않았으면 이벤트는 조용히 버려진다. `routeTrayAction`이 지금 상태에서 뜻 없는 동작(이미 녹음 중인 시작, 녹음 중이 아닌 종료·북마크)을 무시하고, 메뉴를 빠르게 두 번 눌러도 두 번째가 들어오기 전에 단계를 앞당겨 `rec_start`가 두 번 불리지 않게 한다. `Tractus 열기`와 `open_note`는 Rust가 창을 직접 보이고(`show`+`unminimize`+`set_focus`) 숨은 창에서도 된다. `종료`는 ⌘Q와 같은 `begin_quit`이다(쓰던 메모 저장, 3초 안에 종료, 녹음에는 `stop`).
+- **경과 시간.** 화면 타이머를 쓰지 않는다. 화면이 녹음 시작 시각(`rec` 이벤트 `started`를 받은 `Date.now()`)을 한 번 보내고, Rust가 1초 틱(별도 스레드가 메인 스레드에 `sync`를 맡긴다)으로 상태 줄과 아이콘 옆 글자(`●12:34`, 한 시간이 넘으면 `●1:02:03`)를 고친다. 틱은 단계가 바뀌거나 아이콘을 끄거나 앱이 끝나면(`RunEvent::Exit`) 멈춘다. **일시정지 중에는 틱이 멈춘다**: 상태 줄 `일시정지됨 12:34`와 아이콘 옆 `‖12:34`는 화면이 보낸 `elapsed_ms`로 고정되고 시계를 읽지 않는다. 메뉴는 줄이 바뀔 때만 다시 만들고, 경과 시간은 글자만 바꾼다.
+- **메뉴.** 상태 줄(눌리지 않음) · `녹음 시작` · `일시정지`(일시정지 중에는 같은 자리가 `계속`) · `녹음 종료` · `북마크 남기기` · 구분선 · `최근 노트` ▸ (최대 5개, 제목 40자, 클릭하면 노트 열기) · 구분선 · `Tractus 열기` · `종료`. 항목을 숨기지 않고 못 쓸 때는 비활성으로 둔다.
 - **설정** (`settings.json`, 없으면 기본값 — 옛 설정 파일 호환): `tray_enabled`(기본 `true`, `메뉴 막대에 Tractus 표시`), `keep_in_tray`(기본 `true`, `창을 닫아도 메뉴 막대에 남기기`, `tray_enabled`가 꺼지면 쓸 수 없다). 설정 화면의 두 스위치는 저장 단추를 기다리지 않고 `set_tray_prefs`로 바로 적용한다(그 두 키만 병합해 쓴다. `save_settings`도 같은 적용을 한다). 아이콘은 실행 중에 만들고 없앤다(다시 시작 없음). 끌 때 창이 숨어 있으면 다시 보인다(다시 찾을 길이 Dock뿐이라서).
 - **창 닫기.** `should_hide_on_close(settings, tray_exists)` = `tray_enabled && keep_in_tray && 아이콘이 실제로 떠 있음`. 참이면 Rust의 창 이벤트 핸들러가 `prevent_close` + `hide`한다. 화면의 닫기 핸들러는 `tray_hides_on_close`로 같은 판단을 물어 참이면 쓰던 메모만 저장하고 닫기를 막는다(숨기기만 하므로 변환 취소 경고를 띄우지 않는다). 거짓(설정이 꺼짐, OS가 아이콘을 거절)이면 기존 흐름 그대로다: 닫기 확인 → 마지막 창이 닫히며 `ExitRequested` → `defer_exit`. Dock 아이콘(`RunEvent::Reopen`)은 숨은 창을 다시 보인다. ⌘Q와 아이콘의 `종료`는 `begin_quit`이다.
 - **아이콘.** 검정 + 투명 배경 macOS 템플릿 이미지(18×18 @1x, 36×36 @2x: tray-icon이 macOS에서 모든 이미지를 높이 18pt로 맞추므로 그 크기로 그려 줄이지 않는다, `set_icon_as_template(true)`로 라이트·다크에 맞춘다). 쉬는 중은 소리 막대 5개, 녹음 중은 막대 3개 + 꽉 찬 점. `scripts/make_tray_icons.py`(표준 라이브러리만, 재현 가능)가 `app/src-tauri/icons/tray/`의 PNG 4개를 만든다. 자리표시자라 디자이너가 PNG를 바로 바꿔 끼우면 된다(코드는 `@2x`를 `include_bytes!`로 읽는다). macOS `set_icon`은 템플릿 표시를 지우므로 아이콘을 바꿀 때마다 다시 건다.
 - **견고함.** `tray_update`는 잠금이 오염돼도 패닉하지 않는다. 아이콘을 만들지 못하면(OS가 거절) 기록만 하고 앱은 계속 뜨며, 그때는 창을 닫으면 그대로 끝난다. 메뉴 이벤트 핸들러는 앱 전체에 하나만 둔다(아이콘을 다시 만들 때마다 쌓이지 않게). 트레이 핸들은 메인 스레드에서만 만지고 버린다.
 - **빌드.** Tauri 기능 `tray-icon`, `image-png`를 켰다. 새로 잠기는 크레이트: `image 0.25`(MIT OR Apache-2.0), `byteorder-lite`(Unlicense OR MIT), `moxcms`·`pxfm`(BSD-3-Clause OR Apache-2.0) — `image-png`가 PNG를 읽으려고 끌어온다. `tray-icon`(MIT OR Apache-2.0)은 이미 `Cargo.lock`에 있던 것이다.
+
+### 3.2 양쪽 패널 접기·펼치기 (v3.26)
+
+왼쪽 노트 목록(사이드바)과 노트 화면의 오른쪽 패널(`요약`·`AI 질문`·`메모` 탭)을 각각 접고 펼 수 있다. 코어(Python)·Rust는 바뀌지 않는다. 구현은 `app/src/panels.ts`(순수 로직), `PanelToggle.tsx`(상태·단추), 문구는 WORDS.md §4.17이다. ⌘J AI 어시스턴트 서랍은 따로 뜨는 덮개라 그대로다.
+
+- **단추.** 패널마다 하나. 아이콘(꺾쇠) + 이름(`aria-label`)이고 `title`에 단축키가 붙는다: `노트 목록 접기`/`펼치기`(`⌘B`), `오른쪽 패널 접기`/`펼치기`(`⌥⌘B`). `aria-expanded`, `aria-controls`(`sidebar-body`·`rail-body`), `aria-keyshortcuts`(`Meta+B`·`Alt+Meta+B`), 32×32 눌림 영역, 전역 `:focus-visible` 고리. 단추는 패널 안쪽이 아니라 **가장자리 띠에 붙어 있어** 접힌 뒤에도 남는다.
+- **접힌 모양.** 왼쪽은 56px 띠: 펼치기 단추 + **녹음 단추**(동그란 점, 녹음 중에는 붉게, 이름 `녹음 시작`/`녹음 중`/`변환 중…`, 기능 잠금·변환 중 규칙은 사이드바 녹음 단추와 같고, 파일 가져오기·대기 중도 `변환 중…`으로 보인다). 목록 안에만 있는 `변환 대기 중인 녹음`이 있으면 단추 아래에 개수 배지(`변환 대기 중인 녹음 N개`)가 뜬다. 가져오기 진행 막대·경고·목록 불러오기 오류는 목록 안에만 있어 접힌 동안 안 보인다(알려진 한계: 완료·실패는 알림 토스트와 메뉴 막대 아이콘이 알린다). 녹음은 한 번에 닿아야 해서 두었고, 새 노트·검색·설정은 두지 않았다(`⌘N`은 그대로 되고, `⌘K`는 목록을 펼친다). 오른쪽은 52px 띠에 펼치기 단추만 있다. 가운데(전사·편집기)가 남는 너비를 모두 쓴다. 1180px 이하의 좁은 창에서는 오른쪽 패널이 전사 아래로 가므로, 접으면 단추 줄(60px)만 남는다.
+- **내용은 마운트한 채 숨긴다.** `hidden`(`display: none`)이라 탭 순서·화면 읽기에서 빠지고, React 트리는 그대로다: 메모 편집기의 쓰던 글, AI 질문의 스트리밍, 요약 작업이 접어도 이어진다. 접힌 패널의 스크롤 위치는 돌아오면 맨 위일 수 있다(알려진 한계).
+- **움직임.** 너비·높이를 움직이지 않는다: 한 번에 바뀐다(애니메이션 없음 → `prefers-reduced-motion`에서도 같다). 색 전환만 `--fast`.
+- **상태.** `{left, right}` 불리언(`true` = 접힘). `localStorage` 키 **`tractus.panels.v1`**(이 창 전용, 읽기·쓰기는 try/catch, 비어 있거나 깨졌거나 모양이 다르면 없는 것으로 본다. 칸마다 따로 읽어 불리언이 아닌 칸은 버린다). 기본은 둘 다 펼침. **저장한 선택이 없고** 처음 그릴 때 창 너비가 960px 미만이면 오른쪽만 접고 시작한다(이 기본값은 저장하지 않으므로 창을 넓히고 다시 켜면 펼쳐진다). 저장한 값은 항상 이긴다. **사용자가 단추·단축키로 접고 편 칸만** 저장한다(`{left}`만 저장될 수 있다): 좁은 창에서 왼쪽만 접어도 오른쪽은 계속 기본값을 따른다. 아래 자동 펼침은 저장하지 않는다.
+- **단축키.** `⌘B` 왼쪽, `⌥⌘B` 오른쪽. 물리 키(`e.code === "KeyB"`)로 보므로 한글 입력 상태에서도 되고(⌥B는 `∫`), 글을 쓰는 중에도 된다(이 앱에서 ⌘B는 굵게 쓰기가 아니고, Tauri 기본 macOS 메뉴에도 ⌘B가 없다). 한글 조합 중에는 무시하고, 키를 누르고 있어도 한 번만 바꾼다. 맨 `B`(녹음 중 북마크)는 ⌘를 거부하므로 겹치지 않는다. 노트 화면이 아닐 때 `⌥⌘B`는 아무것도 하지 않는다(오른쪽 패널이 없다). 첫 화면 단축키 목록에 두 줄을 더했다.
+- **초점.** 접는 패널 안에 초점이 있으면(`document.activeElement`가 `sidebar-body`·`rail-body` 안) 접기 전에 그 패널의 단추로 옮긴다. 펼칠 때는 초점을 옮기지 않는다.
+- **오른쪽을 접을 때 메모 저장.** 접기 전에 `flushMemos()`로 열려 있는 메모를 저장한다(숨기면 입력창 blur가 믿을 수 없고 단축키로 접으면 blur가 없다). **저장하지 못하면 접지 않는다**(화면 이동과 같은 규칙: 오류는 열려 있는 편집기가 이미 보인다). 왼쪽을 접을 때는 저장하지 않는다.
+- **자동 펼침(`panels.revealFor`, 순수 함수).** (a) 녹음 노트의 `메모 N번째 줄` 칩·검색 결과(`openMemoLine`)는 메모 탭이 오른쪽 패널에 있으므로 접혀 있으면 펼친다. 메모(글쓰기) 노트의 줄은 가운데 본문이라 펼치지 않는다. (b) 대화 시각으로 이동, ⌘K·목록·인용으로 노트 열기, 녹음 단추는 접힘을 건드리지 않는다. (c) **`⌘K`만은 접힌 왼쪽을 펼치고 검색창에 초점을 준다**(검색창이 목록 안에 있어서 안 펼치면 단축키가 죽는다). 요약 만들기·질문은 오른쪽 패널 안의 단추라 접힌 채로는 누를 수 없고, 시작해도 접힌 패널을 대신 펼치지 않는다.
+- **다른 기능과.** 녹음 화면·점검·모델 화면은 가운데 화면이라 왼쪽 접기가 그대로 된다(오른쪽 패널은 노트 화면에만 있다). 메모 노트·변환 전 노트도 같은 단추다(탭 구성만 다르다). 찾기 막대(⌘F)는 가운데에 있어 영향이 없다. PDF 인쇄는 `#root` 전체를 숨기고 인쇄 문서만 그리므로 접힘 상태와 무관하다. 메뉴 막대 아이콘·⌘J 서랍은 바뀌지 않는다(서랍은 창 오른쪽에 떠 있고, 접힌 목록이면 `AI 어시스턴트에게 질문` 단추가 숨는다: `⌘J`로 연다).
+- **검사.** `panels.test.ts`(접기·저장·깨진 값·좁은 창 기본값·자동 펼침·단축키·메모 저장 순서·문구·단추 렌더). 화면에서 보는 항목은 `app/README.md` 체크리스트.
+
+### 3.3 녹음과 변환 나누기: 일시정지·끝낼 때 고르기·변환 전 노트 (v3.25)
+
+코어 §2.16(`recording finish`, `transcribe --into`, 노트 상태 `state: "recorded"`)과 녹음 헬퍼 §1(`pause`·`resume`·`paused`·`resumed`)을 앱이 쓰는 방법이다. 문구는 WORDS.md §4.18. 순수 로직은 `afterRecord.ts`·`pause.ts`·`convertQueue.ts`·`recorded.ts`(테스트가 같이 있다)이고 화면은 `AfterRecordDialog.tsx`·`ConvertPanel.tsx`·`RecordView.tsx`·`MeetingView.tsx`·`NoteRow.tsx`·`App.tsx`다.
+
+**쓰는 계약.** 녹음 헬퍼: stdin `pause`·`resume`(이미 일시정지 중인 `pause`는 아무 일도 없다), 이벤트 `paused {elapsed}`·`resumed {elapsed}`(`elapsed`는 일시정지를 뺀 오디오 시각, 초), 일시정지 중에는 `level`이 없다. 코어: `tractus recording finish <녹음 폴더> [--title=T] --progress-json`(→ `stage(encode)`, `done {meeting_id, meeting_dir}`, 실패해도 녹음 폴더는 남는다), `tractus transcribe --into <노트> --progress-json`(→ `transcribe`와 같은 이벤트, 변환 전이 아니면 종료 코드 2 + `not_recorded`), 목록·상세의 `state`(`"recorded"`일 때만 키가 있다).
+
+- **일시정지·계속.** 녹음 화면에 `일시정지`/`계속` 단추(레이블이 바뀐다), 메뉴 막대에 같은 항목. 앱은 `rec_send("pause"|"resume")`(Rust `procs::recorder_line`이 이 두 줄만 더 받는다)로 보내고 **이벤트가 올 때만** 상태를 바꾼다(`recReduce`: `paused` → 단계 `paused` + `t = elapsed` + 미터 비움, `resumed` → `recording` + `t = elapsed`, 순서가 어긋난 이벤트는 무시). 화면 시계는 마지막 이벤트의 녹음 시각에서 시작해 `recording`일 때만 0.5초마다 흐른다(`pause.clockAt`, 기준은 `level`·`paused`·`resumed` 이벤트): 일시정지 중에는 멈추고 계속하면 `elapsed`에서 다시 시작한다. 메뉴 막대는 시작 시각을 `지금 - elapsed`로 다시 보내(`pause.resumedStartMs`) 일시정지한 시간을 세지 않고, 일시정지 중에는 `elapsed_ms`만 보내 Rust 틱이 멈춘다(§3.1). 북마크·메모·`녹음 종료`는 일시정지 중에도 된다. **한계:** 일시정지해도 녹음 프로그램은 떠 있어 macOS 마이크 사용 표시가 켜진 채다(안내문이 말한다).
+- **끝낸 뒤.** 설정 `after_record`(`"ask"`(기본)|`"convert"`|`"later"`, 없거나 모르는 값은 `ask`, Rust `Settings.after_record`, 설정 화면의 `녹음을 끝내면`은 `set_after_record`로 바로 저장한다)와 변환 기능 잠금으로 `afterRecord.stopAction`이 정한다. `recorder stopped`를 받으면 설정 파일을 다시 읽어(`get_settings`) 아래 중 하나를 한다.
+
+  | 설정 | 변환 가능 | 변환 불가 |
+  | --- | --- | --- |
+  | `convert` | 옛 흐름 그대로 `transcribe --recording` | 옛 흐름 그대로: 녹음 폴더만 남기고 `UNCONVERTED_SAVED` 안내 |
+  | `later` | `recording finish` → 끝나면 새 노트를 연다 | 같음 (변환 엔진 없이도 된다) |
+  | `ask` | 묻는 창 | 묻는 창(`바로 변환하기`는 `aria-disabled` + 이유, 초점은 `나중에 변환하기`) |
+
+  글만 있는 노트에 추가하는 녹음(`attach.json`)은 설정과 상관없이 위 `convert` 줄이다(덧붙이는 변환이라 변환 전 노트로 둘 수 없다). 묻는 창은 네이티브 모달 `<dialog>`다: 처음 초점은 `바로 변환하기`(못 쓰면 `나중에 변환하기`), **Esc = `나중에 변환하기`**(녹음을 버리는 길은 없다), 체크 `다음부터 묻지 않기`를 하고 고르면 `set_after_record`로 그 선택을 남긴다(Esc는 남기지 않는다). 메뉴 막대에서 끝냈으면 창이 숨어 있어도 `tray_show_if_hidden`으로 꺼내 묻는다. **녹음은 항상 남는다**: 묻는 중에 앱이 끝나거나 저장·변환이 실패하면 녹음 폴더가 그대로라 `변환 대기 중인 녹음`에 보인다.
+- **Rust 명령** (`deferred.rs`). `recording_finish(dir, title?, job)`: 녹음 폴더(`meetings::is_recording_dir`)만 받고 `--title=T`(`clean_title`, 빈 제목은 안 넘겨 코어가 `녹음 HH:MM`)로 `recording finish --progress-json`을 띄운다. `convert_note(id, job)`: `^[A-Za-z0-9]+$` ID만 받아 `transcribe --into <ID> --progress-json`. 둘 다 `job` 이벤트로 `{job, kind: "finish" | "convert"}`를 달아 보내고, 끝날 때까지 대상(녹음 폴더 / 노트 ID)을 쓰는 중으로 표시해(`hold`) 삭제를 거절하며(`BusyGuard`와 같은 표), 돌고 있는 백그라운드 검색 갱신을 멈춘다. `convert` 작업의 프로세스는 작업 ID로 `AppState.asks` 표(질문과 같은 표)에 넣어 `ask_cancel(job)`이 kill할 수 있게 한다(새 녹음이 변환을 멈출 때). 변환 전 여부는 Rust가 보지 않는다(코어 `not_recorded`). `set_after_record(value)`는 설정 파일의 그 키만 바꾼다(`ask|convert|later`만).
+- **변환 줄(`convertQueue.ts`).** 노트 하나를 변환하는 것도 `변환 전 노트 모두 변환`도 같은 줄이다: 한 번에 하나(변환 엔진이 한 번에 하나만 올라간다), 줄은 `{current, pending, finished, total}`이고 실패해도 이어진다(실패는 알림 `‘제목’ 노트를 텍스트로 변환하지 못했습니다` + `자세히`). 줄의 첫 노트는 **녹음·바로 변환(`transcribe --recording`)·노트로 저장·가져오기가 끝난 뒤에** 시작하고(앱 전체 `transcribing` 규칙에 `finish`·`convert`를 넣어 새 녹음·가져오기·창 닫기 확인이 같은 규칙을 쓴다), 시작하기 전에 노트가 지워졌거나 이미 변환됐으면(`state` 없음) 건너뛴다. 진행은 `convertJobs.ts`(앱 전체 저장소, 단어 싱크 `alignStore`와 같은 틀)가 노트 ID별로 들고 있어 노트 화면을 닫았다 열어도 보인다. 한 노트의 변환이 끝나면 열려 있는 노트 화면이 대화 내용을 다시 읽는다.
+- **새 녹음은 변환 줄을 멈춘다(리뷰 반영).** 새 녹음을 막는 일(`recordBlocked`)은 녹음 변환·노트로 저장·변환 대기(`waitDir`)와 끝낸 녹음을 묻는 창(`afterAsk`)뿐이다. 변환 줄(돌든 기다리든)은 막지 않는다: 도는 변환이 있으면 녹음을 시작하는 순간 `convertStore.cancel`(→ `ask_cancel`)로 kill하고(변환은 멈춘 곳부터 이어 할 수 있다) 알림 `녹음하는 동안 변환을 멈춥니다. …`을 낸다. 그 변환의 끝 알림은 실패로 알리지 않고 줄도 넘기지 않으며(`preempted`), 줄은 `recording`·`asking`이 풀릴 때까지 시작하지 않는다. 그 뒤 같은 노트를 `transcribe --into`로 다시 시작해 이어서 한다. 메뉴 막대는 변환 줄을 가져오기와 같이 본다(`importing`: 상태 줄만 `변환 중`이고 `can_record`는 그대로). 묻는 창이 떠 있는 동안에는 `waiting`으로 보내 `can_record: false`다. 바로 변환(`waitDir`)도 `recording` 중에는 시작하지 않는다.
+- **노트 화면(`state: "recorded"`).** 날짜 옆 배지 `변환 전`, 통계 `{길이} · 녹음 중 메모 N개`, 가운데에 `ConvertPanel`(`아직 텍스트로 변환하지 않았습니다` + `텍스트로 변환`: 변환 엔진·ffmpeg가 없으면 `GatedButton`이 이유와 고치는 길, 변환 중이면 단계·진행률, 줄에서 기다리면 `녹음이 끝나면 …`/`앞선 변환이 …`, 실패하면 이유 + `자세히` + `다시 변환`). 플레이어·메모 탭·제목·태그·폴더·즐겨찾기·내보내기(SRT·WebVTT 제외)는 그대로고 `찾아 바꾸기`·`단어 싱크 맞추기`·참석자 막대는 없다. 요약·AI 질문 탭은 남겨 두고 안에 `먼저 텍스트로 변환하세요`를 보인다(`recorded.railNotice`). 변환하는 동안(또는 줄에서 기다리는 동안) `삭제`는 막힌다(앱) — Rust도 `hold`로 거절한다. 메모는 계속 쓸 수 있고 코어가 합친다(§2.16).
+- **사이드바.** 변환 전 노트 줄에 배지 `변환 전`(줄에 올리면 `변환 대기`·`변환 중…`)과 `…` 메뉴 `텍스트로 변환`. `변환 대기 중인 녹음`의 줄에는 `변환하기`·`삭제`에 `노트로 저장`(→ `recording finish`, 진행은 녹음 화면)이 더해진다(글만 있는 노트에 추가하려던 녹음은 제외). 변환 전 노트가 2개 이상이면 `파일 가져오기` 아래에 `변환 전 노트 모두 변환 (N)`(만든 순서, 오래된 것부터)이 보이고, 도는 동안은 같은 자리에 진행 줄 `2 / 3 · ‘제목’`이 보인다. 사이드바 녹음 단추는 `녹음 중 12:34` → `일시정지됨 12:34` → `저장 중…`/`변환 중…`(`pause.recButton`).
+- **파싱.** `meetings.rs`가 `state`를 관대하게 읽는다: 문자열 `"recorded"`이고 `kind`가 메모가 아닐 때만 `info.state: "recorded"`, 그 밖의 값(숫자·모르는 문자열·메모 노트)은 키가 없는 평범한 노트다.
+- **한계.** (1) 변환 줄에 따로 취소 단추는 없다(새 녹음 시작이 도는 변환을 멈추는 길이고, 줄은 그대로 남는다). 글만 있는 노트에 추가하는 녹음(`startAttachRecord`)은 변환 줄이 있으면 전처럼 막힌다. (2) "이어서 녹음"(`recording attach`)은 코어가 만들지 않아 앱에도 없다. (3) 줄에 올린 노트도 지워지지 않게 막지만 앱 밖(터미널)에서 지우면 시작할 때 코어 오류로 알린다. (4) 묻는 창에서 변환 가능 여부는 창을 띄울 때 한 번 읽고, 뜬 사이 바뀌면 `바로 변환`을 `나중에`로 바꾼다(`effectiveChoice`).
+- **검사.** vitest: `afterRecord.test.ts`(설정 읽기·끝낸 뒤 할 일·묻는 창), `pause.test.ts`(사이드바 녹음 단추·화면 시계·메뉴 막대 시작 시각), `convertQueue.test.ts`, `recorded.test.ts`(변환 전 판정·화면 모델·탭 안내·내보내기 형식·삭제 막기), `lib.test.ts`(`recReduce` 일시정지·계속), `tray.test.ts`(일시정지 상태·라우팅). cargo: `deferred.rs`(`recording finish`·`transcribe --into` 인수와 검증, 설정 기본값 `ask`, 한 키만 저장), `procs.rs`(`pause`·`resume` 줄), `tray.rs`(일시정지 메뉴·고정 시계·읽기), `meetings.rs`(`state` 관대한 읽기). 화면에서 보는 항목은 `app/README.md` 체크리스트.
 
 ### v1 화면
 

@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from tractus.store import _write_atomic, edit_transcript, is_memo, new_ulid, note_lock, one_line, read_transcript, render_files
+from tractus.store import _write_atomic, edit_transcript, is_memo, is_recorded, new_ulid, note_lock, one_line, read_transcript, render_files
 
 FOLDERS_FILE = "folders.json"
 FOLDERS_LOCK = ".folders.lock"
@@ -425,7 +425,7 @@ def rerender(dirs: list[Path]) -> None:
 
 
 def note_row(d: Path, t: dict, folder_ids: set[str] | None = None) -> dict:
-    """목록 한 줄: meeting_id, title, kind, created_at, updated_at, duration_sec, favorite, tags, folder(없는 폴더 ID면 None).
+    """목록 한 줄: meeting_id, title, kind, state("recorded" = 녹음만 하고 아직 변환하지 않은 노트, 그 밖에는 null), created_at, updated_at, duration_sec, favorite, tags, folder(없는 폴더 ID면 None).
     updated_at이 없는 옛 노트는 created_at, 그것도 없으면 파일 수정 시각."""
     meta = meta_of(t)
     if folder_ids is not None and meta["folder"] not in folder_ids:
@@ -439,7 +439,7 @@ def note_row(d: Path, t: dict, folder_ids: set[str] | None = None) -> dict:
             updated = ""
     duration = (t.get("audio") or {}).get("duration_sec") if isinstance(t.get("audio"), dict) else 0
     return {
-        "meeting_id": t["meeting_id"], "title": str(t.get("title") or ""), "kind": "memo" if is_memo(t) else "recording",
+        "meeting_id": t["meeting_id"], "title": str(t.get("title") or ""), "kind": "memo" if is_memo(t) else "recording", "state": "recorded" if is_recorded(t) else None,
         "created_at": created, "updated_at": updated, "duration_sec": float(duration) if isinstance(duration, (int, float)) else 0.0, **meta,
     }
 

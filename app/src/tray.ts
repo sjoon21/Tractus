@@ -1,9 +1,9 @@
 // 메뉴 막대(트레이) 아이콘과 화면의 연결 (docs/desktop.md §3.1, 이슈 #1). 순수 로직만 둔다: Rust(tray.rs)는 메뉴를 그리고, 화면은 상태를 밀어 주고 이벤트를 받는다.
 // 메뉴의 녹음 시작·종료·북마크는 창의 단추와 같은 길로 처리한다 (App.tsx가 routeTrayAction의 결과를 같은 함수에 연결한다).
 
-import type { RecPhase } from "./lib";
+import { isRecLive, type RecPhase } from "./lib";
 
-export type TrayPhase = "idle" | "recording" | "converting";
+export type TrayPhase = "idle" | "recording" | "paused" | "converting";
 
 export interface TrayRecent {
   id: string;
@@ -13,8 +13,10 @@ export interface TrayRecent {
 /** Rust `tray_update`가 받는 값. started_at_ms·progress_pct는 해당 단계에서만 있다 */
 export interface TrayPayload {
   phase: TrayPhase;
-  /** 녹음이 시작된 시각 (epoch ms). 경과 시간은 Rust가 센다 */
+  /** 녹음이 시작된 시각 (epoch ms). 경과 시간은 Rust가 센다. 일시정지한 시간은 센 적이 없는 것으로, 계속할 때마다 그만큼 뒤로 옮겨 다시 보낸다 */
   started_at_ms?: number;
+  /** paused만: 일시정지한 순간의 경과 (ms). 일시정지 중에는 시계를 읽지 않고 이 값으로 멈춘다 */
+  elapsed_ms?: number;
   /** 변환 진행률 0~100. 총량을 모르면 없다 */
   progress_pct?: number;
   can_record: boolean;
@@ -50,8 +52,10 @@ export function recentNotes(notes: readonly NoteLike[]): TrayRecent[] {
 
 export interface TrayInput {
   rec: { phase: RecPhase };
-  /** 녹음 시작 시각 (epoch ms). 아직 모르면 null */
+  /** 녹음 시작 시각 (epoch ms, 일시정지한 시간을 뺀 값). 아직 모르면 null */
   startedAtMs: number | null;
+  /** 일시정지한 순간의 경과(초). 일시정지 중에만 쓴다 */
+  elapsedSec?: number;
   /** 변환 작업 (녹음 변환) */
   job: { running: boolean; done: number; total: number };
   /** 변환을 시작하려고 기다리는 중 (가져오기가 끝나기를 기다린다). 창의 `변환 대기 중…`과 같다 */
@@ -70,6 +74,8 @@ export function deriveTrayState(i: TrayInput): TrayPayload {
   if (phase === "recording") {
     return { phase: "recording", ...(i.startedAtMs !== null && { started_at_ms: i.startedAtMs }), can_record: false, can_bookmark: true, recent };
   }
+  // 일시정지: 앱은 그대로 녹음 중으로 보고(새 녹음·변환은 막힌다) 시계만 멈춘다
+  if (phase === "paused") return { phase: "paused", elapsed_ms: Math.max(0, Math.round((i.elapsedSec ?? 0) * 1000)), can_record: false, can_bookmark: true, recent };
   // 시작하는 중: 아직 시각이 없다 (Rust는 `녹음 준비 중…`을 보이고 종료·북마크를 막는다)
   if (phase === "starting") return { phase: "recording", can_record: false, can_bookmark: false, recent };
   // 마무리하는 중(정지를 보냈고 변환이 곧 시작된다)도 변환으로 본다
@@ -111,10 +117,10 @@ export function createTraySender(send: (p: TrayWire) => Promise<void> | void): (
   };
 }
 
-export type TrayRoute = { kind: "start" } | { kind: "stop" } | { kind: "bookmark" } | { kind: "open"; id: string };
+export type TrayRoute = { kind: "start" } | { kind: "pause" } | { kind: "resume" } | { kind: "stop" } | { kind: "bookmark" } | { kind: "open"; id: string };
 
 /** 창에서 이미 녹음하거나 마무리하는 중인 단계 (사이드바의 `recording`) */
-const REC_ACTIVE = new Set<RecPhase>(["starting", "recording", "stopping"]);
+const REC_ACTIVE = new Set<RecPhase>(["starting", "recording", "paused", "stopping"]);
 
 /** Rust가 보낸 `tray-action`을 할 일로 바꾼다. 지금 상태에서 뜻이 없으면 null (두 번 누른 시작, 녹음 중이 아닌 종료 등은 아무 일도 하지 않는다) */
 export function routeTrayAction(raw: unknown, s: { recPhase: RecPhase; transcribing: boolean }): TrayRoute | null {
@@ -123,10 +129,14 @@ export function routeTrayAction(raw: unknown, s: { recPhase: RecPhase; transcrib
   switch (action) {
     case "record_start":
       return REC_ACTIVE.has(s.recPhase) || s.transcribing ? null : { kind: "start" };
+    case "record_pause":
+      return s.recPhase === "recording" ? { kind: "pause" } : null;
+    case "record_resume":
+      return s.recPhase === "paused" ? { kind: "resume" } : null;
     case "record_stop":
-      return s.recPhase === "recording" ? { kind: "stop" } : null;
+      return isRecLive(s.recPhase) ? { kind: "stop" } : null;
     case "bookmark":
-      return s.recPhase === "recording" ? { kind: "bookmark" } : null;
+      return isRecLive(s.recPhase) ? { kind: "bookmark" } : null;
     case "open_note":
       return typeof id === "string" && id !== "" ? { kind: "open", id } : null;
     default:

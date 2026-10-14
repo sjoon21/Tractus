@@ -117,7 +117,10 @@ final class CommandTests: XCTestCase {
         XCTAssertNil(Command.parse("memo"))
         XCTAssertNil(Command.parse("memoX"))
         XCTAssertNil(Command.parse(""))
-        XCTAssertNil(Command.parse("pause"))
+        XCTAssertEqual(Command.parse("pause"), .pause)
+        XCTAssertEqual(Command.parse(" resume\n"), .resume)
+        XCTAssertNil(Command.parse("pause now"))
+        XCTAssertNil(Command.parse("Pause"))
     }
 }
 
@@ -144,16 +147,18 @@ final class RecordingInfoTests: XCTestCase {
         var info = RecordingInfo(startedAt: "2026-10-02T14:00:00+09:00", tracks: ["mic": "mic.wav", "system": "system.wav"])
         try info.write(to: url)
         var j = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
-        XCTAssertEqual(Set(j.keys), ["schema_version", "started_at", "duration", "tracks", "marks", "echo_cancel"])
+        XCTAssertEqual(Set(j.keys), ["schema_version", "started_at", "duration", "tracks", "marks", "pauses", "echo_cancel"])
         XCTAssertEqual(j["echo_cancel"] as? Bool, false)
         XCTAssertEqual(j["schema_version"] as? Int, 1)
         XCTAssertTrue(j["duration"] is NSNull, "녹음 중에는 null")
         XCTAssertEqual(j["tracks"] as? [String: String], ["mic": "mic.wav", "system": "system.wav"])
         XCTAssertEqual((j["marks"] as? [Any])?.count, 0)
+        XCTAssertEqual((j["pauses"] as? [Any])?.count, 0)
 
         info.marks = [Mark(t: 95, kind: "bookmark", text: nil), Mark(t: 130.5, kind: "memo", text: "예산 다시 확인")]
         info.duration = 3605.2
         info.echoCancel = true
+        info.pauses = [Pause(at: 12.5, wallStart: "2026-10-14T10:00:12+09:00", wallEnd: "2026-10-14T10:05:00+09:00")]
         try info.write(to: url)
         j = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
         XCTAssertEqual(j["echo_cancel"] as? Bool, true)
@@ -164,6 +169,10 @@ final class RecordingInfoTests: XCTestCase {
         XCTAssertTrue(marks[0]["text"] is NSNull)
         XCTAssertEqual(marks[1]["t"] as? Double, 130.5)
         XCTAssertEqual(marks[1]["text"] as? String, "예산 다시 확인")
+        let pauses = j["pauses"] as! [[String: Any]]
+        XCTAssertEqual(pauses[0]["at"] as? Double, 12.5)
+        XCTAssertEqual(pauses[0]["wall_start"] as? String, "2026-10-14T10:00:12+09:00")
+        XCTAssertEqual(pauses[0]["wall_end"] as? String, "2026-10-14T10:05:00+09:00")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir.path), ["recording.json"], "임시 파일이 남지 않는다")
     }
 

@@ -19,6 +19,7 @@ import {
   groupByDay,
   highlight,
   interleave,
+  isRecLive,
   levelFraction,
   parseHms,
   parseToolResult,
@@ -282,6 +283,54 @@ describe("recReduce", () => {
   test("stopped 없이 exit하면 오류, error 이벤트 뒤의 exit는 메시지를 덮지 않는다", () => {
     expect(run([started, { event: "exit", code: 9, stderr: "" }])).toMatchObject({ phase: "error", error: "녹음이 예기치 않게 끝났습니다 (종료 코드 9)" });
     expect(run([started, { event: "error", message: "장치 없음" }, { event: "exit", code: 1, stderr: "x" }])).toMatchObject({ phase: "error", error: "장치 없음" });
+  });
+});
+
+describe("recReduce: 일시정지·계속", () => {
+  const rec = (events: RecEvent[]) => events.reduce(recReduce, { ...IDLE_REC, phase: "starting" });
+  const started: RecEvent = { event: "started", dir: "/r", tracks: ["mic"], started_at: "" };
+
+  test("paused → resumed: 단계와 경과(일시정지한 시간을 뺀 값)를 이벤트의 elapsed로 맞춘다", () => {
+    const s = rec([started, { event: "level", t: 700, mic: -20, system: null }, { event: "paused", elapsed: 754.2 }]);
+    expect(s).toMatchObject({ phase: "paused", t: 754.2 });
+    expect(recReduce(s, { event: "resumed", elapsed: 754.2 })).toMatchObject({ phase: "recording", t: 754.2 });
+  });
+
+  test("일시정지하면 미터를 비운다 (헬퍼는 일시정지 중 level을 내지 않는다). 계속하면 level이 다시 채운다", () => {
+    const s = rec([started, { event: "level", t: 5, mic: -20, system: -30 }, { event: "paused", elapsed: 5 }]);
+    expect(s).toMatchObject({ phase: "paused", mic: null, system: null, tracks: ["mic"] });
+    expect(recReduce(recReduce(s, { event: "resumed", elapsed: 5 }), { event: "level", t: 5.25, mic: -18, system: null })).toMatchObject({ phase: "recording", mic: -18, t: 5.25 });
+  });
+
+  test("일시정지 중에는 시계가 멈춘다: level이 (혹시) 와도 t는 그대로, 미터만 바뀐다", () => {
+    const s = rec([started, { event: "paused", elapsed: 60 }, { event: "level", t: 61, mic: -100, system: null }]);
+    expect(s).toMatchObject({ phase: "paused", t: 60, mic: -100 });
+    // 계속하면 다시 level이 시계를 맞춘다
+    expect(rec([started, { event: "paused", elapsed: 60 }, { event: "resumed", elapsed: 60 }, { event: "level", t: 60.25, mic: -20, system: null }])).toMatchObject({ phase: "recording", t: 60.25 });
+  });
+
+  test("일시정지 중에도 북마크·메모는 쌓이고 끝낼 수 있다", () => {
+    const s = rec([started, { event: "paused", elapsed: 30 }, { event: "mark", t: 30, kind: "bookmark", text: null }, { event: "mark", t: 30, kind: "memo", text: "확인" }]);
+    expect(s.phase).toBe("paused");
+    expect(s.marks.map((m) => [m.t, m.kind])).toEqual([[30, "bookmark"], [30, "memo"]]);
+    expect(recReduce(s, { event: "stopped", dir: "/r", duration: 30 })).toMatchObject({ phase: "stopped", t: 30 });
+  });
+
+  test("순서가 어긋난 이벤트는 단계를 흔들지 않는다 (녹음 중이 아닌데 paused, 일시정지가 아닌데 resumed)", () => {
+    expect(recReduce({ ...IDLE_REC, phase: "stopping", t: 9 }, { event: "paused", elapsed: 5 })).toMatchObject({ phase: "stopping", t: 9 });
+    expect(recReduce({ ...IDLE_REC, phase: "stopped", t: 9 }, { event: "resumed", elapsed: 5 })).toMatchObject({ phase: "stopped", t: 9 });
+    expect(recReduce({ ...IDLE_REC, phase: "error" }, { event: "paused", elapsed: 5 }).phase).toBe("error");
+    // 이미 녹음 중인데 resumed가 와도 계속 녹음 중이고 시계만 맞춘다
+    expect(recReduce({ ...IDLE_REC, phase: "recording", t: 3 }, { event: "resumed", elapsed: 3.5 })).toMatchObject({ phase: "recording", t: 3.5 });
+  });
+
+  test("일시정지 중에 녹음 프로그램이 죽으면(exit) 오류다", () => {
+    expect(recReduce(rec([started, { event: "paused", elapsed: 10 }]), { event: "exit", code: 1, stderr: "" }).phase).toBe("error");
+  });
+
+  test("isRecLive: 녹음 중과 일시정지만", () => {
+    expect((["recording", "paused"] as const).every(isRecLive)).toBe(true);
+    expect((["idle", "starting", "stopping", "stopped", "error"] as const).some(isRecLive)).toBe(false);
   });
 });
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, errDetail, errText, type McpStatus, type Settings, type VoiceList, type VoicePerson } from "./api";
+import { AFTER_SETTING, afterRecord, type AfterRecord } from "./afterRecord";
 import { ErrorDetail } from "./ErrorDetail";
 import { CHECKUP_OPEN, MODELS_OPEN } from "./caps";
 import { GateHint } from "./GatedButton";
@@ -10,7 +11,7 @@ import { LlmKeySection } from "./LlmKeySettings";
 import { TemplatesSection } from "./TemplatesSettings";
 import { TRAY_KEEP_HINT, TRAY_KEEP_LABEL, TRAY_SHOW_HINT, TRAY_SHOW_LABEL } from "./trayText";
 
-const FIELDS: { key: keyof Omit<Settings, "fake_recorder" | "rec_mode" | "live_captions" | "checkup_done" | "list_sort" | "list_order" | "tray_enabled" | "keep_in_tray">; label: string; hint: string }[] = [
+const FIELDS: { key: keyof Omit<Settings, "fake_recorder" | "rec_mode" | "live_captions" | "checkup_done" | "list_sort" | "list_order" | "tray_enabled" | "keep_in_tray" | "after_record">; label: string; hint: string }[] = [
   { key: "home", label: "데이터 위치 (TRACTUS_HOME)", hint: "meetings/와 recordings/가 들어 있는 폴더" },
   { key: "models_dir", label: "변환 엔진 위치 (TRACTUS_MODELS_DIR)", hint: "비우면 데이터 위치의 models/" },
   { key: "tractus_bin", label: "tractus 실행 파일", hint: "전체 경로로 적습니다 (앱은 터미널의 PATH를 읽지 않습니다)" },
@@ -57,6 +58,20 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
     }
   };
 
+  // `녹음을 끝내면`도 저장 단추를 기다리지 않고 바로 저장한다 (끝낼 때 묻는 창의 `다음부터 묻지 않기`와 같은 값)
+  const after = afterRecord(s?.after_record);
+  const setAfter = async (value: AfterRecord) => {
+    try {
+      await api.setAfterRecord(value);
+      setS((cur) => cur && { ...cur, after_record: value });
+      setMsg(null);
+      setMsgDetail(null);
+    } catch (err) {
+      setMsg(errText(err));
+      setMsgDetail(errDetail(err));
+    }
+  };
+
   if (!s) return (
       <div className="page-loading">
         <p>{msg ?? "불러오는 중…"}</p>
@@ -82,7 +97,8 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
           try {
             // 녹음 방식은 사이드바에서 바꾼다. 이 화면을 연 뒤 바뀌었을 수 있으니 저장된 값을 유지한다
             const latest = await api.getSettings();
-            await api.saveSettings(withRecMode(s, recMode(latest.rec_mode)));
+            // `녹음을 끝내면`도 마찬가지다: 이 화면을 연 뒤 묻는 창에서 바뀌었을 수 있다
+            await api.saveSettings({ ...withRecMode(s, recMode(latest.rec_mode)), after_record: latest.after_record });
             setMsg("저장했습니다.");
             setMsgDetail(null);
             onSaved();
@@ -119,6 +135,16 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
           </span>
         </label>
         <GateHint gate={liveGate} />
+        <fieldset className="field after-record-setting">
+          <legend className="field-label">{AFTER_SETTING.label}</legend>
+          {AFTER_SETTING.options.map((o) => (
+            <label key={o.value} className="check">
+              <input type="radio" name="after_record" checked={after === o.value} onChange={() => void setAfter(o.value)} />
+              <span>{o.label}</span>
+            </label>
+          ))}
+          <span className="field-hint">{AFTER_SETTING.hint}</span>
+        </fieldset>
         <label className="check">
           <input type="checkbox" checked={trayOn} onChange={(e) => void setTray(e.target.checked, keepOn)} />
           <span>
