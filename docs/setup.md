@@ -266,7 +266,7 @@ scripts/update.sh --check   # 받을 커밋 보기 (선택)
 scripts/update.sh           # git pull --ff-only + scripts/install.sh (--with-fluid로 설치했다면 같은 옵션을 붙입니다)
 ```
 
-앱이 켜져 있으면 끄고 실행합니다. 노트와 모델은 그대로 남습니다. 자세한 동작은 [§4](#scriptsupdatesh)입니다.
+앱이 켜져 있으면 끄고 실행합니다. 노트와 모델은 그대로 남습니다. 자세한 동작은 [§4](#scriptsupdatesh)입니다. 미리 만든 앱(`.dmg`)은 이 스크립트가 아니라 앱 안 `설정 > 업데이트`로 올립니다([§10](#데이터와-업데이트)).
 
 **스마트 검색 모델이 8bit로 바뀐 버전(2026-10-15)으로 올리면:** 새 모델(0.6GB)을 모델 화면에서 받고 검색 벡터를 다시 만듭니다(`uv run tractus index`, 모델 식별자가 바뀌어 자동으로 전부 다시 만듭니다). 예전 모델 폴더(`qwen3-embedding-0.6b`, 1.2GB)는 "등록되지 않은 폴더"로 남으므로 `uv run tractus models prune`으로 지웁니다(`tractus models list`가 개수와 크기를 알려 줍니다). 새 모델은 아직 검색 품질을 평가하지 않았습니다([CLAUDE.md](../CLAUDE.md)의 면제 기록).
 
@@ -312,7 +312,7 @@ tccutil reset All dev.tractus.app                       # 권한 초기화 (선�
 
 ### 설치
 
-1. [GitHub 릴리스](https://github.com/sjoon21/Tractus/releases)(첫 프리릴리스 v0.1.0)에서 `Tractus-<버전>[-<날짜>]-arm64.dmg`를 받습니다. 이 DMG에는 9명 이상 참석자 구분 도우미(`tractus-diar`)가 없어서 참석자는 8명까지(Nemotron) 구분합니다. 저장소가 비공개라서 초대받은 협업자가 GitHub에 로그인한 상태에서만 보입니다(아니면 404). `.dmg`를 열고 `Tractus`를 `Applications` 바로가기로 끌어다 놓습니다. 관리자 암호는 필요 없습니다(`~/Applications`에 넣어도 됩니다). 같은 안내가 디스크 안의 `설치 안내.txt`에 있습니다.
+1. [GitHub 릴리스](https://github.com/sjoon21/Tractus/releases)의 최신 릴리스에서 `Tractus-<버전>[-<날짜>]-arm64.dmg`를 받습니다. 이 DMG에는 9명 이상 참석자 구분 도우미(`tractus-diar`)가 없어서 참석자는 8명까지(Nemotron) 구분합니다. `.dmg`를 열고 `Tractus`를 `Applications` 바로가기로 끌어다 놓습니다. 관리자 암호는 필요 없습니다(`~/Applications`에 넣어도 됩니다). 같은 안내가 디스크 안의 `설치 안내.txt`에 있습니다.
 2. 처음 열 때 "확인되지 않은 개발자" 경고가 나옵니다. 서명이 Apple에 등록된 것이 아니기 때문입니다.
    - macOS 15 이상: 앱을 한 번 열어 경고를 닫고, 시스템 설정 > 개인정보 보호 및 보안 아래쪽의 `그래도 열기`를 누른 뒤 암호를 입력합니다.
    - macOS 14.x: 앱을 control 키를 누른 채 클릭해 `열기`를 고릅니다.
@@ -322,7 +322,17 @@ tccutil reset All dev.tractus.app                       # 권한 초기화 (선�
 
 ### 데이터와 업데이트
 
-노트·모델·설정은 모두 앱 밖에 있습니다([§6](#6-폴더-안내)): 노트 `~/Tractus`, 모델 `~/Library/Application Support/dev.tractus.app/models`, 설정과 API 키 `~/Library/Application Support/dev.tractus.app/`. **업데이트는 릴리스에서 새 `.dmg`를 받아 `Tractus.app`을 바꿔 넣는 것**이고(앱을 끄고 덮어씁니다) 데이터는 그대로 남습니다. 앱을 새로 만들 때마다 ad-hoc 서명의 해시가 달라지므로 위 2번의 경고와 마이크·시스템 오디오 권한 확인이 다시 나올 수 있습니다(예상일 뿐 직접 확인하지는 못했습니다). 지우려면 앱을 휴지통에 넣고, 데이터 폴더는 [§9](#9-제거)처럼 직접 지웁니다.
+노트·모델·설정은 모두 앱 밖에 있습니다([§6](#6-폴더-안내)): 노트 `~/Tractus`, 모델 `~/Library/Application Support/dev.tractus.app/models`, 설정과 API 키 `~/Library/Application Support/dev.tractus.app/`. 어떤 방법으로 업데이트해도 데이터는 그대로 남습니다.
+
+**업데이트는 앱 안에서 합니다(0.1.1부터).** 앱을 켜면 약 10초 뒤에 새 버전이 있는지 한 번 보고, 있으면 `새 버전이 있습니다: X` 알림과 `설정 열기` 단추가 보입니다(같은 실행에서 두 번 알리지 않습니다). `설정 > 업데이트`에는 지금 버전, `업데이트 확인` 단추, 상태 문구(`확인 중…` / `최신입니다` / 새 버전과 릴리스 노트 일부 + `업데이트 설치`)가 있습니다. `업데이트 설치`를 누른 뒤에만 받아서(`받는 중 N%`) 설치하고, `설치가 끝났습니다` 다음의 `다시 열기`를 누르면 새 버전으로 다시 뜹니다(녹음·변환 중에는 잠깁니다. 끝난 뒤 누르세요). 저절로 설치하지 않습니다. 켤 때의 확인이 실패하면(인터넷 없음 등) 아무것도 보이지 않고, 설정의 단추로 확인했을 때만 오류 문장이 보입니다.
+
+- 새 버전은 공개 저장소의 **정식 릴리스**(pre-release 아님)에서만 찾습니다(`releases/latest`의 `latest.json`). 받은 파일은 저장소에 든 공개 키로 서명을 검사하고 맞지 않으면 설치하지 않습니다.
+- **v0.1.0에는 이 기능이 없습니다.** 한 번은 새 `.dmg`를 받아 `Tractus.app`을 바꿔 넣습니다(앱을 끄고 덮어씁니다). 이 방법은 그 뒤에도 늘 됩니다.
+- 업데이트마다 앱 전체(약 240MB)를 받습니다. 차이만 받지 않습니다.
+- 앱을 새로 만들 때마다 ad-hoc 서명의 해시가 달라지므로 위 2번의 경고와 마이크·시스템 오디오 권한 확인이 다시 나올 수 있습니다([§5](#5-권한), 예상일 뿐 직접 확인하지는 못했습니다).
+- 저장소에서 `scripts/install.sh`로 만든 앱에는 이 기능이 없고 `설정 > 업데이트`에 `저장소에서 만든 앱은 scripts/update.sh로 업데이트합니다` 한 줄만 보입니다([§7](#7-업데이트)).
+
+지우려면 앱을 휴지통에 넣고, 데이터 폴더는 [§9](#9-제거)처럼 직접 지웁니다.
 
 ### 직접 만들기
 
@@ -337,3 +347,28 @@ scripts/make_dmg.sh dist/bundle/Tractus.app       # → dist/Tractus-<버전>[-<
 - 코어 실행 파일 `runtime/bin/tractus`는 자기 위치 기준으로 번들 안의 Python만 씁니다(링크로 불려도 진짜 위치를 찾고, Python은 `-I`로 띄워 `PYTHON*` 환경변수·사용자 site-packages를 보지 않습니다. `-I`로 막히지 않는 `PYTHONEXECUTABLE`·`__PYVENV_LAUNCHER__`는 지웁니다). 바이트코드는 미리 만들어 두고(`unchecked-hash`) 실행 중에는 쓰지 않습니다. 서명된 앱 안을 바꾸지 않으려는 것이고, 무거운 import의 시작이 약 2.3초에서 1.2초로 줄었습니다.
 - 크기와 시간(Apple M3, 깨끗한 복사본, 2026-10-15 실측): 앱 약 694MB(Python 35MB, `site-packages` 632MB: mlx 155·transformers 111·onnxruntime 79·scipy 92, 바이트코드 약 126MB 포함, 앱 본체 16MB, 녹음 프로그램 0.3MB), `.dmg` 242MB, 빌드 약 2.5분(캐시가 따뜻할 때. 처음 175초).
 - `.pkg`는 만들지 않습니다. 관리자 암호가 필요한 설치나 MDM 배포가 필요할 때만 이득이라서입니다.
+
+#### 릴리스 만들기 (`scripts/release.sh`)
+
+릴리스에 올릴 파일 한 벌은 `scripts/release.sh`가 만듭니다. 앱 안 업데이트가 읽는 `latest.json`을 만드는 곳은 이 스크립트뿐입니다.
+
+```bash
+pnpm --dir app tauri signer generate -w ~/.tauri/tractus.key --ci   # 서명 키가 없을 때 한 번 (비밀번호 없음, 있으면 덮어쓰지 않음)
+scripts/release.sh                 # 만들기만 (기본). gh release create 명령은 출력만 합니다
+scripts/release.sh --publish       # 위에 더해 GitHub 릴리스를 실제로 만듭니다
+```
+
+순서는 `build_app_bundle.sh` → 최종 서명된 `Tractus.app`을 `COPYFILE_DISABLE=1 tar czf Tractus.app.tar.gz`(앱 폴더가 아카이브 루트) → `pnpm tauri signer sign -f ~/.tauri/tractus.key`로 `.sig` → `latest.json` → `make_dmg.sh` → sha256입니다. 버전은 `app/src-tauri/tauri.conf.json`에서 읽고, 결과는 `dist/release/<버전>/`에 모입니다. `tauri build`의 `bundle.createUpdaterArtifacts`는 쓰지 않습니다. 그것이 만드는 tar.gz는 우리 스크립트의 마지막 ad-hoc 재서명 전의 앱이라 쓸모가 없습니다.
+
+| 파일 | 쓰임 |
+| --- | --- |
+| `Tractus-<버전>-arm64.dmg` | 처음 설치하는 사람이 받는 디스크 이미지 |
+| `Tractus-<버전>-arm64.dmg.sha256` | 디스크 이미지의 해시 |
+| `Tractus.app.tar.gz` | 앱 안 업데이트가 받는 파일 (앱 전체, 약 240MB) |
+| `Tractus.app.tar.gz.sig` | 위 파일의 서명 (`minisign` 형식, 앱이 공개 키로 검사) |
+| `latest.json` | 앱이 읽는 안내 파일: `version`, `notes`, `pub_date`, `platforms.darwin-aarch64.{url, signature}`. `url`은 `https://github.com/sjoon21/Tractus/releases/download/v<버전>/Tractus.app.tar.gz` |
+
+- **서명 키 `~/.tauri/tractus.key`는 반드시 백업합니다.** 공개 키는 `tauri.conf.json`의 `plugins.updater.pubkey`에 들어 있어 이미 설치된 앱이 그 키로 서명을 검사합니다. 개인 키를 잃으면 새 키로 서명한 업데이트를 기존 설치본이 거부하므로, 모든 사용자가 다시 `.dmg`로 설치해야 합니다. 개인 키는 저장소에 넣지 않고 내용을 출력하지도 않습니다. 키가 없으면 스크립트는 안내하고 멈춥니다. 다른 위치의 키는 환경변수 `TAURI_SIGNING_PRIVATE_KEY_PATH`(경로) 또는 `TAURI_SIGNING_PRIVATE_KEY`(키 내용)로 줍니다. 만든 `.sig`가 앱의 공개 키와 맞는지는 `TRACTUS_UPDATE_ARTIFACT=<tar.gz> TRACTUS_UPDATE_SIG=<.sig> cargo test --test update_signature`(`app/src-tauri`)가 앱과 같은 방식으로 검사합니다(환경변수가 없으면 조용히 통과).
+- **정식 릴리스여야 합니다.** 앱은 `releases/latest/download/latest.json`을 읽는데, GitHub의 `latest`는 pre-release가 아닌 가장 최근 릴리스만 가리킵니다. pre-release로 올리면 아무도 업데이트를 못 받습니다. 태그는 `v<버전>`이고 `latest.json`의 `url`이 그 태그를 가리키므로, 다른 이름으로 올리면 받기가 404로 실패합니다.
+- 버전을 올릴 때는 `app/src-tauri/tauri.conf.json`·`app/src-tauri/Cargo.toml`·`app/package.json`·`pyproject.toml`을 함께 맞춥니다(`Cargo.lock`은 cargo가, `uv.lock`은 `uv lock`이 따라갑니다).
+- 확인하지 못한 것: 업데이트 뒤 마이크·시스템 오디오 권한을 다시 묻는지(ad-hoc 재서명), 깨끗한 Mac(새 계정)에서의 설치·업데이트, macOS 14.4~15에서의 동작.

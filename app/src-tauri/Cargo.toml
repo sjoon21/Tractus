@@ -1,6 +1,6 @@
 [package]
 name = "tractus-app"
-version = "0.1.0"
+version = "0.1.1"
 description = "Tractus 데스크톱 앱"
 license = "Apache-2.0"
 edition = "2021"
@@ -23,6 +23,15 @@ ulid = "1"
 trash = { version = "5", default-features = false }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+# 업데이트 확인·받기·설치 (MIT/Apache-2.0). 확인은 미리 만든 앱(번들)에서만, 설치는 사용자가 단추를 누른 뒤에만 (docs/desktop.md)
+tauri-plugin-updater = "2"
+# 설치가 끝난 뒤 '다시 열기'(relaunch) 용 (MIT/Apache-2.0)
+tauri-plugin-process = "2"
+
+[dev-dependencies]
+# 릴리스 서명 검증 테스트(tests/update_signature.rs): tauri-plugin-updater 가 쓰는 것과 같은 크레이트·버전 (둘 다 이미 Cargo.lock 에 있다)
+minisign-verify = "0.3"
+base64 = "0.22"
 
 # 개발 빌드의 디버그 정보를 줄 번호만 남긴다 (역추적은 그대로, 깨끗한 개발 빌드의 target이 약 28% 작다: docs/setup.md 2026-10-15 실측).
 # 증분 컴파일은 기본값(켜짐)을 그대로 둔다. 릴리스 빌드(install.sh)에는 영향이 없다.

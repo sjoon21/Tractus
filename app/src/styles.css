@@ -1936,6 +1936,14 @@ pre.inline-error {
   line-height: 1.6;
 }
 
+/* 설정 › 업데이트: 릴리스 노트 일부 (update.noteExcerpt) */
+.update-notes {
+  margin: 12px 0 0;
+  font: inherit;
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+}
+
 .voices-empty {
   font-size: var(--fs-sm);
   color: var(--ink-3);

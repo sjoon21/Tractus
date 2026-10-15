@@ -919,6 +919,17 @@ macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음�
 - **모델 폴더(코어 `paths.models_dir`).** `TRACTUS_MODELS_DIR` → `$TRACTUS_HOME/models`(등록된 모델 폴더가 하나라도 있을 때만, 기존 사용자 호환) → 새 기본 `~/Library/Application Support/dev.tractus.app/models`. 앱은 사용자가 정하지 않으면 `TRACTUS_MODELS_DIR`을 넘기지 않는다. 모델 화면의 `모델 폴더` 줄: `위치 바꾸기…`는 폴더를 고른 뒤(설치한 모델이 있으면 확인) `models_move`로 옮기고 **성공한 뒤에** `models_dir`을 저장한다. `사용하지 않는 폴더 N개 (xx MB) 정리`는 `models list`의 `unregistered`가 있을 때만 보이고 확인 뒤 `models_prune`을 부른다.
 - **데이터 폴더 점검.** 시작 점검 `저장 위치` > `데이터 폴더`: 경로 또는 그 위 폴더가 `Library/Mobile Documents`(iCloud Drive), `Dropbox*`, `OneDrive*`, `GoogleDrive*`·`Google Drive`이거나 `.obsidian` 폴더가 그 폴더나 위 폴더에 있으면 확인 필요와 `폴더 바꾸기…`(폴더를 골라 `home` 저장). **노트는 옮기지 않는다**: 새 폴더로 직접 옮긴 뒤 다시 시작하라고 알린다. 판정은 이름·`.obsidian`뿐이다(`paths::sync_risk`, iCloud `데스크탑 및 문서` 동기화는 못 잡는다).
 
+### 3.5 앱 업데이트 (v3.34)
+
+미리 만든 앱(번들)이 GitHub 릴리스에서 새 버전을 찾아 사용자가 누를 때만 받아 설치한다. 코어(Python)는 바뀌지 않는다. 플러그인은 `tauri-plugin-updater` 2.14(`@tauri-apps/plugin-updater`)와 다시 열기용 `tauri-plugin-process` 2.4(`@tauri-apps/plugin-process`)다. 문구는 WORDS.md §4.21이다.
+
+- **흐름.** 확인은 두 곳에서만 한다: 앱이 뜨고 약 10초 뒤 한 번, 그리고 `설정 > 업데이트`의 `업데이트 확인` 단추. 저절로 받거나 설치하는 일은 없다. 시작 때 새 버전이 있으면 기존 알림(토스트) 패턴으로 `새 버전이 있습니다: X` + `설정 열기`(`go({kind: 'settings'})`)만 보이고, 같은 실행에서 두 번 알리지 않는다. 설정의 절은 지금 버전(`getVersion`, `@tauri-apps/api/app`) → `업데이트 확인` → 상태 문구(`확인 중…` / `최신입니다` / `새 버전 X` + 릴리스 노트 일부 + `업데이트 설치`) → `받는 중 N%`(`downloadAndInstall`의 진행 이벤트) → `설치가 끝났습니다` + `다시 열기`(`relaunch`)다. `relaunch`는 `ExitRequested(RESTART_EXIT_CODE)`라 tauri가 `prevent_exit`를 무시해 `begin_quit`의 메모 저장 대기와 `onCloseRequested`의 '변환 중' 확인을 거치지 않고 바로 끝난다. 그래서 App이 `relaunchBlocked`(녹음·변환·가져오기 중, `idleBlockers`와 같은 조건)를 SettingsView에 넘겨 그동안 `다시 열기`를 잠그고 상태 줄에 `녹음·변환이 끝난 뒤 누르세요.`를 붙인다. 오류는 §3의 규칙대로 첫 줄 문장 + `자세히`다.
+- **번들에서만.** Rust 명령 `update_available(): bool` 하나가 판별한다: `paths.rs`의 번들 판별(`current_exe()` 옆 `../Resources/runtime/bin/tractus`가 있을 때)을 그대로 쓴다. `false`면 확인을 아예 하지 않고(시작 때도, 단추도 없다) 설정의 절에는 `저장소에서 만든 앱은 scripts/update.sh로 업데이트합니다` 한 줄만 보인다(`install.sh`로 만든 앱, `pnpm tauri dev`). 플러그인 등록은 항상 해도 되지만 `check`는 번들에서만 부른다.
+- **권한.** `capabilities/default.json`에 `updater:default`, `process:allow-restart`. CSP는 바꾸지 않는다(내려받기는 Rust 쪽 플러그인이 한다).
+- **엔드포인트와 서명.** `plugins.updater.endpoints`는 정적 JSON `https://github.com/sjoon21/Tractus/releases/latest/download/latest.json` 하나다. GitHub의 `latest`는 공개 저장소의 정식 릴리스(pre-release 아님)만 가리킨다. 플랫폼 키는 `darwin-aarch64`, `url`은 같은 릴리스의 `Tractus.app.tar.gz`(앱 폴더가 아카이브 루트), `signature`는 `.sig` 내용이다. 공개 키는 `plugins.updater.pubkey`(저장소에 넣는다), 개인 키는 `~/.tauri/tractus.key`(비밀번호 없음, 저장소 밖, 백업 필수)다. 이 파일들은 `scripts/release.sh`만 만든다(`bundle.createUpdaterArtifacts`는 쓰지 않는다: `tauri build`가 만드는 tar.gz는 번들 스크립트의 마지막 ad-hoc 재서명 전이라 쓸모없다. docs/setup.md §10). 서명이 맞지 않으면 플러그인이 설치하지 않는다. `plugins.updater.requireSignedVersion: true`라 서명의 trusted comment에 적힌 버전(`tauri signer sign --app-version`, `release.sh`가 늘 붙인다)이 `latest.json`의 `version`과 다르거나 없으면 설치하지 않는다: 누가 `latest.json`을 바꿔치기해 옛 릴리스의 `url`·`signature`에 높은 버전을 붙여도 그 옛 앱으로 내려가지 않는다. 모든 릴리스를 `release.sh`로 서명한다는 전제이고, `tests/update_signature.rs`가 산출물의 이 버전을 검사한다.
+- **실패 시 조용함.** 시작 때의 확인이 실패하면(오프라인, 404, 서명 불일치, 릴리스 없음) 아무것도 보이지 않고 로그에도 키·주소 말고는 남길 것이 없다. 단추로 확인했을 때만 오류 문장이 보인다.
+- **알려진 한계.** 업데이트마다 앱 전체(약 240MB)를 받는다(차이만 받지 않는다). ad-hoc 재서명이라 업데이트 뒤 마이크·시스템 오디오 권한을 다시 물을 수 있다(확인하지 못함). v0.1.0에는 업데이터가 없어 한 번은 수동으로 새 `.dmg`를 설치해야 한다. Apple Developer ID 서명·공증은 아직이다. 깨끗한 Mac·macOS 14.4~15에서의 동작은 확인하지 못했다.
+
 ### v1 화면
 
 | 화면 | 기능 |
@@ -930,7 +941,7 @@ macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음�
 
 ### 제외 (v1)
 
-실시간 전사(Phase 7.2에서 옵트인 미리보기로 추가, §2.8), 전사 텍스트 직접 편집(찾아 바꾸기는 다음 단계), 회의 자동 감지, 자동 업데이트, 공증.
+실시간 전사(Phase 7.2에서 옵트인 미리보기로 추가, §2.8), 전사 텍스트 직접 편집(찾아 바꾸기는 다음 단계), 회의 자동 감지, 자동 설치 업데이트(v3.34에서 알림 뒤 사용자가 누를 때만 설치하는 방식으로 추가, §3.5), 공증.
 
 ## 4. B안 판정 기준 (D안으로 갈지 정할 때)
 

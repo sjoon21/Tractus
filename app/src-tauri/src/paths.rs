@@ -40,14 +40,18 @@ fn lossy(p: PathBuf) -> String {
 }
 
 impl Bin {
+    /// 실행 파일(`<앱>/Contents/MacOS/…`) 기준 번들 안 후보: `<앱>/Contents/Resources/<bundle>`
+    fn in_bundle(&self, exe: Option<&Path>) -> Option<PathBuf> {
+        exe.and_then(|e| Some(e.parent()?.parent()?.join("Resources").join(self.bundle)))
+    }
+
     /// 직접 지정·환경변수를 뺀 자동 후보 (우선순위 순)
     pub fn auto(&self, exe: Option<&Path>) -> Vec<(&'static str, PathBuf)> {
         #[cfg(test)]
         if NO_AUTO.get() {
             return vec![];
         }
-        let bundle = exe.and_then(|e| Some(e.parent()?.parent()?.join("Resources").join(self.bundle)));
-        bundle.map(|b| ("bundle", b)).into_iter().chain([("repo", repo_root().join(self.repo))]).chain(self.known.iter().map(|k| ("known", expand(k)))).collect()
+        self.in_bundle(exe).map(|b| ("bundle", b)).into_iter().chain([("repo", repo_root().join(self.repo))]).chain(self.known.iter().map(|k| ("known", expand(k)))).collect()
     }
 
     pub fn resolve(&self, user: &str, env: Option<String>, exe: Option<&Path>) -> Resolved {
@@ -70,6 +74,17 @@ impl Bin {
         let v = expand(saved);
         self.auto(std::env::current_exe().ok().as_deref()).iter().any(|(_, p)| *p == v)
     }
+}
+
+/// 미리 만든 앱(번들)인가: 실행 파일 옆 `../Resources/runtime/bin/tractus` 가 있을 때만. 저장소에서 install.sh 로 만든 앱·개발 실행은 아니다
+pub fn is_bundled(exe: Option<&Path>) -> bool {
+    TRACTUS.in_bundle(exe).is_some_and(|p| p.is_file())
+}
+
+/// 업데이트 확인을 할 수 있는가(= 번들인가). 저장소에서 만든 앱은 scripts/update.sh 로 업데이트하므로 화면이 확인을 건너뛴다 (docs/desktop.md)
+#[tauri::command]
+pub fn update_available() -> bool {
+    is_bundled(std::env::current_exe().ok().as_deref())
 }
 
 /// 데이터 폴더가 동기화 폴더이거나 Obsidian 볼트 안이면 그 이름. 폴더와 그 위 폴더를 모두 본다
@@ -140,6 +155,16 @@ mod tests {
         assert_eq!(none.source, "none");
         assert!(none.path.ends_with(".venv/bin/tractus"), "{}", none.path); // 안내용: 빌드할 곳
         NO_AUTO.set(false);
+    }
+
+    #[test]
+    fn is_bundled_only_when_the_core_sits_next_to_the_exe_in_resources() {
+        let d = tmp("bundled");
+        let exe = d.join("Tractus.app/Contents/MacOS/tractus-app");
+        assert!(!is_bundled(Some(&exe)), "runtime/ 이 없으면 저장소 빌드다");
+        touch(&d.join("Tractus.app/Contents/Resources/runtime/bin/tractus"));
+        assert!(is_bundled(Some(&exe)));
+        assert!(!is_bundled(None));
     }
 
     #[test]

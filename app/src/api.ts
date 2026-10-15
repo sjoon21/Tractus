@@ -303,6 +303,8 @@ export const api = {
   trayHidesOnClose: () => invoke<boolean>("tray_hides_on_close"),
   /** 숨었거나 최소화한 창을 꺼낸다 (보이는 창은 그대로). 메뉴 막대에서 시작한 녹음이 실패했을 때 오류를 보이려고 쓴다 */
   trayShowIfHidden: () => invoke<void>("tray_show_if_hidden"),
+  /** 미리 만든 앱(번들)인가: 그때만 업데이트를 확인한다 (update.ts, docs/desktop.md §3.5). 저장소에서 만든 앱·개발 실행은 false */
+  updateAvailable: () => invoke<boolean>("update_available"),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setRecMode: (mode: string) => invoke<void>("set_rec_mode", { mode }),

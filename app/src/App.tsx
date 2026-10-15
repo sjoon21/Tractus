@@ -40,6 +40,8 @@ import { touchNote as touchNoteIn, type Folder } from "./organize";
 import { OrganizeContext, useOrganizeState } from "./useOrganize";
 import { PanelToggle, usePanels } from "./PanelToggle";
 import { RAIL_REC_LABEL, railPendingLabel, railRecState } from "./panels";
+import { check } from "@tauri-apps/plugin-updater";
+import { newVersionToast, OPEN_SETTINGS_LABEL, START_DELAY_MS } from "./update";
 
 export type Seek = { segId?: string; t?: number; nonce: number };
 export type View =
@@ -474,6 +476,23 @@ export function App() {
   // 시작할 때 한 번 갱신한다: 지난번에 고친 뒤 5분 안에 앱을 끝냈어도 그 변경이 검색에 따라온다 (갱신은 증분이라 바뀐 것이 없으면 가볍다)
   useEffect(() => indexer.touch(), []);
 
+  // 업데이트 확인 (update.ts): 미리 만든 앱(번들)에서만, 시작 약 10초 뒤 한 번. 새 버전이 있으면 알림과 `설정 열기`뿐이다 (받지도 설치하지도 않는다).
+  // 실패는 조용히 무시한다 (오프라인이 흔하다). 설정 화면의 `업데이트 확인`은 따로 돈다
+  useEffect(() => {
+    const id = setTimeout(async () => {
+      try {
+        if (!(await api.updateAvailable())) return;
+        const u = await check();
+        if (!u) return;
+        notify({ text: newVersionToast(u.version), action: { label: OPEN_SETTINGS_LABEL, run: () => void go({ kind: "settings" }) } });
+        void u.close().catch(() => {});
+      } catch {
+        // 오프라인·서버 오류: 아무것도 보이지 않는다
+      }
+    }, START_DELAY_MS);
+    return () => clearTimeout(id);
+  }, [notify, go]);
+
   // 앱 밖(터미널 `tractus transcribe` 등)에서 만든 노트도 질문 답의 인용 칩이 '삭제됨'으로 보이지 않게: 창으로 돌아올 때와 질문 창을 열 때 목록을 다시 읽는다
   useEffect(() => {
     const onFocus = () => void refresh();
@@ -904,7 +923,7 @@ export function App() {
         )}
         {view.kind === "search" && <SearchView key={view.q} query={view.q} onOpen={openMeeting} memoIds={memoIds} />}
         {view.kind === "record" && <RecordView rec={rec} captions={live} job={progressKind === "save" ? finish.job : waitDir ? { ...IDLE_JOB, running: true, stage: "wait_import" } : transcribe.job} progressKind={progressKind} choosing={afterAsk !== null} send={sendRec} retry={() => (progressKind === "save" ? finishDir.current && finishRecording(finishDir.current) : transcribeDir.current && startTranscribe(transcribeDir.current, transcribeTarget.current))} unconverted={unconverted ? UNCONVERTED_SAVED : null} attachTitle={attach.phase !== "idle" ? (attach.target?.title ?? null) : null} />}
-        {view.kind === "settings" && <SettingsView onSaved={() => void Promise.all([refresh(), caps.refresh()])} />}
+        {view.kind === "settings" && <SettingsView onSaved={() => void Promise.all([refresh(), caps.refresh()])} relaunchBlocked={recording || transcribing || imp.job.running || queue.length > 0} />}
         {view.kind === "models" && <ModelsView />}
       </main>
 

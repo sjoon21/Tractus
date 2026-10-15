@@ -11,11 +11,16 @@ import { recMode, statusLine, withRecMode } from "./lib";
 import { LlmKeySection } from "./LlmKeySettings";
 import { TemplatesSection } from "./TemplatesSettings";
 import { TRAY_KEEP_HINT, TRAY_KEEP_LABEL, TRAY_SHOW_HINT, TRAY_SHOW_LABEL } from "./trayText";
+import { getVersion } from "@tauri-apps/api/app";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check } from "@tauri-apps/plugin-updater";
+import { CHECK_LABEL, INSTALL_LABEL, RELAUNCH_LABEL, RELAUNCH_WAIT, remembered, REPO_NOTE, UPDATE_HINT, updateReduce, updateText, versionLine, type UpdateEvent, type UpdateState } from "./update";
 
 // 변환 엔진 위치는 모델 화면에서 바꾼다 (옮기기까지 함께 한다). 실행 파일 경로는 BinField (자동 / 직접 지정)
 const FIELDS: { key: "home"; label: string; hint: string }[] = [{ key: "home", label: "데이터 위치 (TRACTUS_HOME)", hint: "meetings/와 recordings/가 들어 있는 폴더" }];
 
-export function SettingsView({ onSaved }: { onSaved: () => void }) {
+/** relaunchBlocked: 녹음·변환·가져오기 중(App의 idleBlockers와 같은 조건). 업데이트 절의 `다시 열기`를 잠근다 */
+export function SettingsView({ onSaved, relaunchBlocked }: { onSaved: () => void; relaunchBlocked: boolean }) {
   const [s, setS] = useState<Settings | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [msgDetail, setMsgDetail] = useState<string | null>(null); // 저장 실패의 원래 문구(OS 사유)
@@ -187,6 +192,87 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
       <LlmKeySection />
       <VoicesSection home={s.home} />
       <TemplatesSection />
+      <UpdateSection relaunchBlocked={relaunchBlocked} />
+    </section>
+  );
+}
+
+/** 업데이트 (v3.34, docs/desktop.md §3.5). 자동 설치는 없다: 확인·설치·다시 열기 모두 단추로만. 미리 만든 앱(번들)에서만 확인한다 */
+function UpdateSection({ relaunchBlocked }: { relaunchBlocked: boolean }) {
+  const [version, setVersion] = useState<string | null>(null);
+  const [bundle, setBundle] = useState<boolean | null>(null); // null: 아직 모른다 (단추를 그리지 않는다)
+  const [st, setStRaw] = useState<UpdateState>(() => remembered.state);
+  // 모듈의 상태(update.remembered)가 원본이다: 확인·받는 중에 화면을 떠나면 이 컴포넌트가 내려가 React의 setState 갱신 함수는 돌지 않으므로,
+  // 거기서 줄이면 `확인 중`·`받는 중`에 멈춘 채 남아 돌아와도 단추가 영영 잠긴다. 모듈에서 줄이고 React에는 결과만 준다
+  const dispatch = (ev: UpdateEvent) => setStRaw((remembered.state = updateReduce(remembered.state, ev)));
+  // installed: 디스크의 앱은 이미 새 버전이라 다시 확인하면 같은 버전을 또 받게 된다. `다시 열기`만 남긴다
+  const busy = st.phase === "checking" || st.phase === "downloading" || st.phase === "installed";
+
+  useEffect(() => {
+    getVersion().then(setVersion, () => setVersion("?"));
+    api.updateAvailable().then(setBundle, () => setBundle(false));
+  }, []);
+
+  const onCheck = async () => {
+    dispatch({ type: "check" });
+    try {
+      await remembered.update?.close().catch(() => {});
+      const u = await check();
+      remembered.update = u;
+      if (u) dispatch({ type: "found", version: u.version, body: u.body });
+      else dispatch({ type: "latest" });
+    } catch (e) {
+      dispatch({ type: "fail", error: e });
+    }
+  };
+
+  const onInstall = async () => {
+    const u = remembered.update;
+    if (!u) return;
+    dispatch({ type: "install" });
+    try {
+      await u.downloadAndInstall((event) => dispatch({ type: "download", event }));
+      remembered.update = null;
+      dispatch({ type: "installed" });
+    } catch (e) {
+      dispatch({ type: "fail", error: e });
+    }
+  };
+
+  const text = updateText(st);
+  return (
+    <section className="voices" aria-labelledby="update-title">
+      <h2 id="update-title">업데이트</h2>
+      <p className="field-hint tnum">{versionLine(version)}</p>
+      {bundle === false && <p className="field-hint">{REPO_NOTE}</p>}
+      {bundle && (
+        <>
+          <p className="field-hint">{UPDATE_HINT}</p>
+          <div className="settings-actions">
+            <button className="ghost-button" type="button" disabled={busy} onClick={() => void onCheck()}>
+              {CHECK_LABEL}
+            </button>
+            {st.phase === "found" && (
+              <button className="primary-button" type="button" onClick={() => void onInstall()}>
+                {INSTALL_LABEL}
+              </button>
+            )}
+            {st.phase === "installed" && (
+              <button className="primary-button" type="button" disabled={relaunchBlocked} onClick={() => void relaunch().catch((e) => dispatch({ type: "fail", error: e }))}>
+                {RELAUNCH_LABEL}
+              </button>
+            )}
+            {text && (
+              <span className="field-hint tnum" role="status">
+                {text}
+                {st.phase === "installed" && relaunchBlocked && ` ${RELAUNCH_WAIT}`}
+              </span>
+            )}
+            <ErrorDetail detail={st.phase === "error" ? st.detail : null} />
+          </div>
+          {st.phase === "found" && st.notes && <pre className="field-hint update-notes">{st.notes}</pre>}
+        </>
+      )}
     </section>
   );
 }

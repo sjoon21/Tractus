@@ -1222,8 +1222,12 @@ pub fn run() {
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
+        // 업데이트: 플러그인은 늘 등록하지만 확인·설치는 화면이 update_available(번들)일 때만 부른다. 받기는 Rust가 하므로 CSP는 그대로다
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             get_settings,
+            paths::update_available,
             save_settings,
             set_rec_mode,
             set_checkup_done,

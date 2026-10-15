@@ -59,7 +59,7 @@ Tractus는 노트와 녹음을 한곳에서 다루는 macOS 앱입니다. 소리
 - **파일이 원본입니다.** 노트는 `~/Tractus/meetings/` 아래의 폴더(오디오, JSON, Markdown, 자막)라서 Obsidian 같은 도구로도 열립니다. 검색용 정보(색인)는 지워도 노트에서 다시 만들어집니다.
 - **에이전트가 읽을 수 있습니다.** MCP 서버로 Claude Code, Codex, Antigravity가 내 노트를 검색하고 근거와 함께 인용합니다.
 
-> **상태: 팀 내 시험 단계(베타).** 첫 프리릴리스 [v0.1.0](https://github.com/sjoon21/Tractus/releases)이 `.dmg`로 올라와 있습니다. 저장소가 비공개라서 초대받은 협업자만 릴리스와 이슈를 볼 수 있습니다. 서명·공증은 받지 않았고(ad-hoc 서명), 깨끗한 Mac이나 macOS 14.4~15에서는 시험하지 못했습니다. 알려진 한계는 [로드맵](#로드맵)에 있고, 내부 변경 이력은 [ARCHITECTURE.md](ARCHITECTURE.md)에 있습니다.
+> **상태: 팀 내 시험 단계(베타).** [GitHub 릴리스](https://github.com/sjoon21/Tractus/releases)에 `.dmg`가 올라와 있습니다(저장소는 공개라 누구나 릴리스와 이슈를 볼 수 있습니다). 0.1.1부터는 앱 안 `설정 > 업데이트`에서 새 버전을 확인하고 설치합니다. 서명·공증은 받지 않았고(ad-hoc 서명), 깨끗한 Mac이나 macOS 14.4~15에서는 시험하지 못했습니다. 알려진 한계는 [로드맵](#로드맵)에 있고, 내부 변경 이력은 [ARCHITECTURE.md](ARCHITECTURE.md)에 있습니다.
 
 <p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
@@ -140,12 +140,12 @@ flowchart LR
 
 ### A. 미리 만든 앱 받기
 
-1. [GitHub 릴리스](https://github.com/sjoon21/Tractus/releases)에서 `Tractus-…-arm64.dmg`를 받습니다. 저장소가 비공개라서 초대받은 협업자만 이 페이지가 보입니다(없으면 404). 앱은 약 700MB, `.dmg`는 약 240MB입니다(2026-10-15 실측).
+1. [GitHub 릴리스](https://github.com/sjoon21/Tractus/releases)에서 `Tractus-…-arm64.dmg`를 받습니다. 앱은 약 700MB, `.dmg`는 약 240MB입니다(2026-10-15 실측).
 2. `.dmg`를 열고 `Tractus`를 `Applications` 바로가기로 끌어다 놓습니다. 관리자 암호는 필요 없습니다.
 3. 처음 열 때 "확인되지 않은 개발자" 경고가 나옵니다(서명이 ad-hoc이고 공증을 받지 않았습니다). macOS 15 이상은 시스템 설정 › 개인정보 보호 및 보안 › `그래도 열기`, macOS 14.x는 우클릭 후 `열기`를 고릅니다(직접 확인하지 못했습니다). 터미널에서는 `xattr -dr com.apple.quarantine /Applications/Tractus.app`입니다.
 4. 터미널에서 `brew install ffmpeg`를 한 뒤 앱의 시작 점검 → [모델 받기](#모델-받기) → [AI 키 등록](#ai-키-등록) 순서로 진행합니다.
 
-앱 안에 Python과 의존성, 코어(`tractus`), 녹음 프로그램(`tractus-rec`)이 들어 있습니다. 9명 이상 참석자 구분 도우미(`tractus-diar`)는 들어 있지 않아서 참석자는 8명까지 구분합니다. 노트·모델·설정은 앱 밖에 있어서 업데이트는 새 `Tractus.app`으로 바꿔 넣으면 됩니다. **깨끗한 Mac(새 계정)과 macOS 14.4~15에서는 시험하지 못했습니다.** 개발 기기(macOS 26.6)의 복사본에서 저장소 접근을 막고 환경변수를 비운 채 확인한 것까지입니다. 자세한 안내와 직접 만드는 법은 [docs/setup.md §10](docs/setup.md#10-미리-만든-앱-받기)입니다.
+앱 안에 Python과 의존성, 코어(`tractus`), 녹음 프로그램(`tractus-rec`)이 들어 있습니다. 9명 이상 참석자 구분 도우미(`tractus-diar`)는 들어 있지 않아서 참석자는 8명까지 구분합니다. 노트·모델·설정은 앱 밖에 있습니다. **업데이트는 앱 안 `설정 > 업데이트`에서 합니다(0.1.1부터).** 앱을 켜면 잠시 뒤 새 버전이 있는지 보고 알림으로 알려 주며, `업데이트 설치`를 누른 뒤에만 받아서 설치하고 `다시 열기`로 새 버전이 뜹니다. 저절로 설치하지는 않습니다. v0.1.0에는 이 기능이 없어서 한 번은 새 `.dmg`를 받아 `Tractus.app`을 바꿔 넣습니다. 업데이트마다 앱 전체(약 240MB)를 받고, ad-hoc 서명이라 업데이트 뒤 마이크·시스템 오디오 권한을 다시 물을 수 있습니다(직접 확인하지는 못했습니다). **깨끗한 Mac(새 계정)과 macOS 14.4~15에서는 시험하지 못했습니다.** 개발 기기(macOS 26.6)의 복사본에서 저장소 접근을 막고 환경변수를 비운 채 확인한 것까지입니다. 자세한 안내와 직접 만드는 법은 [docs/setup.md §10](docs/setup.md#10-미리-만든-앱-받기)입니다.
 
 ### B. 소스에서 빌드
 
@@ -159,9 +159,9 @@ scripts/install.sh        # 코어 + 녹음 프로그램 + 앱을 빌드합니�
 - Xcode 명령줄 도구(`xcode-select --install`)와 Homebrew는 스크립트가 대신 설치하지 않고 안내만 합니다. `sudo`도 쓰지 않습니다.
 - `install.sh` 옵션: `--with-fluid`(9명 이상 참석자 구분 도우미 빌드), `--models <required|standard|lite|all>`(끝에 모델 받기), `--copy-app`(`~/Applications`에 복사).
 - 처음 Rust를 컴파일하는 시간이 가장 길지만 개발 기기(Apple M3, 16GB)에서는 깨끗한 복사본에서 도우미까지 5분 17초 걸렸습니다(2026-10-15 실측, 회선에 따라 다릅니다). 빌드 산출물은 약 3GB(도우미 없이 약 2.1GB)입니다. 여러 번 실행해도 안전합니다. 끝에 설치 점검(`tractus doctor`)을 보여 줍니다.
-- **업데이트**는 `scripts/update.sh`(`git pull --ff-only` 뒤 `install.sh`, `--check`는 받을 커밋만 보여 줌), 빌드 산출물 정리는 `scripts/clean.sh`(`--all`로 `node_modules`까지)입니다.
+- **업데이트**는 `scripts/update.sh`(`git pull --ff-only` 뒤 `install.sh`, `--check`는 받을 커밋만 보여 줌), 빌드 산출물 정리는 `scripts/clean.sh`(`--all`로 `node_modules`까지)입니다. 앱 안 `설정 > 업데이트`는 미리 만든 앱(A)에서만 동작하고, 여기서 만든 앱에는 그 자리에 `scripts/update.sh`로 업데이트한다는 안내만 보입니다.
 - **설치한 뒤에는 저장소 폴더를 옮기거나 지우지 마세요.** 앱이 이 폴더 안의 `tractus`와 `tractus-rec`를 실행합니다. 설정의 경로(코어·녹음 프로그램)는 기본이 `자동`(실행할 때마다 찾음)이라 옮긴 뒤 `install.sh`를 다시 실행하면 새 위치가 반영됩니다. `직접 지정`한 경로가 없어지면 앱이 자동으로 되돌리고 시작 점검이 알립니다.
-- **`.dmg`를 직접 만들려면** `scripts/build_app_bundle.sh`로 `Tractus.app`을, `scripts/make_dmg.sh <앱 경로>`로 `dist/Tractus-<버전>[-<날짜>]-arm64.dmg`를 만듭니다(`--check`로 도구만 확인). 자세한 내용은 [docs/setup.md §10](docs/setup.md#직접-만들기)입니다.
+- **`.dmg`를 직접 만들려면** `scripts/build_app_bundle.sh`로 `Tractus.app`을, `scripts/make_dmg.sh <앱 경로>`로 `dist/Tractus-<버전>[-<날짜>]-arm64.dmg`를 만듭니다(`--check`로 도구만 확인). 릴리스 한 벌(`.dmg`, 업데이트용 `Tractus.app.tar.gz`·`.sig`·`latest.json`)은 `scripts/release.sh`가 만듭니다. 자세한 내용은 [docs/setup.md §10](docs/setup.md#직접-만들기)입니다.
 
 터미널 CLI만 쓸 때는 코어만 설치해도 됩니다.
 
@@ -506,7 +506,8 @@ Tractus 자체는 Apache-2.0입니다. 모델의 라이선스와 약관은 각�
 - [x] 녹음 일시정지·계속, 녹음과 변환 분리(`변환 전` 노트), 좌우 패널 접기 (v3.25~v3.26)
 - [x] 경로 자동 찾기, 모델 폴더 옮기기·정리, 스마트 검색 모델 8bit, 설치·업데이트·정리 스크립트 (v3.27~v3.29)
 - [x] 미리 만든 앱(`build_app_bundle.sh`)과 설치 디스크 이미지(`make_dmg.sh`) (v3.30~v3.31)
-- [x] 첫 프리릴리스 v0.1.0: GitHub 릴리스에 `.dmg`로 올림 (비공개 저장소, 초대받은 협업자만 받을 수 있음)
+- [x] 첫 프리릴리스 v0.1.0: GitHub 릴리스에 `.dmg`로 올림
+- [x] 앱 안 업데이트: `설정 > 업데이트`에서 새 버전 확인·설치(알림 뒤 사용자가 누를 때만 설치, Tauri updater, 공개 저장소 릴리스의 `latest.json`, `scripts/release.sh`), 저장소 공개 전환 (v3.34)
 - [ ] 깨끗한 Mac(새 계정)과 macOS 14.4~15에서 미리 만든 앱 실행, 내려받은 `.dmg`의 Gatekeeper 동작과 권한 이름 확인
 - [ ] 팬 없는 M3 Air에서 1시간 연속 녹음 + 실시간 텍스트 변환의 발열·지연 확인
 - [ ] 실제 대면 회의(원거리 마이크)의 단어 싱크·목소리 인식 정확도, 9명 이상 참석자 구분 측정
@@ -627,7 +628,7 @@ Tractus는 아래 오픈소스와 공개 모델 위에 만들었습니다. 라�
 [local-shield]: https://img.shields.io/badge/local--first-audio_stays_on_Mac-2ea44f?style=for-the-badge
 [arch-url]: ARCHITECTURE.md
 [status-shield]: https://img.shields.io/badge/status-beta-orange?style=for-the-badge
-[release-shield]: https://img.shields.io/badge/pre--release-v0.1.0-blue?style=for-the-badge
+[release-shield]: https://img.shields.io/badge/release-v0.1.1-blue?style=for-the-badge
 [release-url]: https://github.com/sjoon21/Tractus/releases
 [roadmap-url]: docs/roadmap.md
 [python-badge]: https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white
