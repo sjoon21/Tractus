@@ -186,6 +186,39 @@ if [ -n "$MODELS_PRESET" ]; then
   fi
 fi
 
+# 설치 점검 (읽기만 한다): tractus doctor 요약과, 앱 설정에 직접 지정해 둔 경로가 방금 만든 것과 맞는지 본다
+# (TRACTUS_APP_SETTINGS는 시험용으로 settings.json 위치를 바꾼다)
+saved_paths_check() {
+  local f="${TRACTUS_APP_SETTINGS:-$HOME/Library/Application Support/dev.tractus.app/settings.json}" out key why val
+  [ -f "$f" ] || return 0
+  out="$("$REPO/.venv/bin/python" - "$f" "$REPO/.venv/bin/tractus" "$REPO/recorder/.build/release/tractus-rec" <<'PY' || true
+import json, os, sys
+
+f, *built = sys.argv[1:]
+try:
+    saved = json.load(open(f, encoding="utf-8"))
+except (OSError, ValueError):
+    sys.exit(0)
+for key, now in zip(("tractus_bin", "rec_bin"), built):
+    val = saved.get(key) or ""
+    path = os.path.expanduser(val)
+    if val and not os.path.exists(path):
+        print(key, "없는 파일입니다", val, sep="\t")
+    elif val and os.path.realpath(path) != os.path.realpath(now):
+        print(key, "방금 만든 것과 다릅니다", val, sep="\t")
+PY
+)"
+  while IFS=$'\t' read -r key why val; do
+    [ -n "$key" ] || continue
+    warn "앱 설정에 저장된 $key 경로가 $why: $val  → 설정에서 경로를 '자동'으로 되돌리세요"
+  done <<<"$out"
+}
+
+step "설치 점검"
+doctor_out=$("$REPO/.venv/bin/tractus" doctor 2>&1) || warn "tractus doctor를 실행하지 못했습니다"  # 파이프 앞의 종료 코드를 봐야 한다 (sed의 것이 아니라)
+printf '%s\n' "$doctor_out" | sed 's/^/  /'
+saved_paths_check
+
 APP_SHOWN="$APP_BUNDLE"
 [ "$COPY_APP" -eq 1 ] && APP_SHOWN="$HOME/Applications/Tractus.app"
 step "설치를 마쳤습니다"

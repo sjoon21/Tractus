@@ -1,14 +1,16 @@
 import { describe, expect, test } from "vitest";
-import { createIndexScheduler, INDEX_DEBOUNCE_MS } from "./indexSchedule";
+import { createIndexScheduler, INDEX_DEBOUNCE_MS, INDEX_MIN_GAP_MS } from "./indexSchedule";
 
 /** 가짜 시계: 타이머를 모아 두고 시간을 직접 흘린다 */
-function harness(opts: { busy?: () => boolean; run?: () => Promise<boolean> } = {}) {
+function harness(opts: { busy?: () => boolean; run?: () => Promise<boolean>; minGapMs?: number } = {}) {
   let now = 0;
   let nextId = 1;
   const timers = new Map<number, { at: number; fn: () => void }>();
   const calls = { run: 0, done: 0, errors: [] as unknown[] };
   const sched = createIndexScheduler({
     isBusy: opts.busy ?? (() => false),
+    minGapMs: opts.minGapMs ?? 0, // 간격 검사는 따로 한 테스트에서만 켠다
+    now: () => now,
     run: async () => {
       calls.run++;
       return opts.run ? opts.run() : true;
@@ -36,12 +38,12 @@ function harness(opts: { busy?: () => boolean; run?: () => Promise<boolean> } = 
 }
 
 describe("index scheduler", () => {
-  test("마지막 수정에서 20초가 지나기 전에는 하지 않고, 수정이 이어지면 계속 미룬다", async () => {
+  test("마지막 수정에서 60초가 지나기 전에는 하지 않고, 수정이 이어지면 계속 미룬다", async () => {
     const h = harness();
     h.sched.touch();
     await h.advance(INDEX_DEBOUNCE_MS - 1);
     expect(h.calls.run).toBe(0);
-    h.sched.touch(); // 또 고쳤다: 여기서부터 다시 20초
+    h.sched.touch(); // 또 고쳤다: 여기서부터 다시 60초
     await h.advance(INDEX_DEBOUNCE_MS - 1);
     expect(h.calls.run).toBe(0);
     await h.advance(1);
@@ -128,6 +130,21 @@ describe("index scheduler", () => {
     await h.advance(INDEX_DEBOUNCE_MS);
     expect(h.calls.run).toBe(2);
     expect(h.calls.done).toBe(1);
+  });
+
+  test("갱신을 마친 뒤 5분 안에는 수정이 이어져도 다시 올리지 않고, 그 뒤에 한 번 한다", async () => {
+    const h = harness({ minGapMs: INDEX_MIN_GAP_MS });
+    h.sched.touch();
+    await h.advance(INDEX_DEBOUNCE_MS);
+    expect(h.calls.run).toBe(1);
+    for (let i = 0; i < 3; i++) {
+      h.sched.touch(); // 수정이 계속 온다
+      await h.advance(INDEX_DEBOUNCE_MS);
+    }
+    expect(h.calls.run).toBe(1); // 마친 지 5분이 안 지났다
+    await h.advance(INDEX_MIN_GAP_MS);
+    expect(h.calls.run).toBe(2);
+    expect(h.pendingTimers()).toBe(0);
   });
 
   test("cancel은 대기 중인 갱신을 없앤다", async () => {

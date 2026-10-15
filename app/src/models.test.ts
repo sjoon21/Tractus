@@ -9,6 +9,13 @@ import {
   engineSummary,
   installedSummary,
   levelLabel,
+  movable,
+  moveDialog,
+  moveDone,
+  pruneDialog,
+  pruneDone,
+  pruneLabel,
+  unregisteredSummary,
   installLabel,
   modelDetailRows,
   modelSubtitle,
@@ -265,5 +272,29 @@ describe("모델 소개: 한 줄과 자세히 (WORDS.md §4.15)", () => {
   test("모르는 값은 줄을 뺀다 (변환한 곳·언어·버전·규모가 없는 모델)", () => {
     const rows = modelDetailRows(row("embedding", { size_bytes: 1_191_000_000, model_name: "Qwen3-Embedding 0.6B", publisher: "Alibaba Qwen 팀", source: "Qwen/Qwen3-Embedding-0.6B", license: "Apache-2.0", converted_by: null, languages: null, revision: null }));
     expect(rows.map((r) => r.label)).toEqual(["모델 이름", "만든 곳", "내려받는 곳", "라이선스", "크기"]);
+  });
+});
+
+describe("모델 폴더: 위치 바꾸기·정리", () => {
+  const row = (state: "installed" | "missing" | "partial", installed_bytes: number) => ({ state, installed_bytes });
+  test("사용하지 않는 폴더: 없거나 옛 코어면 숨긴다, 있으면 개수와 크기", () => {
+    expect(unregisteredSummary(null)).toBeNull();
+    expect(unregisteredSummary({})).toBeNull();
+    expect(unregisteredSummary({ unregistered: [] })).toBeNull();
+    // 읽을 수 없는 항목은 건너뛰고, 크기가 이상하면 0으로 본다
+    const s = unregisteredSummary({ unregistered: [{ name: "old-vad", bytes: 1_500_000 }, { name: "x", bytes: -1 }, { bytes: 9 } as never, null as never] });
+    expect(s).toEqual({ count: 2, bytes: 1_500_000, names: ["old-vad", "x"] });
+    expect(pruneLabel(s!)).toBe("사용하지 않는 폴더 2개 (1.5 MB) 정리");
+    expect(pruneDialog(s!).body).toContain("2개(1.5 MB)");
+    expect(pruneDialog(s!).body).toContain("old-vad, x"); // 지울 폴더 이름을 보여 준다
+    expect(pruneDone(2, 1_500_000)).toBe("2개를 정리했습니다 (1.5 MB 확보).");
+  });
+  test("옮길 모델: 없는 것(missing)만 뺀다. 일부만 받은 것은 옮긴다", () => {
+    expect(movable([row("missing", 0)])).toEqual({ count: 0, bytes: 0 });
+    expect(movable([row("installed", 2_000_000), row("partial", 500_000), row("missing", 0)])).toEqual({ count: 2, bytes: 2_500_000 });
+    const d = moveDialog("/Volumes/ext/models", { count: 2, bytes: 2_500_000 });
+    expect(d.body).toContain("2개(2.5 MB)");
+    expect(d.body).toContain("‘/Volumes/ext/models’");
+    expect([moveDone(3), moveDone(0)]).toEqual(["모델 3개를 옮겼습니다.", "모델 폴더를 바꿨습니다."]);
   });
 });

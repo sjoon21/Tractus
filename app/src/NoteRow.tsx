@@ -4,7 +4,7 @@ import { memo, useState } from "react";
 import type { MeetingInfo } from "./api";
 import { FolderPicker } from "./FolderPicker";
 import { isMemo, noteTime } from "./memo";
-import { CONVERT_ROW, isRecorded, RECORDED_BADGE, ROW_QUEUED, ROW_RUNNING } from "./recorded";
+import { CONVERT_ROW, isRecorded, keptTitle, RECORDED_BADGE, ROW_QUEUED, ROW_RUNNING } from "./recorded";
 import { startNoteDrag } from "./noteDrag";
 import { ItemMenu, Popover } from "./Popover";
 import { useOrganize } from "./useOrganize";
@@ -48,7 +48,7 @@ export const NoteRow = memo(function NoteRow({
         </span>
         <span className="meeting-link-meta tnum">
           {noteTime(m)}
-          {isMemo(m) ? <span className="badge">메모</span> : isRecorded(m) ? <span className="badge is-pending">{slot === "running" ? ROW_RUNNING : slot === "queued" ? ROW_QUEUED : RECORDED_BADGE}</span> : !m.has_summary && <span className="badge">요약 없음</span>}
+          {isMemo(m) ? <span className="badge">메모</span> : isRecorded(m) ? <span className="badge is-pending" title={keptTitle(m.tracks_bytes)}>{slot === "running" ? ROW_RUNNING : slot === "queued" ? ROW_QUEUED : RECORDED_BADGE}</span> : !m.has_summary && <span className="badge">요약 없음</span>}
           {tags.slice(0, TAGS_SHOWN).map((t) => (
             <span key={t} className="row-tag">
               {t}

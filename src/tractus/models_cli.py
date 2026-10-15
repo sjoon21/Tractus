@@ -5,6 +5,7 @@ import json
 import os
 import signal
 import threading
+from pathlib import Path
 
 import typer
 
@@ -41,7 +42,7 @@ def _error(message: str, code: str, model: str | None = None, exit_code: int = 1
 
 
 def register(app: typer.Typer) -> None:
-    models_app = typer.Typer(help="모델 목록·받기·지우기 (모델 위치는 TRACTUS_MODELS_DIR, 기본 ~/Tractus/models)")
+    models_app = typer.Typer(help="모델 목록·받기·지우기 (모델 위치는 TRACTUS_MODELS_DIR, 기본은 앱 설정 폴더의 models)")
     app.add_typer(models_app, name="models")
 
     @models_app.command("list")
@@ -53,6 +54,8 @@ def register(app: typer.Typer) -> None:
         print(f"모델 폴더: {data['models_dir']}  (남은 공간 {_gb(data['disk_free_bytes'])})")
         for m in data["models"]:
             print(f"{m['id']:<10} {STATE_LABEL[m['state']]:<7} {ONE_OF_LABEL if m.get('level_note') == 'one_of' else LEVEL_LABEL[m['level']]:<11} {_gb(m['size_bytes']):>7}  {m['name']} — {m['purpose']}")
+        if data["unregistered"]:
+            print(f"등록되지 않은 폴더 {len(data['unregistered'])}개 ({_gb(sum(u['bytes'] for u in data['unregistered']))}): tractus models prune")
 
     @models_app.command("download")
     def download_models(
@@ -119,6 +122,40 @@ def register(app: typer.Typer) -> None:
             _out(inst.remove(model, models_dir()))
         except inst.ModelError as e:
             _error(e.message, e.code, e.model)
+
+    @models_app.command("move")
+    def move_models(
+        dest: str = typer.Argument(..., help="새 모델 폴더"),
+        yes: bool = typer.Option(False, "--yes", "-y", help="확인 없이 옮긴다 (데스크톱 앱용)"),
+    ) -> None:
+        """등록된 모델 폴더만 지금 모델 폴더에서 DEST로 옮긴다 (그 밖의 폴더는 그대로). 받는 중이면 거부한다. → {"moved", "freed_bytes"}"""
+        if not yes and not typer.confirm(f"{models_dir()}의 모델을 {dest}(으)로 옮길까요?"):
+            raise typer.Exit(1)
+        try:
+            _out(inst.move(models_dir(), Path(dest)))
+        except inst.ModelError as e:
+            _error(e.message, e.code, e.model)
+
+    @models_app.command("prune")
+    def prune_models(
+        yes: bool = typer.Option(False, "--yes", "-y", help="확인 없이 지운다 (데스크톱 앱용)"),
+        as_json: bool = typer.Option(False, "--json", help="결과를 JSON으로 출력 (데스크톱 앱용)"),
+    ) -> None:
+        """모델 폴더 바로 아래의 등록되지 않은 폴더(옛 버전 모델 등)를 지운다. 숨김·파일·심볼릭 링크는 건드리지 않고, 받는 중이면 거부한다.
+        → {"removed": [{"name", "bytes"}], "freed_bytes"}"""
+        root = models_dir()
+        found = inst.unregistered(root)
+        for u in found:  # 미리 보기는 stderr: stdout은 결과 JSON 하나만 나간다
+            typer.echo(f"{u['name']:<40} {_gb(u['bytes']):>7}", err=True)
+        if found and not yes and not typer.confirm(f"위 폴더 {len(found)}개({_gb(sum(u['bytes'] for u in found))})를 지울까요?", err=True):
+            raise typer.Exit(1)
+        try:
+            result = inst.prune(root)
+        except inst.ModelError as e:
+            _error(e.message, e.code, e.model)
+        if as_json:
+            return _out(result)
+        print(f"{len(result['removed'])}개를 지웠습니다 ({_gb(result['freed_bytes'])} 확보)" if found else "지울 폴더가 없습니다")
 
     @app.command("doctor")
     def doctor_cmd(as_json: bool = typer.Option(False, "--json", help="JSON으로 출력 (데스크톱 앱용)")) -> None:

@@ -4729,3 +4729,32 @@ body.is-note-dragging {
   padding: 0;
   margin-bottom: 4px;
 }
+
+/* 설정: 실행 파일 경로 (자동 / 직접 지정) */
+.bin-field .field-label .badge {
+  margin-left: 6px;
+  font-weight: 500;
+}
+
+.bin-path {
+  padding: 9px 12px;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 8px;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.bin-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* 모델 화면: 폴더 위치 바꾸기·정리 */
+.models .models-folder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 8px 0 0;
+}

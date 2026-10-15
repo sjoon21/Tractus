@@ -110,11 +110,11 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `summaries.py` | 유형별 요약(스키마 v2, `summaries/<key>.json`), 시스템 프롬프트 + 지침 구분자, 근거·owner 검증, 목록·삭제 |
 | `ask.py` | 회의 질의: 근거 모으기(회의 전사 전체 / 검색 8개 + 앞뒤 이웃), 프롬프트, 인용 대조·정리(`finalize`), 대화 기록 자르기, `chat.json` |
 | `env.py` | `.env` / `.env.local` 로더 |
-| `paths.py` | `TRACTUS_HOME`, `TRACTUS_MODELS_DIR` 해석 (CLI·MCP 공용) |
+| `paths.py` | `TRACTUS_HOME`, `TRACTUS_MODELS_DIR` 해석 (CLI·MCP 공용). 녹음·도우미 프로그램 위치 `tool_bin`(`TRACTUS_REC_BIN`·`TRACTUS_DIAR_BIN` → 앱 번들 `bin/` → 저장소에서 빌드한 것)과 빌드 안내 `build_hint`(저장소 배치일 때만 `swift build` 명령, 아니면 일반 안내). 모델 폴더 순서: `TRACTUS_MODELS_DIR` → 등록된 모델이 이미 있는 `$TRACTUS_HOME/models` → 앱 설정 폴더의 `models` |
 | `models_registry.py` | **모델·기능 목록의 원본**: 저장소·리비전·폴더·파일 크기, 기능(`CAPABILITIES`), 설치 상태(`inspect`), 프리셋, 받기 안내 문구 |
 | `models_install.py` | `models download`(잠금·이어받기·sha256·오류 코드)·`remove` |
-| `doctor.py`, `models_cli.py` | `tractus doctor`, `tractus models list|download|remove` (docs/desktop.md §2.15) |
-| `embed.py` | Qwen3-Embedding-0.6B (공식 가중치 bf16, mlx-lm), `LazyEmbedder` |
+| `doctor.py`, `models_cli.py` | `tractus doctor`, `tractus models list|download|remove|prune` (docs/desktop.md §2.15) |
+| `embed.py` | Qwen3-Embedding-0.6B 8bit (`mlx-community/Qwen3-Embedding-0.6B-8bit`, mlx-lm `load_model`), `LazyEmbedder` |
 | `index.py` | SQLite FTS5 음절 bigram + sqlite-vec, 증분 동기화(`stats()['pending']` = 지금 모델로 벡터가 없는 청크), strict 우선 + 가중 RRF |
 | `mcp_server.py` | MCP 서버 7개 도구 (`build_server(home, embedder)`) |
 | `cli.py` | `tractus transcribe`, `align`, `summarize`, `ask`, `index`, `search`, `speakers`, `voices`(`list --json`은 `model_present` 포함), `segments`, `render`, `glossary`, `export`, `note`(`new`·`save`·`title`), `mcp` |
@@ -135,7 +135,13 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 
 - **모델을 쓰는 기능을 새로 만들면 `src/tractus/models_registry.py`에 모델(`MODELS`)과 기능(`CAPABILITIES`)을 선언하고, 앱에서 그 기능의 단추를 막는다**(없을 때 이유와 `모델 화면 열기`). 모델이 없어도 코어는 죽지 않고 그 단계를 건너뛰며 `code`가 있는 경고를 낸다. 변환 엔진 둘은 `필수 (둘 중 하나)`다: `Model.level_note = "one_of"`를 달고 `level`은 `required`로 둔다(둘 다 필수로 보이게 하지 않는다). 필수 모델(VAD + 변환 엔진 하나)과 ffmpeg만으로 녹음·가져오기 → 텍스트 변환 → 요약이 돌아야 한다.
 - 저장소·리비전·폴더 상수는 한 곳에 둔다. `diarize`·`align`·`embed`·`voices`의 상수를 바꾸면 레지스트리가 따라가고(가져온다), ASR·VAD는 레지스트리가 원본이다. 파일 크기는 허브 API(`model_info(files_metadata=True)`)로 대조한다. 받기 안내 문구는 `registry.install_hint`로 만든다(`hf download …`를 직접 쓰지 않는다).
-- 코어는 모델 파일을 `tractus models remove`로만 지운다.
+- 코어는 모델 파일을 `tractus models remove`·`prune`(등록되지 않은 폴더)으로만 지운다. **`prune`은 모델 모양(완료 표시·`config.json`·`*.safetensors`)인 폴더만, 모델이 하나라도 든 모델 폴더에서만 지운다.** 노트 폴더(`TRACTUS_HOME`, `meetings/`·`recordings/`가 있는 곳)를 모델 폴더로 잘못 골라도 아무것도 지우지 않고, `models move`도 그런 곳을 목적지로 거부한다. 앱의 확인 창은 지울 폴더 이름을 보여 준다. 코어는 저장소 위치를 가정하지 않는다: 도우미 프로그램 경로는 `paths.tool_bin`(환경변수 → 앱 번들 → 저장소), 저장소 경로가 든 빌드 안내는 `paths.in_repo()`일 때만 말한다.
+
+## 경로 규칙 (앱 `app/src-tauri/src/paths.rs`)
+
+- 설정의 `tractus_bin`·`rec_bin`·`models_dir`이 비어 있으면 `자동`이다. 저장하는 것은 사용자가 입력한 값뿐이다: 자동으로 찾은 경로를 `settings.json`에 쓰지 않는다(`Settings::for_save`).
+- 찾는 순서는 직접 지정(파일이 있을 때) → 환경변수 → 앱 번들 안 → 컴파일 때 저장소 → 알려진 설치 위치다. 하위 프로세스를 띄우는 곳은 모두 `Settings::tractus_path`·`rec_path`를 쓴다. `s.tractus_bin`을 직접 실행하지 않는다.
+- 데이터 폴더를 바꿔도 노트를 옮기지 않는다(원본 보호). 모델 폴더를 옮길 때는 옮긴 **뒤에** 설정을 바꾼다.
 
 ## 검색·MCP 규칙
 
@@ -143,6 +149,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 
 - 검색 결합 방식이나 토크나이저를 바꾸면 `bench/search_eval.py`(가상)와 `bench/aihub_search_eval.py`(AI Hub, 로컬 전용)를 **둘 다** 돌려 비교한다. 가상 평가셋만 보면 동일 가중 RRF가 좋아 보이지만, 실제 ASR 전사에서는 키워드 단독보다 나빴다.
 - 임베딩 모델·revision·지시문을 바꾸면 `embed.MODEL_ID`가 바뀌어 벡터가 전부 다시 만들어진다.
+- **검색 평가 면제 기록 (2026-10-15, 소유자 결정).** 임베딩을 bf16 공식 가중치에서 `mlx-community/Qwen3-Embedding-0.6B-8bit`(revision `407ad232…`)로 바꿀 때 위 평가(`bench/search_eval.py`·`bench/aihub_search_eval.py`)를 **돌리지 않았다.** 확인한 것은 bf16 대비 코사인 0.999 이상과 "바꿔 쓴 문장 > 무관한 문장" 점검뿐이다. 즉 8bit의 검색 품질은 검증되지 않았다. 다음에 검색(결합·토크나이저·임베딩)을 건드릴 때 둘 다 돌려 기준선을 다시 잡는다.
 - `mlx-embeddings`(GPL-3), Kiwi(LGPL-3) 같은 copyleft 의존성을 넣지 않는다.
 - MCP 도구는 async로 쓴다(sqlite·MLX는 스레드에 묶임). 예상된 실패는 `ToolError`로 던진다. stdout에는 아무것도 출력하지 않는다.
 - MCP 서버는 임베딩하지 않는다(`sync(embed=False)`). 벡터는 CLI가 만든다.
@@ -164,9 +171,17 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 
 - **메뉴 막대(트레이)의 녹음 시작·종료·북마크는 Rust가 하지 않는다.** Rust(`tray.rs`)는 메뉴·제목·아이콘만 그리고 `tray-action` 이벤트를 화면에 보내며, 화면이 창의 단추와 같은 함수로 처리한다(쓰던 메모 저장·권한·기능 잠금이 한 곳에 있게). 경과 시간은 화면 타이머가 아니라 Rust 틱이 센다(숨은 창은 타이머가 늦다). 창 닫기는 `should_hide_on_close`, 종료는 언제나 `begin_quit`이다 (docs/desktop.md §3.1, WORDS.md §4.16).
 
+## 앱 번들 규칙 (미리 만든 앱, `scripts/build_app_bundle.sh`·`make_dmg.sh`)
+
+- **번들 구성은 `Tractus.app/Contents/Resources/`의 `runtime/`(옮길 수 있는 Python 3.12 + `site-packages` + 래퍼 `runtime/bin/tractus`, 파이썬은 `-I`로 실행)와 `bin/`(`tractus-rec`, 선택 `tractus-diar`)다.** 코어(Python)는 파일 위치를 `sys.executable`·`__file__` 기준 상대 경로로만 찾는다(`paths.tool_bin`: `runtime/bin/python3.12`에서 `../../bin/`). 만든 Mac의 절대 경로(`REPO_ROOT`, `.venv`, 홈 폴더)를 가정하는 코드를 넣지 않는다. 앱(Rust)은 `current_exe()` 기준 `../Resources/…`(`paths.rs`)다.
+- 번들 안은 서명으로 봉인되어 있다. **코어는 실행 중에 번들 안에 아무것도 쓰지 않는다**(`PYTHONDONTWRITEBYTECODE=1`, 바이트코드는 빌드 때 `unchecked-hash`로 미리 만든다). 캐시·임시 파일은 데이터 폴더나 `$TMPDIR`에 쓴다.
+- 의존성을 바꾸면(`pyproject.toml`·`uv.lock`) 번들은 wheel만 설치한다(`--only-binary :all:`). sdist만 있는 패키지는 번들 빌드가 실패하므로 넣기 전에 wheel이 있는지 본다. copyleft 의존성 금지 규칙은 그대로다.
+- **번들을 바꾸는 변경은 복사본을 옮겨 놓고 확인한다**: 빌드한 앱을 다른 폴더에 복사해 저장소·원래 Python 읽기를 막은 `sandbox-exec` + `env -i`에서 `tractus doctor --json`·텍스트 변환·`tractus-rec record --fake`·`tractus mcp`를 돌린다(절차와 결과: ARCHITECTURE.md v3.30). 깨끗한 Mac에서의 확인은 아직 없다. `tauri.conf.json`에는 `bundle.resources`를 고정하지 않는다(스크립트가 `--config`로 합친다).
+- 번들 빌드와 `.dmg`는 저장소 복사본에서 돌려 시험한다(`rsync`로 `.git`·`target`·`node_modules`·`.venv`·`models`·`data` 제외). 결과는 `dist/`(gitignore)에 둔다.
+
 ## 자주 쓰는 명령
 
-개발 도구(Rust·Node·pnpm·uv·ffmpeg)는 `scripts/bootstrap.sh [--check] [--yes] [--with-install]`가 `Brewfile`로 빠진 것만 설치한다(Xcode 명령줄 도구·Homebrew는 안내만, sudo·curl|sh 없음). 설치(코어 + 녹음 프로그램 + 앱 빌드)는 `scripts/install.sh [--check] [--with-fluid] [--models <구성>] [--copy-app]`이고, 설치 안내는 `docs/setup.md`가 원본이다. 앱은 빌드한 저장소 안의 `.venv/bin/tractus`·`recorder/.build/release/tractus-rec`를 쓰므로(컴파일 때 경로가 들어간다) 설치 뒤 저장소를 옮기면 다시 설치한다. 필수 도구·버전 하한을 바꾸면 `Brewfile`, `scripts/bootstrap.sh`, `scripts/install.sh`, `docs/setup.md`를 같이 고친다. Swift 하한: `recorder/`(tractus-rec)는 tools 5.10(Xcode 15.3), `recorder/diar/`(tractus-diar, FluidAudio `traits: []`)는 tools 6.2(Xcode 26)이고 `--with-fluid`일 때만 요구한다. `recorder/`의 tools-version을 6.x로 올리지 않는다.
+개발 도구(Rust·Node·pnpm·uv·ffmpeg)는 `scripts/bootstrap.sh [--check] [--yes] [--with-install]`가 `Brewfile`로 빠진 것만 설치한다(Xcode 명령줄 도구·Homebrew는 안내만, sudo·curl|sh 없음). 설치(코어 + 녹음 프로그램 + 앱 빌드)는 `scripts/install.sh [--check] [--with-fluid] [--models <구성>] [--copy-app]`(끝에 `tractus doctor` 점검과, 앱 설정의 직접 지정 경로가 맞는지 읽기만 하는 경고)이고, 업데이트는 `scripts/update.sh [--check] [install.sh 옵션]`(작업 폴더가 깨끗하고 origin을 따라가는 브랜치에서만 `git pull --ff-only` 뒤 install), 빌드 산출물 정리는 `scripts/clean.sh [--all] [--yes] [--force]`(`target`·`.build`만, 정해진 폴더 밖·`.venv`·`models/`·노트는 안 지운다, 실행 중이면 거부)이다. 미리 만든 앱은 `scripts/build_app_bundle.sh [--check] [--out D] [--with-fluid]`(→ `<out>/Tractus.app`)와 `scripts/make_dmg.sh <앱> [--version X] [--out dist]`(→ `dist/Tractus-<버전>-arm64.dmg`)다. 설치 안내는 `docs/setup.md`가 원본이다. **`clean.sh` 같은 삭제 스크립트는 실제 저장소에서 시험하지 않는다(빌드한 앱이 지워진다). 저장소 복사본(`git archive`)에서 시험한다.** 앱은 빌드한 저장소 안의 `.venv/bin/tractus`·`recorder/.build/release/tractus-rec`를 쓰므로(컴파일 때 경로가 들어간다) 설치 뒤 저장소를 옮기면 다시 설치한다. 필수 도구·버전 하한을 바꾸면 `Brewfile`, `scripts/bootstrap.sh`, `scripts/install.sh`, `docs/setup.md`를 같이 고친다. Swift 하한: `recorder/`(tractus-rec)는 tools 5.10(Xcode 15.3), `recorder/diar/`(tractus-diar, FluidAudio `traits: []`)는 tools 6.2(Xcode 26)이고 `--with-fluid`일 때만 요구한다. `recorder/`의 tools-version을 6.x로 올리지 않는다.
 
 ```bash
 uv run pytest                                       # 단위·CLI 테스트 (모델 불필요)
@@ -190,6 +205,8 @@ echo '{"title":"…"}' | uv run tractus note title <meeting_id> # 제목 바꾸�
 echo '{"favorite":true,"tags":["a"],"folder":"<폴더 ID>"|null}' | uv run tractus note meta <meeting_id>   # 즐겨찾기·태그·폴더 → 저장된 값
 uv run tractus folders list --json | create --name N [--parent ID] | rename ID --name N | move ID --parent ID|none | delete ID
 uv run tractus notes list --json [--favorite] [--tag T] [--folder ID|이름|none] [--sort created|updated|title|duration] [--order asc|desc]
+uv run tractus models prune [--yes] [--json]         # 등록되지 않은 모델 폴더(옛 버전 등) 지우기 → {removed: [{name, bytes}], freed_bytes}
+uv run tractus models move <새 폴더> [--yes]         # 등록된 모델만 모델 폴더에서 옮김 → {moved, freed_bytes}
 uv run tractus export <meeting_id> --format docx --out 회의.docx [--force] [--summary KEY]   # txt|md|srt|vtt|csv|docx|bundle → {"path": …}. md·docx에 넣을 요약(기본: meeting, 없으면 있는 것)
 uv run python bench/search_eval.py                  # 검색 평가 (가상)
 uv run python bench/ask_eval.py [--memo]            # 질의 평가 (가상 회의만 원격 LLM으로, --memo: 메모가 달린 가상 노트 3건 + 메모 질문 6개)

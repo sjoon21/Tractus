@@ -3,6 +3,7 @@
 Tractus는 저장소를 내려받아 내 Mac에서 직접 빌드해 씁니다. 도구는 `scripts/bootstrap.sh`가, 코어·녹음 프로그램·앱 빌드는 `scripts/install.sh`가 맡고, 앱을 처음 열면 나오는 **시작 점검**에서 모델을 받습니다. 이 문서는 그 과정을 순서대로 안내합니다.
 
 - 대상: 이 저장소를 내려받아 빌드할 수 있는 개발자
+- 빌드 없이 쓰려면 [GitHub 릴리스](https://github.com/sjoon21/Tractus/releases)의 미리 만든 앱(`.dmg`)을 받습니다: [§10](#10-미리-만든-앱-받기)
 - 필요한 것: Apple Silicon Mac, macOS 14.4 이상, 디스크 여유 15GB, 인터넷(설치와 모델 받기에만 씀)
 - `sudo`는 쓰지 않습니다. 스크립트는 인터넷에서 받은 스크립트를 실행하지도 않습니다.
 
@@ -19,7 +20,7 @@ scripts/install.sh        # 코어, 녹음 프로그램, 앱 빌드
 | 명령 | 하는 일 | 걸리는 시간 |
 | --- | --- | --- |
 | `scripts/bootstrap.sh` | Xcode 명령줄 도구와 Homebrew를 확인하고, [Brewfile](../Brewfile)의 도구(Rust, Node.js, pnpm, uv, ffmpeg) 중 빠진 것만 설치한 뒤 `install.sh --check`로 마지막 점검을 합니다. 설치 전에 한 번 묻습니다 | 도구가 이미 있으면 몇 초, 설치가 필요하면 몇 분 (회선에 따라) |
-| `scripts/install.sh` | `uv sync`, `swift build`, `pnpm install`, `pnpm tauri build`를 차례로 실행합니다 | 15~30분 (추정. 처음 Rust를 컴파일할 때) |
+| `scripts/install.sh` | `uv sync`, `swift build`, `pnpm install`, `pnpm tauri build`를 차례로 실행하고, 끝에 `tractus doctor` 점검을 보여 줍니다 | 약 5분 (실측: Apple M3·16GB, 깨끗한 복사본에서 `--with-fluid`까지 5분 17초, 2026-10-15. 회선에 따라 달라집니다) |
 | 모델 받기 | 앱의 시작 점검에서 받습니다 ([§2](#2-앱을-처음-열었을-때)) | 5~20분 (추정. 구성과 회선에 따라) |
 
 - **터미널을 새로 열 필요는 없습니다.** `bootstrap.sh`가 설치한 도구는 같은 터미널에서 바로 씁니다. 예외는 Xcode 명령줄 도구나 Homebrew를 이번에 처음 설치한 경우, 그리고 Homebrew가 PATH에 없어 `/opt/homebrew/bin/brew`로 찾은 경우입니다. 뒤의 경우 스크립트가 끝에 알려 주는 `eval "$(/opt/homebrew/bin/brew shellenv)"`를 먼저 실행합니다. 이때는 두 스크립트가 안내하는 대로 설치를 끝내고 터미널을 새로 연 뒤 `bootstrap.sh`를 다시 실행합니다.
@@ -28,8 +29,9 @@ scripts/install.sh        # 코어, 녹음 프로그램, 앱 빌드
 - 한 번에 이어서 하려면 `scripts/bootstrap.sh --yes --with-install`입니다.
 - 아무것도 바꾸지 않고 상태만 보려면 `scripts/bootstrap.sh --check`, `scripts/install.sh --check`입니다.
 - 모델까지 받고 앱을 `~/Applications`에 복사하려면 `scripts/install.sh --models standard --copy-app`입니다.
+- 새 버전으로 올리려면 `scripts/update.sh`, 쌓인 빌드 산출물을 지우려면 `scripts/clean.sh`입니다 ([§7](#7-업데이트), [디스크 사용량](#디스크-사용량)).
 
-> **설치 뒤에는 저장소 폴더를 옮기거나 지우지 마세요.** 앱은 빌드한 저장소 안의 `.venv/bin/tractus`와 `recorder/.build/release/tractus-rec`를 실행합니다. 이 경로는 빌드할 때 앱에 들어갑니다. 폴더를 옮겼다면 `scripts/install.sh`를 새 위치에서 다시 실행합니다. 앱 설정에 경로를 이미 저장했다면 설정에서 `tractus`와 `tractus-rec` 경로도 새 위치로 고칩니다.
+> **설치 뒤에는 저장소 폴더를 옮기거나 지우지 마세요.** 앱은 빌드한 저장소 안의 `.venv/bin/tractus`와 `recorder/.build/release/tractus-rec`를 실행합니다. 이 경로는 빌드할 때 앱에 들어갑니다. 폴더를 옮겼다면 `scripts/install.sh`를 새 위치에서 다시 실행합니다. 설정의 `tractus`·`tractus-rec` 경로는 기본이 `자동`이라 실행할 때마다 찾으므로 직접 고칠 필요가 없습니다. 예전에 직접 저장한 경로가 없어졌다면 앱이 자동으로 되돌리고 시작 점검에 `저장된 경로가 없어 자동 경로를 씁니다`라고 알립니다. 다른 위치의 실행 파일을 쓰려면 설정에서 `직접 지정`을 고르고 `찾아보기…`로 고릅니다.
 
 ## 2. 앱을 처음 열었을 때
 
@@ -62,7 +64,7 @@ uv run tractus doctor --json     # 앱이 읽는 JSON
 
 ### 모델 받기
 
-모델은 `~/Tractus/models`에 받습니다. 위치를 바꾸려면 앱 설정의 `변환 엔진 위치`나 환경변수 `TRACTUS_MODELS_DIR`을 씁니다. 저장소에 `.env`가 있으면 그 값을 따릅니다.
+모델은 `~/Library/Application Support/dev.tractus.app/models`에 받습니다(노트 폴더와 iCloud 동기화 밖입니다). 예전에 `~/Tractus/models`에 모델을 받았다면 그 폴더를 그대로 씁니다. 위치를 바꾸려면 앱의 `모델` 화면에서 `위치 바꾸기…`를 누르거나(설치한 모델을 새 폴더로 함께 옮깁니다), 터미널에서 `uv run tractus models move <폴더>`를 실행하거나, 환경변수 `TRACTUS_MODELS_DIR`을 씁니다. 저장소에 `.env`가 있으면 그 값을 따릅니다. 모델 목록에 없는 옛 폴더는 `모델` 화면의 `사용하지 않는 폴더 정리`(터미널은 `uv run tractus models prune`)로 지웁니다.
 
 앱은 왼쪽 아래의 `모델` 화면에서 받고 지웁니다. 터미널에서는 다음 명령을 씁니다.
 
@@ -84,7 +86,7 @@ uv run tractus models remove aligner                # 하나 지우기
 | `asr-lite` | 저사양 변환 엔진 (Qwen3-ASR 0.6B) | 1.0GB | 필수 (둘 중 하나) | 텍스트 변환, **실시간 텍스트 변환 (표준 엔진이 있어도 이 엔진이 따로 필요)** |
 | `diarizer` | 참석자 구분 (Nemotron 3 Diarization) | 199MB | 권장 | 참석자 구분 (없으면 참석자 없이 변환) |
 | `aligner` | 단어 싱크 (Qwen3 ForcedAligner 0.6B) | 1.3GB | 선택 | 단어 싱크 맞추기, 재생 중 단어 강조 |
-| `embedding` | 스마트 검색 (Qwen3 Embedding 0.6B) | 1.2GB | 선택 | 스마트 검색 (키워드 검색은 그대로 됨) |
+| `embedding` | 스마트 검색 (Qwen3 Embedding 0.6B, 8bit) | 0.6GB | 선택 | 스마트 검색 (키워드 검색은 그대로 됨) |
 | `voices` | 참석자 목소리 (3D-Speaker CAM++) | 28MB | 선택 | 참석자 목소리 등록과 이름 제안 |
 | `fluid` | 9명 이상 참석자 구분 (FluidAudio) | 22MB + 헬퍼 | 선택 | 9명 이상 참석자 구분 (없으면 8명까지) |
 
@@ -98,10 +100,10 @@ uv run tractus models remove aligner                # 하나 지우기
 
 | 구성 | 담긴 모델 | 디스크 | 대상 |
 | --- | --- | --- | --- |
-| 표준 | 필수(표준 엔진) + 참석자 구분 + 단어 싱크 + 스마트 검색 + 목소리 (실시간 텍스트 변환을 쓰려면 `asr-lite`를 더 받습니다) | 약 5.2GB | 메모리 16GB 이상 (`--preset standard`) |
+| 표준 | 필수(표준 엔진) + 참석자 구분 + 단어 싱크 + 스마트 검색 + 목소리 (실시간 텍스트 변환을 쓰려면 `asr-lite`를 더 받습니다) | 약 4.6GB | 메모리 16GB 이상 (`--preset standard`) |
 | 저사양 | 저사양 엔진 + 참석자 구분 | 약 1.2GB | 메모리 8GB, 다른 작업과 같이 쓸 때 (`--preset lite`) |
 | 필수만 | `vad` + 메모리에 맞는 변환 엔진 하나 | 1.0~2.5GB | 우선 써 보고 나중에 더 받을 때 (`--preset required`) |
-| 전부 | 위 모든 모델 (헬퍼가 있으면 `fluid` 포함) | 약 6.2GB | (`--preset all`) |
+| 전부 | 위 모든 모델 (헬퍼가 있으면 `fluid` 포함) | 약 5.7GB | (`--preset all`) |
 
 필수만 받아도 기본 흐름은 모두 됩니다: 녹음하거나 파일을 가져와 텍스트로 변환하고, API 키가 있으면 요약합니다.
 
@@ -123,12 +125,32 @@ uv run tractus models remove aligner                # 하나 지우기
 | 칩 | Apple Silicon (M1 이상) | M1 Pro 이상 |
 | macOS | 14.4 | 최신 버전 |
 | 메모리 | 8GB | 16GB 이상 |
-| 디스크 여유 | 15GB (빌드 산출물 약 2.5GB(추정) + 모델 최대 6.2GB) | 25GB |
+| 디스크 여유 | 15GB (빌드 산출물 약 3GB(실측, 9명 이상 구분 헬퍼 포함) + 모델 최대 5.7GB) | 25GB |
 
-- **최소 사양은 설계 기준이고 직접 돌려 보지는 못했습니다.** 8GB는 메모리 사용량 계산으로, macOS 14.4는 아래 Core Audio process tap의 하한으로 정했습니다. 개발 기기는 Apple M3, 16GB, macOS 26.6이고 설치 시간과 용량 숫자도 추정치입니다.
+- **최소 사양은 설계 기준이고 직접 돌려 보지는 못했습니다.** 8GB는 메모리 사용량 계산으로, macOS 14.4는 아래 Core Audio process tap의 하한으로 정했습니다. 개발 기기는 Apple M3, 16GB, macOS 26.6입니다. 설치 시간과 빌드 용량은 이 기기에서 2026-10-15에 쟀고([디스크 사용량](#디스크-사용량)), 모델 크기는 레지스트리의 합입니다.
 - 메모리 8GB에서는 저사양 구성(0.6B 모델)을 씁니다. 이 구성에서는 실시간 텍스트 변환(16GB 이상 필요)을 쓸 수 없습니다. 표준 구성(1.7B 모델)은 16GB 이상에서 권장합니다.
 - Intel Mac은 지원하지 않습니다. 변환 모델이 MLX(Apple Silicon 전용)로 돌아갑니다.
 - macOS 14.4는 시스템 오디오 녹음(Core Audio process tap)의 하한입니다.
+
+### 디스크 사용량
+
+2026-10-15에 깨끗한 복사본(`git archive`, 모델·빌드 산출물 없음)에서 `scripts/install.sh --with-fluid`를 한 번 돌려 `du`로 쟀습니다 (Apple M3, 16GB, 릴리스 빌드).
+
+| 항목 | 크기 | 비고 |
+| --- | --- | --- |
+| `.venv` (코어) | 0.58GB | mlx, scipy, onnxruntime, transformers 등 |
+| `recorder/.build` | 0.10GB | 녹음 프로그램 |
+| `recorder/diar/.build` | 0.95GB | `--with-fluid`일 때만 (FluidAudio와 의존성) |
+| `app/src-tauri/target` | 1.22GB | 릴리스 컴파일 산출물. 완성된 `Tractus.app`은 약 17MB |
+| `app/node_modules` | 0.19GB | |
+| **합계 (저장소 폴더)** | **약 3.05GB** | `--with-fluid` 없이는 약 2.1GB. 모델은 별도입니다 |
+
+설치 시간은 전체 5분 17초였습니다: 녹음 프로그램 11초, 9명 이상 구분 헬퍼 167초(FluidAudio 내려받기 포함), 앱 릴리스 컴파일 약 2분.
+
+개발하면서 `cargo build`·`pnpm tauri dev`를 쓰면 `app/src-tauri/target`이 더 커집니다(증분 캐시와 debug·release가 쌓입니다). 이 저장소를 계속 개발한 Mac에서는 `app/src-tauri/target` 12GB 이상(2026-10-15 실측 12.9GB, 계속 늘어납니다), `recorder/.build` 1.0GB, `recorder/diar/.build` 1.3GB, `bench/.venv` 1.2GB까지 불었습니다. 그래서 두 가지를 했습니다.
+
+- **`[profile.dev] debug = "line-tables-only"`** (`app/src-tauri/Cargo.toml`): 개발 빌드가 줄 번호만 남기고 변수 정보는 만들지 않습니다. 깨끗한 개발 빌드(`cargo build` 한 번)의 `target`이 **2.88GB에서 2.08GB로 28% 줄었고**, 컴파일 시간은 64초와 68초로 차이가 없었습니다(2026-10-15 실측). 역추적(backtrace)의 파일·줄 번호는 그대로이고, 디버거(lldb)에서 지역 변수 값을 볼 수 없게 됩니다. 변수까지 봐야 하면 그 줄을 `debug = true`로 바꿉니다. 증분 컴파일은 기본값(켜짐) 그대로입니다. 릴리스 빌드(`install.sh`)에는 영향이 없습니다.
+- **`scripts/clean.sh`**: 다시 만들 수 있는 산출물만 지웁니다 ([§4](#scriptscleansh)).
 
 ### 도구
 
@@ -181,6 +203,30 @@ uv run tractus models remove aligner                # 하나 지우기
 | `--models <구성>` | 끝에 모델을 받습니다. `required`, `standard`, `lite`, `all` 중 하나입니다 ([모델 받기](#모델-받기)) |
 | `--copy-app` | 만든 앱을 `~/Applications/Tractus.app`으로 복사합니다 |
 
+끝에는 읽기만 하는 **설치 점검**이 있습니다. `tractus doctor` 요약을 보여 주고, 앱 설정(`~/Library/Application Support/dev.tractus.app/settings.json`)에 직접 지정해 둔 `tractus_bin`·`rec_bin` 경로가 없거나 방금 만든 것과 다르면 경고합니다(`설정에서 경로를 '자동'으로 되돌리세요`). 경고만 하고 설치는 실패시키지 않으며, `--check`는 여전히 아무것도 바꾸지 않습니다.
+
+### `scripts/update.sh`
+
+```bash
+scripts/update.sh --check                  # 받을 커밋만 보기 (git fetch와 git log뿐)
+scripts/update.sh [install.sh 옵션]        # git pull --ff-only → 바뀐 커밋 보기 → scripts/install.sh → 설치 점검
+```
+
+`--check` 말고는 모든 옵션을 `install.sh`로 그대로 넘깁니다(예: `scripts/update.sh --with-fluid --models standard`). 멈추는 경우는 셋입니다: 작업 폴더에 고치지 않은 변경이 있을 때(새 파일은 세지 않습니다), 브랜치가 `origin`을 따라가지 않을 때(분리된 HEAD 포함), 내 커밋이 있어 빠르게 합칠 수 없을 때. 멈출 때는 아무것도 바꾸지 않고 이유를 알려 줍니다. 이미 최신이면 그렇게 말하고 끝나므로 여러 번 실행해도 안전합니다. 받은 뒤 설치가 중간에 실패해도 코드는 최신이니 문제를 고치고 `scripts/install.sh`를 다시 실행하면 됩니다.
+
+### `scripts/clean.sh`
+
+빌드 산출물의 크기를 보여 주고, 확인을 받은 뒤 지웁니다. 지운 뒤에는 `scripts/install.sh`가 다시 만듭니다.
+
+| 옵션 | 효과 |
+| --- | --- |
+| (없음) | `app/src-tauri/target`, `recorder/.build`, `recorder/diar/.build`를 지웁니다. **완성된 `Tractus.app`도 `target` 안에 있으므로 함께 지워집니다** (`--copy-app`으로 복사해 둔 `~/Applications/Tractus.app`은 그대로입니다) |
+| `--all` | 위에 더해 `app/node_modules`, `bench/.venv`도 지웁니다(다시 받아야 하므로 인터넷이 필요합니다) |
+| `--yes` | 확인을 묻지 않습니다. 터미널이 아닌 곳에서는 이 옵션이 있어야 지웁니다 |
+| `--force` | 이 저장소의 Tractus 앱·녹음 프로그램이 실행 중이어도 지웁니다 (기본은 실행 중이면 멈춥니다) |
+
+**지우지 않는 것:** `.venv`(코어), `models/`, `data/`, 노트 폴더(`TRACTUS_HOME`), 소스. 정해진 폴더만 지우고, 저장소 밖을 가리키는 링크는 건너뜁니다.
+
 ## 5. 권한
 
 | 권한 | 언제 묻나 | 거부했을 때 |
@@ -205,19 +251,24 @@ uv run tractus models remove aligner                # 하나 지우기
 | 노트(오디오, 대화 내용, 요약) | `~/Tractus/meetings/` (환경변수 `TRACTUS_HOME`으로 변경) |
 | 자주 쓰는 단어, 목소리 등록 | `~/Tractus/glossary.md`, `~/Tractus/voices.json` |
 | 검색 색인 | `~/Tractus/.tractus/` (지워도 노트에서 다시 만들어집니다) |
-| 모델 | `~/Tractus/models/` (`TRACTUS_MODELS_DIR`) |
+| 모델 | `~/Library/Application Support/dev.tractus.app/models/` (예전에 `~/Tractus/models/`에 받았다면 그곳. `TRACTUS_MODELS_DIR`로 변경) |
 | 앱 설정, 저장한 API 키 | `~/Library/Application Support/dev.tractus.app/` |
 | 코어·녹음 프로그램·헬퍼·앱 빌드 | 저장소 폴더 안 (`.venv`, `recorder/.build`, `recorder/diar/.build`, `app/src-tauri/target`) |
+| 코어·녹음 프로그램 (미리 만든 앱) | 앱 안 `Tractus.app/Contents/Resources/runtime/`(코어), `Resources/bin/`(녹음 프로그램). 앱 밖 폴더는 위와 같습니다 |
+
+노트 폴더(`~/Tractus`)는 iCloud Drive·Dropbox·OneDrive·Google Drive나 Obsidian 볼트 안에 두지 않는 것을 권합니다. 노트와 오디오가 함께 동기화될 수 있습니다. 그런 폴더면 시작 점검의 `데이터 폴더`가 알려 주고 `폴더 바꾸기…`를 줍니다(노트는 옮기지 않으니 새 폴더로 직접 옮기고 앱을 다시 시작합니다).
 
 ## 7. 업데이트
 
 ```bash
 cd Tractus
-git pull
-scripts/install.sh          # 바뀐 부분만 다시 빌드합니다 (--with-fluid로 설치했다면 같은 옵션을 붙입니다)
+scripts/update.sh --check   # 받을 커밋 보기 (선택)
+scripts/update.sh           # git pull --ff-only + scripts/install.sh (--with-fluid로 설치했다면 같은 옵션을 붙입니다)
 ```
 
-앱이 켜져 있으면 끄고 실행합니다. 노트와 모델은 그대로 남습니다. 임베딩 모델이 바뀐 버전이면 검색 벡터를 다시 만듭니다(`uv run tractus index`).
+앱이 켜져 있으면 끄고 실행합니다. 노트와 모델은 그대로 남습니다. 자세한 동작은 [§4](#scriptsupdatesh)입니다.
+
+**스마트 검색 모델이 8bit로 바뀐 버전(2026-10-15)으로 올리면:** 새 모델(0.6GB)을 모델 화면에서 받고 검색 벡터를 다시 만듭니다(`uv run tractus index`, 모델 식별자가 바뀌어 자동으로 전부 다시 만듭니다). 예전 모델 폴더(`qwen3-embedding-0.6b`, 1.2GB)는 "등록되지 않은 폴더"로 남으므로 `uv run tractus models prune`으로 지웁니다(`tractus models list`가 개수와 크기를 알려 줍니다). 새 모델은 아직 검색 품질을 평가하지 않았습니다([CLAUDE.md](../CLAUDE.md)의 면제 기록).
 
 ## 8. 문제 해결
 
@@ -230,7 +281,9 @@ scripts/install.sh          # 바뀐 부분만 다시 빌드합니다 (--with-fl
 | 모델 받기가 중간에 멈춤 | 같은 명령을 다시 실행하면 이어 받습니다. 디스크 여유와 인터넷을 확인합니다 |
 | 변환 중 앱이 느려지거나 메모리 오류가 남 | 다른 앱을 끄고, 8GB Mac은 저사양 구성으로 바꿉니다. 실시간 텍스트 변환은 메모리를 약 2GB 더 씁니다. 끄는 것을 권합니다 |
 | 녹음 소리가 비어 있음 | 마이크 권한을 확인합니다 ([권한](#5-권한)). 시스템 소리가 비면 시스템 오디오 녹음 권한을 확인합니다 |
-| 앱이 `tractus`나 `tractus-rec`를 실행할 수 없다고 함 | 저장소 폴더를 옮겼거나 빌드가 안 된 것입니다. 저장소에서 `scripts/install.sh`를 다시 실행하고, 설정의 경로가 저장소 안 파일을 가리키는지 확인합니다 |
+| 앱이 `tractus`나 `tractus-rec`를 실행할 수 없다고 함 | 저장소 폴더를 옮겼거나 빌드가 안 된 것입니다. 저장소에서 `scripts/install.sh`를 다시 실행합니다. 설정의 경로가 `자동`이면 새로 만든 파일을 찾고, `직접 지정`이면 `자동으로 되돌리기`나 `찾아보기…`로 고칩니다. 시작 점검의 `도구`에서 어느 경로를 쓰는지 볼 수 있습니다. 설치 끝의 점검도 저장된 경로가 맞지 않으면 알려 줍니다 |
+| 모델 폴더에 예전 모델이 남아 용량을 차지함 | `uv run tractus models list`가 `등록되지 않은 폴더`의 개수와 크기를 알려 줍니다. `uv run tractus models prune`이 크기를 보여 주고 확인한 뒤 지웁니다 (등록된 모델·숨김 파일·링크는 건드리지 않습니다) |
+| `app/src-tauri/target` 등이 너무 큼 | `scripts/clean.sh`로 빌드 산출물을 지우고(`--all`은 `node_modules`까지) 필요하면 `scripts/install.sh`로 다시 만듭니다 |
 | 요약이 `키가 없다`거나 `인증하지 못했다`고 나옴 | 설정 > AI 요약·질문에서 키를 다시 넣습니다 |
 | `scripts/bootstrap.sh`가 Xcode 명령줄 도구나 Homebrew가 없다며 멈춤 | 이 두 가지는 스크립트가 대신 설치하지 않습니다. 화면에 나온 명령(`xcode-select --install`, brew.sh의 설치 명령)을 직접 실행한 뒤 다시 실행합니다 |
 | 도구를 설치했는데 `command not found` | Homebrew를 방금 처음 설치했다면 터미널을 새로 엽니다(설치 끝에 나온 `Next steps` 두 줄도 따라 합니다). 그 밖에는 새 터미널이 필요 없습니다 |
@@ -243,10 +296,44 @@ scripts/install.sh          # 바뀐 부분만 다시 빌드합니다 (--with-fl
 
 ```bash
 rm -rf ~/Applications/Tractus.app                       # 복사했다면
-rm -rf "$HOME/Library/Application Support/dev.tractus.app"   # 앱 설정과 저장한 API 키
-rm -rf ~/Tractus/models                                 # 모델 (다시 받을 수 있음)
+rm -rf "$HOME/Library/Application Support/dev.tractus.app"   # 앱 설정, 저장한 API 키, 기본 위치에 받은 모델 (모델은 다시 받을 수 있음)
+rm -rf ~/Tractus/models                                 # 예전에 이 위치에 모델을 받았다면
 rm -rf <저장소 폴더>                                    # 코어, 녹음 프로그램, 앱 빌드
 tccutil reset All dev.tractus.app                       # 권한 초기화 (선택)
 ```
 
 **`~/Tractus/meetings/`에는 노트와 녹음이 들어 있습니다.** 이 폴더는 위 명령에 넣지 않았습니다. 필요 없다고 확인한 뒤에만 지우세요.
+
+## 10. 미리 만든 앱 받기
+
+저장소 없이 도는 `Tractus.app`을 `.dmg`로 받아 쓰는 방법입니다. 앱 안에 코어(옮길 수 있는 Python, 의존성, `tractus`)와 녹음 프로그램(`tractus-rec`)이 들어 있어 Rust·Node·uv 같은 개발 도구가 필요 없습니다. 모델(수 GB)과 ffmpeg는 넣지 않았습니다.
+
+> **지금 상태 (솔직하게):** 만든 Mac의 복사본에서 저장소·원래 Python 읽기를 막고(`sandbox-exec`) 환경을 비운(`env -i`) 채로 확인했습니다. **깨끗한 Mac(새 계정)에서는 아직 시험하지 못했고, 인터넷에서 내려받아 격리 표시가 붙은 상태의 Gatekeeper 동작과 마이크 권한이 어느 이름으로 뜨는지도 확인하지 못했습니다.** 정식 서명·공증은 하지 않았습니다(ad-hoc 서명). **macOS 14.4~15에서 돌려 보지도 못했습니다**(만든 Mac은 macOS 26.6): 빌드가 의존성 wheel을 가장 낮은 macOS용(`macosx_14_0`)으로 고정하고 14.4보다 새 시스템을 요구하는 Mach-O가 있으면 빌드를 멈추는 것까지만 확인했습니다. 이 검사를 넣기 전의 빌드는 `mlx`가 macOS 26.2 이상을 요구했습니다.
+
+### 설치
+
+1. [GitHub 릴리스](https://github.com/sjoon21/Tractus/releases)(첫 프리릴리스 v0.1.0)에서 `Tractus-<버전>[-<날짜>]-arm64.dmg`를 받습니다. 이 DMG에는 9명 이상 참석자 구분 도우미(`tractus-diar`)가 없어서 참석자는 8명까지(Nemotron) 구분합니다. 저장소가 비공개라서 초대받은 협업자가 GitHub에 로그인한 상태에서만 보입니다(아니면 404). `.dmg`를 열고 `Tractus`를 `Applications` 바로가기로 끌어다 놓습니다. 관리자 암호는 필요 없습니다(`~/Applications`에 넣어도 됩니다). 같은 안내가 디스크 안의 `설치 안내.txt`에 있습니다.
+2. 처음 열 때 "확인되지 않은 개발자" 경고가 나옵니다. 서명이 Apple에 등록된 것이 아니기 때문입니다.
+   - macOS 15 이상: 앱을 한 번 열어 경고를 닫고, 시스템 설정 > 개인정보 보호 및 보안 아래쪽의 `그래도 열기`를 누른 뒤 암호를 입력합니다.
+   - macOS 14.x: 앱을 control 키를 누른 채 클릭해 `열기`를 고릅니다.
+   - 터미널: `xattr -dr com.apple.quarantine /Applications/Tractus.app` (내려받은 파일의 격리 표시를 지웁니다. `손상되었기 때문에 열 수 없습니다`라고 나올 때도 이 명령으로 풀립니다)
+3. 처음 실행하면 **시작 점검** → **모델 받기** → **API 키** 순서입니다([§2](#2-앱을-처음-열었을-때)와 같습니다). 앞의 둘만 하면 녹음과 텍스트 변환은 됩니다.
+4. **ffmpeg는 앱에 들어 있지 않습니다**(라이선스 때문에 넣지 않았습니다). 터미널에서 `brew install ffmpeg`로 설치합니다. 없으면 녹음은 되지만 텍스트 변환과 파일 가져오기는 안 됩니다(시작 점검이 알려 줍니다).
+
+### 데이터와 업데이트
+
+노트·모델·설정은 모두 앱 밖에 있습니다([§6](#6-폴더-안내)): 노트 `~/Tractus`, 모델 `~/Library/Application Support/dev.tractus.app/models`, 설정과 API 키 `~/Library/Application Support/dev.tractus.app/`. **업데이트는 릴리스에서 새 `.dmg`를 받아 `Tractus.app`을 바꿔 넣는 것**이고(앱을 끄고 덮어씁니다) 데이터는 그대로 남습니다. 앱을 새로 만들 때마다 ad-hoc 서명의 해시가 달라지므로 위 2번의 경고와 마이크·시스템 오디오 권한 확인이 다시 나올 수 있습니다(예상일 뿐 직접 확인하지는 못했습니다). 지우려면 앱을 휴지통에 넣고, 데이터 폴더는 [§9](#9-제거)처럼 직접 지웁니다.
+
+### 직접 만들기
+
+```bash
+scripts/build_app_bundle.sh --check               # 도구만 확인
+scripts/build_app_bundle.sh [--out dist/bundle] [--with-fluid]   # → <out>/Tractus.app
+scripts/make_dmg.sh dist/bundle/Tractus.app       # → dist/Tractus-<버전>[-<날짜>]-arm64.dmg (버전은 tauri.conf.json, 날짜는 만든 날. --version으로 정하면 날짜 없이 그 이름)
+```
+
+- `build_app_bundle.sh`는 `uv`의 Python 3.12(python-build-standalone)를 앱 안 `Contents/Resources/runtime/`에 복사해 줄이고(tkinter·idle·테스트·pip·헤더 삭제, universal2 wheel의 x86_64 조각 제거, `tests`·`*.pyi` 삭제), `uv.lock`에 고정된 의존성을 **wheel만**(`--only-binary :all:`, 소스 빌드는 거부) **해시를 검증하며**(`--require-hashes`) 설치합니다. macOS용 wheel이 여럿인 패키지(`mlx` 등)는 uv가 만든 Mac의 macOS 버전으로 고르면 너무 새 것이 걸리므로, `uv.lock`에 있는 가장 낮은 macOS용 wheel의 URL과 해시로 고정합니다. 빌드는 14.4보다 새 시스템을 요구하는 Mach-O가 하나라도 있으면 멈춥니다. 인터넷은 PyPI의 그 wheel을 받을 때만 쓰고(캐시가 있으면 쓰지 않습니다), 처음 한 번 `uv python install 3.12`가 Python을 받을 수 있습니다. `tractus-rec`를 빌드해 `Resources/bin/`에 넣고(`--with-fluid`면 `tractus-diar`도, Swift 6.2 이상), `pnpm tauri build --bundles app`의 `--config`로 `runtime/`·`bin/`을 `bundle.resources`에 합칩니다(`tauri.conf.json`에 고정하지 않은 것은 `install.sh`의 일반 빌드가 깨지지 않게 하려는 것입니다). 마지막에 안쪽 Mach-O를 모두 ad-hoc 서명하고 앱을 `Entitlements.plist`로 서명해 `codesign --verify --deep --strict`까지 합니다.
+- 쓰는 곳은 `--out` 폴더, `app/src-tauri/target`, `app/dist`(`app/node_modules`가 없으면 거기도)뿐입니다. 저장소의 `.venv`와 `recorder/.build`는 건드리지 않습니다(녹음 프로그램은 `--out` 아래 임시 폴더에서 빌드합니다).
+- 코어 실행 파일 `runtime/bin/tractus`는 자기 위치 기준으로 번들 안의 Python만 씁니다(링크로 불려도 진짜 위치를 찾고, Python은 `-I`로 띄워 `PYTHON*` 환경변수·사용자 site-packages를 보지 않습니다. `-I`로 막히지 않는 `PYTHONEXECUTABLE`·`__PYVENV_LAUNCHER__`는 지웁니다). 바이트코드는 미리 만들어 두고(`unchecked-hash`) 실행 중에는 쓰지 않습니다. 서명된 앱 안을 바꾸지 않으려는 것이고, 무거운 import의 시작이 약 2.3초에서 1.2초로 줄었습니다.
+- 크기와 시간(Apple M3, 깨끗한 복사본, 2026-10-15 실측): 앱 약 694MB(Python 35MB, `site-packages` 632MB: mlx 155·transformers 111·onnxruntime 79·scipy 92, 바이트코드 약 126MB 포함, 앱 본체 16MB, 녹음 프로그램 0.3MB), `.dmg` 242MB, 빌드 약 2.5분(캐시가 따뜻할 때. 처음 175초).
+- `.pkg`는 만들지 않습니다. 관리자 암호가 필요한 설치나 MDM 배포가 필요할 때만 이득이라서입니다.

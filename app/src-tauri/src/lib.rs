@@ -9,6 +9,7 @@ mod media;
 mod meetings;
 mod models;
 mod organize;
+mod paths;
 mod procs;
 mod removal;
 mod summaries;
@@ -31,10 +32,12 @@ use tauri::{AppHandle, Emitter, Manager, State};
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Settings {
+    /// 직접 지정한 코어 경로. 비어 있으면 "자동": 실행할 때마다 찾는다 (paths.rs). 저장하는 것은 사용자가 입력한 값뿐이다
     pub tractus_bin: String,
+    /// 직접 지정한 녹음 프로그램 경로 (비어 있으면 자동)
     pub rec_bin: String,
     pub home: String,
-    /// 비어 있으면 tractus 기본값($TRACTUS_HOME/models)
+    /// 비어 있으면 코어가 정한다 (TRACTUS_MODELS_DIR → $TRACTUS_HOME/models에 모델이 있으면 그곳 → 앱 설정 폴더의 models)
     pub models_dir: String,
     /// 개발용: tractus-rec record --fake (권한 없이 합성 신호로 녹음)
     pub fake_recorder: bool,
@@ -53,18 +56,19 @@ pub struct Settings {
     pub keep_in_tray: bool,
     /// 녹음을 끝내면: "ask"(매번 묻기) | "convert"(바로 텍스트로 변환) | "later"(노트로 저장만 하고 나중에 변환). 모르는 값은 화면이 "ask"로 읽는다 (docs/desktop.md §3.3)
     pub after_record: String,
+    /// 이번 실행에서 없는 저장 경로를 자동으로 되돌린 설정 이름 (`tractus_bin`·`rec_bin`). 파일에는 쓰지 않는다 (시작 점검이 알린다)
+    #[serde(skip)]
+    pub stale: Vec<String>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        // 저장소에서 빌드한 앱의 기본값: <repo>/.venv/bin/tractus, <repo>/recorder/.build/release/tractus-rec
-        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).parent().and_then(Path::parent).unwrap_or(Path::new("/"));
         let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
         Settings {
-            tractus_bin: repo.join(".venv/bin/tractus").to_string_lossy().into_owned(),
-            rec_bin: repo.join("recorder/.build/release/tractus-rec").to_string_lossy().into_owned(),
+            tractus_bin: String::new(),
+            rec_bin: String::new(),
             home: var("TRACTUS_HOME").unwrap_or_else(|| "~/Tractus".into()),
-            models_dir: var("TRACTUS_MODELS_DIR").unwrap_or_default(),
+            models_dir: String::new(), // 환경변수는 하위 프로세스가 물려받는다. 파일에 굳히지 않는다
             fake_recorder: false,
             rec_mode: "in_person".into(),
             live_captions: false,
@@ -74,6 +78,7 @@ impl Default for Settings {
             tray_enabled: true,
             keep_in_tray: true,
             after_record: "ask".into(),
+            stale: vec![],
         }
     }
 }
@@ -90,6 +95,51 @@ impl Settings {
         expand(&self.home)
     }
 
+    /// 설정 파일을 읽는다. 없거나 깨졌으면 기본값. 저장된 코어·녹음 프로그램 경로가 없는 파일이면 자동으로 되돌리고 `stale`에 남긴다
+    /// (파일 자체는 다음 저장 때 고쳐진다). 자동 후보와 같은 값(예전에 기본값을 저장한 것)은 조용히 자동으로 바꾼다
+    fn load(raw: Option<&str>) -> Settings {
+        let mut s: Settings = raw.and_then(|r| serde_json::from_str(r).ok()).unwrap_or_default();
+        for (name, field, bin) in [("tractus_bin", &mut s.tractus_bin, &paths::TRACTUS), ("rec_bin", &mut s.rec_bin, &paths::REC)] {
+            if field.is_empty() {
+                continue;
+            }
+            if !expand(field).is_file() {
+                s.stale.push(name.into());
+                field.clear();
+            } else if bin.is_default(field) {
+                field.clear();
+            }
+        }
+        s
+    }
+
+    /// 파일에 쓸 설정: 자동이 찾을 기본값은 저장하지 않는다 (화면이 해석된 경로를 그대로 돌려보내도 굳지 않는다). 직접 입력한 값은 그대로
+    fn for_save(mut self) -> Settings {
+        for (field, bin) in [(&mut self.tractus_bin, &paths::TRACTUS), (&mut self.rec_bin, &paths::REC)] {
+            if bin.is_default(field) {
+                field.clear();
+            }
+        }
+        self.stale.clear();
+        self
+    }
+
+    fn tractus_resolved(&self) -> paths::Resolved {
+        paths::TRACTUS.find(&self.tractus_bin)
+    }
+
+    fn rec_resolved(&self) -> paths::Resolved {
+        paths::REC.find(&self.rec_bin)
+    }
+
+    fn tractus_path(&self) -> PathBuf {
+        PathBuf::from(self.tractus_resolved().path)
+    }
+
+    fn rec_path(&self) -> PathBuf {
+        PathBuf::from(self.rec_resolved().path)
+    }
+
     /// 하위 프로세스에 명시적으로 넘기는 환경변수.
     fn child_env(&self) -> Vec<(String, String)> {
         let mut env = vec![
@@ -104,24 +154,27 @@ impl Settings {
         if !self.models_dir.is_empty() {
             env.push(("TRACTUS_MODELS_DIR".into(), expand(&self.models_dir).to_string_lossy().into_owned()));
         }
-        // `doctor`가 앱이 쓰는 녹음 프로그램을 보게 한다 (설정의 경로가 저장소 기본 경로와 다를 수 있다)
-        if !self.rec_bin.is_empty() {
-            env.push(("TRACTUS_REC_BIN".into(), expand(&self.rec_bin).to_string_lossy().into_owned()));
-        }
+        // `doctor`가 앱이 쓰는 녹음 프로그램을 보게 한다 (자동으로 찾은 경로가 코어의 기본 경로와 다를 수 있다)
+        env.push(("TRACTUS_REC_BIN".into(), self.rec_resolved().path));
         env
     }
 
     /// tractus CLI는 현재 폴더의 .env/.env.local(API 키)을 읽는다. 저장소 .venv의 실행 파일이면 저장소 루트에서 실행한다.
     fn tractus_cwd(&self) -> PathBuf {
-        let bin = expand(&self.tractus_bin);
+        let bin = self.tractus_path();
         match bin.parent().filter(|p| p.ends_with(".venv/bin")).and_then(Path::parent).and_then(Path::parent) {
             Some(repo) => repo.to_path_buf(),
-            None => self.home(),
+            None => {
+                // 깨끗한 Mac에는 데이터 폴더가 아직 없다: 없는 폴더에서는 실행이 ENOENT로 실패하므로 먼저 만든다 (만들지 못하면 그대로 두고 실행이 오류를 말한다)
+                let home = self.home();
+                let _ = std::fs::create_dir_all(&home);
+                home
+            }
         }
     }
 
     fn tractus<S: AsRef<OsStr>>(&self, args: &[S]) -> Command {
-        let mut cmd = Command::new(expand(&self.tractus_bin));
+        let mut cmd = Command::new(self.tractus_path());
         cmd.args(args).envs(self.child_env()).current_dir(self.tractus_cwd());
         cmd
     }
@@ -141,7 +194,7 @@ impl Settings {
 
     fn mcp_spawn(&self) -> mcp::Spawn {
         mcp::Spawn {
-            program: expand(&self.tractus_bin),
+            program: self.tractus_path(),
             args: vec!["mcp".into()],
             env: self.child_env(),
             cwd: Some(self.tractus_cwd()),
@@ -260,6 +313,7 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, tray: State<'_, tra
     if let Some(dir) = state.config_path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
+    let settings = settings.for_save();
     let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
     state.mcp.set_spawn(settings.mcp_spawn());
@@ -408,7 +462,7 @@ fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>, tar
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         attach::write_attach(&dir, id).inspect_err(|_| attach::discard(&dir))?;
     }
-    let mut cmd = Command::new(expand(&s.rec_bin));
+    let mut cmd = Command::new(s.rec_path());
     cmd.arg("record").arg("--out").arg(&dir).args(&flags).envs(s.child_env());
     if s.fake_recorder {
         cmd.arg("--fake");
@@ -728,7 +782,7 @@ fn speakers_args(id: &str, edit: &SpeakerEdit) -> Result<Vec<String>, String> {
 fn run_tractus(s: &Settings, args: &[String], input: Option<&str>, what: &str) -> Result<String, String> {
     let mut cmd = s.tractus(args);
     cmd.stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = cmd.spawn().map_err(|e| procs::cannot_run(&s.tractus_bin, e))?;
+    let mut child = cmd.spawn().map_err(|e| procs::cannot_run(&s.tractus_resolved().path, e))?;
     if let (Some(text), Some(mut stdin)) = (input, child.stdin.take()) {
         // 코어는 stdin을 다 읽은 뒤에 출력하므로 먼저 쓰고 닫아도 막히지 않는다
         stdin.write_all(text.as_bytes()).map_err(|e| format!("{what}\n입력을 넘기지 못했습니다: {e}"))?;
@@ -1049,10 +1103,7 @@ pub fn run() {
         })
         .setup(|app| {
             let config_path = app.path().app_config_dir()?.join("settings.json");
-            let settings: Settings = std::fs::read_to_string(&config_path)
-                .ok()
-                .and_then(|raw| serde_json::from_str(&raw).ok())
-                .unwrap_or_default();
+            let settings = Settings::load(std::fs::read_to_string(&config_path).ok().as_deref());
             let mcp = Arc::new(mcp::McpClient::new(settings.mcp_spawn()));
             // 첫 검색이 빠르도록 미리 띄워 둔다 (실패해도 검색 때 다시 시도)
             let warm = mcp.clone();
@@ -1084,6 +1135,8 @@ pub fn run() {
             models::models_download,
             models::models_cancel,
             models::models_remove,
+            models::models_move,
+            models::models_prune,
             list_meetings,
             list_recordings,
             load_meeting,
@@ -1160,7 +1213,8 @@ mod tests {
     #[test]
     fn settings_defaults_and_env() {
         let s = Settings { home: "~/Tractus".into(), models_dir: String::new(), ..Default::default() };
-        assert!(s.tractus_bin.ends_with("/.venv/bin/tractus"));
+        assert!(s.tractus_bin.is_empty() && s.rec_bin.is_empty()); // 자동: 경로를 저장하지 않는다
+        assert!(s.tractus_resolved().path.ends_with("/.venv/bin/tractus"));
         let env = s.child_env();
         assert!(env.iter().any(|(k, v)| k == "TRACTUS_HOME" && !v.starts_with('~')));
         assert!(!env.iter().any(|(k, _)| k == "TRACTUS_MODELS_DIR"));
@@ -1171,9 +1225,42 @@ mod tests {
         assert!(s.tractus_cwd().join("pyproject.toml").exists());
         let partial: Settings = serde_json::from_str(r#"{"home":"/x"}"#).unwrap();
         assert_eq!(partial.home, "/x");
-        assert!(!partial.rec_bin.is_empty());
+        assert!(partial.rec_bin.is_empty());
         assert_eq!(partial.rec_mode, "in_person"); // 예전 설정 파일에는 녹음 방식이 없다
         assert_eq!(partial.after_record, "ask"); // 예전 설정 파일에는 `녹음을 끝내면`이 없다: 매번 묻는다
+    }
+
+    /// 깨끗한 Mac(데이터 폴더가 아직 없음): 번들 코어를 부르기 전에 폴더가 만들어져 실행이 된다
+    #[test]
+    fn missing_home_is_created_so_the_core_can_run() {
+        let home = std::env::temp_dir().join(format!("tractus-fresh-{}", std::process::id())).join("Tractus");
+        let _ = std::fs::remove_dir_all(home.parent().unwrap());
+        paths::NO_AUTO.set(true);
+        let s = Settings { tractus_bin: "/bin/echo".into(), home: home.to_string_lossy().into_owned(), ..Default::default() };
+        let out = s.tractus(&["ok"]).output().expect("없는 폴더에서도 실행된다");
+        assert!(out.status.success() && home.is_dir());
+        let _ = std::fs::remove_dir_all(home.parent().unwrap());
+    }
+
+    /// 번들 배치(<앱>/Contents/Resources/runtime/bin/tractus)를 앱 해석기가 찾고, ~/Tractus 가 없는 Mac에서도 그 코어가 실제로 뜬다.
+    /// 코어는 저장소가 없으니 .venv/bin 이 아니고, 실행 폴더는 (만들어 둔) 데이터 폴더다
+    #[test]
+    fn bundled_core_spawns_on_a_mac_without_the_data_folder() {
+        let root = std::env::temp_dir().join(format!("tractus-bundle-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (exe, core) = (root.join("Tractus.app/Contents/MacOS/tractus-app"), root.join("Tractus.app/Contents/Resources/runtime/bin/tractus"));
+        std::fs::create_dir_all(core.parent().unwrap()).unwrap();
+        std::fs::write(&core, "#!/bin/sh\npwd -P\n").unwrap();
+        std::fs::set_permissions(&core, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        let home = root.join("fresh-home/Tractus"); // 아직 없음
+        assert_eq!(paths::TRACTUS.resolve("", None, Some(&exe)).source, "bundle");
+        let s = Settings { tractus_bin: core.to_string_lossy().into_owned(), home: home.to_string_lossy().into_owned(), ..Default::default() };
+        assert!(!home.exists());
+        let out = s.tractus(&["x"]).output().expect("번들 코어 실행이 ENOENT 없이 시작된다");
+        assert!(out.status.success(), "{out:?}");
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), home.canonicalize().unwrap().to_string_lossy());
+        assert!(s.tractus_cwd().is_dir());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// 저장된 API 키는 요약·질문 실행에만 들어간다 (llm_key.rs). MCP·녹음·변환 등은 키를 보지 못한다
@@ -1182,6 +1269,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("tractus-llmenv-{}", std::process::id()));
         let (home, cfg) = (root.join("home"), root.join("config"));
         std::fs::create_dir_all(&home).unwrap();
+        paths::NO_AUTO.set(true); // 저장소의 .env가 끼지 않게: 없는 코어 경로면 데이터 폴더에서 실행한다
         let s = Settings { tractus_bin: "/x/tractus".into(), home: home.to_string_lossy().into_owned(), ..Default::default() };
         let envs = |c: &Command| c.get_envs().filter_map(|(k, v)| Some((k.to_str()?.to_string(), v?.to_str()?.to_string()))).collect::<HashMap<_, _>>();
         let none = |_: &str| None;
@@ -1546,7 +1634,55 @@ mod tests {
         assert!(sentence.ends_with("(/x/.venv/bin/tractus)"));
         assert_eq!(detail, "No such file or directory (os error 2)");
         // 실행해 보면 실제 OS 오류도 같은 꼴이다
-        let real = run_tractus(&Settings { tractus_bin: "/nonexistent/tractus".into(), ..Default::default() }, &[], None, "x").unwrap_err();
+        let real = procs::cannot_run("/nonexistent/tractus", Command::new("/nonexistent/tractus").spawn().unwrap_err());
         assert!(real.lines().next().is_some_and(|l| !l.contains("os error")) && real.contains("os error 2"), "{real}");
+    }
+
+    fn tmp_file(name: &str) -> String {
+        let p = std::env::temp_dir().join(format!("tractus-settings-{name}-{}", std::process::id()));
+        std::fs::write(&p, "").unwrap();
+        p.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn load_missing_or_broken_file_is_auto() {
+        for raw in [None, Some("not json"), Some("{}")] {
+            let s = Settings::load(raw);
+            assert!(s.tractus_bin.is_empty() && s.rec_bin.is_empty() && s.stale.is_empty(), "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn load_turns_a_missing_saved_path_into_auto_and_reports_it() {
+        let alive = tmp_file("alive");
+        let raw = json!({"tractus_bin": "/nonexistent/old/tractus", "rec_bin": alive, "home": "/x"}).to_string();
+        let s = Settings::load(Some(&raw));
+        assert_eq!((s.tractus_bin.as_str(), s.rec_bin.as_str(), s.home.as_str()), ("", alive.as_str(), "/x")); // 있는 직접 지정은 그대로
+        assert_eq!(s.stale, ["tractus_bin"]);
+    }
+
+    #[test]
+    fn load_turns_a_saved_default_into_auto_without_a_report() {
+        // 예전 앱이 저장한 기본값: 컴파일할 때 소스 위치의 코어 (이 저장소에는 .venv가 있다)
+        let default = paths::TRACTUS.auto(None).into_iter().find(|(src, _)| *src == "repo").unwrap().1;
+        if !default.is_file() {
+            return; // 빌드하지 않은 저장소에서는 없는 경로라 위 시험(stale)과 같다
+        }
+        let s = Settings::load(Some(&json!({"tractus_bin": default}).to_string()));
+        assert!(s.tractus_bin.is_empty() && s.stale.is_empty());
+    }
+
+    #[test]
+    fn save_never_pins_resolved_defaults_but_keeps_what_the_user_typed() {
+        let mine = tmp_file("mine");
+        let default = paths::TRACTUS.auto(None).into_iter().find(|(src, _)| *src == "repo").unwrap().1.to_string_lossy().into_owned();
+        let saved = Settings { tractus_bin: default, rec_bin: mine.clone(), stale: vec!["x".into()], ..Default::default() }.for_save();
+        assert_eq!((saved.tractus_bin.as_str(), saved.rec_bin.as_str()), ("", mine.as_str()));
+        assert!(saved.stale.is_empty());
+        // 파일에는 stale이 없고, 자동은 빈 문자열로 남는다
+        let raw = serde_json::to_string(&saved).unwrap();
+        assert!(!raw.contains("stale") && raw.contains(r#""tractus_bin":"""#));
+        // 아직 없는 경로를 직접 입력하면 저장은 한다 (다음 실행 때 load가 자동으로 되돌린다)
+        assert_eq!(Settings { tractus_bin: "/typed/not/yet".into(), ..Default::default() }.for_save().tractus_bin, "/typed/not/yet");
     }
 }

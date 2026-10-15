@@ -37,6 +37,8 @@ export interface ModelsList {
   /** 다른 곳(터미널의 `tractus models download` 등)이 지금 받는 중이다. 코어는 한 번에 하나만 받는다 */
   download_active: boolean;
   models: ModelRow[];
+  /** 모델 폴더 안의 등록되지 않은 폴더 (옛 모델 등). 옛 코어는 보내지 않는다 → 정리 줄을 숨긴다 */
+  unregistered?: { name: string; bytes: number }[];
 }
 
 export const LEVEL_LABEL: Record<ModelLevel, string> = { required: "필수", recommended: "권장", optional: "선택" };
@@ -179,6 +181,43 @@ export function removeDialog(m: Pick<ModelRow, "name" | "installed_bytes" | "nee
     confirm: "삭제",
   };
 }
+
+// ── 모델 폴더: 위치 바꾸기·정리 (WORDS.md §4.15) ──
+
+export type FolderDialog = { title: string; body: string; cancel: string; confirm: string };
+
+/** 사용하지 않는 폴더(코어 목록에 없는 폴더) 개수·크기. 없거나 읽을 수 없으면 null (줄을 숨긴다) */
+export function unregisteredSummary(list: Pick<ModelsList, "unregistered"> | null | undefined): { count: number; bytes: number; names: string[] } | null {
+  const rows = Array.isArray(list?.unregistered) ? list.unregistered.filter((u) => u && typeof u.name === "string") : [];
+  if (rows.length === 0) return null;
+  return { count: rows.length, bytes: rows.reduce((n, u) => n + (Number.isFinite(u.bytes) && u.bytes > 0 ? u.bytes : 0), 0), names: rows.map((u) => u.name) };
+}
+
+export const pruneLabel = (s: { count: number; bytes: number }): string => `사용하지 않는 폴더 ${s.count}개 (${fmtBytes(s.bytes)}) 정리`;
+
+export const pruneDialog = (s: { count: number; bytes: number; names: string[] }): FolderDialog => ({
+  title: "사용하지 않는 폴더를 정리할까요?",
+  body: `모델 폴더 안에 모델 목록에 없는 폴더가 ${s.count}개(${fmtBytes(s.bytes)}) 있습니다: ${s.names.join(", ")}. 지운 폴더는 되돌릴 수 없으니 이름을 확인하세요. 모델 폴더 밖은 건드리지 않습니다.`,
+  cancel: "취소",
+  confirm: "정리",
+});
+
+export const pruneDone = (n: number, bytes: number): string => `${n}개를 정리했습니다 (${fmtBytes(bytes)} 확보).`;
+
+/** 옮길 모델이 있는가 (일부만 받은 것도 옮긴다) */
+export const movable = (models: Pick<ModelRow, "state" | "installed_bytes">[]): { count: number; bytes: number } => {
+  const have = models.filter((m) => m.state !== "missing");
+  return { count: have.length, bytes: have.reduce((n, m) => n + m.installed_bytes, 0) };
+};
+
+export const moveDialog = (dest: string, m: { count: number; bytes: number }): FolderDialog => ({
+  title: "모델 폴더를 바꿀까요?",
+  body: `설치된 모델 ${m.count}개(${fmtBytes(m.bytes)})를 ‘${dest}’로 옮깁니다. 같은 디스크면 금방 끝나고, 외장 디스크처럼 다른 디스크면 시간이 걸립니다. 옮기는 동안 앱을 닫지 마세요.`,
+  cancel: "취소",
+  confirm: "옮기기",
+});
+
+export const moveDone = (n: number): string => (n > 0 ? `모델 ${n}개를 옮겼습니다.` : "모델 폴더를 바꿨습니다.");
 
 // ── 받기 진행 ──
 

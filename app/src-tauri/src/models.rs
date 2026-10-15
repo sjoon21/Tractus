@@ -41,6 +41,15 @@ fn remove_args(id: &str) -> Result<Vec<String>, String> {
     Ok(to_args(&["models", "remove", id, "--yes"]))
 }
 
+/// `tractus models move <dest> --yes`. 목적지는 절대 경로(`~/`는 펼친다)만: 옵션처럼 읽히지 않게
+fn move_args(dest: &str) -> Result<Vec<String>, String> {
+    let dest = expand(dest);
+    if !dest.is_absolute() || dest.to_string_lossy().contains('\0') {
+        return Err(format!("폴더는 전체 경로로 지정하세요: {}", dest.display()));
+    }
+    Ok(vec!["models".into(), "move".into(), "--yes".into(), dest.to_string_lossy().into_owned()])
+}
+
 /// `tractus models download <id>... [--preset P] --progress-json`. ID는 중복을 빼고, 하나도 없으면 구성(preset)이 있어야 한다
 fn download_args(ids: &[String], preset: Option<&str>) -> Result<Vec<String>, String> {
     let mut uniq: Vec<&str> = vec![];
@@ -132,6 +141,14 @@ pub struct ModelsList {
     /// 다른 곳(터미널의 `tractus models download` 등)이 받는 중이다
     pub download_active: bool,
     pub models: Vec<ModelRow>,
+    /// 모델 폴더 안의 등록되지 않은 폴더 (옛 모델 등). 옛 코어에는 없으니 비어 있다 (화면은 정리 줄을 숨긴다)
+    pub unregistered: Vec<Unregistered>,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct Unregistered {
+    pub name: String,
+    pub bytes: u64,
 }
 
 const STATES: &[&str] = &["installed", "missing", "partial", "corrupt"];
@@ -174,7 +191,8 @@ const LIST_FAILED: &str = "모델 목록을 읽지 못했습니다";
 fn parse_models_list(out: &str) -> Result<ModelsList, String> {
     let v = parse_object(out).ok_or(LIST_FAILED)?;
     let models = v.get("models").and_then(Value::as_array).ok_or(LIST_FAILED)?.iter().filter_map(model_row).collect();
-    Ok(ModelsList { models_dir: s_of(&v, "models_dir").unwrap_or_default(), disk_free_bytes: bytes_of(&v, "disk_free_bytes"), download_active: bool_of(&v, "download_active").unwrap_or(false), models })
+    let unregistered = v.get("unregistered").and_then(Value::as_array).map(|a| a.iter().filter_map(|u| Some(Unregistered { name: s_of(u, "name")?, bytes: bytes_of(u, "bytes").unwrap_or(0) })).collect()).unwrap_or_default();
+    Ok(ModelsList { models_dir: s_of(&v, "models_dir").unwrap_or_default(), disk_free_bytes: bytes_of(&v, "disk_free_bytes"), download_active: bool_of(&v, "download_active").unwrap_or(false), models, unregistered })
 }
 
 #[derive(Serialize, Debug, PartialEq, Default)]
@@ -301,29 +319,49 @@ fn parse_doctor(out: &str) -> Result<Doctor, String> {
     })
 }
 
-/// `doctor` 명령의 결과. 코어를 못 불러도 앱이 쓰는 실행 파일 경로가 있는지는 늘 알려 준다 (시작 점검의 도구 행)
+/// `doctor` 명령의 결과. 코어를 못 불러도 앱이 쓰는 실행 파일 경로가 있는지는 늘 알려 준다 (시작 점검의 도구 행).
+/// `*_source`는 경로가 어디서 왔는지(`custom` 직접 지정 | `env` | `bundle` | `repo` | `known` | `none` 못 찾음), `stale_saved`는 이번 실행에서 없어서 자동으로 되돌린 저장 경로
 #[derive(Serialize, Debug)]
 pub struct DoctorReport {
     pub doctor: Option<Doctor>,
     pub core_error: Option<String>,
     pub tractus_bin: String,
     pub tractus_bin_exists: bool,
+    pub tractus_source: &'static str,
     pub rec_bin: String,
     pub rec_bin_exists: bool,
+    pub rec_source: &'static str,
+    pub stale_saved: Vec<String>,
+    /// 데이터 폴더(펼친 경로)와, 동기화 폴더·Obsidian 볼트 안이면 그 이름 (paths::sync_risk)
+    pub home: String,
+    pub home_risk: Option<&'static str>,
 }
 
 fn doctor_report(s: &Settings) -> DoctorReport {
-    let is_file = |p: &str| expand(p).is_file();
-    let (tractus_bin_exists, rec_bin_exists) = (is_file(&s.tractus_bin), is_file(&s.rec_bin));
+    let (core, rec) = (s.tractus_resolved(), s.rec_resolved());
+    let (tractus_bin_exists, rec_bin_exists) = (core.source != "none", rec.source != "none");
     let (doctor, core_error) = if !tractus_bin_exists {
-        (None, Some(procs::cannot_run(&s.tractus_bin, "No such file or directory")))
+        (None, Some(procs::cannot_run(&core.path, "No such file or directory")))
     } else {
         match run_tractus(s, &doctor_args(), None, DOCTOR_FAILED).and_then(|out| parse_doctor(&out)) {
             Ok(d) => (Some(d), None),
             Err(e) => (None, Some(e)),
         }
     };
-    DoctorReport { doctor, core_error, tractus_bin: s.tractus_bin.clone(), tractus_bin_exists, rec_bin: s.rec_bin.clone(), rec_bin_exists }
+    let home = s.home();
+    DoctorReport {
+        doctor,
+        core_error,
+        tractus_bin: core.path,
+        tractus_bin_exists,
+        tractus_source: core.source,
+        rec_bin: rec.path,
+        rec_bin_exists,
+        rec_source: rec.source,
+        stale_saved: s.stale.clone(),
+        home_risk: crate::paths::sync_risk(&home),
+        home: home.to_string_lossy().into_owned(),
+    }
 }
 
 // ── 받기 (한 번에 하나) ──
@@ -431,6 +469,28 @@ pub async fn models_remove(state: State<'_, AppState>, id: String) -> Result<(),
     blocking(move || run_tractus(&s, &args, None, "모델을 삭제하지 못했습니다").map(|_| ())).await
 }
 
+/// 모델 폴더 옮기기 (지금 모델 폴더 → dest, 등록된 모델만). 설정은 건드리지 않는다: 화면이 성공한 뒤에 `models_dir`을 저장한다.
+/// → {"moved": [ID], "freed_bytes"}
+#[tauri::command]
+pub async fn models_move(state: State<'_, AppState>, dest: String) -> Result<Value, String> {
+    let s = state.settings();
+    let args = move_args(&dest)?;
+    if downloading() {
+        return Err("모델을 받는 중에는 옮길 수 없습니다".into());
+    }
+    blocking(move || parse_object(&run_tractus(&s, &args, None, "모델을 옮기지 못했습니다")?).ok_or_else(|| "모델을 옮긴 결과를 읽지 못했습니다".to_string())).await
+}
+
+/// 등록되지 않은 폴더 정리 (`tractus models prune --yes --json`). → {"removed": [{"name","bytes"}], "freed_bytes"}
+#[tauri::command]
+pub async fn models_prune(state: State<'_, AppState>) -> Result<Value, String> {
+    let s = state.settings();
+    if downloading() {
+        return Err("모델을 받는 중에는 정리할 수 없습니다".into());
+    }
+    blocking(move || parse_object(&run_tractus(&s, &to_args(&["models", "prune", "--yes", "--json"]), None, "폴더를 정리하지 못했습니다")?).ok_or_else(|| "정리한 결과를 읽지 못했습니다".to_string())).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -464,6 +524,22 @@ mod tests {
         assert!(download_args(&[], Some("everything")).is_err());
         assert!(download_args(&[], None).is_err());
         assert!(download_args(&(0..17).map(|i| format!("m{i}")).collect::<Vec<_>>(), None).is_err());
+    }
+
+    #[test]
+    fn move_args_take_an_absolute_destination_only() {
+        assert_eq!(move_args("/Volumes/ext/models").unwrap(), ["models", "move", "--yes", "/Volumes/ext/models"]);
+        assert!(move_args("~/m").unwrap()[3].ends_with("/m") && !move_args("~/m").unwrap()[3].starts_with('~'));
+        for bad in ["", "models", "--yes", "../x"] {
+            assert!(move_args(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn list_reads_unregistered_leniently() {
+        let l = parse_models_list(r#"{"models":[],"unregistered":[{"name":"old-vad","bytes":123},{"bytes":5},{"name":"x"},"junk"]}"#).unwrap();
+        assert_eq!(l.unregistered, [Unregistered { name: "old-vad".into(), bytes: 123 }, Unregistered { name: "x".into(), bytes: 0 }]);
+        assert!(parse_models_list(r#"{"models":[]}"#).unwrap().unregistered.is_empty()); // 옛 코어
     }
 
     #[test]
@@ -658,9 +734,12 @@ mod tests {
     #[test]
     fn doctor_report_without_core_still_reports_paths() {
         let d = tmp("nocore");
+        crate::paths::NO_AUTO.set(true); // 이 Mac의 저장소·설치 위치에 있는 실제 코어가 끼지 않게
         let s = settings(&d, &d.join("missing-tractus"), &d.join("missing-rec"));
         let r = doctor_report(&s);
+        crate::paths::NO_AUTO.set(false);
         assert!(r.doctor.is_none() && !r.tractus_bin_exists && !r.rec_bin_exists);
+        assert_eq!((r.tractus_source, r.rec_source), ("none", "none"));
         assert!(r.core_error.unwrap().contains("Tractus 엔진을 실행할 수 없습니다"));
     }
 

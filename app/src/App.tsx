@@ -18,7 +18,7 @@ import { addBlocked, ADDED, ADD_BADGE, attachReduce, DROP_CONFIRM, DROP_LABEL, f
 import { ConfirmDialog } from "./ConfirmDialog";
 import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
-import { bindIndexer } from "./indexer";
+import { bindIndexer, indexer } from "./indexer";
 import { baseName, errorView, isImeKey, isRecLive, IDLE_JOB, JOB_ERROR, fmtTime, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, STAGE_FALLBACK, STAGE_LABEL, warningText, type RecMode } from "./lib";
 import { MeetingView } from "./MeetingView";
 import type { NewNoteAction } from "./menu";
@@ -471,6 +471,8 @@ export function App() {
       }),
     [notify],
   );
+  // 시작할 때 한 번 갱신한다: 지난번에 고친 뒤 5분 안에 앱을 끝냈어도 그 변경이 검색에 따라온다 (갱신은 증분이라 바뀐 것이 없으면 가볍다)
+  useEffect(() => indexer.touch(), []);
 
   // 앱 밖(터미널 `tractus transcribe` 등)에서 만든 노트도 질문 답의 인용 칩이 '삭제됨'으로 보이지 않게: 창으로 돌아올 때와 질문 창을 열 때 목록을 다시 읽는다
   useEffect(() => {

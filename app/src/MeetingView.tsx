@@ -62,7 +62,7 @@ import { NoteOrganizer } from "./NoteOrganizer";
 import { ADD_FILE, ADD_FILE_TITLE, ADD_RECORDING, ADD_TITLE, LOCK_NOTICE, type AttachControls } from "./attach";
 import { ConvertPanel } from "./ConvertPanel";
 import { useConvertJob } from "./convertJobs";
-import { deleteBlockedWhileConverting, isRecorded, railNotice, RECORDED_BADGE, recordedStats, type ConvertControls } from "./recorded";
+import { deleteBlockedWhileConverting, isRecorded, keptNotice, railNotice, RECORDED_BADGE, recordedStats, type ConvertControls } from "./recorded";
 import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type EditKind, type SaveState } from "./memo";
 import { RAIL_LABEL, railKey, railLabel, railTabs, validTab, type RailTab } from "./rail";
 import { PanelToggle, usePanels } from "./PanelToggle";
@@ -293,7 +293,7 @@ export function MeetingView({
         if (changed > 0) {
           onEdited?.(id, meeting.info.updated_at ?? "");
           bumpEdit("text");
-          indexer.touch(); // 한가할 때 조용히 검색에 반영한다 (마지막 수정 뒤 20초)
+          indexer.touch(); // 한가할 때 조용히 검색에 반영한다 (마지막 수정 뒤 60초, 갱신 사이 5분)
           if (!isUndo && before) undoStack.current.push(inverseEdits(before.segments, edits));
         }
       } catch (e) {
@@ -798,7 +798,7 @@ export function MeetingView({
         {memoNote && (
           <MemoEditor id={id} initial={detail.body ?? ""} savedBody={detail.body ?? ""} segments={segments} target={memoTarget} notify={notify} onSaved={onMemoSaved} onState={setMemoSave} locked={attach?.lock ? LOCK_NOTICE[attach.lock] : null} />
         )}
-        {!memoNote && recorded && convert && <ConvertPanel id={id} job={convertJob} controls={convert} />}
+        {!memoNote && recorded && convert && <ConvertPanel id={id} job={convertJob} controls={convert} kept={keptNotice(info.tracks_bytes, info.created_at, Date.now())} />}
         {!memoNote && !recorded && segments.length === 0 && (
           <div className="transcript-empty" role="status">
             <p className="eyebrow">인식된 대화가 없습니다</p>

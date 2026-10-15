@@ -9,15 +9,16 @@ from pathlib import Path
 
 from tractus import diarize
 from tractus import models_registry as reg
-from tractus.models_install import disk_free, lock_held
+from tractus.models_install import disk_free, lock_held, unregistered
+from tractus.paths import tool_bin
 
 MIN_MACOS = (14, 4)
 TRACK_OF = {"asr-std": "standard", "asr-lite": "lite"}  # 모델 ID → cli.Track 값
 
 
 def recorder_bin() -> Path:
-    """$TRACTUS_REC_BIN, 없으면 저장소에서 빌드한 <repo>/recorder/.build/release/tractus-rec (fluid_bin과 같은 규칙)."""
-    return Path(os.environ.get("TRACTUS_REC_BIN") or diarize.REPO_ROOT / "recorder/.build/release/tractus-rec")
+    """$TRACTUS_REC_BIN → 앱 번들 → 저장소에서 빌드한 recorder/.build/release/tractus-rec (fluid_bin과 같은 paths.tool_bin 규칙)."""
+    return tool_bin("TRACTUS_REC_BIN", "tractus-rec", "recorder/.build/release/tractus-rec")
 
 
 def _version(cmd: list[str], pattern: str) -> str | None:
@@ -70,7 +71,7 @@ def model_row(m: reg.Model, root: Path) -> dict:
 
 def models_list(root: Path) -> dict:
     return {"models_dir": str(root), "disk_free_bytes": disk_free(root), "download_active": lock_held(root),
-            "models": [model_row(m, root) for m in reg.MODELS]}
+            "models": [model_row(m, root) for m in reg.MODELS], "unregistered": unregistered(root)}  # 등록되지 않은 폴더 (옛 모델 등): models prune
 
 
 def effective_track(root: Path, memory: int | None = None) -> str | None:

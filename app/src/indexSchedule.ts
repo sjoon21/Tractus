@@ -1,8 +1,12 @@
 // 문장을 고친 뒤 검색에 반영하는 조용한 백그라운드 갱신 (`tractus index`)의 시점 정하기. 화면과 무관한 순수 로직.
 // 마지막 수정에서 INDEX_DEBOUNCE_MS가 지나고 앱이 한가할 때만 한 번에 하나씩 돌리고, 성공하면 아무것도 보이지 않는다.
+// 갱신은 임베딩 엔진을 올리는 일이라 비싸다: 수정이 잦아도 끝난 뒤 INDEX_MIN_GAP_MS 안에는 다시 올리지 않는다.
+// 앱을 끝내면 '고쳤다' 표시는 사라지지만, App이 시작할 때 `touch()`를 한 번 불러 바뀐 청크를 따라잡는다 (`tractus index`는 증분).
 
 /** 마지막 수정 뒤 이만큼 조용하면 갱신한다 */
-export const INDEX_DEBOUNCE_MS = 20_000;
+export const INDEX_DEBOUNCE_MS = 60_000;
+/** 갱신을 마친 뒤 다음 갱신까지 최소 간격 */
+export const INDEX_MIN_GAP_MS = 300_000;
 
 export interface IndexSchedulerDeps {
   /** 변환·가져오기·요약·단어 싱크·녹음(실시간 변환 포함)이 돌고 있으면 true. 그동안은 하지 않는다 */
@@ -15,6 +19,9 @@ export interface IndexSchedulerDeps {
   setTimer: (fn: () => void, ms: number) => unknown;
   clearTimer: (handle: unknown) => void;
   debounceMs?: number;
+  minGapMs?: number;
+  /** 지금 시각(ms). 기본 Date.now */
+  now?: () => number;
 }
 
 export interface IndexScheduler {
@@ -26,6 +33,9 @@ export interface IndexScheduler {
 
 export function createIndexScheduler(deps: IndexSchedulerDeps): IndexScheduler {
   const wait = deps.debounceMs ?? INDEX_DEBOUNCE_MS;
+  const gap = deps.minGapMs ?? INDEX_MIN_GAP_MS;
+  const now = deps.now ?? Date.now;
+  let lastDone: number | null = null;
   let timer: unknown = null;
   let running = false;
   let dirty = false;
@@ -36,7 +46,8 @@ export function createIndexScheduler(deps: IndexSchedulerDeps): IndexScheduler {
   };
   const arm = () => {
     disarm();
-    timer = deps.setTimer(() => void fire(), wait);
+    const sinceDone = lastDone === null ? gap : now() - lastDone;
+    timer = deps.setTimer(() => void fire(), Math.max(wait, gap - sinceDone));
   };
 
   async function fire(): Promise<void> {
@@ -47,8 +58,10 @@ export function createIndexScheduler(deps: IndexSchedulerDeps): IndexScheduler {
     dirty = false;
     let failed = false;
     try {
-      if (await deps.run()) deps.onDone();
-      else dirty = true; // 비켜 갔다: 나중에 다시
+      if (await deps.run()) {
+        lastDone = now();
+        deps.onDone();
+      } else dirty = true; // 비켜 갔다: 나중에 다시
     } catch (e) {
       failed = true;
       dirty = true; // 다음 수정이 오면 다시 시도한다. 오류를 알린 채 혼자 계속 두드리지는 않는다

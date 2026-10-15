@@ -39,9 +39,18 @@ export interface DoctorReport {
   tractus_bin_exists: boolean;
   rec_bin: string;
   rec_bin_exists: boolean;
+  /** 경로가 어디서 왔는지 (Rust paths.rs): custom 직접 지정 | env | bundle | repo | known | none 못 찾음. 옛 앱은 보내지 않는다 */
+  tractus_source?: string;
+  rec_source?: string;
+  /** 이번 실행에서 없어서 자동으로 되돌린 저장 경로 (`tractus_bin`·`rec_bin`) */
+  stale_saved?: string[];
+  /** 데이터 폴더(펼친 경로)와, 동기화 폴더·Obsidian 볼트 안이면 그 이름 (iCloud Drive | Dropbox | OneDrive | Google Drive | Obsidian) */
+  home?: string;
+  home_risk?: string | null;
 }
 
-export type FixKind = "models" | "checkup" | "settings";
+/** pick-*: 파일·폴더를 골라 설정에 저장 / auto-*: 직접 지정을 지우고 자동으로. 시작 점검 화면이 직접 처리한다 (pathFix.ts) */
+export type FixKind = "models" | "checkup" | "settings" | "pick-tractus" | "auto-tractus" | "pick-rec" | "auto-rec" | "pick-home";
 export interface Fix {
   kind: FixKind;
   label: string;

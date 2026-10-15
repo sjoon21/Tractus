@@ -1,10 +1,12 @@
 // 시작 점검 (docs/desktop.md §2.15): 처음 실행할 때 저절로 열리고, 설정·첫 화면에서 언제든 다시 연다. 행 구조는 checkupRows.ts.
 // 점검은 앱을 막지 않는다: 닫기·Esc·`점검 마치기` 어느 쪽이든 닫고, 고치는 길(모델 화면·설정)로 가려면 먼저 닫는다.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "./api";
+import { api, errText } from "./api";
 import type { Fix } from "./caps";
 import { checkupHeadline, checkupSections, STATUS_LABEL, type CheckupRow } from "./checkupRows";
 import { DownloadPanel, PresetButtons, useModelsList } from "./ModelsSettings";
+import { isPathFix } from "./paths";
+import { runPathFix } from "./pathFix";
 import { useCapabilities } from "./useCapabilities";
 
 const ICON: Record<CheckupRow["status"], string> = { ok: "✓", warn: "!", blocked: "✕", info: "i" };
@@ -14,6 +16,7 @@ export function Checkup({ onClose }: { onClose: () => void }) {
   const { list, load, dl } = useModelsList();
   const [keySaved, setKeySaved] = useState<boolean | null>(null);
   const [checking, setChecking] = useState(false);
+  const [pathNote, setPathNote] = useState<string | null>(null);
   const [copied, setCopied] = useState<{ id: string; ok: boolean } | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const title = useRef<HTMLHeadingElement>(null);
@@ -41,6 +44,17 @@ export function Checkup({ onClose }: { onClose: () => void }) {
     setChecking(false);
   };
   const fix = (f: Fix) => {
+    if (isPathFix(f.kind)) {
+      // 경로 고르기는 점검 안에서 끝낸다 (닫지 않는다). 고른 뒤 바로 다시 점검한다
+      runPathFix(f.kind).then(
+        (done) => {
+          setPathNote(done);
+          if (done) void caps.refresh();
+        },
+        (e) => setPathNote(errText(e)),
+      );
+      return;
+    }
     onClose();
     caps.fixAction(f);
   };
@@ -68,6 +82,11 @@ export function Checkup({ onClose }: { onClose: () => void }) {
       <p className="field-hint" aria-live="polite">
         {caps.loading || checking ? "확인하는 중…" : checkupHeadline(sections)} — 점검 결과와 상관없이 앱은 계속 쓸 수 있습니다. 설정이나 홈 화면에서 언제든 다시 열 수 있습니다.
       </p>
+      {pathNote && (
+        <p className="field-hint" role="status">
+          {pathNote}
+        </p>
+      )}
       {sections.map((s) => (
         <section key={s.id} className="checkup-section" aria-labelledby={`checkup-${s.id}`}>
           <h3 id={`checkup-${s.id}`}>{s.title}</h3>

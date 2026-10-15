@@ -1,19 +1,20 @@
-"""로컬 임베딩: Qwen3-Embedding-0.6B (공식 가중치, Apache-2.0)를 mlx-lm(MIT)으로 실행한다.
+"""로컬 임베딩: Qwen3-Embedding-0.6B의 MLX 8bit 변환본(mlx-community, Apache-2.0)을 mlx-lm(MIT)으로 실행한다.
 
-mlx-embeddings는 GPL-3이라 쓰지 않는다. Phase 3 리서치 실측(M3):
+mlx-embeddings는 GPL-3이라 쓰지 않는다 (이 변환본을 만들 때 쓰인 도구일 뿐, 실행에는 필요 없다).
+2026-10-15에 bf16 공식 가중치(1.2GB)에서 8bit(0.63GB)로 바꿨다. 소유자 결정으로 검색 평가(bench/search_eval.py·aihub_search_eval.py)는 돌리지 않았다
+(CLAUDE.md의 평가 규칙 면제, ARCHITECTURE.md 변경 이력). 아래 실측은 bf16 기준이다. Phase 3 리서치 실측(M3):
 - bf16, 오른쪽 패딩 + 인과 마스크 + 마지막(EOS) 토큰 풀링 + L2 정규화 → torch fp32 참조와 코사인 ≥ 0.9998
 - 왼쪽 패딩은 마스크 없이 틀린 결과(코사인 0.63)를 내므로 쓰지 않는다
 - 400자 한국어 기준 약 11 문단/초, 피크 메모리 1.4–1.8 GiB, 질의 1건 약 50ms
 """
 
-import json
 from pathlib import Path
 
 import numpy as np
 
-MODEL_REPO = "Qwen/Qwen3-Embedding-0.6B"
-MODEL_REVISION = "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
-MODEL_DIR = "qwen3-embedding-0.6b"
+MODEL_REPO = "mlx-community/Qwen3-Embedding-0.6B-8bit"
+MODEL_REVISION = "407ad2329cd30702720aafe83f74a1ba30fdfbca"
+MODEL_DIR = "qwen3-embedding-0.6b-8bit"
 DIM = 1024
 BATCH_SIZE = 16
 MAX_TOKENS = 1024  # 청크는 500자(약 330토큰) 이하
@@ -21,22 +22,18 @@ MAX_TOKENS = 1024  # 청크는 500자(약 330토큰) 이하
 QUERY_TASK = "Given a web search query, retrieve relevant passages that answer the query"
 
 
-MODEL_ID = f"{MODEL_REPO}@{MODEL_REVISION[:8]}/bf16/{DIM}/{QUERY_TASK[:20]}"  # 바뀌면 인덱스가 벡터를 다시 만든다
+MODEL_ID = f"{MODEL_REPO}@{MODEL_REVISION[:8]}/8bit/{DIM}/{QUERY_TASK[:20]}"  # 바뀌면 인덱스가 벡터를 다시 만든다
 
 
 class Embedder:
     def __init__(self, model_dir: Path):
         import mlx.core as mx
-        from mlx_lm.models.qwen3 import ModelArgs, Qwen3Model
+        from mlx_lm.utils import load_model
         from transformers import AutoTokenizer
 
         self._mx = mx
-        config = json.loads((model_dir / "config.json").read_text())
-        model = Qwen3Model(ModelArgs.from_dict(config))
-        # 공식 가중치 키에는 "model." 접두사가 없어 mlx_lm.load 대신 Qwen3Model에 직접 싣는다
-        model.load_weights([(k, v.astype(mx.bfloat16)) for k, v in mx.load(str(model_dir / "model.safetensors")).items()])
-        mx.eval(model.parameters())
-        self.model = model
+        model, _ = load_model(model_dir)  # config.json의 quantization(8bit, group 64)을 읽어 양자화 층으로 싣는다
+        self.model = model.model  # 언어 모델 머리(lm_head) 없이 마지막 은닉 상태를 쓴다
         self.tok = AutoTokenizer.from_pretrained(str(model_dir))
         self.eos = self.tok.pad_token_id  # <|endoftext|>: 토크나이저가 끝에 붙이는 풀링 대상 토큰
         self.model_id = MODEL_ID

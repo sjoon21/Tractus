@@ -33,6 +33,8 @@ export interface MeetingInfo {
   updated_at?: string;
   /** "recorded": 변환 전 노트 (녹음만 있고 아직 텍스트로 변환하지 않았다). 없으면 평범한 노트 (recorded.isRecorded) */
   state?: "recorded" | null;
+  /** 변환 전 노트가 보관 중인 원본 녹음(`tracks/`)의 바이트 수. 변환 전 노트에만 있다 (recorded.keptNotice) */
+  tracks_bytes?: number;
 }
 
 export interface Summary {
@@ -225,6 +227,10 @@ export const api = {
   doctor: () => invoke<DoctorReport>("doctor"),
   /** 받기는 modelsJob.ts가 시작한다 (job 이벤트 kind "models"). 지우기는 받는 중이면 코어가 거절한다 */
   modelsRemove: (id: string) => invoke<void>("models_remove", { id }),
+  /** 모델 폴더 옮기기 (지금 폴더 → dest). 성공한 뒤에 화면이 `models_dir` 설정을 저장한다 */
+  modelsMove: (dest: string) => invoke<{ moved: string[]; freed_bytes: number }>("models_move", { dest }),
+  /** 등록되지 않은 폴더 정리 */
+  modelsPrune: () => invoke<{ removed: { name: string; bytes: number }[]; freed_bytes: number }>("models_prune"),
   setCheckupDone: (done: boolean) => invoke<void>("set_checkup_done", { done }),
   /** 메뉴 막대 아이콘 설정 두 개를 바로 적용하고 저장한다 (다시 시작하지 않아도 된다) */
   setTrayPrefs: (trayEnabled: boolean, keepInTray: boolean) => invoke<void>("set_tray_prefs", { trayEnabled, keepInTray }),

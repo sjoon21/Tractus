@@ -229,6 +229,9 @@ pub struct MeetingInfo {
     /// "recorded"(변환 전)일 때만 싣는다. 평범한 노트는 키가 없다
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    /// 변환 전 노트가 보관 중인 원본 녹음(`tracks/`)의 바이트 수. 없으면 0. 변환 전 노트에만 싣는다 (D5, 변환하면 지워진다)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tracks_bytes: Option<u64>,
 }
 
 #[derive(Serialize, Debug)]
@@ -276,7 +279,21 @@ fn info(dir: &Path, t: &Transcript) -> MeetingInfo {
         folder: t.folder.clone().filter(|f| !f.is_empty()),
         updated_at: t.updated_at.clone().filter(|u| !u.is_empty()).unwrap_or_else(|| t.created_at.clone()),
         state: recorded_state(t),
+        tracks_bytes: recorded_state(t).map(|_| dir_bytes(&dir.join("tracks"))),
     }
+}
+
+/// 폴더 아래 파일 크기의 합. 없거나 읽을 수 없으면 0 (표시용이라 너그럽게). 링크는 따라가지 않는다
+fn dir_bytes(dir: &Path) -> u64 {
+    let Ok(entries) = fs::read_dir(dir) else { return 0 };
+    entries
+        .flatten()
+        .map(|e| match e.file_type() {
+            Ok(t) if t.is_dir() => dir_bytes(&e.path()),
+            Ok(t) if t.is_file() => e.metadata().map_or(0, |m| m.len()),
+            _ => 0,
+        })
+        .sum()
 }
 
 /// 변환 전 노트만 "recorded". 메모 노트나 모르는 값은 평범한 노트다 (옛 파일을 옮기지 않는다)
@@ -869,6 +886,15 @@ mod tests {
         let d = load(&home, "01REC").unwrap();
         assert_eq!(d.info.state.as_deref(), Some("recorded"));
         assert!(d.segments.is_empty() && d.audio_path.unwrap().ends_with("audio.ogg"));
+        // 원본 녹음 크기: 변환 전 노트만, tracks/가 없으면 0
+        assert_eq!(by_id("01REC").tracks_bytes, Some(0));
+        let tracks = home.join("meetings/2026-10-14_녹음_01REC/tracks");
+        fs::create_dir_all(tracks.join("part2")).unwrap();
+        fs::write(tracks.join("mic.wav"), vec![0u8; 1000]).unwrap();
+        fs::write(tracks.join("part2/system.wav"), vec![0u8; 500]).unwrap();
+        assert_eq!(by_id("01REC").tracks_bytes, Some(1500));
+        assert_eq!(by_id("01DONE").tracks_bytes, None);
+        assert_eq!(serde_json::to_value(by_id("01REC")).unwrap()["tracks_bytes"], 1500);
         // 평범한 노트는 JSON에 state 키가 없다 (프런트엔드가 없으면 변환한 노트로 읽는다)
         assert!(serde_json::to_value(by_id("01DONE")).unwrap().get("state").is_none());
         assert_eq!(serde_json::to_value(by_id("01REC")).unwrap()["state"], "recorded");

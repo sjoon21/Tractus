@@ -5,18 +5,15 @@ import { ErrorDetail } from "./ErrorDetail";
 import { CHECKUP_OPEN, MODELS_OPEN } from "./caps";
 import { GateHint } from "./GatedButton";
 import { useCapabilities } from "./useCapabilities";
+import { BinField } from "./BinField";
 import { onIndexed } from "./indexer";
 import { recMode, statusLine, withRecMode } from "./lib";
 import { LlmKeySection } from "./LlmKeySettings";
 import { TemplatesSection } from "./TemplatesSettings";
 import { TRAY_KEEP_HINT, TRAY_KEEP_LABEL, TRAY_SHOW_HINT, TRAY_SHOW_LABEL } from "./trayText";
 
-const FIELDS: { key: keyof Omit<Settings, "fake_recorder" | "rec_mode" | "live_captions" | "checkup_done" | "list_sort" | "list_order" | "tray_enabled" | "keep_in_tray" | "after_record">; label: string; hint: string }[] = [
-  { key: "home", label: "데이터 위치 (TRACTUS_HOME)", hint: "meetings/와 recordings/가 들어 있는 폴더" },
-  { key: "models_dir", label: "변환 엔진 위치 (TRACTUS_MODELS_DIR)", hint: "비우면 데이터 위치의 models/" },
-  { key: "tractus_bin", label: "tractus 실행 파일", hint: "전체 경로로 적습니다 (앱은 터미널의 PATH를 읽지 않습니다)" },
-  { key: "rec_bin", label: "tractus-rec 실행 파일", hint: "recorder/.build/release/tractus-rec" },
-];
+// 변환 엔진 위치는 모델 화면에서 바꾼다 (옮기기까지 함께 한다). 실행 파일 경로는 BinField (자동 / 직접 지정)
+const FIELDS: { key: "home"; label: string; hint: string }[] = [{ key: "home", label: "데이터 위치 (TRACTUS_HOME)", hint: "meetings/와 recordings/가 들어 있는 폴더" }];
 
 export function SettingsView({ onSaved }: { onSaved: () => void }) {
   const [s, setS] = useState<Settings | null>(null);
@@ -115,6 +112,8 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
             <span className="field-hint">{f.hint}</span>
           </label>
         ))}
+        <BinField kind="tractus" value={s.tractus_bin} onChange={(v) => setS({ ...s, tractus_bin: v })} report={caps.report} />
+        <BinField kind="rec" value={s.rec_bin} onChange={(v) => setS({ ...s, rec_bin: v })} report={caps.report} />
         <label className="check">
           <input type="checkbox" checked={s.fake_recorder} onChange={(e) => setS({ ...s, fake_recorder: e.target.checked })} />
           <span>

@@ -73,11 +73,30 @@ describe("checkupSections: 도구", () => {
     const r = row(checkupSections({ report: report({ ffmpeg: false, brew: false }), models: null, keySaved: true }), "ffmpeg");
     expect(r.detail).toContain("Homebrew도 없습니다");
   });
-  test("실행 파일 경로가 없으면 설정으로 안내한다", () => {
+  test("실행 파일 경로가 없으면 찾아보기로 안내한다", () => {
     const rep = { ...report(), tractus_bin_exists: false, rec_bin_exists: false };
     const s = checkupSections({ report: rep, models: null, keySaved: true });
-    expect(row(s, "core")).toMatchObject({ status: "blocked", fix: { kind: "settings" } });
-    expect(row(s, "recorder")).toMatchObject({ status: "blocked", fix: { kind: "settings" } });
+    expect(row(s, "core")).toMatchObject({ status: "blocked", fix: { kind: "pick-tractus", label: "찾아보기…" } });
+    expect(row(s, "recorder")).toMatchObject({ status: "blocked", fix: { kind: "pick-rec" } });
+  });
+  test("찾은 경로와 출처를 보여 주고, 직접 지정일 때만 자동으로 되돌리는 단추를 준다", () => {
+    const auto = checkupSections({ report: { ...report(), tractus_source: "bundle", rec_source: "repo" }, models: null, keySaved: true });
+    expect(row(auto, "core")).toMatchObject({ status: "ok", detail: "/repo/.venv/bin/tractus — 앱 안에서 찾았습니다" });
+    expect(row(auto, "core").fix).toBeUndefined();
+    const mine = checkupSections({ report: { ...report(), tractus_source: "custom", rec_source: "custom" }, models: null, keySaved: true });
+    expect(row(mine, "core")).toMatchObject({ detail: expect.stringContaining("직접 지정한 경로"), fix: { kind: "auto-tractus", label: "자동으로 되돌리기" } });
+    expect(row(mine, "recorder").fix).toMatchObject({ kind: "auto-rec" });
+  });
+  test("없어서 자동으로 되돌린 저장 경로가 있으면 한 줄로 알린다", () => {
+    const s = checkupSections({ report: { ...report(), stale_saved: ["tractus_bin"] }, models: null, keySaved: true });
+    expect(row(s, "stale-paths")).toMatchObject({ status: "info", detail: "저장된 경로가 없어 자동 경로를 씁니다" });
+    expect(checkupSections({ report: report(), models: null, keySaved: true }).flatMap((x) => x.rows).some((r) => r.id === "stale-paths")).toBe(false);
+  });
+  test("데이터 폴더: 동기화 폴더·Obsidian 볼트면 경고와 폴더 바꾸기, 아니면 문제 없음, 점검을 못 읽으면 행이 없다", () => {
+    const at = (home: string, home_risk: string | null) => row(checkupSections({ report: { ...report(), home, home_risk }, models: null, keySaved: true }), "home");
+    expect(at("/Users/me/Tractus", null)).toMatchObject({ status: "ok", detail: "/Users/me/Tractus", label: "데이터 폴더" });
+    expect(at("/Users/me/Dropbox/Tractus", "Dropbox")).toMatchObject({ status: "warn", detail: expect.stringContaining("Obsidian 볼트일 수 있습니다"), fix: { kind: "pick-home", label: "폴더 바꾸기…" } });
+    expect(checkupSections({ report: report(), models: null, keySaved: true }).some((x) => x.id === "data")).toBe(false);
   });
   test("엔진은 있는데 점검을 못 읽으면(옛 코어) 경고", () => {
     const rep: DoctorReport = { ...report(), doctor: null, core_error: "No such command 'doctor'\nusage" };
@@ -85,6 +104,14 @@ describe("checkupSections: 도구", () => {
     expect(r.status).toBe("warn");
     expect(r.detail).toContain("No such command");
     expect(r.detail).not.toContain("usage");
+  });
+  test("앱 안의 엔진이 안 돌면 '앱이 손상됐다'고 막는다 (엔진이 오래된 것이 아니다)", () => {
+    const rep: DoctorReport = { ...report(), doctor: null, tractus_source: "bundle", core_error: "dyld: Library not loaded\ndetail" };
+    const r = row(checkupSections({ report: rep, models: null, keySaved: true }), "core");
+    expect(r.status).toBe("blocked");
+    expect(r.detail).toContain("앱을 다시 받아 설치하세요");
+    expect(r.detail).toContain("dyld: Library not loaded");
+    expect(r.detail).not.toContain("detail");
   });
   test("9명 이상 구분 도구는 없어도 안내일 뿐이다", () => {
     expect(row(checkupSections({ report: report(), models: null, keySaved: true }), "diar-helper").status).toBe("info");

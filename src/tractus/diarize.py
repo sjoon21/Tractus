@@ -17,6 +17,8 @@ from pathlib import Path
 
 import numpy as np
 
+from tractus.paths import REPO_ROOT, build_hint, in_repo, tool_bin  # noqa: F401 — REPO_ROOT는 테스트가 diarize에서 가져온다
+
 SR = 16000
 MAX_CHUNK_S = 30.0  # vad.MAX_CHUNK_S와 같다. 청크를 나누기만 하므로 늘어나지 않는다
 MODEL_REPO = "mlx-community/Nemotron-3-Diarization"
@@ -150,12 +152,11 @@ FLUID_DIR = "speaker-diarization"  # FluidAudio가 정한 폴더 이름. <models
 FLUID_FILES = ("Segmentation.mlmodelc", "Embedding.mlmodelc")  # 있는지만 본다. 나머지는 헬퍼가 확인한다
 FLUID_TIMEOUT_BASE_S = 120.0  # CoreML 첫 컴파일 포함
 FLUID_TIMEOUT_RTF = 0.2  # 2026-10-04 실측 RTF 0.006–0.016의 10배 이상
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def fluid_bin() -> Path:
-    """$TRACTUS_DIAR_BIN, 없으면 저장소에서 빌드한 <repo>/recorder/diar/.build/release/tractus-diar (앱의 tractus-rec와 같은 규칙)."""
-    return Path(os.environ.get("TRACTUS_DIAR_BIN") or REPO_ROOT / "recorder/diar/.build/release/tractus-diar")
+    """$TRACTUS_DIAR_BIN → 앱 번들 → 저장소에서 빌드한 recorder/diar/.build/release/tractus-diar (paths.tool_bin, 녹음 프로그램과 같은 규칙)."""
+    return tool_bin("TRACTUS_DIAR_BIN", "tractus-diar", "recorder/diar/.build/release/tractus-diar")
 
 
 def fluid_timeout(duration_s: float) -> float:
@@ -180,7 +181,7 @@ def fluid_hint(models_dir: Path) -> str:
     binary, path = fluid_bin(), models_dir / FLUID_DIR
     lines = []
     if not _executable(binary):
-        lines.append(f"  헬퍼 빌드: cd {REPO_ROOT / 'recorder' / 'diar'} && swift build -c release  (Swift 6.2 이상, 다른 위치면 TRACTUS_DIAR_BIN)")
+        lines.append(f"  헬퍼: {build_hint('diar_helper')}" + ("  (Swift 6.2 이상, 다른 위치면 TRACTUS_DIAR_BIN)" if in_repo() else ""))
     if not _fluid_models_ok(path):
         lines.append(f"  모델 받기: tractus models download fluid  (직접: {binary} download --models {path})")
     return "\n".join(lines)

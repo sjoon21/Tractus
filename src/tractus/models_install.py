@@ -14,6 +14,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -22,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterator
 
-from tractus import diarize
+from tractus import diarize, paths
 from tractus import models_registry as reg
 
 Emit = Callable[..., None]
@@ -195,7 +196,7 @@ def _download_url(m: reg.Model, root: Path, report: _Reporter, cancel: threading
 def _download_helper(m: reg.Model, root: Path, report: _Reporter, cancel: threading.Event) -> None:
     binary = diarize.fluid_bin()
     if not diarize._executable(binary):
-        raise ModelError("helper_missing", f"tractus-diar 도우미 프로그램이 없습니다. 먼저 빌드하세요:\n  {reg.BUILD_HINTS['diar_helper']}", m.id)
+        raise ModelError("helper_missing", f"tractus-diar 도우미 프로그램이 없습니다:\n  {reg.build_hint('diar_helper')}", m.id)
     proc = subprocess.Popen([str(binary), "download", "--models", str(root / m.local_dir)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     threading.Thread(target=lambda: (cancel.wait(), proc.poll() is None and proc.terminate()), daemon=True).start()
     out, err = proc.communicate()
@@ -260,12 +261,53 @@ def download(ids: list[str], root: Path, emit: Emit, cancel: threading.Event) ->
 
 # ── 지우기 ───────────────────────────────────────────────────────────────────
 
+def _inside(path: Path, root: Path) -> bool:
+    """모델 폴더 바로 아래의 진짜 폴더(심볼릭 링크 아님)인가. 지우기 전에 반드시 본다."""
+    return not path.is_symlink() and path.resolve().parent == root.resolve()
+
+
+def _is_notes_home(root: Path) -> bool:
+    """노트 폴더(TRACTUS_HOME)이거나 회의·녹음 폴더를 품은 곳인가. 모델 폴더로 잘못 고른 것이라 아무것도 지우지 않는다."""
+    return root.resolve() == paths.home_dir().resolve() or (root / "meetings").exists() or (root / "recordings").exists()
+
+
+def _looks_like_model(p: Path) -> bool:
+    """모델 가중치 폴더 모양인가: 완료 표시·config.json·*.safetensors 중 하나가 있다. 사진·문서 폴더는 아니다."""
+    return (p / reg.MARKER).is_file() or (p / "config.json").is_file() or any(p.glob("*.safetensors"))
+
+
+def unregistered(root: Path) -> list[dict]:
+    """모델 폴더 바로 아래의 등록되지 않은 모델 폴더(옛 버전 모델 등) → [{"name", "bytes"}] 이름순.
+    파일·숨김 항목(잠금 파일 포함)·심볼릭 링크는 세지 않는다 (그래서 prune이 건드리지도 않는다).
+    모델이 하나도 없는 곳, 노트 폴더, 모델 모양이 아닌 폴더는 비운다: 사용자가 모델 폴더를 문서·바탕화면 같은 곳으로 잘못 골랐을 때 prune이 지우지 않게."""
+    known = {m.local_dir for m in reg.MODELS}
+    if not root.is_dir() or _is_notes_home(root) or not any((root / d).is_dir() for d in known):
+        return []
+    return [{"name": p.name, "bytes": reg._dir_bytes(p)} for p in sorted(root.iterdir())
+            if p.is_dir() and not p.is_symlink() and not p.name.startswith(".") and p.name not in known and _looks_like_model(p)]
+
+
+def prune(root: Path) -> dict:
+    """등록되지 않은 폴더를 모두 지운다. 받기 중이면 busy. → {"removed": [{"name", "bytes"}], "freed_bytes"}"""
+    if not unregistered(root):
+        return {"removed": [], "freed_bytes": 0}
+    removed = []
+    with download_lock(root):
+        for u in unregistered(root):  # 잠근 뒤 다시 본다: 확인 사이에 바뀐 것을 지우지 않게
+            path = root / u["name"]
+            if not _inside(path, root):
+                raise ModelError(code="unsafe_path", message=f"모델 폴더가 아닌 곳은 지우지 않습니다: {path}")
+            shutil.rmtree(path)
+            removed.append(u)
+    return {"removed": removed, "freed_bytes": sum(u["bytes"] for u in removed)}
+
+
 def remove(model_id: str, root: Path) -> dict:
     """모델 폴더 하나를 지운다. 모델 폴더 바깥을 가리키거나 심볼릭 링크면 거부, 받기 중이면 busy.
     → {"id", "removed": bool, "freed_bytes"}. fluid는 모델 폴더만 지운다 (도우미 프로그램은 그대로)."""
     m = reg.get(model_id)
     path = root / m.local_dir
-    if path.is_symlink() or path.resolve().parent != root.resolve():
+    if not _inside(path, root):
         raise ModelError(code="unsafe_path", message=f"모델 폴더가 아닌 곳은 지우지 않습니다: {path}", model=model_id)
     if not path.exists():
         return {"id": model_id, "removed": False, "freed_bytes": 0}
@@ -275,3 +317,47 @@ def remove(model_id: str, root: Path) -> dict:
         freed = reg._dir_bytes(path)
         shutil.rmtree(path)
     return {"id": model_id, "removed": True, "freed_bytes": freed}
+
+
+# ── 옮기기 ───────────────────────────────────────────────────────────────────
+
+def move(src: Path, dest: Path) -> dict:
+    """등록된 모델 폴더만 src에서 dest로 옮긴다 (등록되지 않은 폴더·잠금 파일은 그대로). 같은 볼륨이면 이름만 바꾼다.
+    받기 중이면 busy, 목적지에 같은 모델 폴더가 있거나 공간이 모자라면 아무것도 옮기기 전에 거부한다.
+    다른 볼륨이면 복사를 끝낸 뒤 원본을 지운다: 지우기가 실패해도 복사본은 두고 "leftover"(남은 옛 폴더 이름)로 알린다.
+    → {"moved": [ID], "freed_bytes": 원래 위치의 볼륨에서 비운 바이트 (같은 볼륨이면 0)}"""
+    src, dest = src.resolve(), dest.expanduser().resolve()
+    if _is_notes_home(dest):
+        raise ModelError(code="bad_argument", message=f"노트가 들어 있는 폴더는 모델 폴더로 쓸 수 없습니다: {dest}")
+    if src == dest or dest.is_relative_to(src) or src.is_relative_to(dest):
+        raise ModelError(code="bad_argument", message=f"같은 폴더이거나 서로 안에 들어 있어 옮길 수 없습니다: {dest}")
+    found = [m for m in reg.MODELS if (src / m.local_dir).is_dir() and not (src / m.local_dir).is_symlink()]
+    if not found:
+        return {"moved": [], "freed_bytes": 0}
+    if clash := [m.id for m in found if (dest / m.local_dir).exists()]:
+        raise ModelError(code="exists", message=f"대상 폴더에 같은 모델이 이미 있습니다: {', '.join(clash)}")
+    size = sum(reg._dir_bytes(src / m.local_dir) for m in found)
+    same_volume = src.stat().st_dev == nearest_existing(dest).stat().st_dev
+    if not same_volume and (free := disk_free(dest)) < size * DISK_MARGIN:
+        raise ModelError(code="disk_full", message=f"저장 공간이 모자랍니다: 필요 {size * DISK_MARGIN / 1e9:.1f}GB, 남은 공간 {free / 1e9:.1f}GB ({dest})")
+    moved, leftover = [], []
+    with download_lock(src), download_lock(dest):
+        for m in found:
+            a, b = src / m.local_dir, dest / m.local_dir
+            try:
+                if same_volume:
+                    a.rename(b)
+                else:
+                    shutil.copytree(a, b, symlinks=True)
+            except OSError as e:  # 옮기다 끊김: 반쯤 복사된 것을 치운다 (원본은 그대로)
+                if not same_volume:
+                    shutil.rmtree(b, ignore_errors=True)
+                raise ModelError(code=classify(e), message=f"{m.name}을(를) 옮기지 못했습니다: {e}", model=m.id) from e
+            if not same_volume:  # 복사가 끝난 뒤의 원본 지우기: 실패해도 복사본은 지우지 않는다
+                try:
+                    shutil.rmtree(a)
+                except OSError as e:
+                    leftover.append(m.local_dir)
+                    print(f"경고: 옛 폴더를 다 지우지 못해 남겼습니다 ({a}): {e}", file=sys.stderr)
+            moved.append(m.id)
+    return {"moved": moved, "freed_bytes": 0 if same_volume else size, **({"leftover": leftover} if leftover else {})}

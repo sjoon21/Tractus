@@ -648,11 +648,11 @@ MCP: `list_meetings`는 `favorite`·`tags`·`folder`(이름)·`folder_id`를 싣
 | `asr-lite` | Qwen3-ASR 0.6B 8bit | 필수 (둘 중 하나), 실시간은 항상 | 1.0GB | `qwen3-asr-0.6b-8bit` | `convert` (둘 다 없을 때), `live` |
 | `diarizer` | Nemotron-3 Diarization | 권장 | 0.2GB | `nemotron-3-diarization` | `diarize` |
 | `aligner` | Qwen3-ForcedAligner 0.6B 8bit | 선택 | 1.3GB | `qwen3-forcedaligner-0.6b-8bit` | `align` |
-| `embedding` | Qwen3-Embedding 0.6B | 선택 | 1.2GB | `qwen3-embedding-0.6b` | `smart-search` |
+| `embedding` | Qwen3-Embedding 0.6B 8bit (mlx-community 변환본, 2026-10-15에 bf16 공식 가중치에서 바꿈) | 선택 | 0.6GB | `qwen3-embedding-0.6b-8bit` | `smart-search` |
 | `voices` | 3D-Speaker CAM++ zh_en ONNX | 선택 | 28MB | `3dspeaker-campplus-zh-en` | `voices` |
 | `fluid` | FluidAudio 화자 분리 + 도우미 `tractus-diar` | 선택 | 22MB(+도우미 빌드) | `speaker-diarization` | `diarize-many` |
 
-크기 합계(GiB): `required` 2.3(16GB 이상, 미만이면 1.0), `standard` 4.8, `lite` 1.1, `all`(fluid 제외) 5.8.
+크기 합계(GiB): `required` 2.3(16GB 이상, 미만이면 1.0), `standard` 4.3, `lite` 1.1, `all`(fluid 제외) 5.2.
 
 기능(`capabilities`): `record`(도구 `recorder`) · `convert`(`vad` + `asr-std`/`asr-lite` 중 하나 + 도구 `ffmpeg`) · `diarize`(`diarizer`) · `diarize-many`(`fluid`) · `align`(`aligner` + 도구 `ffmpeg`: 노트 오디오를 디코딩한다) · `smart-search`(`embedding`) · `live`(`vad` + `asr-lite` + 도구 `recorder` + 메모리 16GB 이상: **표준 엔진이 있어도 0.6B가 따로 필요하다.** 1.7B로 실시간을 재 봤으나 확정 지연 p95가 1.59–1.95초로 기준(1.0초)을 넘어 쓰지 않는다, §2.8. 16GB 미만이면 `tractus live`가 `live_low_memory`로 거절하므로 `missing`에 `memory`가 든다) · `voices`(`voices` + 도구 `ffmpeg`). 요약·질문은 모델이 아니라 API 키라 코어 점검에 없다(앱이 키 상태를 더한다). 녹음 자체는 모델이 필요 없다: 변환 엔진이 없어도 녹음은 저장되고 앱은 `변환 대기 중인 녹음`으로 보인다.
 
@@ -667,11 +667,13 @@ MCP: `list_meetings`는 `favorite`·`tags`·`folder`(이름)·`folder_id`를 싣
              "needed_by": ["convert", "live"], "group": "convert", "path": "/Users/me/Tractus/models/qwen3-asr-0.6b-8bit",
              "model_name": "Qwen3-ASR 0.6B (8bit 양자화)", "publisher": "Alibaba Qwen 팀", "converted_by": "mlx-community (MLX 변환본)",
              "source": "mlx-community/Qwen3-ASR-0.6B-8bit", "revision": "89e96d92ba34aca20b3e29fb10cc284097d1219f",
-             "license": "Apache-2.0", "languages": "한국어·영어 등 30개 언어와 중국어 방언 22개", "params": "0.6B"}, …]}
+             "license": "Apache-2.0", "languages": "한국어·영어 등 30개 언어와 중국어 방언 22개", "params": "0.6B"}, …],
+ "unregistered": [{"name": "qwen3-embedding-0.6b", "bytes": 1191586416}]}
 ```
 
 - **모델 소개(2026-10-14, 추가 키만).** `model_name`(공식 이름을 풀어 쓴 것)·`publisher`(만든 곳)·`license`(Apache-2.0, MIT, OpenMDW-1.1, CC-BY-4.0 …)·`source`(내려받는 곳: HF 저장소 ID 또는 URL)는 항상 비어 있지 않은 문자열이다. `converted_by`(커뮤니티 변환본이면 변환한 곳, 공식 가중치 그대로면 `null`)·`revision`(고정한 리비전 전체. 고정하지 않은 voices·fluid는 `null`)·`languages`·`params`(카드에 적혀 있을 때만)는 `null`일 수 있다. 앱은 `revision`의 앞 8자만 보이고 전체는 `title`에 둔다. 값은 `models_registry.py`의 모델 줄 주석에 적은 모델 카드(HF API·README)·NOTICE로 2026-10-14에 확인했고, 확인하지 못한 값은 추측하지 않고 `null`이다(`tests/test_models.py`가 빈 값과 다운로드 상수와의 일치를 검사한다). 이름·만든 곳 같은 문구의 기준은 WORDS.md §4.14다.
 
+- **`unregistered`(추가 키, 2026-10-15).** 모델 폴더 바로 아래의 **등록되지 않은 폴더**(옛 버전 모델 등)의 `[{name, bytes}]`(이름순, 없으면 `[]`). 파일·숨김 항목(`.tractus-models.lock` 포함)·심볼릭 링크는 세지 않는다. `bytes`는 폴더 안 파일 크기의 합이다. `models prune`이 지우는 목록과 같다. **모델 모양(완료 표시·`config.json`·`*.safetensors`가 있는) 폴더만** 나오고, 모델 폴더에 등록된 모델이 하나도 없거나 노트 폴더(`TRACTUS_HOME`이거나 `meetings/`·`recordings/`를 품은 곳)면 항상 `[]`다: 모델 폴더를 문서·노트 폴더로 잘못 골랐을 때 사용자 폴더가 지워지지 않게 한다.
 - `state`: `installed`(파일이 모두 있고 크기가 맞음) · `missing`(없음) · `partial`(일부만, 또는 받다 만 `.incomplete`·`.part`가 있음. `installed_bytes`에 받은 바이트) · `corrupt`(파일 크기가 다름, voices는 sha256 불일치). fluid는 모델 폴더와 도우미 프로그램이 모두 있어야 `installed`(모델만 있으면 `partial`).
 - `group`: `convert` · `speakers` · `words` · `search`. `level`: `required` · `recommended` · `optional`. `level_note`(추가 키, 2026-10-14): 같은 기능의 필수 모델 여럿 중 하나만 있으면 될 때 `"one_of"`, 아니면 `null`. 지금은 `asr-std`·`asr-lite`만 `one_of`이고(레지스트리의 `ONE_OF`, `tests/test_models.py`가 `CAPABILITIES`의 둘 중 하나 묶음과 일치를 검사한다) `level`은 그대로 `required`다: **`level` 값을 바꾸지 않아 옛 소비자는 그대로 읽는다.** 앱은 `level: required` + `level_note: one_of`를 `필수 (둘 중 하나)`로 보이고, 둘 중 하나라도 설치됐으면 `변환 엔진: 설치됨`으로 본다(WORDS.md §4.15). `tractus models list`(사람용 출력)도 같은 글자를 쓴다. `doctor`의 `models` 항목에도 같은 키가 있다. `download_active`: 다른 프로세스가 이 폴더에서 받는 중.
 - 받기를 마치면 HF 모델 폴더에 `.tractus-model.json`(`{id, revision, files, completed_at}`)을 **맨 마지막에** 쓴다. 상태 판단은 파일 크기가 기본이고, 이 표시가 있으면 `revision`이 레지스트리와 같은지도 본다(다르면 `partial`: 다시 받으면 새 리비전으로 채운다). 표시가 없는 폴더(직접 받은 것)는 파일이 맞으면 설치로 본다. 내용 해시는 voices만 확인한다.
@@ -711,6 +713,10 @@ ID와 프리셋을 함께 주면 합친다(중복 제거, 레지스트리 순서
 
 모델 폴더 하나를 지운다. 모델 폴더(`TRACTUS_MODELS_DIR`) 바로 아래의 실제 폴더만 지우고(심볼릭 링크나 바깥을 가리키면 `unsafe_path`. 폴더가 아닌 파일이어도 같다), 받기 잠금을 잡을 수 없으면 `busy`. `--yes` 없이는 확인한다. 출력: `{"id": "vad", "removed": true, "freed_bytes": 1238323}`(폴더가 없으면 `removed: false`). fluid는 모델 폴더만 지우고 도우미 프로그램은 그대로 둔다. 이 명령 말고는 코어가 모델 파일을 지우지 않는다.
 
+#### `tractus models prune [--yes] [--json]`
+
+등록되지 않은 폴더(`models list`의 `unregistered`: 모델 모양인 폴더만, 노트 폴더·모델 없는 폴더에서는 비어 있다)를 모두 지운다. 모델 폴더(`TRACTUS_MODELS_DIR`) 바로 아래의 실제 폴더만 대상이다: 파일·숨김 항목·심볼릭 링크는 건드리지 않고, 지우기 직전에 `remove`와 같은 검사(링크 아님, 부모가 모델 폴더)를 다시 한다. 받기 잠금을 잡을 수 없으면 `busy`(받는 중이면 거부). `--yes` 없이는 폴더 목록과 크기를 **stderr**에 보이고 확인한다(stdout은 결과뿐이다). 출력(stdout, `--json`일 때 JSON; 없으면 한 줄 요약): `{"removed": [{"name", "bytes"}], "freed_bytes": N}`. 지울 것이 없으면 `{"removed": [], "freed_bytes": 0}`. 레지스트리가 폴더 이름을 바꾸면(예: 2026-10-15 임베딩 bf16 → 8bit) 옛 폴더가 여기에 나타나므로 새 버전으로 올린 사용자가 용량을 되찾는 길이다.
+
 #### `tractus doctor [--json]`
 
 없는 것이 있어도 종료 코드 0이다. 앱은 시작할 때, 받기·지우기 뒤, 창에 초점이 돌아올 때 부른다.
@@ -729,7 +735,7 @@ ID와 프리셋을 함께 주면 합친다(중복 제거, 레지스트리 순서
 ```
 
 - 최소 사양: Apple Silicon(`arm64`), macOS 14.4 이상, 메모리 8GB 이상. 못 미치면 `meets_min: false`와 `problems`(`not_apple_silicon` · `macos_too_old` · `memory_low`). 표준 엔진은 16GB 이상을 권한다(`standard_recommended`).
-- 도구 위치: `brew`는 `PATH` 또는 `/opt/homebrew/bin`·`/usr/local/bin`(ffmpeg 설치 안내용, 기능에는 쓰지 않는다), `ffmpeg`는 `PATH`, `recorder`는 `$TRACTUS_REC_BIN` 또는 `<저장소>/recorder/.build/release/tractus-rec`, `diar_helper`는 `$TRACTUS_DIAR_BIN` 또는 `<저장소>/recorder/diar/.build/release/tractus-diar`. 앱이 다른 위치를 쓰면(설정의 녹음 프로그램 경로) 환경변수로 넘긴다. 마이크·시스템 오디오 권한은 macOS가 첫 녹음에서 물으므로 미리 확인할 방법이 없다.
+- 도구 위치: `brew`는 `PATH` 또는 `/opt/homebrew/bin`·`/usr/local/bin`(ffmpeg 설치 안내용, 기능에는 쓰지 않는다), `ffmpeg`는 `PATH`, `recorder`는 `$TRACTUS_REC_BIN` → 앱 번들(`sys.executable`이 `<앱>/Contents/Resources/runtime/bin`에 있을 때 `../../bin/tractus-rec`) → 저장소에서 빌드한 `recorder/.build/release/tractus-rec` 순으로 찾고, `diar_helper`는 같은 규칙으로 `$TRACTUS_DIAR_BIN` → `bin/tractus-diar` → `recorder/diar/.build/release/tractus-diar`다(`paths.tool_bin`, 존재하는 첫 후보. 하나도 없으면 저장소 배치일 때 저장소 경로, 아니면 번들 경로를 `path`로 알린다). **코어는 저장소 위치를 가정하지 않는다**: `capabilities[].hint`와 `helper_missing`의 빌드 명령(`cd <저장소>/recorder … swift build`)은 저장소 배치(`recorder/Package.swift`가 있음)일 때만 나오고, 아니면 `TRACTUS_REC_BIN`·`TRACTUS_DIAR_BIN`으로 위치를 알리라는 일반 안내가 나온다(`paths.build_hint`). 앱이 다른 위치를 쓰면(설정의 녹음 프로그램 경로) 환경변수로 넘긴다. 마이크·시스템 오디오 권한은 macOS가 첫 녹음에서 물으므로 미리 확인할 방법이 없다.
 - `capabilities[].missing`은 채울 모델 ID와 도구 이름(`ffmpeg` · `recorder` · `diar_helper`), 그리고 못 채우는 `memory`(live, 16GB 미만)다. `vad`+엔진이 둘 다 없으면 엔진은 메모리가 권하는 쪽만 적는다. `partial`·`corrupt`인 모델은 없는 것으로 친다. `hint`는 개발자용 명령이다(`tractus models download <id>`, `brew install ffmpeg`, 빌드 명령).
 - `recommended_track`: 메모리가 권하는 트랙(`standard`|`lite`). `effective_track`: 지금 `--track` 없이 변환하면 쓸 트랙, 쓸 수 있는 엔진이 없으면 `null`.
 
@@ -789,6 +795,7 @@ tractus transcribe --into <노트> [--track …] [--language …] [--term …] [
 | `export` | `txt`·`md`·`csv`·`docx`·`bundle`은 된다(대화 내용은 비고 메모 절은 있다. `bundle`은 `audio.ogg`·transcript.json·md·memos.json이고 `tracks/`는 넣지 않는다). **`srt`·`vtt`는 종료 코드 2** + `아직 텍스트로 변환하지 않아 자막 파일로 내보낼 수 없습니다. 먼저 텍스트로 변환하세요.` (`export.NO_SUBTITLES_RECORDED`) |
 | MCP | `list_meetings`에 `state`(`"recorded"` 또는 null)가 있다. `get_transcript`는 `변환 전` 머리 줄 + 안내 한 줄 + 메모 구간을 돌려준다. `save_summary`는 ToolError |
 | `notes list --json` | 한 줄마다 `"state": "recorded" \| null`가 더해진다(`organize.note_row`) |
+| 앱 `list_meetings`·`load_meeting`(Rust `MeetingInfo`) | 변환 전 노트에만 `tracks_bytes`(노트 폴더 `tracks/` 아래 파일 크기의 합, 없으면 0)가 더해진다. 코어 JSON이 아니라 앱이 폴더를 읽어 만든다. 화면은 이 크기를 보여 주기만 한다(WORDS §4.18) |
 | `render` | `transcript.md`만 다시 쓴다(vtt 없음). 몇 번 돌려도 같다. `asr` 블록이 없어도 죽지 않는다 |
 | `align`, `speakers rename/set/merge/dismiss`, `segments edit`, `voices enroll/match` | 종료 코드 2, `code: not_converted`, `먼저 텍스트로 변환하세요.` (`speakers list`는 빈 목록) |
 | `note save`, `note title`, `note meta`, `folders` | 그대로 된다. `note save`는 `memo` 블록을 쓴다(`kind: "recording"`) |
@@ -806,10 +813,10 @@ tractus transcribe --into <노트> [--track …] [--language …] [--term …] [
 - **스택:** Tauri 2 + React + TypeScript + Vite. 오디오는 자체 `media://` URI 스킴(`convertFileSrc(path, "media")`, MIME `audio/ogg`, HTTP Range 지원, `TRACTUS_HOME` 밖 경로 거부)으로 `<audio>`에 연결한다. Tauri 기본 asset protocol은 `.ogg`/`.opus`의 MIME과 Range 처리가 맞지 않아 쓰지 않는다(`app/README.md`).
 - **남은 녹음:** `recordings/<ULID>/recording.json`이 남아 있는 폴더는 "변환 대기 중인 녹음"으로 보여 준다. 코어는 전사에 **성공했을 때만** 녹음 폴더를 지운다(앱이 강제 종료되거나 전사가 실패해도 녹음은 남는다).
 - **API 키·모델 위치:** 코어는 현재 폴더에 이어 `$TRACTUS_HOME/.env` / `.env.local`도 읽는다. 저장소 밖에 설치한 앱은 `$TRACTUS_HOME/.env.local`에 `UPSTAGE_API_KEY`, `TRACTUS_MODELS_DIR` 등을 둔다.
-- **설정:** `TRACTUS_HOME`(기본 `~/Tractus`), `TRACTUS_MODELS_DIR`, `tractus` 실행 파일 경로(기본: 저장소 `.venv/bin/tractus`), `tractus-rec` 경로. GUI 앱은 셸 PATH를 물려받지 않으므로 절대 경로로 둔다.
+- **설정:** `TRACTUS_HOME`(기본 `~/Tractus`), `TRACTUS_MODELS_DIR`(비우면 코어가 정한다: §3.4), `tractus` 실행 파일 경로와 `tractus-rec` 경로(비우면 `자동`: 실행할 때마다 찾는다, §3.4). GUI 앱은 셸 PATH를 물려받지 않으므로 직접 지정은 절대 경로로 둔다.
 - **데이터:** 노트 목록·전사·요약·메모는 Rust에서 파일을 직접 읽는다. 검색만 상주 `tractus mcp`의 `search_meetings`로 한다(색인·임베딩 모델을 매번 올리지 않으려고).
 - **오류 문자열 규칙:** Rust가 invoke로 돌려주는 오류는 첫 줄이 화면 문장(WORDS.md), 둘째 줄부터가 원래 오류(OS 오류 문구 등)다. 앱은 첫 줄만 문장으로 보이고 나머지는 접힌 `자세히`에 둔다(`lib.splitMessage`, `errText`·`errDetail`). 예: 실행 파일을 띄우지 못함 → `Tractus 엔진을 실행할 수 없습니다. 설정에서 … (경로)` + `자세히`: `No such file or directory (os error 2)`.
-- **수정 뒤 검색 반영(`index_refresh`):** 문장을 고치면(`changed > 0`) 마지막 수정에서 20초가 지나고 앱이 한가할 때 `tractus index`를 조용히 한 번 돌려 고친 청크를 임베딩한다(`indexSchedule.ts`, 성공하면 아무것도 보이지 않는다). 녹음·변환·가져오기 중이면 미루고(앱), 요약·단어 싱크·질문(전체 범위 질문도 `<ask>`로 표시한다)·편집·내보내기·다른 갱신이 돌고 있으면 Rust가 `false`로 비켜 간다(`BusyGuard::new_if_idle`, 한 번에 하나). 이미 돌고 있는 갱신은 녹음·변환·질문이 시작할 때 Rust가 멈추고(`cancel_index`) `false`로 끝난다: 모델이 겹쳐 올라가지 않게 하는 것이고, 다음 갱신이 빠진 벡터를 이어서 채운다. 임베딩하는 동안 그 청크가 다시 쓰였으면 낡은 벡터는 저장하지 않는다(`Index._ensure_vectors`). 앱 창으로 돌아올 때와 질문 창을 열 때 노트 목록을 다시 읽는다(앱 밖에서 만든 노트의 인용 칩이 `삭제된 노트입니다`로 보이지 않게). 실패하면 알림을 한 번 띄우고 다음 수정 때 다시 시도한다. 설정의 '스마트 검색 상태'를 열어 둔 채 끝나면 그 줄을 새로 읽는다.
+- **수정 뒤 검색 반영(`index_refresh`):** 문장을 고치면(`changed > 0`) 마지막 수정에서 60초가 지나고(앞선 갱신이 끝난 지 5분 안이면 그 뒤로 미룬다. 임베딩 엔진을 자주 올리지 않으려는 것이다) 앱이 한가할 때 `tractus index`를 조용히 한 번 돌려 고친 청크를 임베딩한다(`indexSchedule.ts`, 성공하면 아무것도 보이지 않는다). 녹음·변환·가져오기 중이면 미루고(앱), 요약·단어 싱크·질문(전체 범위 질문도 `<ask>`로 표시한다)·편집·내보내기·다른 갱신이 돌고 있으면 Rust가 `false`로 비켜 간다(`BusyGuard::new_if_idle`, 한 번에 하나). 이미 돌고 있는 갱신은 녹음·변환·질문이 시작할 때 Rust가 멈추고(`cancel_index`) `false`로 끝난다: 모델이 겹쳐 올라가지 않게 하는 것이고, 다음 갱신이 빠진 벡터를 이어서 채운다. 임베딩하는 동안 그 청크가 다시 쓰였으면 낡은 벡터는 저장하지 않는다(`Index._ensure_vectors`). 앱 창으로 돌아올 때와 질문 창을 열 때 노트 목록을 다시 읽는다(앱 밖에서 만든 노트의 인용 칩이 `삭제된 노트입니다`로 보이지 않게). 실패하면 알림을 한 번 띄우고 다음 수정 때 다시 시도한다. 설정의 '스마트 검색 상태'를 열어 둔 채 끝나면 그 줄을 새로 읽는다.
 - **단어 싱크 상태:** 노트 ID별로 앱 전체 저장소(`alignStore.ts`)에 둔다. 작업 중에 노트를 닫았다 다시 열어도 진행이 보이고, 같은 노트의 단어 싱크를 또 시작하지 못한다. 끝났다는 알림은 노트가 열려 있지 않아도 App이 띄운다.
 - **가라오케(재생 중인 단어 강조):** 시작 시각이 같은 단어(실측 노트 하나에 132쌍)는 다음 다른 시작 시각까지를 균등하게 나눠 차례로 칠하고, 길이 0인 단어도 최소 0.12초는 칠한다(`lib.wordClock`, 단어 배열마다 캐시한 시작 시각 배열을 이진 탐색해 O(log n)). 마지막 단어는 `max(세그먼트 끝, wordClock.end)`까지 칠한다. 단어를 눌러 이동할 때도 같은 시각을 쓴다.
 - **삭제된 노트의 인용:** 전체 범위 AI 질문의 인용 칩은 노트 목록에 없는 노트를 가리키면(답을 쓰는 사이에 지워졌거나 지워진 뒤) 누를 수 없고 `삭제된 노트입니다`라는 설명만 보인다. 목록을 새로 읽을 때마다 다시 판단한다.
@@ -817,7 +824,7 @@ tractus transcribe --into <노트> [--track …] [--language …] [--term …] [
 
 #### 모델·점검의 앱 쪽 (§2.15를 쓴다, v3.23)
 
-- **Rust 명령** (`models.rs`, 모두 인수 배열): `models_list`(`models list --json`), `doctor`(`doctor --json` + 앱이 쓰는 `tractus`·`tractus-rec` 경로가 있는지), `models_download(job, ids, preset)`(`models download <id>… [--preset P] --progress-json`), `models_cancel`, `models_remove(id)`(`models remove <id> --yes`), `set_checkup_done(done)`(설정 파일의 `checkup_done`만 바꾼다). 모델 ID는 `^[a-z0-9-]{1,40}$`(처음은 `-`가 아님), 구성은 `required|standard|lite|all`만 받고, 한 번에 16개까지다. 응답은 느슨하게 읽는다: 모르는 키·이상한 항목은 버리고 빠진 키는 빈 값이다(`parse_models_list`·`parse_doctor`). 모델 소개 키(`model_name` 등)는 문자열일 때만 받고 아니면 없는 것으로 본다(옛 코어는 키가 없어 모델 화면이 이름 아래 한 줄과 `자세히`를 보이지 않는다). **`doctor`는 실패하지 않는다**: 코어를 못 불러도(경로가 틀림, `doctor`가 없는 옛 코어) `{doctor: null, core_error, tractus_bin(_exists), rec_bin(_exists)}`로 답한다.
+- **Rust 명령** (`models.rs`, 모두 인수 배열): `models_list`(`models list --json`), `doctor`(`doctor --json` + 앱이 쓰는 `tractus`·`tractus-rec` 경로가 있는지), `models_download(job, ids, preset)`(`models download <id>… [--preset P] --progress-json`), `models_cancel`, `models_remove(id)`(`models remove <id> --yes`), `models_move(dest)`(`models move --yes <절대 경로>`, 설정은 바꾸지 않는다: 화면이 성공한 뒤 `models_dir`을 저장한다. 노트 폴더(`TRACTUS_HOME`이거나 `meetings/`·`recordings/`가 있는 곳)는 목적지로 `bad_argument` 거부한다. 다른 볼륨이면 복사를 끝낸 뒤 원본을 지우고, 지우기가 실패해도 복사본은 두고 응답에 `leftover`(남은 옛 폴더 이름)와 stderr 경고를 준다), `models_prune`(`models prune --yes --json`), `set_checkup_done(done)`(설정 파일의 `checkup_done`만 바꾼다). 모델 ID는 `^[a-z0-9-]{1,40}$`(처음은 `-`가 아님), 구성은 `required|standard|lite|all`만 받고, 한 번에 16개까지다. 응답은 느슨하게 읽는다: 모르는 키·이상한 항목은 버리고 빠진 키는 빈 값이다(`parse_models_list`·`parse_doctor`). 모델 소개 키(`model_name` 등)는 문자열일 때만 받고 아니면 없는 것으로 본다(옛 코어는 키가 없어 모델 화면이 이름 아래 한 줄과 `자세히`를 보이지 않는다). **`doctor`는 실패하지 않는다**: 코어를 못 불러도(경로가 틀림, `doctor`가 없는 옛 코어) `{doctor: null, core_error, tractus_bin(_exists), rec_bin(_exists)}`로 답한다. 경로 키는 앱이 찾은 경로이고, 출처 `tractus_source`·`rec_source`(`custom|env|bundle|repo|known|none`), 이번 실행에서 되돌린 저장 경로 `stale_saved`, 데이터 폴더 `home`·`home_risk`(`iCloud Drive|Dropbox|OneDrive|Google Drive|Obsidian|null`)가 덧붙는다. `models_list`는 코어의 `unregistered`(`[{name, bytes}]`)를 느슨하게 싣는다(없으면 빈 목록 = 정리 줄을 숨긴다).
 - **받기 작업.** `job` 이벤트(`kind: "models"`, `job`은 프론트엔드가 만든 ID)로 코어의 JSON 줄(§2.15 이벤트)과 마지막 `exit`를 그대로 보낸다. 받기는 앱 전체에서 한 번에 하나다(앱이 한 번 더 확인하고, 코어도 `busy`). `models_cancel`은 SIGTERM을 보내 코어가 받던 파일을 남기고 멈추게 하고(`cancelled` + 종료 코드 130), 10초 뒤에도 남아 있으면 SIGKILL한다. 앱을 끄면 받기에 SIGTERM을 보낸다. 상태는 `modelsJob.ts`(앱 전체 저장소)가 `models.downloadReduce`로 모으므로 모델 화면·시작 점검을 닫았다 열어도 진행이 이어진다. 코어가 알리는 `overall_done/overall_total`을 전체 진행률로 쓰고, 없으면 받을 모델의 크기 합으로 센다.
 - **기능 잠금 (`useCapabilities`, `caps.ts`).** App이 시작할 때, 받기·지우기·설정 저장 뒤에, 창 초점이 돌아올 때(0.6초 디바운스, 5초 이내 반복 없음) `doctor`를 불러 `CapsContext`로 내려 준다. `can(id)` → `{ok}` 또는 `{ok: false, reason, missing, fix}`. 점검 결과가 없거나 그 기능이 점검에 없으면 `ok`다(앱을 막지 않는다). 못 쓰는 단추는 `GatedButton`(`aria-disabled`, 누르면 이유 팝오버 + 고치는 단추)과 `GateHint`(이유 한 줄 + 단추)로 한 곳에서 그린다. 잠그는 곳: 변환(파일 가져오기·`파일에서 추가`·끌어 놓기·`변환 대기 중인 녹음`의 변환), 녹음 프로그램(녹음 시작·녹음 추가), 단어 싱크 맞추기, 실시간 텍스트 변환 체크, 목소리 등록 체크, 참석자 구분 안내(노트마다 한 번 닫기), 스마트 검색(설정 상태·⌘K 검색). 변환할 수 없는 동안 녹음은 저장만 하고 변환을 시작하지 않는다(`변환 대기 중인 녹음`으로 남는다).
 - **시작 점검 (`Checkup.tsx`, `checkupRows.ts`).** 설정의 `checkup_done`이 `false`(키가 없어도)인 처음 실행에 한 번 저절로 열린다. 닫으면(Esc·닫기·`점검 마치기`) `true`로 저장한다. 행은 `ok|warn|blocked|info`: 시스템(Apple Silicon·macOS 14.4+·메모리·디스크), 도구(앱이 쓰는 `tractus` 경로·`ffmpeg`+복사할 `brew install ffmpeg`·`tractus-rec` 경로·`tractus-diar`), 모델(필수·권장·선택 요약 + 구성 단추), 권한 안내(글), AI 키(`llm_key_status`). 디스크 기준: 표준 구성 약 5.2 GB, 저사양 약 1.2 GB(레지스트리 크기의 합).
@@ -890,6 +897,15 @@ macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음�
 - **파싱.** `meetings.rs`가 `state`를 관대하게 읽는다: 문자열 `"recorded"`이고 `kind`가 메모가 아닐 때만 `info.state: "recorded"`, 그 밖의 값(숫자·모르는 문자열·메모 노트)은 키가 없는 평범한 노트다.
 - **한계.** (1) 변환 줄에 따로 취소 단추는 없다(새 녹음 시작이 도는 변환을 멈추는 길이고, 줄은 그대로 남는다). 글만 있는 노트에 추가하는 녹음(`startAttachRecord`)은 변환 줄이 있으면 전처럼 막힌다. (2) "이어서 녹음"(`recording attach`)은 코어가 만들지 않아 앱에도 없다. (3) 줄에 올린 노트도 지워지지 않게 막지만 앱 밖(터미널)에서 지우면 시작할 때 코어 오류로 알린다. (4) 묻는 창에서 변환 가능 여부는 창을 띄울 때 한 번 읽고, 뜬 사이 바뀌면 `바로 변환`을 `나중에`로 바꾼다(`effectiveChoice`).
 - **검사.** vitest: `afterRecord.test.ts`(설정 읽기·끝낸 뒤 할 일·묻는 창), `pause.test.ts`(사이드바 녹음 단추·화면 시계·메뉴 막대 시작 시각), `convertQueue.test.ts`, `recorded.test.ts`(변환 전 판정·화면 모델·탭 안내·내보내기 형식·삭제 막기), `lib.test.ts`(`recReduce` 일시정지·계속), `tray.test.ts`(일시정지 상태·라우팅). cargo: `deferred.rs`(`recording finish`·`transcribe --into` 인수와 검증, 설정 기본값 `ask`, 한 키만 저장), `procs.rs`(`pause`·`resume` 줄), `tray.rs`(일시정지 메뉴·고정 시계·읽기), `meetings.rs`(`state` 관대한 읽기). 화면에서 보는 항목은 `app/README.md` 체크리스트.
+
+### 3.4 경로: 자동 / 직접 지정, 모델 폴더, 데이터 폴더 (v3.28)
+
+- **자동이 기본.** `settings.json`의 `tractus_bin`·`rec_bin`·`models_dir`이 비어 있으면 자동이다. 저장하는 것은 사용자가 입력한 값뿐이고(`save_settings`는 자동 후보와 같은 값을 비운다: 화면이 찾은 경로를 되돌려 보내도 굳지 않는다), 옛 파일의 필드 이름은 그대로다(`serde(default)`).
+- **찾는 순서(`paths.rs`, 코어·녹음 프로그램 같은 규칙).** ① 직접 지정(파일이 있을 때) → ② 환경변수 `TRACTUS_BIN`·`TRACTUS_REC_BIN` → ③ 앱 번들 안: `current_exe()`의 `../Resources/runtime/bin/tractus`, `../Resources/bin/tractus-rec`(있을 때만) → ④ 컴파일 때 저장소(`CARGO_MANIFEST_DIR`: `.venv/bin/tractus`, `recorder/.build/release/tractus-rec`, 있을 때만) → ⑤ `~/.local/bin/tractus`, `/opt/homebrew/bin/tractus`(코어만). 하나도 없으면 출처 `none`이고 경로는 안내용이다(직접 지정한 값, 없으면 저장소 경로). 하위 프로세스(`tractus()`·`mcp_spawn`·`rec_start`·`doctor`)가 모두 이 한 함수를 쓰고, `TRACTUS_REC_BIN`은 찾은 녹음 프로그램 경로를 코어에 넘긴다. 번들 구성(`Resources/runtime/`의 옮길 수 있는 Python과 래퍼 `runtime/bin/tractus`, `Resources/bin/tractus-rec`)은 `scripts/build_app_bundle.sh`가 만든다(ARCHITECTURE.md v3.30, docs/setup.md §10). 번들의 코어는 `sys.executable`이 `runtime/bin/python3.12`라서 `paths.tool_bin`이 `../../bin/`에서 녹음 프로그램을 찾는다. 코어는 번들 안에 쓰지 않는다(`PYTHONDONTWRITEBYTECODE=1`).
+- **옛 설정 이전.** 읽을 때 저장된 `tractus_bin`·`rec_bin`이 없는 파일이면 자동으로 되돌리고(`Settings.stale`, 파일에는 쓰지 않는다) 시작 점검이 `저장된 경로가 없어 자동 경로를 씁니다`로 알린다. 자동 후보와 같은 값(예전 앱이 저장한 기본값)은 조용히 자동으로 바꾼다. 다음 저장 때 파일이 고쳐진다.
+- **화면.** 설정의 두 경로 칸은 찾은 경로(읽기만)와 배지 `자동`/`직접 지정`(`BinField.tsx`, 순수 로직 `paths.ts`)을 보이고, `직접 지정`은 입력 + `찾아보기…`(`tauri-plugin-dialog`) + `자동으로 되돌리기`다. 시작 점검의 도구 행은 같은 경로·출처와 같은 단추를 준다(`checkupRows.ts`, 고르기·저장은 `pathFix.ts`, 점검을 닫지 않고 처리한다).
+- **모델 폴더(코어 `paths.models_dir`).** `TRACTUS_MODELS_DIR` → `$TRACTUS_HOME/models`(등록된 모델 폴더가 하나라도 있을 때만, 기존 사용자 호환) → 새 기본 `~/Library/Application Support/dev.tractus.app/models`. 앱은 사용자가 정하지 않으면 `TRACTUS_MODELS_DIR`을 넘기지 않는다. 모델 화면의 `모델 폴더` 줄: `위치 바꾸기…`는 폴더를 고른 뒤(설치한 모델이 있으면 확인) `models_move`로 옮기고 **성공한 뒤에** `models_dir`을 저장한다. `사용하지 않는 폴더 N개 (xx MB) 정리`는 `models list`의 `unregistered`가 있을 때만 보이고 확인 뒤 `models_prune`을 부른다.
+- **데이터 폴더 점검.** 시작 점검 `저장 위치` > `데이터 폴더`: 경로 또는 그 위 폴더가 `Library/Mobile Documents`(iCloud Drive), `Dropbox*`, `OneDrive*`, `GoogleDrive*`·`Google Drive`이거나 `.obsidian` 폴더가 그 폴더나 위 폴더에 있으면 확인 필요와 `폴더 바꾸기…`(폴더를 골라 `home` 저장). **노트는 옮기지 않는다**: 새 폴더로 직접 옮긴 뒤 다시 시작하라고 알린다. 판정은 이름·`.obsidian`뿐이다(`paths::sync_risk`, iCloud `데스크탑 및 문서` 동기화는 못 잡는다).
 
 ### v1 화면
 

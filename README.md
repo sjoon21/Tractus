@@ -7,6 +7,7 @@
 [![Tauri][tauri-shield]][tauri-url]
 [![Local-first][local-shield]][arch-url]
 [![Status][status-shield]][roadmap-url]
+[![Release][release-shield]][release-url]
 
 <br />
 <div align="center">
@@ -19,6 +20,8 @@
     <br />
     <br />
     <a href="docs/setup.md">설치</a>
+    &middot;
+    <a href="https://github.com/sjoon21/Tractus/releases">릴리스</a>
     &middot;
     <a href="docs/desktop.md">문서</a>
     &middot;
@@ -33,7 +36,7 @@
   <summary>목차</summary>
   <ol>
     <li><a href="#프로젝트-소개">프로젝트 소개</a> (<a href="#주요-기능">주요 기능</a>, <a href="#만든-기술">만든 기술</a>, <a href="#스크린샷">스크린샷</a>)</li>
-    <li><a href="#시작하기">시작하기</a> (<a href="#요구-사항">요구 사항</a>, <a href="#빠른-설치">빠른 설치</a>, <a href="#처음-실행과-시작-점검">시작 점검</a>, <a href="#모델-받기">모델 받기</a>, <a href="#ai-키-등록">AI 키</a>)</li>
+    <li><a href="#시작하기">시작하기</a> (<a href="#요구-사항">요구 사항</a>, <a href="#a-미리-만든-앱-받기">미리 만든 앱</a>, <a href="#b-소스에서-빌드">소스에서 빌드</a>, <a href="#처음-실행과-시작-점검">시작 점검</a>, <a href="#모델-받기">모델 받기</a>, <a href="#ai-키-등록">AI 키</a>)</li>
     <li><a href="#사용법">사용법</a> (<a href="#앱에서">앱에서</a>, <a href="#단축키">단축키</a>, <a href="#cli-빠른-참조">CLI</a>)</li>
     <li><a href="#claude-codecodexantigravity-연동-mcp">Claude Code·Codex·Antigravity 연동 (MCP)</a></li>
     <li><a href="#구성">구성</a></li>
@@ -56,7 +59,7 @@ Tractus는 노트와 녹음을 한곳에서 다루는 macOS 앱입니다. 소리
 - **파일이 원본입니다.** 노트는 `~/Tractus/meetings/` 아래의 폴더(오디오, JSON, Markdown, 자막)라서 Obsidian 같은 도구로도 열립니다. 검색용 정보(색인)는 지워도 노트에서 다시 만들어집니다.
 - **에이전트가 읽을 수 있습니다.** MCP 서버로 Claude Code, Codex, Antigravity가 내 노트를 검색하고 근거와 함께 인용합니다.
 
-> **상태: 팀 내 시험 단계(베타).** 저장소를 내려받아 직접 빌드해 쓰는 개발자용 배포입니다. 저장소를 공개하기 전에는 아래 GitHub 링크(클론, 이슈)가 권한 있는 사람에게만 열립니다. 서명·공증을 받은 설치 파일은 없습니다. 알려진 한계는 [로드맵](#로드맵)에 있습니다.
+> **상태: 팀 내 시험 단계(베타).** 첫 프리릴리스 [v0.1.0](https://github.com/sjoon21/Tractus/releases)이 `.dmg`로 올라와 있습니다. 저장소가 비공개라서 초대받은 협업자만 릴리스와 이슈를 볼 수 있습니다. 서명·공증은 받지 않았고(ad-hoc 서명), 깨끗한 Mac이나 macOS 14.4~15에서는 시험하지 못했습니다. 알려진 한계는 [로드맵](#로드맵)에 있고, 내부 변경 이력은 [ARCHITECTURE.md](ARCHITECTURE.md)에 있습니다.
 
 <p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
@@ -64,7 +67,7 @@ Tractus는 노트와 녹음을 한곳에서 다루는 macOS 앱입니다. 소리
 
 | 영역 | 할 수 있는 일 |
 | --- | --- |
-| 녹음 | 마이크(대면)와 시스템 소리(화상 통화)를 함께 녹음합니다. 녹음 중에 메모와 북마크를 남기고, 실시간 텍스트 변환(미리보기)을 켤 수 있습니다. 미리보기는 메모리 16GB 이상과 가벼운 변환 엔진(`asr-lite`)이 필요합니다. 표준 엔진으로도 재 봤지만 글자가 확정되기까지 p95로 약 1.6~2초(부하가 있는 Mac에서 잰 값, 중간값도 약 1초 이상)라 기준 1초를 넘어 쓰지 않습니다 |
+| 녹음 | 마이크(대면)와 시스템 소리(화상 통화)를 함께 녹음합니다. 일시정지·계속이 되고, 녹음 중에 메모와 북마크를 남깁니다. 끝낼 때 바로 텍스트로 바꾸거나 `변환 전` 노트로 저장만 해 둘 수 있습니다(설정 `녹음을 끝내면`). 실시간 텍스트 변환(미리보기)을 켤 수 있습니다. 미리보기는 메모리 16GB 이상과 가벼운 변환 엔진(`asr-lite`)이 필요합니다. 표준 엔진으로도 재 봤지만 글자가 확정되기까지 p95로 약 1.6~2초(부하가 있는 Mac에서 잰 값, 중간값도 약 1초 이상)라 기준 1초를 넘어 쓰지 않습니다 |
 | 메뉴 막대 | 메뉴 막대 아이콘에서 창을 열지 않고 녹음을 시작·종료하고 북마크를 남기며 최근 노트를 엽니다. 녹음 중에는 경과 시간이 보이고, 창을 닫아도 앱이 메뉴 막대에 남아 녹음과 변환이 이어집니다(설정에서 끌 수 있습니다) |
 | 가져오기 | m4a, mp3, wav 같은 오디오와 mp4, mov 같은 동영상을 끌어 놓으면 텍스트로 바꿉니다. 같은 파일은 다시 변환하지 않습니다 |
 | 텍스트 변환 | Qwen3-ASR(MLX)로 한국어·영어를 자동 감지해 변환합니다. 중간에 멈춰도 이어서 합니다 |
@@ -77,6 +80,7 @@ Tractus는 노트와 녹음을 한곳에서 다루는 macOS 앱입니다. 소리
 | 검색 | 단어 일치와 비슷한 뜻을 함께 찾습니다 (⌘K) |
 | 정리 | 즐겨찾기, 태그, 폴더(3단계), 목록 순서 |
 | 내보내기 | txt, md, srt, vtt, csv, docx, 전체 백업(ZIP), PDF 인쇄 |
+| 모델·시작 점검 | `모델` 화면에서 크기와 설치 상태를 보고 받고 옮기고 정리합니다. 처음 열면 시작 점검이 못 쓰는 기능과 고치는 방법을 알려 줍니다. 요약·AI 질문용 API 키도 설정에서 넣습니다 |
 | 에이전트 연동 | MCP 서버 도구 7개 |
 
 <p align="right">(<a href="#readme-top">맨 위로</a>)</p>
@@ -117,7 +121,7 @@ flowchart LR
 <!-- GETTING STARTED -->
 ## 시작하기
 
-저장소를 내려받아 내 Mac에서 직접 빌드합니다. 자세한 순서와 문제 해결은 [docs/setup.md](docs/setup.md)에 있습니다.
+길이 둘입니다. **(A) 미리 만든 앱**은 GitHub 릴리스에서 `.dmg`를 받아 끌어다 놓으면 되고 개발 도구가 필요 없습니다. **(B) 소스에서 빌드**는 저장소를 내려받아 내 Mac에서 직접 만듭니다. 자세한 순서와 문제 해결은 [docs/setup.md](docs/setup.md)에 있습니다.
 
 ### 요구 사항
 
@@ -126,15 +130,24 @@ flowchart LR
 | 칩 | Apple Silicon (M1 이상) | M1 Pro 이상 |
 | macOS | 14.4 | 최신 버전 |
 | 메모리 | 8GB (저사양 구성) | 16GB 이상 (표준 구성) |
-| 디스크 여유 | 15GB (빌드 산출물 약 2.5GB(추정) + 모델 최대 6.2GB) | 25GB |
+| 디스크 여유 | 15GB (B: 빌드 산출물 약 3GB(실측, 9명 이상 구분 도우미 포함) + 모델 최대 5.7GB. A: 앱 약 0.7GB + 모델) | 25GB |
 
 - Intel Mac은 지원하지 않습니다. 변환 모델이 MLX(Apple Silicon 전용)로 돌아갑니다.
 - **최소 사양은 설계 기준이고 직접 돌려 보지는 못했습니다.** 8GB는 메모리 사용량 계산으로, macOS 14.4는 시스템 오디오 녹음(Core Audio process tap)의 하한으로 정했습니다. 개발 기기는 Apple M3, 16GB, macOS 26.6입니다.
-- 도구: Xcode 명령줄 도구(Swift 5.10 이상, Xcode 15.3. 개발 기기의 Swift 6.4·Xcode 27에서만 빌드를 확인했습니다), Rust, Node.js 22.12 이상, pnpm, uv(Python은 uv가 받습니다), ffmpeg. `scripts/bootstrap.sh`가 Xcode 도구와 Homebrew를 제외한 나머지를 [Brewfile](Brewfile)로 설치합니다.
-- ffmpeg는 앱에 넣지 않았습니다. 없어도 녹음은 되지만 텍스트 변환과 파일 가져오기는 안 됩니다.
+- **(B)만 필요한 도구:** Xcode 명령줄 도구(Swift 5.10 이상, Xcode 15.3. 개발 기기의 Swift 6.4·Xcode 27에서만 빌드를 확인했습니다), Rust, Node.js 22.12 이상, pnpm, uv(Python은 uv가 받습니다), ffmpeg. `scripts/bootstrap.sh`가 Xcode 도구와 Homebrew를 제외한 나머지를 [Brewfile](Brewfile)로 설치합니다.
+- **ffmpeg는 (A)와 (B) 모두 따로 설치합니다**(`brew install ffmpeg`, 앱에 넣지 않았습니다). 없어도 녹음은 되지만 텍스트 변환과 파일 가져오기는 안 됩니다.
 - 9명 이상 참석자 구분 도우미(`--with-fluid`)는 Swift 6.2 이상(Xcode 26)이 필요합니다. 없어도 8명까지는 구분합니다.
 
-### 빠른 설치
+### A. 미리 만든 앱 받기
+
+1. [GitHub 릴리스](https://github.com/sjoon21/Tractus/releases)에서 `Tractus-…-arm64.dmg`를 받습니다. 저장소가 비공개라서 초대받은 협업자만 이 페이지가 보입니다(없으면 404). 앱은 약 700MB, `.dmg`는 약 240MB입니다(2026-10-15 실측).
+2. `.dmg`를 열고 `Tractus`를 `Applications` 바로가기로 끌어다 놓습니다. 관리자 암호는 필요 없습니다.
+3. 처음 열 때 "확인되지 않은 개발자" 경고가 나옵니다(서명이 ad-hoc이고 공증을 받지 않았습니다). macOS 15 이상은 시스템 설정 › 개인정보 보호 및 보안 › `그래도 열기`, macOS 14.x는 우클릭 후 `열기`를 고릅니다(직접 확인하지 못했습니다). 터미널에서는 `xattr -dr com.apple.quarantine /Applications/Tractus.app`입니다.
+4. 터미널에서 `brew install ffmpeg`를 한 뒤 앱의 시작 점검 → [모델 받기](#모델-받기) → [AI 키 등록](#ai-키-등록) 순서로 진행합니다.
+
+앱 안에 Python과 의존성, 코어(`tractus`), 녹음 프로그램(`tractus-rec`)이 들어 있습니다. 9명 이상 참석자 구분 도우미(`tractus-diar`)는 들어 있지 않아서 참석자는 8명까지 구분합니다. 노트·모델·설정은 앱 밖에 있어서 업데이트는 새 `Tractus.app`으로 바꿔 넣으면 됩니다. **깨끗한 Mac(새 계정)과 macOS 14.4~15에서는 시험하지 못했습니다.** 개발 기기(macOS 26.6)의 복사본에서 저장소 접근을 막고 환경변수를 비운 채 확인한 것까지입니다. 자세한 안내와 직접 만드는 법은 [docs/setup.md §10](docs/setup.md#10-미리-만든-앱-받기)입니다.
+
+### B. 소스에서 빌드
 
 ```bash
 git clone https://github.com/sjoon21/Tractus.git && cd Tractus
@@ -145,8 +158,10 @@ scripts/install.sh        # 코어 + 녹음 프로그램 + 앱을 빌드합니�
 - 아무것도 바꾸지 않고 확인만 하려면 `scripts/bootstrap.sh --check`, `scripts/install.sh --check`입니다. `bootstrap.sh`는 `--yes`(묻지 않음), `--with-install`(이어서 `install.sh` 실행)도 받습니다.
 - Xcode 명령줄 도구(`xcode-select --install`)와 Homebrew는 스크립트가 대신 설치하지 않고 안내만 합니다. `sudo`도 쓰지 않습니다.
 - `install.sh` 옵션: `--with-fluid`(9명 이상 참석자 구분 도우미 빌드), `--models <required|standard|lite|all>`(끝에 모델 받기), `--copy-app`(`~/Applications`에 복사).
-- 처음 Rust를 컴파일하므로 빌드에 15~30분쯤 걸릴 것으로 예상합니다(추정치). 여러 번 실행해도 안전합니다.
-- **설치한 뒤에는 저장소 폴더를 옮기거나 지우지 마세요.** 앱이 이 폴더 안의 `tractus`와 `tractus-rec`를 실행합니다.
+- 처음 Rust를 컴파일하는 시간이 가장 길지만 개발 기기(Apple M3, 16GB)에서는 깨끗한 복사본에서 도우미까지 5분 17초 걸렸습니다(2026-10-15 실측, 회선에 따라 다릅니다). 빌드 산출물은 약 3GB(도우미 없이 약 2.1GB)입니다. 여러 번 실행해도 안전합니다. 끝에 설치 점검(`tractus doctor`)을 보여 줍니다.
+- **업데이트**는 `scripts/update.sh`(`git pull --ff-only` 뒤 `install.sh`, `--check`는 받을 커밋만 보여 줌), 빌드 산출물 정리는 `scripts/clean.sh`(`--all`로 `node_modules`까지)입니다.
+- **설치한 뒤에는 저장소 폴더를 옮기거나 지우지 마세요.** 앱이 이 폴더 안의 `tractus`와 `tractus-rec`를 실행합니다. 설정의 경로(코어·녹음 프로그램)는 기본이 `자동`(실행할 때마다 찾음)이라 옮긴 뒤 `install.sh`를 다시 실행하면 새 위치가 반영됩니다. `직접 지정`한 경로가 없어지면 앱이 자동으로 되돌리고 시작 점검이 알립니다.
+- **`.dmg`를 직접 만들려면** `scripts/build_app_bundle.sh`로 `Tractus.app`을, `scripts/make_dmg.sh <앱 경로>`로 `dist/Tractus-<버전>[-<날짜>]-arm64.dmg`를 만듭니다(`--check`로 도구만 확인). 자세한 내용은 [docs/setup.md §10](docs/setup.md#직접-만들기)입니다.
 
 터미널 CLI만 쓸 때는 코어만 설치해도 됩니다.
 
@@ -157,17 +172,19 @@ cp .env.example .env     # 선택: 개발 기본값(경로, LLM 공급자). API 
 
 ### 처음 실행과 시작 점검
 
+(A)는 `Applications`의 Tractus를 엽니다. (B)는 다음 명령으로 엽니다.
+
 ```bash
 open app/src-tauri/target/release/bundle/macos/Tractus.app    # --copy-app을 썼다면 ~/Applications/Tractus.app
 ```
 
 처음 열면 **시작 점검**이 나옵니다. 시스템(Apple Silicon, macOS, 메모리, 디스크), 도구(ffmpeg, 녹음 프로그램), 모델, 권한 안내, AI 키를 항목별로 점검하고 막힌 항목에는 고치는 방법을 보여 줍니다. 점검은 앱 사용을 막지 않습니다. 터미널에서는 `uv run tractus doctor`입니다.
 
-직접 빌드한 앱은 공증을 받지 않아 "확인되지 않은 개발자" 경고가 나올 수 있습니다. macOS 14 이하에서는 Finder에서 우클릭 후 `열기`를, macOS 15 이상에서는 시스템 설정 › 개인정보 보호 및 보안 › `그래도 열기`를 고릅니다(자세한 방법은 [docs/setup.md](docs/setup.md#확인되지-않은-개발자-경고)). 마이크와 시스템 오디오 권한은 첫 녹음 때 macOS가 묻습니다.
+직접 빌드한 앱도 공증을 받지 않아 내려받아 옮기면 "확인되지 않은 개발자" 경고가 나올 수 있습니다. 푸는 방법은 위 (A) 3번과 같습니다([docs/setup.md](docs/setup.md#확인되지-않은-개발자-경고)). 마이크와 시스템 오디오 권한은 첫 녹음 때 macOS가 묻습니다.
 
 ### 모델 받기
 
-모델 파일은 저장소에 들어 있지 않습니다. 앱은 왼쪽 아래 `모델` 화면(또는 시작 점검)에서, 터미널은 다음 명령으로 받습니다. 받는 위치는 기본 `~/Tractus/models`이고 `TRACTUS_MODELS_DIR`로 바꿉니다(`.env.example`을 복사하면 `./models`로 바뀝니다). 받다 끊겨도 같은 명령으로 이어 받습니다. 목록의 원본은 `src/tractus/models_registry.py`입니다.
+모델 파일은 저장소에 들어 있지 않습니다. 앱은 왼쪽 아래 `모델` 화면(또는 시작 점검)에서, 터미널은 다음 명령으로 받습니다. 받는 위치는 기본 `~/Library/Application Support/dev.tractus.app/models`입니다(예전에 `~/Tractus/models`에 받았다면 그곳을 그대로 씁니다). 앱의 `모델` 화면 `위치 바꾸기…`나 `tractus models move <폴더>`로 옮기고, `TRACTUS_MODELS_DIR`로도 바꿉니다(`.env.example`을 복사하면 `./models`로 바뀝니다). 받다 끊겨도 같은 명령으로 이어 받습니다. 목록의 원본은 `src/tractus/models_registry.py`입니다.
 
 ```bash
 uv run tractus models list                          # 설치 상태
@@ -175,7 +192,7 @@ uv run tractus models download --preset standard    # required | standard | lite
 uv run tractus models remove aligner                # 하나 지우기
 ```
 
-구성은 `standard`(약 5.2GB, 메모리 16GB 이상), `lite`(약 1.2GB, 메모리 8GB), `required`(1.0~2.5GB, 변환에 꼭 필요한 것만), `all`(약 6.2GB)입니다. 기본 흐름(녹음·가져오기 → 변환 → 요약)은 `required`로 됩니다. 실시간 텍스트 변환(미리보기)은 메모리 16GB 이상에서만 켜지고 가벼운 엔진(`asr-lite`)이 따로 필요하므로, 8GB Mac(`lite` 구성)에서는 쓸 수 없습니다. 변환 엔진 둘(`asr-std`·`asr-lite`)은 **필수 (둘 중 하나)** 입니다: 하나만 받아도 텍스트 변환이 되고, 모델 화면에는 `변환 엔진: 설치됨`으로 보입니다.
+구성은 `standard`(약 4.6GB, 메모리 16GB 이상), `lite`(약 1.2GB, 메모리 8GB), `required`(1.0~2.5GB, 변환에 꼭 필요한 것만), `all`(약 5.7GB)입니다. 기본 흐름(녹음·가져오기 → 변환 → 요약)은 `required`로 됩니다. 실시간 텍스트 변환(미리보기)은 메모리 16GB 이상에서만 켜지고 가벼운 엔진(`asr-lite`)이 따로 필요하므로, 8GB Mac(`lite` 구성)에서는 쓸 수 없습니다. 변환 엔진 둘(`asr-std`·`asr-lite`)은 **필수 (둘 중 하나)** 입니다: 하나만 받아도 텍스트 변환이 되고, 모델 화면에는 `변환 엔진: 설치됨`으로 보입니다.
 
 모델이 없는 기능은 단추를 눌러 보면 이유와 설치 방법을 알려 줍니다. 녹음은 모델 없이 되고, 변환 엔진이 없으면 `변환 대기 중인 녹음`으로 남습니다.
 
@@ -332,7 +349,7 @@ uv run tractus live --recording ~/Tractus/recordings/01K… --progress-json   # 
 
 먼저 한 번 색인합니다(벡터는 CLI 쪽에서 만듭니다): `uv run tractus index`
 
-아래 예시의 `/path/to/Tractus`는 이 저장소 경로입니다. `.venv/bin/tractus`는 `uv sync`(또는 `scripts/install.sh`) 뒤에 생깁니다. `TRACTUS_MODELS_DIR`은 모델을 받은 폴더(기본 `~/Tractus/models`)입니다.
+아래 예시의 `/path/to/Tractus`는 이 저장소 경로입니다. `.venv/bin/tractus`는 `uv sync`(또는 `scripts/install.sh`) 뒤에 생깁니다. `TRACTUS_MODELS_DIR`은 모델을 받은 폴더입니다(`uv run tractus models list`의 `모델 폴더`. 기본은 앱 설정 폴더의 `models`이고, 예전에 `~/Tractus/models`에 받았다면 그곳이니 아래 예시를 그대로 쓰면 됩니다).
 
 **Claude Code** — 이름을 `-e`보다 앞에 둡니다.
 
@@ -437,7 +454,7 @@ Tractus는 모델 가중치를 저장소에 넣지 않습니다. 사용자가 �
 | [Nemotron 3 Diarization (MLX)](https://huggingface.co/mlx-community/Nemotron-3-Diarization) | 참석자 구분 (최대 8명) | 0.2GB | [OpenMDW-1.1](https://openmdw.ai/license/1-1/) |
 | [FluidInference/speaker-diarization-coreml](https://huggingface.co/FluidInference/speaker-diarization-coreml) | 9명 이상 참석자 구분 (pyannote community-1의 Core ML 변환) | 22MB + 도우미 | [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/) (출처 표기 필요) |
 | [Qwen3-ForcedAligner 0.6B (MLX 8bit)](https://huggingface.co/mlx-community/Qwen3-ForcedAligner-0.6B-8bit) | 단어 싱크 | 1.3GB | Apache-2.0 |
-| [Qwen3-Embedding 0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) | 스마트 검색 (비슷한 뜻) | 1.2GB | Apache-2.0 |
+| [Qwen3-Embedding 0.6B (MLX 8bit)](https://huggingface.co/mlx-community/Qwen3-Embedding-0.6B-8bit) | 스마트 검색 (비슷한 뜻) | 0.6GB | Apache-2.0 |
 | [3D-Speaker CAM++ zh_en](https://modelscope.cn/models/iic/speech_campplus_sv_zh_en_16k-common_advanced) ([ONNX 변환](https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models)) | 참석자 목소리 프로필 | 28MB | Apache-2.0 |
 
 변환 엔진 둘(1.7B·0.6B)은 **필수 (둘 중 하나)** 입니다. 하나만 있어도 텍스트 변환이 됩니다. 1.7B는 가장 정확하고 메모리 16GB 이상을 권하며, 0.6B는 메모리를 덜 쓰고 실시간 미리보기에는 0.6B가 따로 필요합니다.
@@ -481,10 +498,15 @@ Tractus 자체는 Apache-2.0입니다. 모델의 라이선스와 약관은 각�
 - [x] 즐겨찾기·태그·폴더·목록 순서, 요약 유형과 직접 프롬프트 (v3.20~v3.21)
 - [x] 설정에서 AI 키 등록, 모델 받기와 시작 점검, 기능별 막기 (v3.22~v3.23)
 - [x] 메뉴 막대 아이콘: 창 없이 녹음 시작·종료·북마크, 최근 노트, 창을 닫아도 남기기 (v3.24, 이슈 #1). 설정 `메뉴 막대에 Tractus 표시`·`창을 닫아도 메뉴 막대에 남기기`(둘 다 기본 켜짐, 바로 적용)
+- [x] 녹음 일시정지·계속, 녹음과 변환 분리(`변환 전` 노트), 좌우 패널 접기 (v3.25~v3.26)
+- [x] 경로 자동 찾기, 모델 폴더 옮기기·정리, 스마트 검색 모델 8bit, 설치·업데이트·정리 스크립트 (v3.27~v3.29)
+- [x] 미리 만든 앱(`build_app_bundle.sh`)과 설치 디스크 이미지(`make_dmg.sh`) (v3.30~v3.31)
+- [x] 첫 프리릴리스 v0.1.0: GitHub 릴리스에 `.dmg`로 올림 (비공개 저장소, 초대받은 협업자만 받을 수 있음)
+- [ ] 깨끗한 Mac(새 계정)과 macOS 14.4~15에서 미리 만든 앱 실행, 내려받은 `.dmg`의 Gatekeeper 동작과 권한 이름 확인
 - [ ] 팬 없는 M3 Air에서 1시간 연속 녹음 + 실시간 텍스트 변환의 발열·지연 확인
 - [ ] 실제 대면 회의(원거리 마이크)의 단어 싱크·목소리 인식 정확도, 9명 이상 참석자 구분 측정
 - [ ] OpenAI·Claude·Gemini 공급자 검증 (지금은 키 대기, Upstage만 검증)
-- [ ] 서명·공증을 받은 설치 파일 (지금은 직접 빌드)
+- [ ] 서명·공증을 받은 설치 파일 (지금은 ad-hoc 서명이라 처음 열 때 경고가 나옵니다)
 - [ ] WKWebView에서 손으로 확인하지 못한 화면 점검 (노트 끌어 놓기, 요약 유형 메뉴). 단어 강조 등 WebKit 기능은 macOS 26.6에서만 확인했고 최소 버전 14.4에서는 확인하지 못했습니다
 - [ ] 키를 Keychain에 저장 (지금은 앱 설정 폴더의 0600 파일)
 - [ ] Windows 지원 (llama.cpp GGUF 경로, 필요가 확인될 때)
@@ -505,7 +527,8 @@ WORDS.md          화면에 보이는 말의 용어표와 금지어 검사
 src/tractus/      코어: CLI, 변환, 참석자 구분, 요약, 질문, 검색, MCP
 app/              Tauri 2 데스크톱 앱 (Rust + React + TypeScript)
 recorder/         Swift 패키지: 녹음 프로그램 tractus-rec (diar/: 도우미 tractus-diar)
-scripts/          bootstrap.sh (개발 도구 설치), install.sh (빌드)
+scripts/          bootstrap.sh (개발 도구 설치), install.sh (빌드), update.sh (업데이트), clean.sh (빌드 산출물 정리),
+                  build_app_bundle.sh (미리 만든 앱), make_dmg.sh (.dmg)
 Brewfile          bootstrap.sh가 읽는 도구 목록
 docs/             설치(setup), 앱 계약(desktop), 로드맵(roadmap), 공급자(llm-providers)
 tests/            pytest (가상 회의 fixtures)
@@ -522,6 +545,7 @@ cd app && pnpm install && pnpm test && pnpm build   # 앱: vitest, tsc, vite
 cd app/src-tauri && cargo test                      # 앱 Rust 테스트
 (cd recorder && swift build -c release && swift test)       # 녹음 프로그램 (Swift 5.10 이상)
 (cd recorder/diar && swift build -c release && swift test)  # 9명 이상 구분 도우미 (Swift 6.2 이상)
+scripts/build_app_bundle.sh --check && scripts/make_dmg.sh --check   # 미리 만든 앱·.dmg 도구 확인 (만들기는 docs/setup.md §10)
 cd app && pnpm tauri dev                            # 개발 실행
 ```
 
@@ -598,6 +622,8 @@ Tractus는 아래 오픈소스와 공개 모델 위에 만들었습니다. 라�
 [local-shield]: https://img.shields.io/badge/local--first-audio_stays_on_Mac-2ea44f?style=for-the-badge
 [arch-url]: ARCHITECTURE.md
 [status-shield]: https://img.shields.io/badge/status-beta-orange?style=for-the-badge
+[release-shield]: https://img.shields.io/badge/pre--release-v0.1.0-blue?style=for-the-badge
+[release-url]: https://github.com/sjoon21/Tractus/releases
 [roadmap-url]: docs/roadmap.md
 [python-badge]: https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white
 [mlx-badge]: https://img.shields.io/badge/MLX-000000?style=flat&logo=apple&logoColor=white

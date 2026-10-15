@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from tractus import align, diarize, embed, voices
+from tractus import align, diarize, embed, paths, voices
 
 LEVELS = ("required", "recommended", "optional")
 ONE_OF = "one_of"  # level_note: 같은 기능의 필수 모델 여럿 중 하나만 있으면 된다 (`level`은 그대로 required라 옛 소비자는 그대로 읽는다)
@@ -117,11 +117,11 @@ MODELS: tuple[Model, ...] = (
         model_name="Qwen3-ForcedAligner 0.6B (8bit 양자화)", publisher="Alibaba Qwen 팀", converted_by=MLX, license="Apache-2.0", languages="한국어·영어 등 11개 언어", params="0.6B"),
     _hf("embedding", "스마트 검색", "단어가 달라도 비슷한 뜻의 대화를 찾습니다.", "optional", "search",
         embed.MODEL_REPO, embed.MODEL_REVISION, embed.MODEL_DIR,
-        {"1_Pooling/config.json": 313, "config.json": 727, "config_sentence_transformers.json": 215, "generation_config.json": 117,
-         "merges.txt": 1671853, "model.safetensors": 1191586416, "modules.json": 349, "tokenizer.json": 11423705,
-         "tokenizer_config.json": 9706, "vocab.json": 2776833},
-        # 카드 Qwen/Qwen3-Embedding-0.6B (공식 가중치 그대로라 변환한 곳 없음): apache-2.0, "Supported Languages: 100+", "Number of Parameters: 0.6B"
-        model_name="Qwen3-Embedding 0.6B", publisher="Alibaba Qwen 팀", license="Apache-2.0", languages="100개 이상의 언어", params="0.6B"),
+        {"added_tokens.json": 707, "config.json": 857, "merges.txt": 1671853, "model.safetensors": 633152041, "special_tokens_map.json": 613,
+         "tokenizer.json": 11423705, "tokenizer_config.json": 5404, "vocab.json": 2776833},
+        # 카드 mlx-community/Qwen3-Embedding-0.6B-8bit (2026-10-15 HF API 확인): Qwen/Qwen3-Embedding-0.6B에서 mlx-embeddings로 변환, apache-2.0, config quantization bits 8·group 64.
+        # 원본 카드(HF 조직 Qwen): "Supported Languages: 100+", "Number of Parameters: 0.6B". 변환본 카드에는 언어·파라미터 수가 없어 원본 값을 쓴다
+        model_name="Qwen3-Embedding 0.6B (8bit 양자화)", publisher="Alibaba Qwen 팀", converted_by=MLX, license="Apache-2.0", languages="100개 이상의 언어", params="0.6B"),
     Model("voices", "참석자 목소리 프로필", "등록한 참석자의 목소리를 알아보고 이름을 제안합니다.", "optional", "speakers", "url", voices.MODEL_DIR,
           28281164, files={voices.MODEL_FILE: 28281164}, url=voices.MODEL_URL, sha256=voices.MODEL_SHA256,
           # ModelScope iic/speech_campplus_sv_zh_en_16k-common_advanced: 3D-Speaker(alibaba-damo-academy), Apache License 2.0, 언어 cn·en. ONNX는 k2-fsa/sherpa-onnx 릴리스(speaker-recongition-models)가 올린 것. 파라미터 수는 카드에 없다
@@ -144,11 +144,11 @@ CAPABILITIES: tuple[Capability, ...] = (
 )
 
 _BY_ID = {m.id: m for m in MODELS}
-BUILD_HINTS = {
-    "ffmpeg": "brew install ffmpeg",
-    "recorder": f"cd {diarize.REPO_ROOT / 'recorder'} && swift build -c release --product tractus-rec",
-    "diar_helper": f"cd {diarize.REPO_ROOT / 'recorder' / 'diar'} && swift build -c release",
-}
+
+
+def build_hint(item: str) -> str | None:
+    """없는 도구를 채우는 안내. 녹음·도우미 프로그램은 저장소 배치일 때만 빌드 명령을 말한다 (paths.build_hint)."""
+    return "brew install ffmpeg" if item == "ffmpeg" else paths.build_hint(item) if item in ("recorder", "diar_helper") else None
 
 
 def get(model_id: str) -> Model:
@@ -309,7 +309,7 @@ def capability_status(states: dict[str, str], tools: dict[str, bool], memory: in
 def fix_command(item: str) -> str:
     if item == "memory":
         return "메모리 16GB 이상인 Mac에서만 켤 수 있습니다"
-    return BUILD_HINTS.get(item) or f"tractus models download {item}"
+    return build_hint(item) or f"tractus models download {item}"
 
 
 # ── 힌트 문구 (코어 경고·오류가 쓴다) ──────────────────────────────────────────
@@ -324,5 +324,5 @@ def install_hint(m: Model | str, root: Path) -> str:
     elif m.kind == "url":
         lines.append(f"  (직접 받기: mkdir -p {path} && curl -L -o {path / next(iter(m.files))} {m.url}  sha256 {m.sha256})")
     else:
-        lines.append(f"  (도우미 프로그램 빌드: {BUILD_HINTS['diar_helper']})")
+        lines.append(f"  (도우미 프로그램: {build_hint('diar_helper')})")
     return "\n".join(lines)

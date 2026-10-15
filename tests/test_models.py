@@ -82,7 +82,7 @@ def test_every_model_says_what_it_is_and_agrees_with_download_constants():
         for key in ("converted_by", "languages", "params"):
             assert row[key] is None or row[key].strip(), (m.id, key)
         assert re.fullmatch(r"[0-9a-f]{40}", row["revision"]) if m.kind == "hf" and m.id != "fluid" else row["revision"] is None
-    assert reg.get("embedding").converted_by is None and reg.get("asr-std").converted_by.startswith("mlx-community")
+    assert reg.get("embedding").converted_by.startswith("mlx-community") and reg.get("asr-std").converted_by.startswith("mlx-community")
     assert reg.get("diarizer").license == "OpenMDW-1.1" and reg.get("voices").source.startswith("https://github.com/k2-fsa/")
 
 
@@ -223,7 +223,7 @@ def test_resolve_ids_validates_and_dedupes():
         reg.preset_ids("huge")
     standard_gb = sum(reg.get(i).size_bytes for i in reg.preset_ids("standard")) / GB
     lite_gb = sum(reg.get(i).size_bytes for i in reg.preset_ids("lite")) / GB
-    assert 4.7 < standard_gb < 4.9 and 1.0 < lite_gb < 1.2  # docs/setup.md의 합계 (GiB)
+    assert 4.2 < standard_gb < 4.4 and 1.0 < lite_gb < 1.2  # docs/setup.md의 합계 (GiB)
 
 
 # ── 받기 ─────────────────────────────────────────────────────────────────────
@@ -261,7 +261,7 @@ def test_download_skips_installed_writes_marker_last_and_reports(root, monkeypat
     assert progress[-1]["overall_done"] == progress[-1]["overall_total"] == reg.get("vad").size_bytes + reg.get("embedding").size_bytes
     marker = json.loads((root / "silero-vad-v6" / reg.MARKER).read_text())
     assert marker["id"] == "vad" and marker["revision"] == reg.get("vad").revision and marker["files"] == reg.get("vad").files
-    assert not (root / "qwen3-embedding-0.6b" / (reg.MARKER + ".tmp")).exists()
+    assert not (root / "qwen3-embedding-0.6b-8bit" / (reg.MARKER + ".tmp")).exists()
 
 
 def test_download_refuses_corrupt_and_checks_disk_first(root, monkeypatch):
@@ -792,3 +792,67 @@ def test_sigterm_stops_cleanly_with_cancelled_event(tmp_path):
 def test_silero_vad_languages_is_none_because_card_lists_only_training_corpus():
     from tractus import models_registry as r
     assert next(m for m in r.MODELS if m.id == "vad").languages is None
+
+
+# ── 등록되지 않은 폴더 지우기 (D1) ───────────────────────────────────────────
+
+def test_unregistered_lists_only_real_unknown_dirs_and_prune_removes_them(root, tmp_path):
+    fake_install(root, "vad")
+    old = root / "qwen3-embedding-0.6b"  # 옛 bf16 임베딩 폴더가 이 모양이다
+    old.mkdir()
+    (old / "model.safetensors").write_bytes(b"x" * 100)
+    (root / ".hidden").mkdir()
+    (root / "stray.txt").write_text("file")
+    (root / reg.LOCK_NAME).write_text("")
+    outside = tmp_path / "precious"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("x")
+    (root / "link").symlink_to(outside, target_is_directory=True)
+    assert inst.unregistered(root) == [{"name": "qwen3-embedding-0.6b", "bytes": 100}]
+    assert doctor.models_list(root)["unregistered"] == [{"name": "qwen3-embedding-0.6b", "bytes": 100}]
+    assert inst.prune(root) == {"removed": [{"name": "qwen3-embedding-0.6b", "bytes": 100}], "freed_bytes": 100}
+    assert not old.exists() and reg.inspect("vad", root).installed
+    assert (root / ".hidden").exists() and (root / "stray.txt").exists() and (root / "link").is_symlink() and (outside / "keep.txt").exists()
+    assert inst.prune(root) == {"removed": [], "freed_bytes": 0}
+
+
+def test_prune_never_deletes_folders_in_a_wrongly_chosen_models_dir(root, tmp_path, monkeypatch):
+    """모델 폴더를 문서·노트 폴더로 잘못 골라도 사용자 폴더는 지우지 않는다 (데이터 손실 방지)."""
+    for name in ("Photos", "Taxes"):  # 모델이 하나도 없는 곳
+        (root / name).mkdir()
+        (root / name / "a.txt").write_text("x")
+    assert inst.unregistered(root) == [] and inst.prune(root) == {"removed": [], "freed_bytes": 0}
+    fake_install(root, "vad")  # 모델이 있어도 모델 모양이 아닌 폴더는 건드리지 않는다
+    assert inst.unregistered(root) == [] and (root / "Photos" / "a.txt").exists()
+    home = tmp_path / "home"  # 노트 폴더를 모델 폴더로 쓰는 경우
+    (home / "meetings" / "m1").mkdir(parents=True)
+    (home / "meetings" / "m1" / "transcript.json").write_text("{}")
+    fake_install(home, "vad")
+    (home / "old").mkdir()
+    (home / "old" / "config.json").write_text("{}")
+    assert inst.unregistered(home) == [] and inst.prune(home)["removed"] == []
+    assert (home / "meetings" / "m1" / "transcript.json").exists() and (home / "old").exists()
+    with pytest.raises(inst.ModelError) as e:
+        inst.move(root, home)
+    assert e.value.code == "bad_argument"
+
+
+def test_prune_refuses_while_download_lock_is_held(root):
+    fake_install(root, "vad")
+    (root / "old").mkdir()
+    (root / "old" / "config.json").write_text("{}")
+    with inst.download_lock(root):
+        with pytest.raises(inst.ModelError) as e:
+            inst.prune(root)
+    assert e.value.code == "busy" and (root / "old").exists()
+
+
+def test_cli_prune_asks_unless_yes_and_keeps_stdout_json(root):
+    fake_install(root, "vad")
+    (root / "old").mkdir()
+    (root / "old" / "config.json").write_text("{}")
+    r = CliRunner().invoke(cli.app, ["models", "prune", "--json"], input="n\n")
+    assert r.exit_code == 1 and (root / "old").exists()  # --yes 없이는 확인한다
+    r = CliRunner().invoke(cli.app, ["models", "prune", "--json", "--yes"])
+    assert r.exit_code == 0 and json.loads(r.stdout) == {"removed": [{"name": "old", "bytes": 2}], "freed_bytes": 2} and not (root / "old").exists()
+    assert CliRunner().invoke(cli.app, ["models", "prune", "--yes"]).stdout.strip() == "지울 폴더가 없습니다"

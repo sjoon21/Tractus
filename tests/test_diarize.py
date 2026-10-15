@@ -227,3 +227,36 @@ def test_real_helper_contract_on_broken_models(tmp_path):
     with pytest.raises(RuntimeError, match=r"종료 코드 1\).*download"):
         FluidDiarizer(REAL_BIN, models).diarize(np.zeros(SR, np.float32), max_speakers=12)
     assert sorted(p.relative_to(models) for p in models.rglob("*")) == before  # 아무것도 받지 않았다
+
+
+def test_tool_bin_order_env_then_bundle_then_repo_and_hints_follow_layout(tmp_path, monkeypatch):
+    """P3: 환경변수 → 앱 번들(<앱>/Contents/Resources/runtime/bin의 파이썬 기준 ../../bin) → 저장소. 저장소 배치가 아니면 빌드 명령을 말하지 않는다."""
+    from tractus import paths
+
+    monkeypatch.setenv("TRACTUS_DIAR_BIN", "")
+    rt = tmp_path / "App.app/Contents/Resources/runtime/bin"
+    rt.mkdir(parents=True)
+    monkeypatch.setattr(paths.sys, "executable", str(rt / "python"))
+    bundled = tmp_path / "App.app/Contents/Resources/bin/tractus-diar"
+    monkeypatch.setattr(paths, "REPO_ROOT", tmp_path / "no-repo")  # 저장소 배치 아님
+    assert not paths.in_repo() and diarize.fluid_bin() == bundled  # 아무것도 없으면 번들 경로 (점검 표시용)
+    assert "swift build" not in paths.build_hint("diar_helper") and "TRACTUS_DIAR_BIN" in paths.build_hint("diar_helper")
+    bundled.parent.mkdir(parents=True)
+    bundled.write_text("")
+    assert diarize.fluid_bin() == bundled
+    monkeypatch.setenv("TRACTUS_DIAR_BIN", str(tmp_path / "mine"))
+    assert diarize.fluid_bin() == tmp_path / "mine"
+    repo = tmp_path / "repo"
+    (repo / "recorder").mkdir(parents=True)
+    (repo / "recorder/Package.swift").write_text("")
+    monkeypatch.setattr(paths, "REPO_ROOT", repo)
+    monkeypatch.setenv("TRACTUS_DIAR_BIN", "")
+    bundled.unlink()
+    assert paths.in_repo() and diarize.fluid_bin() == repo / "recorder/diar/.build/release/tractus-diar"  # 저장소 배치면 아직 없어도 저장소 경로
+    # 번들 밖의 파이썬(예: ~/.venv/bin/python)이면 ../../bin 의 같은 이름 파일을 집지 않는다
+    stray = tmp_path / "bin/tractus-diar"
+    stray.parent.mkdir()
+    stray.write_text("")
+    monkeypatch.setattr(paths.sys, "executable", str(tmp_path / ".venv/bin/python"))
+    assert diarize.fluid_bin() == repo / "recorder/diar/.build/release/tractus-diar"
+    assert f"cd {repo}/recorder/diar && swift build" in paths.build_hint("diar_helper")

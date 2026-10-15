@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { APP_ERROR, IDLE_JOB, type JobState } from "./lib";
 import { exportFormatsFor } from "./memo";
-import { canQueueConvert, CONVERT_FIRST, convertPanelView, deleteBlockedWhileConverting, DELETE_BLOCKED, isRecorded, noteLabel, railNotice, recordedIds, recordedStats, WAIT_OTHER, WAIT_RECORDING } from "./recorded";
+import { canQueueConvert, CONVERT_FIRST, convertPanelView, deleteBlockedWhileConverting, DELETE_BLOCKED, isRecorded, noteLabel, railNotice, recordedIds, recordedStats, keptNotice, keptTitle, KEPT_WARN, WAIT_OTHER, WAIT_RECORDING } from "./recorded";
 import { railTabs } from "./rail";
 
 const job = (o: Partial<JobState> = {}): JobState => ({ ...IDLE_JOB, ...o });
@@ -92,5 +92,29 @@ describe("변환 전 노트 화면 모델", () => {
   test("제목이 비면 `제목 없음`", () => {
     expect(noteLabel("  ")).toBe("‘제목 없음’");
     expect(noteLabel("주간")).toBe("‘주간’");
+  });
+});
+
+describe("보관 중인 원본 녹음 안내 (D5)", () => {
+  const now = Date.parse("2026-10-15T12:00:00+09:00");
+  const MB = 1024 ** 2;
+
+  test("크기를 모르거나 0이면 아무것도 보이지 않는다", () => {
+    expect(keptNotice(undefined, "2026-10-15T09:00:00+09:00", now)).toBeNull();
+    expect(keptNotice(0, "2026-10-15T09:00:00+09:00", now)).toBeNull();
+    expect(keptTitle(undefined)).toBeUndefined();
+  });
+
+  test("작고 새 노트는 크기 한 줄만, 1 GB 이상이거나 7일이 넘으면 안내도", () => {
+    expect(keptNotice(300 * MB, "2026-10-15T09:00:00+09:00", now)).toEqual({ line: "원본 녹음 300 MB를 보관 중입니다. 텍스트로 변환하면 지워집니다.", warn: null });
+    expect(keptNotice(1024 * MB, "2026-10-15T09:00:00+09:00", now)?.warn).toBe(KEPT_WARN);
+    expect(keptNotice(1, "2026-10-07T11:00:00+09:00", now)?.warn).toBe(KEPT_WARN); // 7일 하고 1시간
+    expect(keptNotice(1, "2026-10-08T12:00:00+09:00", now)?.warn).toBeNull(); // 딱 7일은 아직
+    expect(keptNotice(1, "엉망", now)?.warn).toBeNull(); // 날짜를 못 읽으면 오래됐다고 보지 않는다
+  });
+
+  test("MB는 1 미만으로 내려가지 않고 천 단위로 끊는다. 배지 title도 같은 크기", () => {
+    expect(keptNotice(10, "2026-10-15T09:00:00+09:00", now)?.line).toContain("1 MB");
+    expect(keptTitle(1500 * MB)).toBe("원본 녹음 1,500 MB 보관 중");
   });
 });

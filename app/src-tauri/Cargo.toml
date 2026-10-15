@@ -23,3 +23,8 @@ ulid = "1"
 trash = { version = "5", default-features = false }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+
+# 개발 빌드의 디버그 정보를 줄 번호만 남긴다 (역추적은 그대로, 깨끗한 개발 빌드의 target이 약 28% 작다: docs/setup.md 2026-10-15 실측).
+# 증분 컴파일은 기본값(켜짐)을 그대로 둔다. 릴리스 빌드(install.sh)에는 영향이 없다.
+[profile.dev]
+debug = "line-tables-only"

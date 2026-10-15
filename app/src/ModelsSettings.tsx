@@ -17,6 +17,13 @@ import {
   installLabel,
   engineSummary,
   levelLabel,
+  moveDialog,
+  moveDone,
+  movable,
+  pruneDialog,
+  pruneDone,
+  pruneLabel,
+  unregisteredSummary,
   modelDetailRows,
   modelSubtitle,
   MODEL_DETAIL_LABEL,
@@ -39,6 +46,7 @@ import {
   type Preset,
 } from "./models";
 import { cancelDownload, startDownload, useDownload } from "./modelsJob";
+import { patchSettings, pickPath } from "./pathFix";
 import { useCapabilities } from "./useCapabilities";
 
 const LIST_FAILED = "모델 목록을 읽지 못했습니다";
@@ -192,6 +200,8 @@ export function ModelsView() {
   const caps = useCapabilities();
   const [asking, setAsking] = useState<ModelRow | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [folderAsk, setFolderAsk] = useState<{ kind: "move"; dest: string } | { kind: "prune" } | null>(null);
+  const [folderBusy, setFolderBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; detail: string | null; error?: boolean } | null>(null);
   const helperFound = caps.report?.doctor?.tools.diar_helper.found;
 
@@ -231,6 +241,38 @@ export function ModelsView() {
     }
   };
 
+  // 모델 폴더 위치 바꾸기(옮기기 포함)와 사용하지 않는 폴더 정리. 옮기기가 먼저 돌고, 성공해야 설정(models_dir)을 바꾼다
+  // ponytail: 옮기다 중간에 실패하면 일부만 옮겨진 채 남는다. 설정은 그대로라 다시 하면 남은 것만 옮긴다
+  const runFolder = async (ask: NonNullable<typeof folderAsk>) => {
+    setFolderBusy(true);
+    try {
+      if (ask.kind === "move") {
+        const r = await api.modelsMove(ask.dest);
+        await patchSettings({ models_dir: ask.dest });
+        setMsg({ text: moveDone(r.moved.length), detail: null });
+      } else {
+        const r = await api.modelsPrune();
+        setMsg({ text: pruneDone(r.removed.length, r.freed_bytes), detail: null });
+      }
+      await changed();
+    } catch (e) {
+      setMsg({ text: errText(e), detail: errDetail(e), error: true });
+    } finally {
+      setFolderAsk(null);
+      setFolderBusy(false);
+    }
+  };
+  const chooseFolder = async () => {
+    const dest = await pickPath(true);
+    if (!dest || !list) return;
+    setMsg(null);
+    // 옮길 모델이 없으면 묻지 않고 바로 바꾼다
+    if (movable(list.models).count === 0) void runFolder({ kind: "move", dest });
+    else setFolderAsk({ kind: "move", dest });
+  };
+  const unused = unregisteredSummary(list);
+  const folderDialog = folderAsk && list ? (folderAsk.kind === "move" ? moveDialog(folderAsk.dest, movable(list.models)) : unused && pruneDialog(unused)) : null;
+
   const sum = list ? installedSummary(list.models) : null;
   const engine = list ? engineSummary(list.models) : null;
   const dialog = asking && removeDialog(asking);
@@ -244,13 +286,25 @@ export function ModelsView() {
       <p className="field-hint tnum models-where">
         {list ? (
           <>
-            위치 {list.models_dir} · 디스크 여유 {fmtBytes(list.disk_free_bytes)}
+            모델 폴더 {list.models_dir} · 디스크 여유 {fmtBytes(list.disk_free_bytes)}
             {sum && ` · 설치됨 ${sum.installed}/${sum.total}개 (${fmtBytes(sum.bytes)})`}
           </>
         ) : (
           !error && "불러오는 중…"
         )}
       </p>
+      {list && (
+        <p className="models-folder">
+          <button type="button" className="ghost-button" disabled={busy || folderBusy} onClick={() => void chooseFolder()}>
+            위치 바꾸기…
+          </button>
+          {unused && (
+            <button type="button" className="ghost-button" disabled={busy || folderBusy} onClick={() => setFolderAsk({ kind: "prune" })}>
+              {pruneLabel(unused)}
+            </button>
+          )}
+        </p>
+      )}
       {engine && (
         <p className={`field-hint models-required${engine.ok ? " is-ok" : ""}`} role="status">
           {engine.text}
@@ -344,6 +398,9 @@ export function ModelsView() {
             </tbody>
           </table>
         </div>
+      )}
+      {folderAsk && folderDialog && (
+        <ConfirmDialog title={folderDialog.title} body={folderDialog.body} cancelLabel={folderDialog.cancel} confirmLabel={folderDialog.confirm} busy={folderBusy} onCancel={() => setFolderAsk(null)} onConfirm={() => void runFolder(folderAsk)} />
       )}
       {asking && dialog && (
         <ConfirmDialog title={dialog.title} body={dialog.body} cancelLabel={dialog.cancel} confirmLabel={dialog.confirm} busy={removing} onCancel={() => setAsking(null)} onConfirm={() => void remove(asking)} />

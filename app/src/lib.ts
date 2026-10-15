@@ -344,7 +344,7 @@ export function parseToolResult<T>(result: unknown): T {
 /** 스마트 검색 상태 줄 (WORDS.md §4.6). MCP status.hint는 에이전트용이라 보이지 않고, 필드로 문장을 고른다 */
 export function statusLine(st: { meetings: number; indexed_chunks: number; vectors: number; vector_search: boolean }): string {
   const n = `(노트 ${st.meetings}개)`;
-  if (!st.vector_search) return `스마트 검색 엔진(qwen3-embedding-0.6b)이 변환 엔진 위치에 없어 단어 일치로만 찾습니다 ${n}`;
+  if (!st.vector_search) return `스마트 검색 엔진(qwen3-embedding-0.6b-8bit)이 변환 엔진 위치에 없어 단어 일치로만 찾습니다 ${n}`;
   if (st.vectors < st.indexed_chunks) return `일부 노트가 아직 스마트 검색에 포함되지 않았습니다. 터미널에서 tractus index를 실행하세요 ${n}`;
   return `스마트 검색 준비 완료 ${n}`;
 }

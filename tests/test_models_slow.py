@@ -123,3 +123,15 @@ def test_real_live_captions_follow_a_growing_recording():
     assert sim_mod.cer(" ".join(u[2] for u in utts), hyp) < 0.35
     assert all(f["speaker"] is None for f in finals)  # 화자는 --speakers일 때만
     assert not [e for e in events if e["event"] == "warning"]
+
+
+@pytest.mark.slow
+def test_real_embedding_8bit_ranks_paraphrase_above_unrelated():
+    """8bit 변환본이 올라가고 의미가 맞게 가까운지만 본다 (검색 평가가 아니다: 2026-10-15 소유자가 평가를 면제했다)."""
+    from tractus import embed
+
+    path = MODELS / embed.MODEL_DIR
+    if not (path / "model.safetensors").exists():
+        pytest.skip(f"{path} 없음")
+    a, b, c = embed.Embedder(path).embed(["다음 분기 예산안을 금요일까지 제출해야 합니다.", "금요일 전에 다음 분기 예산 계획서를 내야 해요.", "점심 메뉴로 김치찌개와 비빔밥 중에 고민 중입니다."])
+    assert a.shape == (1024,) and abs(np.linalg.norm(a) - 1) < 1e-3 and a @ b > a @ c + 0.2

@@ -2,8 +2,9 @@
 // 상태: ok = 문제 없음, warn = 일부 기능이 줄어듦, blocked = 핵심 기능이 안 됨, info = 안내(앱이 미리 확인할 수 없음).
 // 점검은 앱을 막지 않는다: blocked여도 노트 쓰기·검색·녹음 보관은 된다.
 import type { DoctorReport, Fix } from "./caps";
-import { FIX_MODELS, FIX_SETTINGS } from "./caps";
+import { FIX_MODELS } from "./caps";
 import { fmtBytes, type ModelRow, type ModelsList } from "./models";
+import { binView, BROWSE, HOME_PICK, REVERT_AUTO, type BinKind } from "./paths";
 
 export type RowStatus = "ok" | "warn" | "blocked" | "info";
 
@@ -17,7 +18,7 @@ export interface CheckupRow {
   copy?: string;
 }
 
-export type SectionId = "system" | "tools" | "models" | "permissions" | "ai";
+export type SectionId = "system" | "tools" | "data" | "models" | "permissions" | "ai";
 export interface CheckupSection {
   id: SectionId;
   title: string;
@@ -28,12 +29,15 @@ export const BREW_FFMPEG = "brew install ffmpeg";
 export const MIN_MACOS = [14, 4] as const;
 export const MIN_MEMORY_GB = 8;
 export const STANDARD_MEMORY_GB = 16;
-/** 구성을 받을 때 필요한 디스크: 표준 약 5.2 GB, 저사양 약 1.2 GB (코어 레지스트리의 크기 합). 여유가 이 값의 1.1배(코어의 확인)보다 많으면 문제 없다 */
-export const STANDARD_DISK = 5.2e9;
+/** 구성을 받을 때 필요한 디스크: 표준 약 4.6 GB(스마트 검색이 8bit가 된 2026-10-15 이후, 전에는 5.2), 저사양 약 1.2 GB (코어 레지스트리의 크기 합). 여유가 이 값의 1.1배(코어의 확인)보다 많으면 문제 없다 */
+export const STANDARD_DISK = 4.6e9;
 export const LITE_DISK = 1.2e9;
 export const MIN_DISK = LITE_DISK * 1.25;
 
 export const KEY_FIX: Fix = { kind: "settings", label: "API 키 등록" };
+export const STALE_SAVED = "저장된 경로가 없어 자동 경로를 씁니다";
+export const HOME_RISK = "이 폴더는 동기화되거나 Obsidian 볼트일 수 있습니다. 노트 폴더 안에 모델을 두지 마세요";
+const fixFor = (kind: BinKind, kindOfFix: "pick" | "auto", label: string): Fix => ({ kind: `${kindOfFix}-${kind}` as Fix["kind"], label });
 
 export const STATUS_LABEL: Record<RowStatus, string> = { ok: "문제 없음", warn: "확인 필요", blocked: "사용할 수 없음", info: "안내" };
 
@@ -91,12 +95,17 @@ function systemRows(report: DoctorReport | null, models: ModelsList | null): Che
 function toolRows(report: DoctorReport | null): CheckupRow[] {
   const rows: CheckupRow[] = [];
   const r = report;
-  if (r && !r.tractus_bin_exists) {
-    rows.push({ id: "core", label: "Tractus 엔진", status: "blocked", detail: `실행 파일을 찾지 못했습니다 (${r.tractus_bin}). 설정의 tractus 실행 파일 경로를 확인하세요.`, fix: FIX_SETTINGS });
-  } else if (r && !r.doctor) {
+  if (r?.stale_saved?.length) rows.push({ id: "stale-paths", label: "저장된 경로", status: "info", detail: STALE_SAVED });
+  const core = binView(r, "tractus");
+  if (r && core && !core.found) {
+    rows.push({ id: "core", label: "Tractus 엔진", status: "blocked", detail: `실행 파일을 찾지 못했습니다 (${core.path}). 설정에서 tractus 실행 파일 경로를 확인하세요.`, fix: fixFor("tractus", "pick", BROWSE) });
+  } else if (r && core && !r.doctor && r.tractus_source === "bundle") {
+    // 앱 안의 엔진이 안 돈다 = 앱이 손상된 것이라 '엔진이 오래됐다'가 아니다. 날것의 한 줄은 뒤에 붙인다
+    rows.push({ id: "core", label: "Tractus 엔진", status: "blocked", detail: `Tractus 안의 엔진이 손상되었습니다. 앱을 다시 받아 설치하세요.${r.core_error ? ` (${r.core_error.split("\n")[0]})` : ""}` });
+  } else if (r && core && !r.doctor) {
     rows.push({ id: "core", label: "Tractus 엔진", status: "warn", detail: `점검 정보를 읽지 못했습니다${r.core_error ? `: ${r.core_error.split("\n")[0]}` : ""}. 엔진이 오래되었을 수 있습니다.` });
-  } else if (r) {
-    rows.push({ id: "core", label: "Tractus 엔진", status: "ok", detail: r.tractus_bin });
+  } else if (r && core) {
+    rows.push({ id: "core", label: "Tractus 엔진", status: "ok", detail: `${core.path} — ${core.note}`, ...(core.custom && { fix: fixFor("tractus", "auto", REVERT_AUTO) }) });
   }
   const ff = r?.doctor?.tools.ffmpeg;
   if (ff) {
@@ -113,11 +122,12 @@ function toolRows(report: DoctorReport | null): CheckupRow[] {
           },
     );
   }
-  if (r) {
+  const rec = binView(r, "rec");
+  if (rec) {
     rows.push(
-      r.rec_bin_exists
-        ? { id: "recorder", label: "녹음 프로그램", status: "ok", detail: r.rec_bin }
-        : { id: "recorder", label: "녹음 프로그램", status: "blocked", detail: `tractus-rec를 찾지 못했습니다 (${r.rec_bin}). 설정의 tractus-rec 실행 파일 경로를 확인하세요. 녹음 말고는 모두 쓸 수 있습니다.`, fix: FIX_SETTINGS },
+      rec.found
+        ? { id: "recorder", label: "녹음 프로그램", status: "ok", detail: `${rec.path} — ${rec.note}`, ...(rec.custom && { fix: fixFor("rec", "auto", REVERT_AUTO) }) }
+        : { id: "recorder", label: "녹음 프로그램", status: "blocked", detail: `tractus-rec를 찾지 못했습니다 (${rec.path}). 설정의 tractus-rec 실행 파일 경로를 확인하세요. 녹음 말고는 모두 쓸 수 있습니다.`, fix: fixFor("rec", "pick", BROWSE) },
     );
   }
   const helper = r?.doctor?.tools.diar_helper;
@@ -129,6 +139,17 @@ function toolRows(report: DoctorReport | null): CheckupRow[] {
     );
   }
   return rows;
+}
+
+/** 데이터 폴더: 동기화 폴더나 Obsidian 볼트 안이면 주의 (노트가 함께 동기화될 수 있다). 점검을 못 읽었으면 행이 없다 */
+function dataRows(report: DoctorReport | null): CheckupRow[] {
+  if (!report?.home) return [];
+  const risk = report.home_risk;
+  return [
+    risk
+      ? { id: "home", label: "데이터 폴더", status: "warn", detail: `${report.home} (${risk}) — ${HOME_RISK}`, fix: { kind: "pick-home", label: HOME_PICK } }
+      : { id: "home", label: "데이터 폴더", status: "ok", detail: report.home },
+  ];
 }
 
 const installed = (list: ModelRow[], id: string) => list.some((m) => m.id === id && m.installed);
@@ -188,9 +209,11 @@ function aiRows(keySaved: boolean | null): CheckupRow[] {
 }
 
 export function checkupSections(o: { report: DoctorReport | null; models: ModelsList | null; keySaved: boolean | null }): CheckupSection[] {
+  const data = dataRows(o.report);
   return [
     { id: "system", title: "시스템", rows: systemRows(o.report, o.models) },
     { id: "tools", title: "도구", rows: toolRows(o.report) },
+    ...(data.length > 0 ? [{ id: "data" as const, title: "저장 위치", rows: data }] : []),
     { id: "models", title: "모델", rows: modelRows(o.report, o.models) },
     { id: "permissions", title: "권한 안내", rows: PERMISSION_ROWS },
     { id: "ai", title: "AI 요약·질문", rows: aiRows(o.keySaved) },

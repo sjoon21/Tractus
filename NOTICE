@@ -20,8 +20,10 @@ Each one is covered by its own license.
    License: Apache License 2.0
 
 2. Qwen3-Embedding-0.6B (semantic search; optional)
-   https://huggingface.co/Qwen/Qwen3-Embedding-0.6B
-   (revision 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3)
+   Original: https://huggingface.co/Qwen/Qwen3-Embedding-0.6B
+   MLX 8-bit conversion used by Tractus:
+             https://huggingface.co/mlx-community/Qwen3-Embedding-0.6B-8bit
+             (revision 407ad2329cd30702720aafe83f74a1ba30fdfbca)
    License: Apache License 2.0
 
 3. Silero VAD v6 (voice activity detection)

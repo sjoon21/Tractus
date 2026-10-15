@@ -63,6 +63,21 @@ export const railNotice = (tab: RailTab, recorded: boolean): string | null => (r
 /** 삭제를 막는 이유: 변환 중이거나 줄에서 기다리는 노트는 지울 수 없다 (줄에서 기다리는 노트를 지우면 시작할 때 실패한다) */
 export const deleteBlockedWhileConverting = (slot: ConvertControls["slot"]): string | null => (slot ? DELETE_BLOCKED : null);
 
+const MB = 1024 ** 2;
+const KEPT_BIG = 1024 ** 3;
+const KEPT_STALE_MS = 7 * 24 * 3600 * 1000;
+const mbText = (bytes: number) => `${Math.max(1, Math.round(bytes / MB)).toLocaleString("ko-KR")} MB`;
+
+/** 사이드바 배지 `title`: 보관 중인 원본 녹음의 크기. 없으면(0·모름) undefined */
+export const keptTitle = (bytes?: number): string | undefined => (bytes ? KEPT_TITLE(mbText(bytes)) : undefined);
+
+/** 변환 전 노트 가운데에 보일 안내: 보관 중인 원본 크기, 1 GB 이상이거나 7일이 넘었으면 `warn`도. 크기를 모르면 null (D5, 표시와 안내만) */
+export function keptNotice(bytes: number | undefined, createdAt: string, now: number): { line: string; warn: string | null } | null {
+  if (!bytes) return null;
+  const age = now - Date.parse(createdAt); // 날짜를 못 읽으면 NaN: 오래됐다고 보지 않는다
+  return { line: KEPT_LINE(mbText(bytes)), warn: bytes >= KEPT_BIG || age > KEPT_STALE_MS ? KEPT_WARN : null };
+}
+
 // ── 문구 (WORDS.md §4.18) ──
 
 export const RECORDED_BADGE = "변환 전";
@@ -72,6 +87,9 @@ export const CONVERT_LABEL = "텍스트로 변환";
 export const CONVERT_RETRY = "다시 변환";
 export const CONVERT_EMPTY_TITLE = "아직 텍스트로 변환하지 않았습니다";
 export const CONVERT_EMPTY_BODY = "녹음은 저장되어 있어 아래 플레이어로 들어 볼 수 있습니다. 준비가 되면 텍스트로 변환하세요. 변환하기 전에도 메모를 쓰고 제목·태그·폴더를 정리할 수 있습니다.";
+export const KEPT_LINE = (size: string) => `원본 녹음 ${size}를 보관 중입니다. 텍스트로 변환하면 지워집니다.`;
+export const KEPT_WARN = "변환하지 않으면 용량을 계속 차지합니다.";
+export const KEPT_TITLE = (size: string) => `원본 녹음 ${size} 보관 중`;
 export const CONVERT_FIRST = "먼저 텍스트로 변환하세요";
 export const CONVERT_FAILED_TITLE = "텍스트 변환 실패";
 /** 변환 전 노트를 변환하는 중에 새 녹음을 시작할 때 (알림) */
