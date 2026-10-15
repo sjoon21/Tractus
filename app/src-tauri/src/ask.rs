@@ -59,6 +59,11 @@ pub struct LlmConfig {
     pub provider: Option<String>,
     pub model: Option<String>,
     pub local_only: bool,
+    /// 요청이 가는 곳의 호스트 (서비스 기본 주소가 아닌 주소를 쓸 때만. 화면은 없으면 서비스 기본 호스트를 쓴다). 주소 전체는 화면에 보내지 않는다
+    pub host: Option<String>,
+    /// 셸·.env의 TRACTUS_LLM_BASE_URL 원문. 화면으로는 나가지 않는다 (`host`만)
+    #[serde(skip)]
+    pub base_url: Option<String>,
 }
 
 /// 코어 env._parse와 같은 규칙: `export` 생략 가능, 따옴표 벗기기, 따옴표 없는 값의 ` #` 뒤는 주석
@@ -91,7 +96,7 @@ pub fn llm_config(dirs: &[&Path], env: impl Fn(&str) -> Option<String>) -> LlmCo
         })
     };
     let local_only = get("TRACTUS_LOCAL_ONLY").is_some_and(|v| !matches!(v.trim().to_lowercase().as_str(), "" | "0" | "false" | "no" | "off"));
-    LlmConfig { provider: get("TRACTUS_LLM_PROVIDER"), model: get("TRACTUS_LLM_MODEL"), local_only }
+    LlmConfig { provider: get("TRACTUS_LLM_PROVIDER"), model: get("TRACTUS_LLM_MODEL"), local_only, host: None, base_url: get("TRACTUS_LLM_BASE_URL") }
 }
 
 #[cfg(test)]
@@ -135,7 +140,7 @@ mod tests {
         let none = |_: &str| None;
         assert_eq!(
             llm_config(&[&cwd, &home], none),
-            LlmConfig { provider: Some("upstage".into()), model: Some("solar-x".into()), local_only: false }
+            LlmConfig { provider: Some("upstage".into()), model: Some("solar-x".into()), local_only: false, host: None, base_url: None }
         );
         // 셸 값이 먼저다. 닫힌 쪽으로: 모르는 값도 켜진 것
         let shell = |k: &str| match k {
@@ -143,8 +148,10 @@ mod tests {
             "TRACTUS_LOCAL_ONLY" => Some("ture".to_string()),
             _ => None,
         };
-        assert_eq!(llm_config(&[&cwd, &home], shell), LlmConfig { provider: Some("gemma-local".into()), model: Some("solar-x".into()), local_only: true });
-        assert_eq!(llm_config(&[], none), LlmConfig { provider: None, model: None, local_only: false });
+        assert_eq!(llm_config(&[&cwd, &home], shell), LlmConfig { provider: Some("gemma-local".into()), model: Some("solar-x".into()), local_only: true, host: None, base_url: None });
+        assert_eq!(llm_config(&[], none), LlmConfig { provider: None, model: None, local_only: false, host: None, base_url: None });
+        fs::write(home.join(".env"), "TRACTUS_LLM_BASE_URL=http://localhost:11434/v1\n").unwrap();
+        assert_eq!(llm_config(&[&home], none).base_url.as_deref(), Some("http://localhost:11434/v1"));
         fs::remove_dir_all(&root).unwrap();
     }
 }

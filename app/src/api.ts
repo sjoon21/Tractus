@@ -113,6 +113,55 @@ export interface Settings {
   keep_in_tray?: boolean;
   /** 녹음을 끝내면: "ask" | "convert" | "later". 없거나 모르는 값이면 매번 묻는다 (afterRecord.afterRecord) */
   after_record?: string;
+  /** AI 서비스·스마트 검색 방식은 llm_* 명령으로 따로 저장한다 (여기 값은 저장 때 무시된다) */
+  llm_default?: string;
+  llm_profiles?: Record<string, LlmProfile>;
+  embedding_provider?: string;
+}
+
+/** 한 서비스에 저장한 주소·AI 모델 (비어 있으면 서비스 기본값) */
+export interface LlmProfile {
+  base_url: string;
+  model: string;
+}
+
+export interface LlmSettings {
+  /** 서비스를 따로 고르지 않을 때 쓰는 서비스 (등록된 것 중에서) */
+  default: string;
+  /** 서비스마다 저장한 주소·AI 모델. 다섯 서비스가 모두 있다 */
+  profiles: Record<string, LlmProfile>;
+  /** 서비스별 키 등록 여부 */
+  saved: Record<string, boolean>;
+  /** 지금 쓸 수 있는 서비스 (키가 있거나 이 Mac 주소의 직접 입력) */
+  registered: string[];
+  /** 셸·.env.local의 TRACTUS_LLM_ 설정이 이 화면의 선택보다 먼저 적용되는가 */
+  env_override: boolean;
+  /** 그중 서비스 자체를 환경이 정하는가 (그러면 요약·질문에서 서비스를 고를 수 없다) */
+  provider_fixed: boolean;
+  /** 스마트 검색 방식 */
+  embedding_provider: "local" | "upstage";
+  /** 로컬 전용 모드(TRACTUS_LOCAL_ONLY): Upstage로 보내지 않는다 */
+  local_only: boolean;
+}
+
+/** `tractus llm models`의 결과. 실패하면 models가 비고 code·message가 있다 */
+export interface LlmModelList {
+  models: string[];
+  code: string | null;
+  message: string | null;
+}
+
+export interface LlmTestResult {
+  ok: boolean;
+  provider: string | null;
+  model: string | null;
+  host: string | null;
+  latency_ms: number | null;
+  /** 응답은 왔지만 내용이 비어 있었다 (연결은 된 것이다) */
+  empty?: boolean;
+  /** 실패했을 때 코어의 오류 코드 (lib.ts ERROR_TEXT)와 원래 문구 */
+  code: string | null;
+  message: string | null;
 }
 
 export interface SearchHit {
@@ -148,6 +197,8 @@ export interface AskArgs {
   to: string | null;
   question: string;
   history: ChatMessage[];
+  /** 이번 질문에 쓸 AI 서비스 (없으면 기본 서비스) */
+  provider?: string | null;
 }
 
 export interface McpStatus {
@@ -217,11 +268,23 @@ export const api = {
   askCancel: (job: string) => invoke<void>("ask_cancel", { job }),
   loadChat: (id: string) => invoke<ChatEntry[]>("load_chat", { id }),
   /** 보내기 전 안내용 공급자·모델 (셸 > .env.local > .env, 코어와 같은 순서) */
-  llmConfig: () => invoke<LlmConfig>("llm_config"),
-  /** AI 서비스 API 키: 등록 여부만 알 수 있다. 키는 화면으로 돌아오지 않는다 (docs/desktop.md §2.14) */
-  llmKeyStatus: () => invoke<{ saved: boolean }>("llm_key_status"),
-  llmKeySave: (key: string) => invoke<void>("llm_key_save", { key }),
-  llmKeyDelete: () => invoke<void>("llm_key_delete"),
+  llmConfig: (provider?: string | null) => invoke<LlmConfig>("llm_config", { provider: provider ?? null }),
+  /** AI 서비스 API 키: 서비스별로 등록 여부만 알 수 있다. 키는 화면으로 돌아오지 않는다 (docs/desktop.md §2.14) */
+  llmKeyStatus: (provider: string) => invoke<{ saved: boolean }>("llm_key_status", { provider }),
+  llmKeySave: (provider: string, key: string) => invoke<void>("llm_key_save", { provider, key }),
+  llmKeyDelete: (provider: string) => invoke<void>("llm_key_delete", { provider }),
+  /** 서비스마다 저장한 주소·AI 모델, 기본 서비스, 등록된 서비스, 스마트 검색 방식 */
+  llmSettings: () => invoke<LlmSettings>("llm_settings"),
+  /** 한 서비스의 주소·AI 모델만 저장한다 (다른 서비스·설정은 건드리지 않는다). 주소·AI 모델이 비어 있으면 서비스 기본값 */
+  llmSettingsSave: (provider: string, baseUrl: string, model: string) => invoke<void>("llm_settings_save", { provider, baseUrl, model }),
+  /** 요약·질문에서 서비스를 따로 고르지 않을 때 쓰는 서비스 */
+  llmDefaultSave: (provider: string) => invoke<void>("llm_default_save", { provider }),
+  /** 스마트 검색 방식. upstage는 Upstage 키가 있어야 한다. 바꾸면 검색 정보를 새로 만든다 (indexer.touch) */
+  embeddingProviderSave: (provider: "local" | "upstage") => invoke<void>("embedding_provider_save", { provider }),
+  /** 저장된 선택과 키로 `tractus llm test` (provider 없으면 기본 서비스). 실패해도 reject하지 않고 {ok: false, code, message}를 돌려준다 (실행하지 못했을 때만 reject) */
+  llmTest: (provider?: string | null) => invoke<LlmTestResult>("llm_test", { provider: provider ?? null }),
+  /** 서비스가 아는 AI 모델 이름 (`tractus llm models`). 실패해도 reject하지 않고 {models: [], code, message} */
+  llmModels: (provider?: string | null) => invoke<LlmModelList>("llm_models", { provider: provider ?? null }),
   /** 모델·점검 (docs/desktop.md §2.15): `tractus models list --json` / `doctor --json`. doctor는 코어를 못 불러도 실행 파일 경로 확인 결과를 돌려준다 */
   modelsList: () => invoke<ModelsList>("models_list"),
   doctor: () => invoke<DoctorReport>("doctor"),

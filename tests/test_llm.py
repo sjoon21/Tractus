@@ -97,11 +97,12 @@ def test_local_only_blocks_remote_providers(monkeypatch):
 
 
 def test_provider_without_default_model_requires_explicit_model(monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
     monkeypatch.delenv("TRACTUS_LLM_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
     with pytest.raises(LLMError, match="모델"):
-        resolve_provider("gemini", None)
-    assert resolve_provider("gemini", "gemini-x")[1] == "gemini-x"
+        resolve_provider("openai", None)
+    assert resolve_provider("openai", "gpt-x")[1] == "gpt-x"
 
 
 def test_empty_choices_are_retried_then_raise():

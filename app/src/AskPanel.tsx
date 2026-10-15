@@ -4,9 +4,10 @@ import { listen } from "@tauri-apps/api/event";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { api, errFull, errText, type ChatEntry } from "./api";
 import { ErrorDetail } from "./ErrorDetail";
-import { answeredBy, answerParts, askReduce, citeLabel, citeTarget, isAsking, isMemoCite, isNoteGone, isTaggedMemo, sendNotice, START_ASK, trimHistory, turnsHistory, type AskEvent, type AskSource, type AskState, type LlmConfig } from "./ask";
+import { answerParts, askReduce, citeLabel, citeTarget, isAsking, isMemoCite, isNoteGone, isTaggedMemo, sendNotice, START_ASK, trimHistory, turnsHistory, type AskEvent, type AskSource, type AskState, type LlmConfig } from "./ask";
 import { APP_ERROR, fmtTime, isImeKey } from "./lib";
 import { KEY_CHANGED, llmErrorView } from "./llmKey";
+import { LlmServicePicker, useLlmServices } from "./LlmServicePicker";
 import { OpenSettings } from "./OpenSettings";
 import { flushMemos } from "./memo";
 import { NOTE_GONE } from "./remove";
@@ -38,17 +39,15 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
   const [llm, setLlm] = useState<LlmConfig | null>(null);
   const [draft, setDraft] = useState("");
   const [range, setRange] = useState({ from: "", to: "" });
+  const services = useLlmServices("ask");
+  const provider = services.provider;
   const composing = useRef(false);
   const running = turns.find((t) => isAsking(t.state));
   const runningId = useRef<string | null>(null);
   runningId.current = running?.id ?? null;
 
   useEffect(() => {
-    // 설정에서 키를 저장·삭제하면 보내기 전 안내를 다시 읽는다 (질문 서랍은 닫아도 계속 떠 있다)
-    const refetch = () => void api.llmConfig().then(setLlm, () => setLlm(null));
-    refetch();
-    window.addEventListener(KEY_CHANGED, refetch);
-    if (!meetingId) return () => window.removeEventListener(KEY_CHANGED, refetch);
+    if (!meetingId) return;
     let alive = true;
     api.loadChat(meetingId).then(
       // 기록을 읽는 사이에 보낸 질문은 뒤에 둔다
@@ -57,9 +56,16 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
     );
     return () => {
       alive = false;
-      window.removeEventListener(KEY_CHANGED, refetch);
     };
   }, [meetingId]);
+
+  useEffect(() => {
+    // 보내기 전 안내는 고른 서비스 기준이다. 설정에서 키·서비스를 바꾸면 다시 읽는다 (질문 서랍은 닫아도 계속 떠 있다)
+    const refetch = () => void api.llmConfig(provider).then(setLlm, () => setLlm(null));
+    refetch();
+    window.addEventListener(KEY_CHANGED, refetch);
+    return () => window.removeEventListener(KEY_CHANGED, refetch);
+  }, [provider]);
 
   useEffect(() => {
     const un = listen<AskEvent>("ask", ({ payload: ev }) => setTurns((ts) => ts.map((t) => (t.id === ev.job ? { ...t, state: askReduce(t.state, ev) } : t))));
@@ -97,7 +103,7 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
     setTurns((ts) => [...ts, { id: job, question, state: START_ASK }]);
     setDraft("");
     try {
-      await api.askStart({ job, meeting: meetingId, from: range.from || null, to: range.to || null, question, history });
+      await api.askStart({ job, meeting: meetingId, from: range.from || null, to: range.to || null, question, history, provider });
     } catch (e) {
       setTurns((ts) => ts.map((t) => (t.id === job ? { ...t, state: { ...t.state, phase: "error", error: errFull(e), errorCode: APP_ERROR } } : t)));
     }
@@ -165,6 +171,7 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
           }}
         />
         <div className="ask-form-foot">
+          <LlmServicePicker services={services} disabled={!!running} />
           <p className={`ask-notice ${notice?.warn ? "is-warn" : ""}`}>{notice?.text}</p>
           {running ? (
             <button type="button" className="ghost-button ask-send" onClick={cancel}>
@@ -212,7 +219,6 @@ function TurnItem({ turn: { question, state: s }, scope, onCite, notes, memoIds 
         {status && !(s.phase === "answer" && s.answer) ? status : null}
         {s.phase === "done" && s.citations.length === 0 && <span className="badge">근거 대화 없음</span>}
         {s.phase === "cancelled" && "멈췄습니다"}
-        {answeredBy(s) && <span className="ask-by">{answeredBy(s)}</span>}
       </p>
       {s.error && <AskError error={s.error} code={s.errorCode} />}
       {s.warning && <p className="ask-note is-warn">{s.warning}</p>}

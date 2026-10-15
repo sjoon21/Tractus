@@ -18,7 +18,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 from pydantic import BaseModel, Field
 
-from tractus import organize
+from tractus import embed, organize
 from tractus.index import Index
 from tractus.store import find_meeting_dir, is_recorded, memo_segments, seg_text, speaker_name, stamp
 from tractus.summarize import MeetingSummary, check_segment_ids, write_summary
@@ -189,7 +189,9 @@ def build_server(home: Path, embedder) -> MCPServer:
         st = idx.stats()
         vector_search = idx.embedder is not None and st["vectors"] > 0
         hint = None
-        if idx.embedder is None:
+        if idx.embedder is None and embed.mode() == "upstage":
+            hint = "Upstage 임베딩을 쓸 수 없어 키워드 검색만 합니다 (UPSTAGE_API_KEY를 확인하세요)"
+        elif idx.embedder is None:
             hint = "임베딩 모델이 없거나 올리지 못해 키워드 검색만 합니다 (터미널에서 `tractus models download embedding`)"
         elif st["pending"]:
             hint = f"벡터가 없는 청크 {st['pending']}개: 터미널에서 `tractus index`를 실행하면 의미 검색에 포함됩니다"

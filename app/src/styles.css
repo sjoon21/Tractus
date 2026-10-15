@@ -1453,13 +1453,6 @@ mark {
   font-size: var(--fs-base);
 }
 
-.summary-source {
-  margin-top: 32px;
-  font-size: var(--fs-xs);
-  color: var(--ink-3);
-  letter-spacing: 0.04em;
-}
-
 .transcript-empty {
   padding: 8px 0 24px;
   max-width: 46ch;
@@ -1875,7 +1868,8 @@ pre.inline-error {
   font-weight: 650;
 }
 
-.field input {
+.field input,
+.field select {
   padding: 9px 12px;
   border: 1px solid var(--rule-strong);
   border-radius: 8px;
@@ -1884,7 +1878,8 @@ pre.inline-error {
   font-variant-numeric: tabular-nums;
 }
 
-.field input:focus {
+.field input:focus,
+.field select:focus {
   border-color: var(--ink);
   outline: none;
 }
@@ -2507,11 +2502,6 @@ pre.inline-error {
 
 .ask-status:empty {
   display: none;
-}
-
-.ask-by {
-  margin-left: auto;
-  font-size: var(--fs-xs);
 }
 
 .ask-note {
@@ -4757,4 +4747,64 @@ body.is-note-dragging {
   flex-wrap: wrap;
   gap: 10px;
   margin: 8px 0 0;
+}
+
+/* 요약·질문마다 AI 서비스 고르기 */
+.llm-pick {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  align-items: center;
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
+.llm-pick select {
+  max-width: 10rem;
+  padding: 5px 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 7px;
+  background: var(--paper-3);
+  font-size: var(--fs-sm);
+  color: var(--ink);
+}
+
+.llm-pick select:focus-visible {
+  border-color: var(--ink);
+  outline: none;
+}
+
+.llm-services {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.llm-service {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 8px;
+  background: transparent;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  transition: border-color var(--fast), background var(--fast);
+}
+
+.llm-service[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--paper-3);
+}
+
+.llm-service .badge.is-on {
+  color: var(--ink);
+}
+
+.embed-choice {
+  margin-top: 20px;
 }

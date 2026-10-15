@@ -337,6 +337,19 @@ pub struct DoctorReport {
     pub home_risk: Option<&'static str>,
 }
 
+/// 스마트 검색을 Upstage로 쓰면 이 Mac의 검색 모델은 필요 없다: 기능은 Upstage 키가 있을 때 준비됨, 없으면 `upstage-key`가 빠진 것으로 알린다.
+/// 로컬 전용 모드(TRACTUS_LOCAL_ONLY)면 코어가 Upstage를 쓰지 않고 단어 일치로만 찾으므로 준비되지 않은 것으로 알린다 (`local-only`)
+fn apply_embedding(d: &mut Doctor, s: &Settings, local_only: bool) {
+    if s.embedding_provider != "upstage" {
+        return;
+    }
+    let missing = if local_only { Some("local-only") } else if s.key_saved("upstage") { None } else { Some("upstage-key") };
+    for c in d.capabilities.iter_mut().filter(|c| c.id == "smart-search") {
+        c.ready = missing.is_none();
+        c.missing = missing.map(String::from).into_iter().collect();
+    }
+}
+
 fn doctor_report(s: &Settings) -> DoctorReport {
     let (core, rec) = (s.tractus_resolved(), s.rec_resolved());
     let (tractus_bin_exists, rec_bin_exists) = (core.source != "none", rec.source != "none");
@@ -344,7 +357,10 @@ fn doctor_report(s: &Settings) -> DoctorReport {
         (None, Some(procs::cannot_run(&core.path, "No such file or directory")))
     } else {
         match run_tractus(s, &doctor_args(), None, DOCTOR_FAILED).and_then(|out| parse_doctor(&out)) {
-            Ok(d) => (Some(d), None),
+            Ok(mut d) => {
+                apply_embedding(&mut d, s, crate::ask::llm_config(&[&s.tractus_cwd(), &s.home()], |k| std::env::var(k).ok()).local_only);
+                (Some(d), None)
+            }
             Err(e) => (None, Some(e)),
         }
     };
@@ -752,6 +768,41 @@ mod tests {
         let r = doctor_report(&settings(&d, &bin, &rec));
         assert!(r.doctor.is_none() && r.tractus_bin_exists && r.rec_bin_exists);
         assert_eq!(r.core_error.as_deref(), Some("No such command 'doctor'."));
+    }
+
+    #[test]
+    fn upstage_search_needs_the_key_not_the_local_model() {
+        let cap = |ready| Capability { id: "smart-search".into(), name: "스마트 검색".into(), ready, missing: if ready { vec![] } else { vec!["embedding".into()] }, hint: String::new() };
+        let mut d = parse_doctor(r#"{"capabilities":[]}"#).unwrap();
+        d.capabilities = vec![cap(false)];
+        let d0 = std::env::temp_dir().join(format!("tractus-embcap-{}", std::process::id()));
+        let s = Settings { embedding_provider: "upstage".into(), config_dir: Some(d0.clone()), ..Default::default() };
+        apply_embedding(&mut d, &s, false);
+        assert_eq!((d.capabilities[0].ready, d.capabilities[0].missing.as_slice()), (false, ["upstage-key".to_string()].as_slice())); // 키 없음
+        crate::llm_key::save(&d0, "upstage", "test-key-123").unwrap();
+        apply_embedding(&mut d, &s, false);
+        assert_eq!((d.capabilities[0].ready, d.capabilities[0].missing.len()), (true, 0));
+        // 로컬 전용 모드에서는 키가 있어도 준비되지 않았다 (코어가 Upstage를 쓰지 않는다)
+        apply_embedding(&mut d, &s, true);
+        assert_eq!((d.capabilities[0].ready, d.capabilities[0].missing.as_slice()), (false, ["local-only".to_string()].as_slice()));
+        // 이 Mac 방식이면 코어의 답을 그대로 둔다
+        d.capabilities = vec![cap(false)];
+        apply_embedding(&mut d, &Settings { config_dir: Some(d0.clone()), ..Default::default() }, false);
+        assert!(!d.capabilities[0].ready);
+        let _ = std::fs::remove_dir_all(&d0);
+    }
+
+    /// 2026-10-15 실제 `tractus doctor --json`의 모양 그대로 (모델·기능 부분, smart-search만 로컬 모델 없음으로 바꿈)
+    #[test]
+    fn real_doctor_shape_with_upstage_search() {
+        let json = r#"{"system": {"arch": "arm64", "macos_version": "26.6", "memory_gb": 16.0, "meets_min": true, "problems": [], "standard_recommended": true, "disk_free_bytes": 187451600896, "models_dir": "models"}, "tools": {"ffmpeg": {"found": true, "path": "/opt/homebrew/bin/ffmpeg", "version": "8.1.1"}}, "models": [{"id": "embedding", "level": "optional", "level_note": null, "state": "missing"}], "capabilities": [{"id": "convert", "name": "텍스트로 변환", "ready": true, "missing": [], "hint": ""}, {"id": "smart-search", "name": "스마트 검색", "ready": false, "missing": ["embedding"], "hint": ""}], "recommended_track": "standard", "effective_track": "standard"}"#;
+        let mut d = parse_doctor(json).unwrap();
+        let d0 = std::env::temp_dir().join(format!("tractus-realdoc-{}", std::process::id()));
+        crate::llm_key::save(&d0, "upstage", "test-key-123").unwrap();
+        apply_embedding(&mut d, &Settings { embedding_provider: "upstage".into(), config_dir: Some(d0.clone()), ..Default::default() }, false);
+        let by = |id: &str| d.capabilities.iter().find(|c| c.id == id).map(|c| (c.ready, c.missing.len())).unwrap();
+        assert_eq!((by("smart-search"), by("convert")), ((true, 0), (true, 0))); // 로컬 모델이 없어도 Upstage 키로 준비됨, 다른 기능은 그대로
+        let _ = std::fs::remove_dir_all(&d0);
     }
 
     #[test]

@@ -104,7 +104,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `live.py` | 실시간 자막(미리보기): `WavTail`(커지는 WAV 꼬리 읽기), `Mixer`(트랙 합산·클립), `Resampler`(48k → 16k FIR), `Segmenter`(Silero feed, 0.5초 무음·8초 상한·3초 미리보기·쉼 미리 전사), `Live`(ASR·뒤처짐·정지), `SpeakerTrack`(선택) |
 | `voices.py` | 목소리 프로필: CAM++ 임베딩(onnxruntime + kaldi-native-fbank), 화자 구간 고르기, `voices.json`(0600, 원자적 쓰기), `match`(헝가리안 + 임계값 + 2위와 차이) |
 | `export.py` | 내보내기 txt·md·srt·vtt·csv(utf-8-sig)·docx(python-docx, `w:eastAsia`)·bundle(zip) |
-| `llm.py` | 공급자 표(`PROVIDERS`), `complete_json`: strict JSON + Pydantic 검증 + 1회 재요청, `stream_chat`: 평문 스트리밍 |
+| `llm.py` | 공급자 표(`PROVIDERS`: 서비스 주소·온도 정책 포함), `resolve_provider`(주소 덮어쓰기·호스트 기반 로컬 전용), `map_error`(SDK 오류 → `LLMError` 코드), `check_connection`(`tractus llm test`), `list_models`(`tractus llm models`), `complete_json`: strict JSON + Pydantic 검증 + 1회 재요청, `stream_chat`: 평문 스트리밍 |
 | `summarize.py` | 요약 스키마, segment_ids 검증, summary.md/json |
 | `summary_templates.py` | 요약 유형: 기본(`templates/*.md`)·내 유형(`$TRACTUS_HOME/templates/u-*.md`) 로더·CRUD·검증 |
 | `summaries.py` | 유형별 요약(스키마 v2, `summaries/<key>.json`), 시스템 프롬프트 + 지침 구분자, 근거·owner 검증, 목록·삭제 |
@@ -114,7 +114,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `models_registry.py` | **모델·기능 목록의 원본**: 저장소·리비전·폴더·파일 크기, 기능(`CAPABILITIES`), 설치 상태(`inspect`), 프리셋, 받기 안내 문구 |
 | `models_install.py` | `models download`(잠금·이어받기·sha256·오류 코드)·`remove` |
 | `doctor.py`, `models_cli.py` | `tractus doctor`, `tractus models list|download|remove|prune` (docs/desktop.md §2.15) |
-| `embed.py` | Qwen3-Embedding-0.6B 8bit (`mlx-community/Qwen3-Embedding-0.6B-8bit`, mlx-lm `load_model`), `LazyEmbedder` |
+| `embed.py` | Qwen3-Embedding-0.6B 8bit (`mlx-community/Qwen3-Embedding-0.6B-8bit`, mlx-lm `load_model`), `LazyEmbedder`, 선택: `UpstageEmbedder`(solar-embedding-2, `TRACTUS_EMBED=upstage`), `load_embedder`가 고른다 |
 | `index.py` | SQLite FTS5 음절 bigram + sqlite-vec, 증분 동기화(`stats()['pending']` = 지금 모델로 벡터가 없는 청크), strict 우선 + 가중 RRF |
 | `mcp_server.py` | MCP 서버 7개 도구 (`build_server(home, embedder)`) |
 | `cli.py` | `tractus transcribe`, `align`, `summarize`, `ask`, `index`, `search`, `speakers`, `voices`(`list --json`은 `model_present` 포함), `segments`, `render`, `glossary`, `export`, `note`(`new`·`save`·`title`), `mcp` |
@@ -153,19 +153,25 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - `mlx-embeddings`(GPL-3), Kiwi(LGPL-3) 같은 copyleft 의존성을 넣지 않는다.
 - MCP 도구는 async로 쓴다(sqlite·MLX는 스레드에 묶임). 예상된 실패는 `ToolError`로 던진다. stdout에는 아무것도 출력하지 않는다.
 - MCP 서버는 임베딩하지 않는다(`sync(embed=False)`). 벡터는 CLI가 만든다.
+- **검색 임베딩은 선택이다(v3.33): `TRACTUS_EMBED=local`(기본) | `upstage`.** `embed.load_embedder`가 CLI·MCP 모두의 단일 선택 지점이다(오타는 로컬로 본다: 원격 전송은 정확히 `upstage`일 때만). `UpstageEmbedder`는 로컬 임베더와 같은 모양(`model_id`·`dim`·`embed(texts, is_query)`)이고 passage는 `solar-embedding-2-passage`, 질의는 `solar-embedding-2-query`, 1024차원(첫 응답이 아니라 **모든** 응답에서 확인, 어긋나면 오류: 섞인 벡터를 넣지 않는다), `MODEL_ID` `upstage/solar-embedding-2/1024`라 바꾸면 벡터가 다시 만들어진다. 요청 하나 100개·입력 3500자 초과는 자른다. 429·5xx는 SDK 재시도, 그래도 실패하면 `Index._embed`가 키워드로 물러나고(벡터는 `pending`) 오류 줄에는 상태 코드만 남긴다(노트 문장·키 없음). **키는 `UPSTAGE_API_KEY`, 주소는 `UPSTAGE_BASE_URL`만 읽는다**(전역 `TRACTUS_LLM_BASE_URL`은 읽지 않는다: 다른 서비스를 가리키는 전역 값이 Upstage 키를 엉뚱한 곳에 보내면 안 된다). `TRACTUS_LOCAL_ONLY`면 쓰지 않는다. **"MCP에 키를 넘기지 않는다"의 유일한 예외**: 사용자가 Upstage 임베딩을 고르면 앱이 `TRACTUS_EMBED=upstage`와 `UPSTAGE_API_KEY`(그 키 하나)를 색인 작업과 MCP·검색 프로세스에 싣는다. 노트 문장(색인)과 검색어(검색)가 Upstage로 간다. Upstage 임베딩의 검색 품질은 `bench/search_eval.py`·`aihub_search_eval.py`로 아직 재지 않았다(선택 사항이고 기본은 로컬 그대로. 기본으로 삼으려면 둘 다 돌려 비교한다).
 - **노트 삭제는 앱 전용이다.** 앱이 폴더를 macOS 휴지통으로 옮기고(`app/src-tauri/src/removal.rs`), 색인은 `Index.sync`가 사라진 폴더를 지운다. `tractus delete`나 MCP 삭제 도구를 만들지 않는다. 목소리 프로필·자주 쓰는 단어는 지우지 않는다.
 - 에이전트 CLI 인수 테스트에는 `tests/fixtures/eval`(가상 회의)만 쓴다. AI Hub 전사가 들어 있는 홈을 MCP에 연결하지 않는다.
 
 ## LLM 규칙
 
 - 공급자는 OpenAI 호환 API 키 방식만 쓴다. `claude -p`, `codex exec`, `agy`를 공급자로 붙이지 않는다(약관, ARCHITECTURE.md §0).
+- **공급자 표(`llm.PROVIDERS`): `upstage`·`openai`·`claude`·`gemini`·`custom`(직접 입력, OpenAI 호환, 엄격 JSON 끔, 기본 AI 모델 없음)·`gemma-local`.** 서비스 주소는 `TRACTUS_LLM_BASE_URL`로 바꾼다(http/https + 호스트, 계정 정보·공백·역슬래시는 `llm_config`). **서비스별 변수(v3.33)**: `UPSTAGE_`·`OPENAI_`·`ANTHROPIC_`·`GEMINI_` + `BASE_URL`·`MODEL`(`.env.example`). 우선순위는 인수 > 전역 `TRACTUS_LLM_BASE_URL`·`TRACTUS_LLM_MODEL`(**`TRACTUS_LLM_PROVIDER`가 그 서비스이거나 비었을 때만**, `custom`은 항상) > 서비스별 > 표의 기본값. 전역 값이 다른 서비스를 가리킬 때 이 서비스에 새지 않게 한 것이다. `gemini` 기본 AI 모델은 별칭 `gemini-flash-latest`(`gemini-2.5-flash`는 새 사용자에게 404, 2026-10-15). `custom`의 키는 `TRACTUS_LLM_API_KEY`이고 비워도 되는 것은 주소가 이 Mac(`localhost`·`127.0.0.1`·`::1`)일 때뿐이다. 새 라이브러리(LiteLLM 등)를 들이지 않는다(`docs/llm-providers.md`).
+- **Claude와 OpenAI는 온도를 보내지 않는다**(`Provider.temperature=None`). Claude 호환 계층은 4.7 이상의 온도 1 미만을, OpenAI gpt-5·o 계열은 기본값이 아닌 온도를 400으로 거절한다. 다른 공급자는 0.2다.
+- **코어는 HTTP 3xx를 따라가지 않는다**(`make_client`). 앱은 서비스를 정하면 주소도 정한다(비면 서비스 기본 주소를 `TRACTUS_LLM_BASE_URL`로 싣는다): 노트 폴더 `.env`·셸의 주소가 키를 받지 못하게. 연결 테스트는 코어 30초(총 시간)·앱 35초(프로세스 kill) 제한이 있다. 공급자를 더하면 온도 정책을 표에 적는다.
+- **로컬 전용 모드(`TRACTUS_LOCAL_ONLY`)는 이름이 아니라 주소의 호스트로 판단한다.** `urlsplit`으로 파싱한 호스트가 정확히 `localhost`·`127.0.0.1`·`::1`이 아니면 `llm_local_only`다(부분 문자열 비교 금지: `localhost.evil.com`, `user@host`). 앱(`llm_key.rs`)·화면(`llmKey.ts`)에도 같은 규칙이 있다: 셋을 함께 바꾼다.
+- **SDK 오류는 `llm.map_error`가 `LLMError`로 바꾼다**(`llm_auth` 401·403 / `llm_rate` 429 / `llm_busy` 503·529·`UNAVAILABLE`·`overloaded` / `llm_model` 404(서버 안내 문장을 키 가리고 200자로 `자세히`에 싣는다) / `llm_context` / `llm_conn` 연결·시간 초과 / `llm_api`). 실제 호출은 SDK가 408·409·429·5xx를 4회 지수 백오프로 다시 보낸다. `cli.py`는 `LLMError`만 잡고 `code`를 오류 이벤트에 싣는다. 새 코드를 더하면 `app/src/lib.ts` `ERROR_TEXT`·WORDS.md·docs/desktop.md 표도 고친다. `tractus llm test`는 같은 해석·환경으로 짧은 요청 한 번(`max_tokens` 256, 재시도 없음)을 보내고 HTTP 200이면 성공이다(`empty: true`: 생각하는 AI가 토큰을 생각에 다 써 답이 비어도 연결은 된 것). `tractus llm models [--provider P]`는 `GET /models`로 `{"models": [ID…]}`를 낸다(앞의 `models/` 제거).
 - 모든 추출 항목은 근거 `segment_ids`가 필수다. 프롬프트·스키마를 바꾸면 `uv run pytest -m llm`으로 확인한다.
 - **요약 유형·직접 프롬프트(v3.21).** 기본 유형(회의록)은 옛 스키마의 `summary.json`이고 다른 유형·직접 요약은 `summaries/<key>.json`(스키마 v2)이다. 요약 지침(유형 본문·내가 쓴 방법)은 시스템 규칙(`summaries.SYSTEM_PROMPT`)이 항상 이기고 `<요약 지침>`으로 감싼다. 새 유형 파일이나 시스템 프롬프트를 바꾸면 `uv run pytest -m llm -k template`을 돌린다(유형마다 스키마·근거·owner 라벨·한국어를 본다). 직접 요약이 내 유형으로 저장되는 것은 요약이 성공한 뒤다.
 - 화자는 자동 추정이다. owner에는 사용자가 이름을 붙인 화자만 쓰고 `S1` 같은 라벨은 쓰지 않는다. 프롬프트만으로는 새어 나와서 `summarize.clean_owners`가 null로 바꾼다.
 - **회의 질의(`ask`)는 원격 공급자로 질문, 최근 대화, 근거 세그먼트 텍스트만 보낸다.** 오디오·요약·근거 밖 전사는 보내지 않는다. 답의 인용은 `ask.finalize`가 근거와 대조해 없는 ID를 지운다. 프롬프트를 바꾸면 `uv run pytest -m llm`과 `bench/ask_eval.py`(가상 회의만)를 돌린다. 전체 범위 질의는 단독 질문에 keyword 일치가 없으면 직전 사용자 질문 2개를 보탠 검색을 섞는다(`ask._hits`). `done`·`chat.json`의 `no_evidence`는 인용이 하나도 안 남았다는 뜻이다(거절 문장과 같은 말이 아니다).
 - **AI Hub 데이터의 전사를 원격 LLM에 보내지 않는다.** 테스트는 `tests/fixtures/sample_meeting.json`(가상 회의)만 쓴다.
 - API 키를 코드·로그·커밋·대화에 남기지 않는다. `.env.local`에만 둔다.
-- **앱의 API 키는 앱 설정 폴더의 `llm_key` 파일(0600)에만 둔다**(`$TRACTUS_HOME`·`settings.json`·webview·인수·로그에 두지 않는다). 요약·질문을 돌리는 `tractus` 프로세스(`Settings::tractus_llm`)에만 환경변수로 넘기고 MCP·녹음 등에는 넘기지 않는다. 키를 로그·오류 문구에 찍지 않는다(`app/src-tauri/src/llm_key.rs`, docs/desktop.md §2.14).
+- **앱의 API 키는 앱 설정 폴더의 서비스별 파일(0600)에만 둔다**(Upstage는 `llm_key`, 나머지는 `llm_key.<서비스>`. `$TRACTUS_HOME`·`settings.json`·webview·인수·로그에 두지 않는다). 서비스마다 주소·AI 모델은 `settings.json`의 `llm_profiles`에 두고(`llm_default`는 기본 서비스, 예전 `llm_provider` 등은 읽을 때 옮긴다), 요약·질문은 등록된 서비스 중에서 그때그때 고른다. **이번에 고른 서비스의** 키·주소·AI 모델만(서비스 `TRACTUS_LLM_PROVIDER`도 함께 싣는다: 셸·`.env`가 다섯 서비스 중 하나를 정해 두어도 앱의 선택이 이긴다. 앱 밖의 서비스 `gemma-local`은 환경이 정한다) 요약·질문·연결 테스트·모델 목록을 돌리는 `tractus` 프로세스(`Settings::tractus_llm(args, provider)`)에 그 서비스의 환경변수로 넘기고, 녹음 등에는 키도 주소도 넘기지 않는다. 앱은 `TRACTUS_EMBED`를 늘 정하고, 사용자가 스마트 검색을 Upstage로 고른 옵트인일 때만 `UPSTAGE_API_KEY` 하나(와 `UPSTAGE_BASE_URL`)를 문장·검색어를 임베딩하는 실행(색인·변환·가져오기·요약·질문)과 상주 검색 프로세스에만 싣는다(`Settings::embed_key_env`: 위 "MCP에 키를 넘기지 않는다"의 유일한 예외. 녹음 프로그램·화자·내보내기 등 `child_env`에는 없다). 키는 5~200자. 화면에는 요약·답변에 쓴 AI 서비스·모델 이름을 쓰지 않는다(WORDS §6 2026-10-15). 키를 로그·오류 문구·`error` 이벤트에 찍지 않는다(서버가 돌려준 문구에서도 가린다). 테스트는 가짜 키(`test-key-123`)와 로컬 가짜 서버(`tests/test_llm_providers.py`)만 쓴다(`app/src-tauri/src/llm_key.rs`, docs/desktop.md §2.14).
 
 ## 메뉴 막대 아이콘 (v3.24)
 
@@ -191,6 +197,9 @@ uv run pytest -m network                            # 작은 VAD(1.3MB)를 임�
 uv run tractus doctor [--json]                      # 시스템·도구·모델·기능 점검
 uv run tractus models list [--json]                 # 설치 상태 (download [ID…|--preset required|standard|lite|all] [--progress-json], remove ID --yes)
 uv run tractus summarize <meeting_id>               # 요약
+uv run tractus llm test [--provider P] [--model M]   # AI 서비스 연결 테스트 (한 줄 JSON, 키 출력 없음)
+uv run tractus llm models [--provider P]              # 서비스의 AI 모델 ID 목록 → {"models": […]}
+TRACTUS_EMBED=upstage uv run tractus index            # 검색 임베딩을 Upstage로 (UPSTAGE_API_KEY 필요, 노트 문장이 전송됨)
 uv run tractus summarize <meeting_id> --template brief   # 요약 유형 (templates list --json). 직접: echo '{"prompt": "…"}' | … --custom
 uv run tractus summaries <meeting_id> list --json   # 노트의 요약들 (delete KEY)
 echo "질문" | uv run tractus ask [--meeting <id>] [--from/--to YYYY-MM-DD] [--save]   # 회의 질의 (앱: stdin JSON + --progress-json)

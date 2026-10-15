@@ -27,7 +27,7 @@ from tractus import summarize as summ  # noqa: E402
 from tractus import summaries as sums  # noqa: E402
 from tractus import summary_templates as tmpls  # noqa: E402
 from tractus.env import load_env_all  # noqa: E402
-from tractus.llm import LLMError, make_client, resolve_provider  # noqa: E402
+from tractus.llm import LLMError, check_connection, list_models, make_client, resolve_provider  # noqa: E402
 from tractus.paths import home_dir, models_dir  # noqa: E402
 from tractus.align import MODEL_DIR as ALIGNER_DIR  # noqa: E402
 from tractus.align import align_segments, is_approximate, load_aligner  # noqa: E402
@@ -747,7 +747,7 @@ def _sync_index_quietly(embed: bool = True) -> None:
 @app.command()
 def summarize(
     meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
-    provider: str = typer.Option(None, "--provider", help="upstage | openai | claude | gemini | gemma-local. 생략하면 TRACTUS_LLM_PROVIDER"),
+    provider: str = typer.Option(None, "--provider", help="upstage | openai | claude | gemini | custom | gemma-local. 생략하면 TRACTUS_LLM_PROVIDER"),
     model: str = typer.Option(None, "--model", help="모델 ID. 생략하면 TRACTUS_LLM_MODEL 또는 공급자 기본값"),
     progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
     template: str = typer.Option(None, "--template", help="요약 유형 ID (`tractus templates list`). 생략하면 meeting(회의록): summary.json·summary.md. 다른 유형은 summaries/<ID>.json·md"),
@@ -755,8 +755,6 @@ def summarize(
 ) -> None:
     """전사본으로 요약을 만든다. 기본(회의록)은 요약·결정 사항·할 일을 summary.md와 summary.json에, 다른 유형·직접 요약은 summaries/ 폴더에 저장한다. 전사 텍스트와 요약 지침만 공급자에 전송한다.
     done 이벤트의 summary_key는 저장한 요약의 key다 (`tractus summaries <노트> list`)."""
-    from openai import APIError
-
     Events.enabled = progress_json
     try:
         d = resolve_meeting(meeting)
@@ -783,8 +781,6 @@ def summarize(
             console.print(f"[red]{escape(str(e))}[/red]")  # 검증 오류의 [type=…] 같은 대괄호를 rich 마크업으로 해석하지 않게 한다
             _fail("AI 응답이 형식에 맞지 않아 요약하지 못했습니다", code=e.code)
         _fail(str(e), code=e.code)
-    except APIError as e:
-        _fail(f"AI 서비스 오류: {e}", code="llm_api")
     try:
         if spec.is_default:
             summ.write_summary(d, result, transcript, p.name, m)
@@ -813,15 +809,13 @@ def ask(
     meeting: str = typer.Option(None, "--meeting", help="이 노트 전사 전체로 답한다 (meeting_id 일부 또는 폴더). 생략하면 모든 노트에서 검색"),
     date_from: str = typer.Option(None, "--from", help="YYYY-MM-DD (전체 범위 검색에만)", callback=lambda v: _iso_date(v, "--from")),
     date_to: str = typer.Option(None, "--to", help="YYYY-MM-DD (전체 범위 검색에만)", callback=lambda v: _iso_date(v, "--to")),
-    provider: str = typer.Option(None, "--provider", help="upstage | openai | claude | gemini | gemma-local. 생략하면 TRACTUS_LLM_PROVIDER"),
+    provider: str = typer.Option(None, "--provider", help="upstage | openai | claude | gemini | custom | gemma-local. 생략하면 TRACTUS_LLM_PROVIDER"),
     model: str = typer.Option(None, "--model", help="모델 ID. 생략하면 TRACTUS_LLM_MODEL 또는 공급자 기본값"),
     save: bool = typer.Option(False, "--save", help="질문·답을 노트 폴더 chat.json에 덧붙인다 (--meeting과 함께)"),
     progress_json: bool = typer.Option(False, "--progress-json", help="이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
 ) -> None:
     """노트에 질문한다. stdin: {"question": "…", "history": [{"role", "content"}]} 또는 질문 평문.
     공급자에는 질문, 최근 대화, 근거 세그먼트만 보낸다. 답의 문장마다 [s0012] 인용이 붙는다."""
-    from openai import APIError
-
     from tractus import ask as qa
 
     Events.enabled = progress_json
@@ -860,7 +854,7 @@ def ask(
     try:
         p, m = resolve_provider(provider, model)
         done = None
-        for ev in qa.ask(make_client(p), p.name, m, question, history, "global" if d is None else "meeting", get_sources):
+        for ev in qa.ask(make_client(p), p.name, m, question, history, "global" if d is None else "meeting", get_sources, policy=p):
             if ev["event"] == "done":
                 done = ev
                 if save:  # done보다 먼저 저장한다: 앱이 done을 받은 직후 프로세스를 끝내도 기록이 남는다
@@ -868,8 +862,6 @@ def ask(
             Events.emit(ev["event"], **{k: v for k, v in ev.items() if k != "event"})
     except LLMError as e:
         _fail(str(e), code=e.code)
-    except APIError as e:
-        _fail(f"AI 서비스 오류: {e}", code="llm_api")
     if not progress_json and done:
         print(done["answer"])
         if done["citations"]:
@@ -879,9 +871,45 @@ def ask(
             print(f"  [{sid} {stamp(c)}]")
 
 
+llm_app = typer.Typer(help="AI 서비스 연결 (요약·질문)")
+
+
+@llm_app.command("test")
+def llm_test(
+    provider: str = typer.Option(None, "--provider", help="upstage | openai | claude | gemini | custom | gemma-local. 생략하면 TRACTUS_LLM_PROVIDER"),
+    model: str = typer.Option(None, "--model", help="모델 ID. 생략하면 TRACTUS_LLM_MODEL 또는 공급자 기본값"),
+) -> None:
+    """연결 테스트: 아주 짧은 요청 한 번(30초 제한). 실제 요약·질문과 같은 해석·환경변수를 쓴다.
+    성공하면 한 줄 JSON {"ok", "provider", "model", "host", "latency_ms"}, 실패하면 error 이벤트 한 줄 + 종료 코드 1. 키는 출력하지 않는다."""
+    Events.enabled = True  # 앱이 stdout의 JSON 한 줄을 읽는다
+    try:
+        p, m = resolve_provider(provider, model)
+        print(json.dumps(check_connection(p, m), ensure_ascii=False))
+    except LLMError as e:
+        _fail(str(e), code=e.code)
+
+
+@llm_app.command("models")
+def llm_models(
+    provider: str = typer.Option(None, "--provider", help="upstage | openai | claude | gemini | custom | gemma-local. 생략하면 TRACTUS_LLM_PROVIDER"),
+) -> None:
+    """서비스가 알려 주는 AI 모델 ID 목록 (GET <주소>/models). 성공하면 한 줄 JSON {"models": [ID…]}, 실패하면 error 이벤트 한 줄 + 종료 코드 1 (`llm test`와 같은 코드)."""
+    Events.enabled = True
+    try:
+        p, _ = resolve_provider(provider, None, need_model=False)
+        print(json.dumps({"models": list_models(p)}, ensure_ascii=False))
+    except LLMError as e:
+        _fail(str(e), code=e.code)
+
+
+app.add_typer(llm_app, name="llm")
+
+
 @app.command()
 def index(rebuild: bool = typer.Option(False, "--rebuild", help="색인 파일을 지우고 처음부터 다시 만든다")) -> None:
     """노트 폴더를 검색 색인(~/Tractus/.tractus/index.sqlite)에 반영한다. 바뀐 노트만 처리한다."""
+    from tractus import embed
+
     t0 = time.perf_counter()
     with console.status("색인 중… (처음에는 임베딩 모델을 올리느라 몇 초 걸립니다)"):
         idx = _open_index()
@@ -895,7 +923,9 @@ def index(rebuild: bool = typer.Option(False, "--rebuild", help="색인 파일�
         f"노트 {st['meetings']}개, 청크 {st['chunks']}개, 벡터 {st['vectors']}개 "
         f"(추가 {r.added}, 갱신 {r.updated}, 삭제 {r.removed}, 임베딩 {r.embedded}, {time.perf_counter() - t0:.1f}초)"
     )
-    if not has_embedder:
+    if not has_embedder and embed.mode() == "upstage":
+        console.print("[yellow]Upstage 임베딩을 쓸 수 없어 키워드 검색만 됩니다. UPSTAGE_API_KEY와 위의 건너뜀 줄을 확인하세요.[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+    elif not has_embedder:
         console.print("[yellow]임베딩 모델이 없거나 올리지 못해 키워드 검색만 됩니다. `tractus models download embedding`으로 받으세요.[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
     elif st["pending"]:
         console.print(f"[yellow]벡터가 없는 청크 {st['pending']}개가 남았습니다.[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)

@@ -184,35 +184,43 @@ export interface LlmConfig {
   provider: string | null;
   model: string | null;
   local_only: boolean;
+  /** 서비스 기본 주소가 아닌 주소로 보낼 때의 호스트 (없으면 서비스 기본 호스트) */
+  host?: string | null;
 }
 
-const PROVIDERS: Record<string, { label: string; model: string | null; local?: boolean }> = {
-  upstage: { label: "Upstage", model: "solar-pro4" },
-  openai: { label: "OpenAI", model: null },
-  claude: { label: "Anthropic", model: "claude-sonnet-5-5" },
-  gemini: { label: "Google Gemini", model: null },
-  "gemma-local": { label: "이 Mac의 AI", model: "gemma4:31b", local: true },
+/** 서비스 표. url: 기본 주소(직접 입력은 없다), model: 기본 AI 모델(없으면 직접 입력해야 한다) */
+export interface ProviderInfo {
+  label: string;
+  model: string | null;
+  url: string | null;
+  local?: boolean;
+}
+
+export const PROVIDERS: Record<string, ProviderInfo> = {
+  upstage: { label: "Upstage", model: "solar-pro4", url: "https://api.upstage.ai/v1" },
+  openai: { label: "OpenAI", model: null, url: "https://api.openai.com/v1" },
+  claude: { label: "Claude", model: "claude-sonnet-5-5", url: "https://api.anthropic.com/v1" },
+  gemini: { label: "Gemini", model: "gemini-flash-latest", url: "https://generativelanguage.googleapis.com/v1beta/openai" },
+  custom: { label: "직접 입력", model: null, url: null },
+  "gemma-local": { label: "이 Mac의 AI", model: "gemma4:31b", url: "http://localhost:11434/v1", local: true },
 };
 
-/** 화면에 보일 AI 서비스 이름 (요약 바닥글·답한 AI). 모르는 값은 그대로 */
-export const providerLabel = (provider: string): string => PROVIDERS[provider]?.label ?? provider;
-
-/** 끝난 턴에 실제로 답한 곳 ("Upstage(solar-pro4)"). 근거도 인용도 없으면 LLM을 부르지 않았을 수 있어 보이지 않는다 */
-export function answeredBy(s: AskState): string | null {
-  if (s.phase !== "done" || !s.provider || (s.sources.length === 0 && s.citations.length === 0)) return null;
-  const p = PROVIDERS[s.provider];
-  const name = p?.local ? "이 Mac의 AI" : (p?.label ?? s.provider);
-  return s.model ? `${name}(${s.model})` : name;
+/** `host` 또는 `host:포트` (대괄호 IPv6 포함)가 이 Mac인가: 정확히 localhost / 127.0.0.1 / ::1 */
+export function isLoopbackHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[([^\]]*)\](:\d+)?$/, "$1").replace(/^([^:]*):\d+$/, "$1");
+  return h === "localhost" || h === "127.0.0.1" || h === "::1";
 }
 
 export function sendNotice(c: LlmConfig): { text: string; warn: boolean } {
   if (!c.provider) return { text: "AI 서비스가 설정되지 않았습니다. 설정에서 API 키를 등록하세요", warn: true };
   const p = PROVIDERS[c.provider];
   if (!p) return { text: `알 수 없는 AI 서비스입니다: ${c.provider}`, warn: true };
-  if (c.local_only && !p.local) return { text: `로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 외부 AI 서비스(${p.label})로 보내지 않습니다`, warn: true };
+  const host = c.host ?? (p.url ? new URL(p.url).host : null);
+  const local = host !== null ? isLoopbackHost(host) : !!p.local; // 주소가 있으면 주소로 본다 (이 Mac의 AI라도 환경변수 주소가 원격이면 원격)
+  if (c.local_only && !local) return { text: `로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 외부 AI 서비스(${p.label})로 보내지 않습니다`, warn: true };
   const model = c.model || p.model;
   if (!model) return { text: `사용할 ${p.label} AI 모델을 지정하세요 (TRACTUS_LLM_MODEL)`, warn: true };
-  return p.local
+  return local
     ? { text: `질문과 관련 대화 일부를 이 Mac의 AI(${model})가 처리합니다`, warn: false }
-    : { text: `질문과 관련 대화 일부가 ${p.label}(${model})로 전송됩니다`, warn: false };
+    : { text: `질문과 관련 대화 일부가 ${p.label}(${model})로 전송됩니다${host ? `. 보내는 곳: ${host}` : ""}`, warn: false };
 }

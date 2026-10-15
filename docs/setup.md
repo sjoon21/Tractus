@@ -111,8 +111,8 @@ uv run tractus models remove aligner                # 하나 지우기
 
 요약과 AI 질문은 LLM API를 부릅니다. 전송하는 것은 질문과 근거 텍스트뿐이고 오디오는 보내지 않습니다.
 
-- **앱:** 설정 > AI 요약·질문에서 Upstage API 키를 붙여 넣습니다. 앱 설정 폴더에 저장되고 노트 폴더에는 쓰지 않습니다.
-- **터미널:** 저장소 루트의 `.env.local`에 `UPSTAGE_API_KEY=...`처럼 넣습니다(git 제외). 다른 공급자는 [README](../README.md#요약결정-사항할-일)의 공급자 표와 `.env.example`을 봅니다.
+- **앱:** 설정 > AI 요약·질문에서 AI 서비스(Upstage·OpenAI·Claude·Gemini·직접 입력)를 고르고 API 키(와 필요하면 서비스 주소·AI 모델 이름)를 넣은 뒤 `연결 테스트`로 확인합니다. 키는 서비스마다 앱 설정 폴더에 따로 저장되고 노트 폴더에는 쓰지 않습니다. 요약·질문을 요청하면 그 노트의 대화 내용(제목·참석자 이름 포함)이 고른 서비스로 전송됩니다. API 키는 5자부터 저장됩니다. 서비스를 둘 이상 등록하면 요약 탭과 AI 질문 입력창의 `AI 서비스` 칸에서 그때그때 고를 수 있고(처음 값은 `기본으로 사용`), 설정의 `스마트 검색 방식`에서 스마트 검색을 Upstage로 바꿀 수 있습니다(Upstage 키가 필요하고, 노트 내용과 검색어가 Upstage로 전송됩니다).
+- **터미널:** 저장소 루트의 `.env.local`에 `UPSTAGE_API_KEY=...`처럼 넣습니다(git 제외). 다른 공급자·주소는 [README](../README.md#요약결정-사항할-일)의 공급자 표와 `.env.example`을 봅니다. `uv run tractus llm test`로 연결을 시험하고 `uv run tractus llm models --provider gemini`로 서비스의 AI 모델 ID를 봅니다. 서비스마다 주소·AI 모델을 따로 두려면 `.env.local`에 `GEMINI_BASE_URL`·`GEMINI_MODEL`처럼 씁니다. 검색 임베딩을 Upstage로 바꾸려면 `TRACTUS_EMBED=upstage`(노트의 문장과 검색어가 Upstage로 전송됩니다)와 `UPSTAGE_API_KEY`가 필요합니다.
 
 키가 없어도 녹음, 변환, 검색, 내보내기는 모두 됩니다. 요약과 질문만 안 됩니다.
 

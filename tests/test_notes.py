@@ -353,7 +353,7 @@ def test_ask_cli_prints_line_label_for_memo_citations(home, monkeypatch):
     chunk = lambda x: SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=x))])  # noqa: E731
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **kw: iter([chunk("동결 [s0002]")]))))
     monkeypatch.setattr(cli, "make_client", lambda p: client)
-    monkeypatch.setattr(cli, "resolve_provider", lambda p, m: (SimpleNamespace(name="fake"), "m"))
+    monkeypatch.setattr(cli, "resolve_provider", lambda p, m: (SimpleNamespace(name="fake", temperature=0.2, base_url="http://x"), "m"))
     r = run("ask", "--meeting", mid, input="예산은?")
     assert r.exit_code == 0 and "[s0002 2번째 줄]" in r.stdout and "00:00:00" not in r.stdout
 

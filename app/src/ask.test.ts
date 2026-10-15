@@ -7,7 +7,6 @@ import {
   historyFromEntries,
   isAsking,
   isNoteGone,
-  answeredBy,
   sendNotice,
   START_ASK,
   trimHistory,
@@ -103,14 +102,6 @@ describe("askReduce", () => {
     const d = run([{ event: "done", answer: "예산은 3억 [s0012]", citations: [{ meeting_id: ID, segment_id: "s0012", start: 331 }], provider: "upstage", model: "solar-pro4" }, { event: "exit", code: null, stderr: "" }], cancelled);
     expect(d).toMatchObject({ phase: "done", answer: "예산은 3억 [s0012]", provider: "upstage" });
   });
-  test("answeredBy: LLM이 실제로 답한 턴만 공급자를 보인다", () => {
-    const done = { ...START_ASK, phase: "done" as const, provider: "upstage", model: "solar-pro4" };
-    const cite = [{ meeting_id: ID, segment_id: "s0012", start: 331 }];
-    expect(answeredBy({ ...done, citations: cite })).toBe("Upstage(solar-pro4)");
-    expect(answeredBy({ ...done, provider: "gemma-local", model: "gemma4:31b", citations: cite })).toBe("이 Mac의 AI(gemma4:31b)");
-    expect(answeredBy(done)).toBeNull(); // 근거가 없어 LLM을 부르지 않은 답
-    expect(answeredBy({ ...done, phase: "answer", citations: cite })).toBeNull();
-  });
 });
 
 describe("대화 기록", () => {
@@ -138,15 +129,36 @@ describe("대화 기록", () => {
 
 describe("전송 안내", () => {
   test("공급자·모델 이름으로 어디로 보내는지 알린다", () => {
-    expect(sendNotice({ provider: "upstage", model: null, local_only: false })).toEqual({ text: "질문과 관련 대화 일부가 Upstage(solar-pro4)로 전송됩니다", warn: false });
-    expect(sendNotice({ provider: "openai", model: "gpt-x", local_only: false }).text).toBe("질문과 관련 대화 일부가 OpenAI(gpt-x)로 전송됩니다");
+    expect(sendNotice({ provider: "upstage", model: null, local_only: false })).toEqual({ text: "질문과 관련 대화 일부가 Upstage(solar-pro4)로 전송됩니다. 보내는 곳: api.upstage.ai", warn: false });
+    expect(sendNotice({ provider: "openai", model: "gpt-x", local_only: false }).text).toBe("질문과 관련 대화 일부가 OpenAI(gpt-x)로 전송됩니다. 보내는 곳: api.openai.com");
     expect(sendNotice({ provider: "gemma-local", model: null, local_only: true })).toEqual({ text: "질문과 관련 대화 일부를 이 Mac의 AI(gemma4:31b)가 처리합니다", warn: false });
+  });
+  test("고른 주소의 호스트를 알린다: 서비스 기본 호스트 대신 설정한 주소", () => {
+    expect(sendNotice({ provider: "claude", model: null, local_only: false }).text).toBe("질문과 관련 대화 일부가 Claude(claude-sonnet-5-5)로 전송됩니다. 보내는 곳: api.anthropic.com");
+    expect(sendNotice({ provider: "openai", model: "m", local_only: false, host: "gw.example.com:8443" }).text).toBe("질문과 관련 대화 일부가 OpenAI(m)로 전송됩니다. 보내는 곳: gw.example.com:8443");
+    expect(sendNotice({ provider: "custom", model: "m", local_only: false, host: "llm.corp.example" }).text).toBe("질문과 관련 대화 일부가 직접 입력(m)로 전송됩니다. 보내는 곳: llm.corp.example");
+  });
+  test("이 Mac 주소는 로컬 전용 모드에서도 쓸 수 있고 이 Mac의 AI로 안내한다", () => {
+    expect(sendNotice({ provider: "custom", model: "llama", local_only: true, host: "localhost:11434" })).toEqual({ text: "질문과 관련 대화 일부를 이 Mac의 AI(llama)가 처리합니다", warn: false });
+    expect(sendNotice({ provider: "custom", model: "m", local_only: true, host: "[::1]:8080" }).warn).toBe(false);
+    expect(sendNotice({ provider: "custom", model: "m", local_only: true, host: "localhost.evil.com" }).warn).toBe(true);
+    expect(sendNotice({ provider: "openai", model: "m", local_only: true, host: "127.0.0.1:1234" }).warn).toBe(false);
+  });
+  test("이 Mac의 AI라도 환경변수 주소가 원격이면 원격으로 안내한다", () => {
+    const n = sendNotice({ provider: "gemma-local", model: "g", local_only: false, host: "api.example.com" });
+    expect(n.text).toContain("로 전송됩니다");
+    expect(n.text).toContain("보내는 곳: api.example.com");
+    expect(sendNotice({ provider: "gemma-local", model: "g", local_only: true, host: "api.example.com" }).warn).toBe(true);
+    expect(sendNotice({ provider: "gemma-local", model: "g", local_only: true }).warn).toBe(false); // 주소가 없으면 서비스 기본(이 Mac)
   });
   test("공급자 없음·로컬 전용 모드는 경고", () => {
     expect(sendNotice({ provider: null, model: null, local_only: false })).toEqual({ text: "AI 서비스가 설정되지 않았습니다. 설정에서 API 키를 등록하세요", warn: true });
     expect(sendNotice({ provider: "upstage", model: null, local_only: true })).toEqual({ text: "로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 외부 AI 서비스(Upstage)로 보내지 않습니다", warn: true });
     expect(sendNotice({ provider: "mystery", model: null, local_only: false })).toEqual({ text: "알 수 없는 AI 서비스입니다: mystery", warn: true });
     expect(sendNotice({ provider: "openai", model: null, local_only: false })).toEqual({ text: "사용할 OpenAI AI 모델을 지정하세요 (TRACTUS_LLM_MODEL)", warn: true });
+    expect(sendNotice({ provider: "claude", model: null, local_only: true })).toEqual({ text: "로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 외부 AI 서비스(Claude)로 보내지 않습니다", warn: true });
+    // Gemini는 기본 AI 모델이 있다: 모델 이름을 비워 둬도 경고하지 않는다
+    expect(sendNotice({ provider: "gemini", model: null, local_only: false })).toMatchObject({ warn: false, text: expect.stringContaining("Gemini(gemini-flash-latest)") });
   });
 });
 

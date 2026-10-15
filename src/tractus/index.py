@@ -24,6 +24,7 @@ TOKENIZER_VERSION = "bigram-v2"  # v2: 영문 접두와 숫자 분리 (v2.4 → 
 CHUNK_MIN, CHUNK_MAX = 300, 500  # 자. 30초 세그먼트(200–250자)를 2개 안팎으로 묶는다
 POOL = 50  # RRF에 넣을 키워드·벡터 후보 수
 RRF_K = 60
+EMBED_COMMIT_ROWS = 200  # 벡터를 이만큼 만들 때마다 저장한다 (_ensure_vectors)
 # 벡터 쪽 RRF 가중치. 2026-10-02 실측 (hit@1, 가상 30질의 / AI Hub 실제 ASR 139질의):
 #   RRF 동일 가중 0.97 / 0.50, 키워드만 0.90 / 0.85, strict 우선 + 벡터 0.3 → 0.97 / 0.80
 # 긴 회의가 쌓이면 벡터 후보의 잡음이 키워드로 정확히 찾은 결과를 밀어내므로 가중치를 낮춘다.
@@ -331,20 +332,22 @@ class Index:
         ).fetchall()
         if not rows:
             return
-        vectors = self._embed([r[1] for r in rows], report)
-        if vectors is None:
-            return
-        self.db.execute("BEGIN IMMEDIATE")
-        stored = 0
-        for (cid, text, mid, date), v in zip(rows, vectors):
-            # 임베딩하는 동안 다른 연결이 이 청크를 다시 썼으면(같은 chunk_id에 다른 글) 낡은 벡터를 넣지 않는다. 빠진 채로 두면 다음 동기화가 채운다.
-            now = self.db.execute("SELECT 1 FROM chunks WHERE chunk_id=? AND text=? AND meeting_id=?", (cid, text, mid)).fetchone()
-            if now is None:
-                continue
-            self.db.execute("INSERT INTO chunks_vec(chunk_id, embedding, meeting_id, meeting_date) VALUES(?, ?, ?, ?)", (cid, v.astype(np.float32).tobytes(), mid, date))
-            stored += 1
-        self.db.execute("COMMIT")
-        report.embedded += stored
+        for i in range(0, len(rows), EMBED_COMMIT_ROWS):  # 조각마다 저장한다: 도중에 실패·중단돼도 끝낸 조각은 남고 나머지만 다음에 채운다 (원격 임베딩이 같은 글을 다시 받지 않게)
+            part = rows[i : i + EMBED_COMMIT_ROWS]
+            vectors = self._embed([r[1] for r in part], report)
+            if vectors is None:
+                return
+            self.db.execute("BEGIN IMMEDIATE")
+            stored = 0
+            for (cid, text, mid, date), v in zip(part, vectors):
+                # 임베딩하는 동안 다른 연결이 이 청크를 다시 썼으면(같은 chunk_id에 다른 글) 낡은 벡터를 넣지 않는다. 빠진 채로 두면 다음 동기화가 채운다.
+                now = self.db.execute("SELECT 1 FROM chunks WHERE chunk_id=? AND text=? AND meeting_id=?", (cid, text, mid)).fetchone()
+                if now is None:
+                    continue
+                self.db.execute("INSERT INTO chunks_vec(chunk_id, embedding, meeting_id, meeting_date) VALUES(?, ?, ?, ?)", (cid, v.astype(np.float32).tobytes(), mid, date))
+                stored += 1
+            self.db.execute("COMMIT")
+            report.embedded += stored
 
     # ── 동기화 ────────────────────────────────────────────────────────
     def sync(self, embed: bool = True) -> SyncReport:

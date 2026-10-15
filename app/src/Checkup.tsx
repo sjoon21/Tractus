@@ -29,7 +29,8 @@ export function Checkup({ onClose }: { onClose: () => void }) {
     return () => d.close();
   }, []);
 
-  const loadKey = useCallback(() => api.llmKeyStatus().then((s) => setKeySaved(s.saved), () => setKeySaved(null)), []);
+  // 쓸 수 있는 AI 서비스(키가 등록돼 있거나 이 Mac 주소의 직접 입력)가 하나라도 있는가
+  const loadKey = useCallback(() => api.llmSettings().then((s) => setKeySaved(s.registered.length > 0), () => setKeySaved(null)), []);
   useEffect(() => void loadKey(), [loadKey]);
   // 받기가 끝나면 점검도 다시 한다 (필수 모델 행이 바뀐다)
   const wasRunning = useRef(dl.running);

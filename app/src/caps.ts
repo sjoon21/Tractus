@@ -93,6 +93,8 @@ const REASON = {
   diarizeMany: "9명 이상 구분에 필요한 도구가 없어 참석자를 최대 8명까지만 구분합니다. 모델 화면에서 안내를 확인하세요.",
   align: "단어 싱크 모델이 없어 단어 싱크를 맞출 수 없습니다. 모델 화면에서 설치하세요.",
   smartSearch: "스마트 검색 모델이 없어 단어 일치로만 찾습니다. 모델 화면에서 설치하세요.",
+  smartSearchKey: "스마트 검색에 쓸 Upstage API 키가 없어 단어 일치로만 찾습니다. 설정에서 API 키를 등록하세요.",
+  smartSearchLocalOnly: "로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 스마트 검색을 Upstage로 처리하지 않고 단어 일치로만 찾습니다. 이 Mac에서 처리하려면 설정에서 스마트 검색 방식을 바꾸세요.",
   liveLite: "실시간 텍스트 변환에는 작은 변환 엔진(0.6B)이 따로 필요합니다. 표준 변환 엔진을 설치했어도 마찬가지입니다. 모델 화면에서 설치하세요.",
   liveFiles: "실시간 텍스트 변환에 필요한 파일(목소리 구간 감지)이 없습니다. 모델 화면에서 설치하세요.",
   liveMemory: "이 Mac은 메모리가 16 GB 미만이라 실시간 텍스트 변환을 켜지 않습니다. 녹음은 정상 진행되고, 녹음 종료 후 텍스트로 변환합니다.",
@@ -102,6 +104,11 @@ const REASON = {
   voicesFfmpeg: "음성 파일을 읽는 데 필요한 ffmpeg가 없어 목소리를 등록할 수 없습니다. 이름만 바꿀 수 있습니다. 터미널에서 brew install ffmpeg로 설치한 뒤 시작 점검에서 다시 확인하세요.",
   voices: "목소리 인식 모델이 없어 목소리를 등록할 수 없습니다. 이름만 바꿀 수 있습니다. 모델 화면에서 설치하세요.",
 } as const;
+
+/** 코어 점검이 아니라 앱이 `missing`에 넣는 값: 스마트 검색을 Upstage로 쓰는데 Upstage 키가 없다 */
+export const UPSTAGE_KEY_MISSING = "upstage-key";
+/** 스마트 검색을 Upstage로 쓰는데 로컬 전용 모드라 코어가 Upstage를 쓰지 않는다 */
+export const LOCAL_ONLY_MISSING = "local-only";
 
 const isTool = (id: string) => TOOL_IDS.has(id);
 
@@ -132,7 +139,9 @@ export function decide(report: DoctorReport | null | undefined, id: CapId): Deci
     case "align":
       return models.length === 0 && noFfmpeg ? fail(REASON.alignFfmpeg, FIX_CHECKUP) : fail(REASON.align, FIX_MODELS);
     case "smart-search":
-      return fail(REASON.smartSearch, FIX_MODELS);
+      // 스마트 검색을 Upstage로 쓰는 중이면 이 Mac의 검색 모델이 아니라 Upstage 키가 빠진 것이다 (Rust apply_embedding)
+      if (cap.missing.includes(LOCAL_ONLY_MISSING)) return fail(REASON.smartSearchLocalOnly, FIX_SETTINGS);
+      return cap.missing.includes(UPSTAGE_KEY_MISSING) ? fail(REASON.smartSearchKey, FIX_SETTINGS) : fail(REASON.smartSearch, FIX_MODELS);
     case "voices":
       return models.length === 0 && noFfmpeg ? fail(REASON.voicesFfmpeg, FIX_CHECKUP) : fail(REASON.voices, FIX_MODELS);
   }

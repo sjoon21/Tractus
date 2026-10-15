@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, errText, useJob, type JobState } from "./api";
 import type { Notify } from "./App";
-import { providerLabel } from "./ask";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CustomSummaryDialog } from "./CustomSummaryDialog";
 import { ErrorDetail } from "./ErrorDetail";
+import { LlmServicePicker, useLlmServices } from "./LlmServicePicker";
 import { STAGE_LABEL } from "./lib";
 import { llmErrorView } from "./llmKey";
 import { OpenSettings } from "./OpenSettings";
@@ -76,6 +76,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
   const wrap = useRef<HTMLDivElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const menuId = useId();
+  const services = useLlmServices("summary");
 
   const reload = useCallback(
     async (alive: () => boolean = () => true) => {
@@ -123,7 +124,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
     const cur = q.current;
     if (!cur) return;
     launchSeq.current = p.editSeqRef.current;
-    void job.runJob("summary_start", { id, template: cur.template ?? null, custom: cur.custom ?? null });
+    void job.runJob("summary_start", { id, template: cur.template ?? null, custom: cur.custom ?? null, provider: services.provider });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 새 일이 시작될 때만 (job.runJob은 안정적이다)
   }, [q.current]);
 
@@ -232,6 +233,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
             </div>
           )}
         </div>
+        <LlmServicePicker services={services} disabled={running} />
         <button
           type="button"
           className="primary-button"
@@ -305,7 +307,6 @@ export function SummariesPanel(p: SummariesPanelProps) {
             </div>
           )}
           {selected.legacy ? <LegacyBody doc={selected} chip={p.chip} /> : <SectionsBody doc={selected} chip={p.chip} />}
-          {selected.model && <p className="summary-source">{selected.provider ? `요약: ${providerLabel(selected.provider)}(${selected.model})` : `요약: ${selected.model}`}</p>}
         </div>
       ) : (
         loaded && (

@@ -60,7 +60,7 @@ fn convert_args(id: &str) -> Result<Vec<String>, String> {
 /// 변환·저장은 모델·디스크를 쓰므로 돌고 있는 백그라운드 검색 정보 갱신은 멈춘다 (다음 갱신이 이어서 한다).
 /// `cancellable`이면 프로세스를 작업 ID로 `asks` 표에 넣는다: `ask_cancel`이 kill한다 (새 녹음이 변환을 멈출 때. 변환은 멈춘 곳부터 이어 할 수 있다)
 fn start(app: AppHandle, state: &AppState, args: Vec<String>, kind: &str, job: String, held: &str, cancellable: bool) -> Result<(), String> {
-    let cmd = state.settings().tractus(&args);
+    let cmd = state.settings().tractus_embed(&args);
     let tag = json!({"job": job, "kind": kind}).as_object().unwrap().clone();
     let (busy, key) = (state.busy.clone(), hold(&state.busy, held));
     cancel_index(&state.index);

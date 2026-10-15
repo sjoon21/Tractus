@@ -15,7 +15,7 @@ from datetime import date, datetime
 from itertools import zip_longest
 from pathlib import Path
 
-from tractus.llm import LLMError, stream_chat
+from tractus.llm import LLMError, Provider, stream_chat
 from tractus.store import _write_atomic, is_memo, memo_segments, seg_text, speaker_display, stamp
 
 NO_EVIDENCE = "노트 내용에서 답을 찾지 못했습니다."
@@ -239,10 +239,11 @@ def _done(answer: str, citations: list[dict], provider: str | None, model: str |
 
 
 def ask(client, provider: str, model: str, question: str, history: list[dict], scope: str,
-        get_sources: Callable[[], list[dict]]) -> Iterator[dict]:
+        get_sources: Callable[[], list[dict]], policy: Provider | None = None) -> Iterator[dict]:
     """진행 이벤트: stage(retrieve) → sources → stage(answer) → delta* → done. 근거가 없으면 LLM을 부르지 않는다.
     delta는 정리 전 원문 조각이다. 앱은 done의 answer(인용 정리본)로 바꿔 표시한다.
-    근거가 없어 아무것도 보내지 않은 done은 provider·model이 null이다 (앱의 전송 안내가 거짓이 되지 않게)."""
+    근거가 없어 아무것도 보내지 않은 done은 provider·model이 null이다 (앱의 전송 안내가 거짓이 되지 않게).
+    policy: 실제 공급자 설정 (온도 정책·오류 문장의 호스트). 없으면 기본값(온도 0.2)."""
     yield {"event": "stage", "stage": "retrieve"}
     sources = get_sources()
     yield {"event": "sources", "sources": sources}
@@ -251,7 +252,7 @@ def ask(client, provider: str, model: str, question: str, history: list[dict], s
         return
     yield {"event": "stage", "stage": "answer"}
     parts = []
-    for text in stream_chat(client, model, build_messages(question, history, sources, scope)):
+    for text in stream_chat(client, policy or Provider(provider, "", None, None, False), model, build_messages(question, history, sources, scope)):
         parts.append(text)
         yield {"event": "delta", "text": text}
     if not "".join(parts).strip():

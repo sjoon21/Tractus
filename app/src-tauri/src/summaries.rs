@@ -218,12 +218,12 @@ pub async fn summaries_delete(state: State<'_, AppState>, id: String, key: Strin
 }
 
 /// 요약 하나 만들기. 이벤트는 "job"으로 보내고 {job, kind: "summarize"}를 덧붙인다 (job_start와 같다: 화면의 작업 상태가 그대로 쓴다).
-/// template이 없고 custom도 없으면 기본(회의록). custom이 있으면 stdin으로 요약 방법을 넘긴다. 작업하는 동안 그 노트는 삭제할 수 없다
+/// provider: 고른 AI 서비스 (없으면 기본 서비스). template이 없고 custom도 없으면 기본(회의록). custom이 있으면 stdin으로 요약 방법을 넘긴다. 작업하는 동안 그 노트는 삭제할 수 없다
 #[tauri::command]
-pub fn summary_start(app: AppHandle, state: State<'_, AppState>, id: String, job: String, template: Option<String>, custom: Option<CustomSummary>) -> Result<(), String> {
+pub fn summary_start(app: AppHandle, state: State<'_, AppState>, id: String, job: String, template: Option<String>, custom: Option<CustomSummary>, provider: Option<String>) -> Result<(), String> {
     let args = summarize_args(&id, template.as_deref(), custom.is_some())?;
     let input = custom.as_ref().map(custom_input).transpose()?;
-    let cmd = state.llm_cmd(&args);
+    let cmd = state.llm_cmd(&args, provider.as_deref())?;
     let tag = json!({"job": job, "kind": "summarize"}).as_object().unwrap().clone();
     let (busy, key) = (state.busy.clone(), hold(&state.busy, &id));
     cancel_index(&state.index);

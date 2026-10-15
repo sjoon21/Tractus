@@ -6,6 +6,7 @@ import { trackOf } from "./caps";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorDetail } from "./ErrorDetail";
 import { warningText } from "./lib";
+import { KEY_CHANGED } from "./llmKey";
 import {
   capChip,
   diskShort,
@@ -192,6 +193,22 @@ function ModelDetails({ m, rows }: { m: ModelRow; rows: DetailRow[] }) {
   );
 }
 
+/** 스마트 검색에 쓰는 이 Mac의 모델 ID (코어 models_registry) */
+const EMBEDDING_ID = "embedding";
+const NOT_IN_USE = "사용하지 않음";
+
+/** 스마트 검색을 Upstage로 쓰는 중인가 (그러면 이 Mac의 검색 모델은 쓰지 않는다). 설정에서 바꾸면 다시 읽는다 */
+function useViaUpstage(): boolean {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const load = () => void api.getSettings().then((s) => setOn(s.embedding_provider === "upstage"), () => setOn(false));
+    load();
+    window.addEventListener(KEY_CHANGED, load);
+    return () => window.removeEventListener(KEY_CHANGED, load);
+  }, []);
+  return on;
+}
+
 const needsHelperNote = (m: ModelRow, helperFound: boolean | undefined) => m.id === "fluid" && helperFound === false;
 
 export function ModelsView() {
@@ -204,6 +221,7 @@ export function ModelsView() {
   const [folderBusy, setFolderBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; detail: string | null; error?: boolean } | null>(null);
   const helperFound = caps.report?.doctor?.tools.diar_helper.found;
+  const viaUpstage = useViaUpstage();
 
   const changed = async () => {
     await load();
@@ -359,7 +377,11 @@ export function ModelsView() {
                     <span className={`badge level-${m.level}`}>{levelLabel(m)}</span>
                   </td>
                   <td>
-                    <span className={`model-state is-${m.state}`}>{STATE_LABEL[m.state]}</span>
+                    {m.id === EMBEDDING_ID && viaUpstage ? (
+                      <span className="model-state">{NOT_IN_USE}</span>
+                    ) : (
+                      <span className={`model-state is-${m.state}`}>{STATE_LABEL[m.state]}</span>
+                    )}
                     {m.state === "partial" && m.installed_bytes > 0 && <span className="models-purpose tnum">{fmtBytes(m.installed_bytes)} 받음</span>}
                   </td>
                   <td>
@@ -373,7 +395,7 @@ export function ModelsView() {
                     </ul>
                   </td>
                   <td className="models-actions">
-                    {m.state !== "installed" && (
+                    {m.state !== "installed" && !(m.id === EMBEDDING_ID && viaUpstage) && (
                       <button type="button" className="ghost-button" disabled={busy} onClick={() => (m.state === "corrupt" ? void reinstall(m) : install(m))}>
                         {installLabel(m.state)}
                       </button>

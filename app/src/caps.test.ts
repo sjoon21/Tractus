@@ -88,6 +88,10 @@ describe("decide: 기능별 이유와 고치는 길", () => {
     expect(why("diarize-many", ["fluid"]).reason).toContain("최대 8명");
     expect(why("align", ["aligner"]).reason).toContain("단어 싱크");
     expect(why("smart-search", ["embedding"]).reason).toContain("단어 일치로만");
+    // Upstage로 쓰는 중에 키가 없으면 모델이 아니라 키가 이유이고, 고치는 곳은 설정이다
+    expect(why("smart-search", ["upstage-key"])).toMatchObject({ reason: expect.stringContaining("Upstage API 키가 없어"), fix: FIX_SETTINGS });
+    // 로컬 전용 모드에서는 Upstage로 처리하지 않는다: 이유는 모드이고, 고치는 곳은 설정이다
+    expect(why("smart-search", ["local-only"])).toMatchObject({ reason: expect.stringContaining("로컬 전용 모드"), fix: FIX_SETTINGS });
     expect(why("voices", ["voices"]).reason).toContain("이름만 바꿀 수 있습니다");
   });
   test("모든 막힌 기능은 이유 문장과 고치는 단추 글자를 가진다", () => {

@@ -18,7 +18,7 @@ mod voices;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -56,6 +56,15 @@ pub struct Settings {
     pub keep_in_tray: bool,
     /// 녹음을 끝내면: "ask"(매번 묻기) | "convert"(바로 텍스트로 변환) | "later"(노트로 저장만 하고 나중에 변환). 모르는 값은 화면이 "ask"로 읽는다 (docs/desktop.md §3.3)
     pub after_record: String,
+    /// 요약·질문에서 서비스를 따로 고르지 않을 때 쓰는 AI 서비스 (llm_key::PROVIDERS의 이름). 키는 settings.json이 아니라 서비스별 파일에 있다 (llm_key.rs)
+    pub llm_default: String,
+    /// 서비스마다 주소·AI 모델 (비어 있으면 서비스 기본값). 예전 설정의 `llm_provider` 등은 읽을 때 여기로 옮긴다 (llm_key::migrate_llm)
+    pub llm_profiles: BTreeMap<String, llm_key::Profile>,
+    /// 스마트 검색 방식: "local"(이 Mac, 기본) | "upstage"(문장·검색어를 Upstage로 보낸다. 옵트인)
+    pub embedding_provider: String,
+    /// 앱 설정 폴더 (키가 있는 곳). 파일에는 쓰지 않고 `AppState::settings()`가 채운다
+    #[serde(skip)]
+    pub config_dir: Option<PathBuf>,
     /// 이번 실행에서 없는 저장 경로를 자동으로 되돌린 설정 이름 (`tractus_bin`·`rec_bin`). 파일에는 쓰지 않는다 (시작 점검이 알린다)
     #[serde(skip)]
     pub stale: Vec<String>,
@@ -78,6 +87,10 @@ impl Default for Settings {
             tray_enabled: true,
             keep_in_tray: true,
             after_record: "ask".into(),
+            llm_default: llm_key::DEFAULT_PROVIDER.into(),
+            llm_profiles: BTreeMap::new(),
+            embedding_provider: "local".into(),
+            config_dir: None,
             stale: vec![],
         }
     }
@@ -98,7 +111,19 @@ impl Settings {
     /// 설정 파일을 읽는다. 없거나 깨졌으면 기본값. 저장된 코어·녹음 프로그램 경로가 없는 파일이면 자동으로 되돌리고 `stale`에 남긴다
     /// (파일 자체는 다음 저장 때 고쳐진다). 자동 후보와 같은 값(예전에 기본값을 저장한 것)은 조용히 자동으로 바꾼다
     fn load(raw: Option<&str>) -> Settings {
-        let mut s: Settings = raw.and_then(|r| serde_json::from_str(r).ok()).unwrap_or_default();
+        let parsed = raw.and_then(|r| serde_json::from_str::<Value>(r).ok()).map(|mut v| {
+            llm_key::migrate_llm(&mut v);
+            v
+        });
+        let mut s: Settings = parsed.and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default();
+        // 손으로 고친 파일의 모르는 값
+        if !llm_key::is_provider(&s.llm_default) {
+            s.llm_default = llm_key::DEFAULT_PROVIDER.into();
+        }
+        s.llm_profiles.retain(|p, _| llm_key::is_provider(p));
+        if s.embedding_provider != "upstage" {
+            s.embedding_provider = "local".into();
+        }
         for (name, field, bin) in [("tractus_bin", &mut s.tractus_bin, &paths::TRACTUS), ("rec_bin", &mut s.rec_bin, &paths::REC)] {
             if field.is_empty() {
                 continue;
@@ -156,7 +181,52 @@ impl Settings {
         }
         // `doctor`가 앱이 쓰는 녹음 프로그램을 보게 한다 (자동으로 찾은 경로가 코어의 기본 경로와 다를 수 있다)
         env.push(("TRACTUS_REC_BIN".into(), self.rec_resolved().path));
+        env.push(self.embed_mode());
         env
+    }
+
+    /// 스마트 검색 방식. 앱이 정한다: `.env`의 TRACTUS_EMBED가 이 선택을 뒤집지 못하게 모든 실행에 늘 싣는다 (뒤집히면 노트 내용이 Upstage로 가거나, 벡터가 계속 다시 만들어진다)
+    fn embed_mode(&self) -> (String, String) {
+        ("TRACTUS_EMBED".into(), if self.embedding_provider == "upstage" { "upstage" } else { "local" }.into())
+    }
+
+    /// 옵트인(upstage)일 때만 Upstage 키와 주소. 이것이 "키는 요약·질문 실행에만"의 유일한 예외다: 노트 문장·검색어를 임베딩하는 실행(색인, 변환·가져오기·요약 뒤의 색인, 질문의 검색)과
+    /// 상주 검색 프로세스에만 `tractus_embed`·`llm_cmd`·`mcp_spawn`이 싣는다. 녹음·화자·내보내기 등 나머지 실행(child_env)에는 없다.
+    /// 셸에 이미 있는 값은 덮어쓰지 않는다. 주소는 Upstage 서비스에 저장한 주소, 없으면 기본 주소 (노트 폴더 .env의 UPSTAGE_BASE_URL이 키를 받지 못하게 늘 정한다)
+    fn embed_key_env(&self, shell: impl Fn(&str) -> Option<String>) -> Vec<(String, String)> {
+        if self.embedding_provider != "upstage" {
+            return vec![];
+        }
+        let unset = |k: &str| shell(k).is_none_or(|v| v.is_empty());
+        let mut env = vec![];
+        if unset("UPSTAGE_BASE_URL") {
+            env.push(("UPSTAGE_BASE_URL".into(), self.upstage_base_url()));
+        }
+        if let (true, Some(key)) = (unset("UPSTAGE_API_KEY"), self.config_dir.as_deref().and_then(|d| llm_key::load(d, "upstage"))) {
+            env.push(("UPSTAGE_API_KEY".into(), key));
+        }
+        env
+    }
+
+    fn upstage_base_url(&self) -> String {
+        let stored = self.llm_profiles.get("upstage").map_or("", |p| p.base_url.as_str());
+        if stored.is_empty() { llm_key::default_url("upstage").unwrap_or_default().into() } else { stored.into() }
+    }
+
+    fn key_saved(&self, provider: &str) -> bool {
+        self.config_dir.as_deref().and_then(|d| llm_key::load(d, provider)).is_some()
+    }
+
+    /// 지금 쓸 수 있는 서비스 (키가 있거나 이 Mac 주소의 직접 입력), 표의 순서대로
+    fn registered(&self) -> Vec<&'static str> {
+        llm_key::provider_ids().filter(|p| llm_key::usable(p, self.llm_profiles.get(*p).map_or("", |x| x.base_url.as_str()), self.key_saved(p))).collect()
+    }
+
+    /// 요약·질문의 기본 서비스: 고른 서비스가 등록돼 있으면 그것, 아니면 등록된 첫 서비스, 하나도 없으면 고른 서비스
+    fn default_provider(&self) -> &'static str {
+        let chosen = llm_key::canonical(&self.llm_default).unwrap_or(llm_key::DEFAULT_PROVIDER);
+        let reg = self.registered();
+        if reg.contains(&chosen) { chosen } else { reg.first().copied().unwrap_or(chosen) }
     }
 
     /// tractus CLI는 현재 폴더의 .env/.env.local(API 키)을 읽는다. 저장소 .venv의 실행 파일이면 저장소 루트에서 실행한다.
@@ -179,24 +249,44 @@ impl Settings {
         cmd
     }
 
-    /// 요약·질문처럼 AI 서비스를 부르는 실행만 쓴다 (MCP·녹음·변환은 `tractus`). 저장된 API 키를 환경변수로만 넘긴다 (llm_key.rs)
-    fn tractus_llm<S: AsRef<OsStr>>(&self, args: &[S], config_dir: Option<&Path>) -> Command {
-        self.tractus_llm_with(args, config_dir, |k| std::env::var(k).ok())
+    /// 노트 문장·검색어를 임베딩하는 실행 (색인·변환·가져오기). 스마트 검색을 Upstage로 쓰면 그 키가 더해진다 (`embed_key_env`)
+    fn tractus_embed<S: AsRef<OsStr>>(&self, args: &[S]) -> Command {
+        let mut cmd = self.tractus(args);
+        cmd.envs(self.embed_key_env(|k| std::env::var(k).ok()));
+        cmd
     }
 
-    fn tractus_llm_with<S: AsRef<OsStr>>(&self, args: &[S], config_dir: Option<&Path>, env: impl Fn(&str) -> Option<String>) -> Command {
+    /// 요약·질문처럼 AI 서비스를 부르는 실행만 쓴다 (녹음·변환은 `tractus`). provider: 이번에 고른 서비스 (없으면 기본). 그 서비스의 키를 환경변수로만 넘긴다 (llm_key.rs)
+    fn tractus_llm<S: AsRef<OsStr>>(&self, args: &[S], provider: Option<&str>) -> Result<Command, String> {
+        let mut cmd = self.tractus_llm_with(args, self.config_dir.as_deref(), provider, |k| std::env::var(k).ok())?;
+        cmd.envs(self.embed_key_env(|k| std::env::var(k).ok())); // 요약 뒤 색인·질문의 검색이 임베딩한다 (옵트인일 때만)
+        Ok(cmd)
+    }
+
+    fn tractus_llm_with<S: AsRef<OsStr>>(&self, args: &[S], config_dir: Option<&Path>, provider: Option<&str>, env: impl Fn(&str) -> Option<String>) -> Result<Command, String> {
         let mut cmd = self.tractus(args);
-        let key = config_dir.and_then(llm_key::load);
-        let provider_set = ask::llm_config(&[&self.tractus_cwd(), &self.home()], &env).provider.is_some();
-        cmd.envs(llm_key::env(key.as_deref(), &env, provider_set));
-        cmd
+        let choice = self.llm_choice(provider)?;
+        let key = config_dir.and_then(|d| llm_key::load(d, choice.provider));
+        let set = ask::llm_config(&[&self.tractus_cwd(), &self.home()], &env);
+        cmd.envs(llm_key::env(&choice, key.as_deref(), &env, &set));
+        Ok(cmd)
+    }
+
+    /// 이번에 고른 AI 서비스(없으면 기본 서비스)와 그 서비스에 저장한 주소·AI 모델. 모르는 서비스는 오류
+    fn llm_choice(&self, provider: Option<&str>) -> Result<llm_key::Choice<'_>, String> {
+        let provider = match provider {
+            Some(p) => llm_key::canonical(p).ok_or_else(|| format!("알 수 없는 AI 서비스입니다: {p}"))?,
+            None => self.default_provider(),
+        };
+        let profile = self.llm_profiles.get(provider);
+        Ok(llm_key::Choice { provider, base_url: profile.map_or("", |p| &p.base_url), model: profile.map_or("", |p| &p.model) })
     }
 
     fn mcp_spawn(&self) -> mcp::Spawn {
         mcp::Spawn {
             program: self.tractus_path(),
             args: vec!["mcp".into()],
-            env: self.child_env(),
+            env: self.child_env().into_iter().chain(self.embed_key_env(|k| std::env::var(k).ok())).collect(),
             cwd: Some(self.tractus_cwd()),
         }
     }
@@ -289,12 +379,12 @@ type LiveSlot = Arc<Mutex<Option<procs::Stoppable>>>;
 
 impl AppState {
     fn settings(&self) -> Settings {
-        self.settings.lock().unwrap().clone()
+        Settings { config_dir: self.config_path.parent().map(Path::to_path_buf), ..self.settings.lock().unwrap().clone() }
     }
 
-    /// 요약·질문 프로세스 (저장된 API 키 포함)
-    fn llm_cmd<S: AsRef<OsStr>>(&self, args: &[S]) -> Command {
-        self.settings().tractus_llm(args, self.config_path.parent())
+    /// 요약·질문 프로세스 (고른 서비스의 API 키 포함)
+    fn llm_cmd<S: AsRef<OsStr>>(&self, args: &[S], provider: Option<&str>) -> Result<Command, String> {
+        self.settings().tractus_llm(args, provider)
     }
 }
 
@@ -313,7 +403,10 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, tray: State<'_, tra
     if let Some(dir) = state.config_path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let settings = settings.for_save();
+    let mut settings = settings.for_save();
+    // AI 서비스·스마트 검색 방식 선택은 llm_key.rs의 명령이 따로 저장한다: 오래된 화면 값이 덮어쓰지 못하게 지금 값을 지킨다
+    let cur = state.settings();
+    (settings.llm_default, settings.llm_profiles, settings.embedding_provider, settings.config_dir) = (cur.llm_default, cur.llm_profiles, cur.embedding_provider, cur.config_dir);
     let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
     state.mcp.set_spawn(settings.mcp_spawn());
@@ -547,10 +640,15 @@ fn job_args(home: &Path, kind: &str, target: &str) -> Result<Vec<String>, String
 /// 전사·요약·단어 타이밍 작업. 이벤트는 "job"으로 보내고 {job, kind}를 덧붙인다. job은 프론트엔드가 만든 ID.
 /// append_to: 글만 있는 노트의 ID. 있으면(transcribe·import만) 새 노트를 만들지 않고 그 노트에 녹음을 덧붙인다 (`--append-to`, docs/desktop.md §2.11). 작업하는 동안 그 노트는 삭제할 수 없다
 #[tauri::command]
-fn job_start(app: AppHandle, state: State<'_, AppState>, kind: String, target: String, job: String, append_to: Option<String>) -> Result<(), String> {
+fn job_start(app: AppHandle, state: State<'_, AppState>, kind: String, target: String, job: String, append_to: Option<String>, provider: Option<String>) -> Result<(), String> {
     let s = state.settings();
     let args = attach::with_target(job_args(&s.home(), &kind, &target)?, &kind, append_to.as_deref(), &s.home(), |t| is_busy(&state.busy, t))?;
-    let cmd = if kind == "summarize" { state.llm_cmd(&args) } else { s.tractus(&args) };
+    // provider: 요약에서 고른 AI 서비스 (없으면 기본 서비스). 다른 작업은 쓰지 않는다
+    let cmd = match kind.as_str() {
+        "summarize" => state.llm_cmd(&args, provider.as_deref())?,
+        "transcribe" | "import" => s.tractus_embed(&args), // 끝나면 색인한다
+        _ => s.tractus(&args),
+    };
     let tag = json!({"job": job, "kind": kind}).as_object().unwrap().clone();
     // 노트·녹음을 쓰는 동안은 삭제를 거절한다. 가져오기는 대상이 아직 없어 IMPORT_TARGET으로 표시만 한다 (백그라운드 검색 정보 갱신이 비켜 간다)
     let held = if kind == "import" { IMPORT_TARGET } else { target.as_str() };
@@ -591,10 +689,11 @@ fn ask_start(
     to: Option<String>,
     question: String,
     history: Vec<ask::ChatMessage>,
+    provider: Option<String>,
 ) -> Result<(), String> {
     let args = ask::ask_args(meeting.as_deref(), from.as_deref(), to.as_deref())?;
     let input = ask::ask_input(&question, &history)?;
-    let cmd = state.llm_cmd(&args);
+    let cmd = state.llm_cmd(&args, provider.as_deref())?;
     let tag = json!({ "job": job }).as_object().unwrap().clone();
     let (asks, key) = (state.asks.clone(), job.clone());
     // 한 노트에 묻는 동안은 그 노트 삭제를 거절한다
@@ -733,12 +832,16 @@ fn sync_index_later(mcp: Arc<mcp::McpClient>) {
     });
 }
 
-/// 질문을 보내기 전 '어디로 전송되는지' 안내에 쓸 공급자·모델 (API 키는 읽지 않는다)
+/// 질문을 보내기 전 '어디로 전송되는지' 안내에 쓸 서비스·AI 모델·호스트 (API 키는 읽지 않고 등록 여부만 본다). provider: 고른 서비스 (없으면 기본)
 #[tauri::command]
-async fn llm_config(state: State<'_, AppState>) -> Result<ask::LlmConfig, String> {
+async fn llm_config(state: State<'_, AppState>, provider: Option<String>) -> Result<ask::LlmConfig, String> {
     let s = state.settings();
-    let saved = state.config_path.parent().and_then(llm_key::load).is_some();
-    blocking(move || Ok(llm_key::with_saved_key(ask::llm_config(&[&s.tractus_cwd(), &s.home()], |k| std::env::var(k).ok()), saved))).await
+    blocking(move || {
+        let c = s.llm_choice(provider.as_deref())?;
+        let cfg = ask::llm_config(&[&s.tractus_cwd(), &s.home()], |k| std::env::var(k).ok());
+        Ok(llm_key::effective(cfg, &c, s.key_saved(c.provider)))
+    })
+    .await
 }
 
 fn is_meeting_id(id: &str) -> bool {
@@ -898,7 +1001,7 @@ async fn index_refresh(state: State<'_, AppState>) -> Result<bool, String> {
     blocking(move || {
         let _guard = guard;
         let (tx, rx) = std::sync::mpsc::channel();
-        let (stdin, child) = procs::spawn_streaming(s.tractus(&["index".to_string()]), serde_json::Map::new(), move |ev| {
+        let (stdin, child) = procs::spawn_streaming(s.tractus_embed(&["index".to_string()]), serde_json::Map::new(), move |ev| {
             if ev["event"] == "exit" {
                 let _ = tx.send(ev);
             }
@@ -1103,7 +1206,8 @@ pub fn run() {
         })
         .setup(|app| {
             let config_path = app.path().app_config_dir()?.join("settings.json");
-            let settings = Settings::load(std::fs::read_to_string(&config_path).ok().as_deref());
+            let mut settings = Settings::load(std::fs::read_to_string(&config_path).ok().as_deref());
+            settings.config_dir = config_path.parent().map(Path::to_path_buf);
             let mcp = Arc::new(mcp::McpClient::new(settings.mcp_spawn()));
             // 첫 검색이 빠르도록 미리 띄워 둔다 (실패해도 검색 때 다시 시도)
             let warm = mcp.clone();
@@ -1175,6 +1279,12 @@ pub fn run() {
             llm_key::llm_key_status,
             llm_key::llm_key_save,
             llm_key::llm_key_delete,
+            llm_key::llm_settings,
+            llm_key::llm_settings_save,
+            llm_key::llm_default_save,
+            llm_key::embedding_provider_save,
+            llm_key::llm_test,
+            llm_key::llm_models,
             voices::voices_list,
             voices::voices_enroll,
             voices::voices_forget
@@ -1263,43 +1373,230 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// 저장된 API 키는 요약·질문 실행에만 들어간다 (llm_key.rs). MCP·녹음·변환 등은 키를 보지 못한다
+    fn envs(c: &Command) -> HashMap<String, String> {
+        c.get_envs().filter_map(|(k, v)| Some((k.to_str()?.to_string(), v?.to_str()?.to_string()))).collect()
+    }
+
+    fn llm_env(s: &Settings, cfg: &Path, provider: Option<&str>, shell: impl Fn(&str) -> Option<String>) -> HashMap<String, String> {
+        envs(&s.tractus_llm_with(&["summarize"], Some(cfg), provider, shell).unwrap())
+    }
+
+    fn profiles(items: &[(&str, &str, &str)]) -> BTreeMap<String, llm_key::Profile> {
+        items.iter().map(|(p, b, m)| (p.to_string(), llm_key::Profile { base_url: b.to_string(), model: m.to_string() })).collect()
+    }
+
+    /// 저장된 API 키는 요약·질문 실행에만 들어간다 (llm_key.rs). 녹음·변환 등은 키를 보지 못한다. 예외는 스마트 검색을 Upstage로 쓰는 옵트인뿐이다 (아래 테스트)
     #[test]
     fn saved_key_reaches_only_llm_commands() {
         let root = std::env::temp_dir().join(format!("tractus-llmenv-{}", std::process::id()));
         let (home, cfg) = (root.join("home"), root.join("config"));
         std::fs::create_dir_all(&home).unwrap();
         paths::NO_AUTO.set(true); // 저장소의 .env가 끼지 않게: 없는 코어 경로면 데이터 폴더에서 실행한다
-        let s = Settings { tractus_bin: "/x/tractus".into(), home: home.to_string_lossy().into_owned(), ..Default::default() };
-        let envs = |c: &Command| c.get_envs().filter_map(|(k, v)| Some((k.to_str()?.to_string(), v?.to_str()?.to_string()))).collect::<HashMap<_, _>>();
+        let s = Settings { tractus_bin: "/x/tractus".into(), home: home.to_string_lossy().into_owned(), config_dir: Some(cfg.clone()), ..Default::default() };
         let none = |_: &str| None;
-        let key = || envs(&s.tractus_llm_with(&["summarize"], Some(&cfg), none));
+        let key = || llm_env(&s, &cfg, None, none);
         // 키가 없으면 지금까지와 똑같다
-        assert_eq!(envs(&s.tractus_llm_with(&["summarize"], Some(&cfg), none)), envs(&s.tractus(&["summarize"])));
-        llm_key::save(&cfg, "test-key-123").unwrap();
+        assert_eq!(key(), envs(&s.tractus(&["summarize"])));
+        llm_key::save(&cfg, "upstage", "test-key-123").unwrap();
         let e = key();
         assert_eq!((e["UPSTAGE_API_KEY"].as_str(), e["TRACTUS_LLM_PROVIDER"].as_str()), ("test-key-123", "upstage"));
-        // 공급자를 이미 정했으면(.env.local) 건드리지 않는다
-        std::fs::write(home.join(".env.local"), "TRACTUS_LLM_PROVIDER=openai\n").unwrap();
+        // .env.local이 다섯 서비스 중 하나를 정해 두어도 앱이 고른 서비스가 이긴다 (서비스·주소·AI 모델을 함께 싣는다)
+        std::fs::write(home.join(".env.local"), "TRACTUS_LLM_PROVIDER=openai\nTRACTUS_LLM_BASE_URL=https://elsewhere.example.com/v1\nTRACTUS_LLM_MODEL=gpt-env\n").unwrap();
         let e = key();
-        assert_eq!(e["UPSTAGE_API_KEY"], "test-key-123");
-        assert!(!e.contains_key("TRACTUS_LLM_PROVIDER"));
+        assert_eq!((e["UPSTAGE_API_KEY"].as_str(), e["TRACTUS_LLM_PROVIDER"].as_str(), e["TRACTUS_LLM_BASE_URL"].as_str()), ("test-key-123", "upstage", "https://api.upstage.ai/v1"));
+        assert_eq!(e["TRACTUS_LLM_MODEL"], "solar-pro4"); // 환경이 다른 서비스(openai)를 정했으면 그 모델은 이 서비스에 가지 않는다
+        // 환경이 같은 서비스를 정했으면 주소는 앱 것, AI 모델은 입력칸이 비었을 때 환경 것
+        std::fs::write(home.join(".env.local"), "TRACTUS_LLM_PROVIDER=upstage\nTRACTUS_LLM_BASE_URL=https://elsewhere.example.com/v1\nTRACTUS_LLM_MODEL=solar-env\n").unwrap();
+        let e = key();
+        assert_eq!((e["TRACTUS_LLM_BASE_URL"].as_str(), e.get("TRACTUS_LLM_MODEL")), ("https://api.upstage.ai/v1", None));
+        // 앱 밖의 서비스(gemma-local)를 환경이 정했으면 환경이 모두 정한다: 아무것도 싣지 않는다 (키도)
+        std::fs::write(home.join(".env.local"), "TRACTUS_LLM_PROVIDER=gemma-local\n").unwrap();
+        assert_eq!(key(), envs(&s.tractus(&["summarize"])));
         std::fs::remove_file(home.join(".env.local")).unwrap();
-        // 셸(앱 프로세스)의 값이 먼저다
+        // 셸(앱 프로세스)의 키는 덮어쓰지 않는다. 서비스는 앱이 정한다
         let shell = |k: &str| match k {
             "UPSTAGE_API_KEY" => Some("from-shell".to_string()),
             "TRACTUS_LLM_PROVIDER" => Some("claude".to_string()),
             _ => None,
         };
-        assert!(envs(&s.tractus_llm_with(&["summarize"], Some(&cfg), shell)).keys().all(|k| !k.starts_with("UPSTAGE") && k != "TRACTUS_LLM_PROVIDER"));
+        let e = llm_env(&s, &cfg, None, shell);
+        assert!(!e.contains_key("UPSTAGE_API_KEY") && e["TRACTUS_LLM_PROVIDER"] == "upstage");
         // 키를 지우면 다시 들어가지 않는다
-        llm_key::delete(&cfg).unwrap();
+        llm_key::delete(&cfg, "upstage").unwrap();
         assert_eq!(key(), envs(&s.tractus(&["summarize"])));
-        // 키가 있어도 일반 실행·MCP·녹음 환경에는 없다
-        llm_key::save(&cfg, "test-key-123").unwrap();
+        // 키가 있어도 일반 실행·MCP·녹음 환경에는 없다 (이 Mac 방식이 기본이다)
+        llm_key::save(&cfg, "upstage", "test-key-123").unwrap();
         let has_key = |env: &[(String, String)]| env.iter().any(|(k, v)| k.contains("API_KEY") || v.contains("test-key-123"));
         assert!(!has_key(&s.child_env()) && !has_key(&s.mcp_spawn().env));
+        assert!(s.child_env().contains(&("TRACTUS_EMBED".into(), "local".into()))); // .env의 TRACTUS_EMBED가 뒤집지 못하게 늘 정한다
         assert!(!envs(&s.tractus(&["index"])).values().any(|v| v.contains("test-key-123")));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// 스마트 검색을 Upstage로 쓰는 옵트인: 그때만, Upstage 키만 색인·검색 프로세스(MCP 포함)에 실린다. 다른 서비스의 키는 어느 경우에도 없다
+    #[test]
+    fn upstage_search_opt_in_is_the_only_way_a_key_reaches_the_search_processes() {
+        let root = std::env::temp_dir().join(format!("tractus-embenv-{}", std::process::id()));
+        let (home, cfg) = (root.join("home"), root.join("config"));
+        std::fs::create_dir_all(&home).unwrap();
+        paths::NO_AUTO.set(true);
+        for p in ["upstage", "openai", "gemini"] {
+            llm_key::save(&cfg, p, &format!("key-for-{p}-0000")).unwrap();
+        }
+        let base = Settings { tractus_bin: "/x/tractus".into(), home: home.to_string_lossy().into_owned(), config_dir: Some(cfg.clone()), ..Default::default() };
+        let on = Settings { embedding_provider: "upstage".into(), ..base.clone() };
+        let secrets = |env: &[(String, String)]| env.iter().filter(|(k, v)| k.contains("API_KEY") || v.contains("key-for-")).map(|(k, _)| k.clone()).collect::<Vec<_>>();
+        let cmd_env = |c: &Command| c.get_envs().filter_map(|(k, v)| Some((k.to_str()?.to_string(), v?.to_str()?.to_string()))).collect::<Vec<_>>();
+        assert!(secrets(&base.mcp_spawn().env).is_empty() && secrets(&base.child_env()).is_empty() && secrets(&cmd_env(&base.tractus_embed(&["index"]))).is_empty());
+        // 키가 가는 곳: 색인·변환·가져오기, 요약·질문(색인·검색), 상주 검색 프로세스
+        let keyed = [on.mcp_spawn().env, cmd_env(&on.tractus_embed(&["index"])), cmd_env(&on.tractus_llm(&["ask"], Some("upstage")).unwrap()), on.embed_key_env(|_| None)];
+        for env in keyed {
+            assert_eq!(secrets(&env).iter().filter(|k| *k == "UPSTAGE_API_KEY").count(), 1);
+            assert!(env.contains(&("UPSTAGE_API_KEY".into(), "key-for-upstage-0000".into())));
+            assert!(!env.iter().any(|(_, v)| v.contains("key-for-openai") || v.contains("key-for-gemini"))); // 다른 서비스의 키는 어느 경우에도 없다
+            assert!(env.contains(&("UPSTAGE_BASE_URL".into(), "https://api.upstage.ai/v1".into()))); // 노트 폴더 .env의 주소가 키를 받지 못하게 늘 정한다
+        }
+        // 그 밖의 모든 실행(녹음 프로그램 포함: child_env, 화자·내보내기 등: tractus)에는 키도 주소도 없고 방식만 있다
+        for env in [on.child_env(), cmd_env(&on.tractus(&["speakers"]))] {
+            assert!(secrets(&env).is_empty() && !env.iter().any(|(k, _)| k == "UPSTAGE_BASE_URL"));
+            assert!(env.contains(&("TRACTUS_EMBED".into(), "upstage".into())));
+        }
+        // Upstage에 저장한 주소를 쓴다. 셸의 값이 먼저다
+        let gw = Settings { llm_profiles: profiles(&[("upstage", "https://gw.example.com/v1", "")]), ..on.clone() };
+        assert!(gw.embed_key_env(|_| None).contains(&("UPSTAGE_BASE_URL".into(), "https://gw.example.com/v1".into())));
+        let shell = |k: &str| (k == "UPSTAGE_API_KEY" || k == "UPSTAGE_BASE_URL").then(|| "from-shell".to_string());
+        assert!(on.embed_key_env(shell).is_empty());
+        // 키가 없으면 방식만 싣는다 (코어는 단어 일치로만 찾는다)
+        llm_key::delete(&cfg, "upstage").unwrap();
+        assert!(secrets(&on.mcp_spawn().env).is_empty() && secrets(&cmd_env(&on.tractus_embed(&["index"]))).is_empty() && on.child_env().contains(&("TRACTUS_EMBED".into(), "upstage".into())));
+        // 설정 파일의 모르는 값은 이 Mac 방식
+        assert_eq!(Settings::load(Some(r#"{"embedding_provider": "../x"}"#)).embedding_provider, "local");
+        assert_eq!(Settings::load(Some(r#"{"embedding_provider": "upstage"}"#)).embedding_provider, "upstage");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// 서비스마다 자기 환경변수에만, 고른 서비스의 키·주소·AI 모델만 싣는다. 다른 서비스의 키는 파일에 있어도 싣지 않는다. 녹음·일반 실행에는 어느 서비스 키도 없다
+    #[test]
+    fn injection_follows_the_selected_provider() {
+        let root = std::env::temp_dir().join(format!("tractus-llmsel-{}", std::process::id()));
+        let (home, cfg) = (root.join("home"), root.join("config"));
+        std::fs::create_dir_all(&home).unwrap();
+        paths::NO_AUTO.set(true);
+        let none = |_: &str| None;
+        let base = Settings { tractus_bin: "/x/tractus".into(), home: home.to_string_lossy().into_owned(), config_dir: Some(cfg.clone()), ..Default::default() };
+        for p in ["upstage", "openai", "claude", "gemini", "custom"] {
+            llm_key::save(&cfg, p, &format!("key-for-{p}-0000")).unwrap();
+        }
+        let vars = ["UPSTAGE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "TRACTUS_LLM_API_KEY"];
+        // 서비스마다 다른 주소·AI 모델을 저장해 두고, 요청마다 그 서비스의 것만 간다
+        let all = ["upstage", "openai", "claude", "gemini", "custom"];
+        let prof: Vec<(String, String)> = all.iter().map(|p| (format!("https://{p}.example.com/v1"), format!("m-{p}"))).collect();
+        let s = Settings { llm_profiles: profiles(&all.iter().zip(&prof).map(|(p, (b, m))| (*p, b.as_str(), m.as_str())).collect::<Vec<_>>()), ..base.clone() };
+        for (i, p) in all.iter().enumerate() {
+            let e = llm_env(&s, &cfg, Some(p), none);
+            assert_eq!(e[vars[i]], format!("key-for-{p}-0000"), "{p}");
+            assert_eq!(vars.iter().filter(|v| e.contains_key(**v)).count(), 1, "{p}: 선택한 서비스의 키만");
+            assert_eq!((e["TRACTUS_LLM_PROVIDER"].as_str(), e["TRACTUS_LLM_BASE_URL"].as_str(), e["TRACTUS_LLM_MODEL"].as_str()), (*p, prof[i].0.as_str(), prof[i].1.as_str()));
+            // 다른 실행에는 키도 주소도 없다
+            let has_key = |env: &[(String, String)]| env.iter().any(|(k, v)| k.contains("API_KEY") || v.contains("key-for-") || k.starts_with("TRACTUS_LLM_"));
+            assert!(!has_key(&s.child_env()) && !has_key(&s.mcp_spawn().env), "{p}");
+            let plain = envs(&s.tractus(&["index"]));
+            assert!(!plain.keys().any(|k| k.contains("API_KEY") || k.starts_with("TRACTUS_LLM_")) && !plain.values().any(|v| v.contains("key-for-")), "{p}");
+        }
+        // 서비스를 정하지 않으면 기본 서비스 (등록된 것 중에서)
+        let d = Settings { llm_default: "gemini".into(), ..s.clone() };
+        assert_eq!(llm_env(&d, &cfg, None, none)["TRACTUS_LLM_PROVIDER"], "gemini");
+        assert_eq!(d.registered(), all);
+        assert!(s.llm_choice(Some("../x")).is_err() && s.tractus_llm(&["x"], Some("gemma-local")).is_err());
+        // 기본 서비스가 등록돼 있지 않으면 등록된 첫 서비스
+        llm_key::delete(&cfg, "gemini").unwrap();
+        assert_eq!((d.default_provider(), d.registered().contains(&"gemini")), ("upstage", false));
+        // AI 모델이 비어 있으면 싣지 않는다 (서비스 기본값). 주소가 비어 있으면 서비스 기본 주소를 싣는다:
+        // 노트 폴더 .env의 TRACTUS_LLM_BASE_URL이 키를 받지 못하게 (프로세스 환경변수는 dotenv 값이 덮지 못한다)
+        std::fs::write(home.join(".env"), "TRACTUS_LLM_BASE_URL=http://127.0.0.1:9/v1\nCLAUDE_BASE_URL=http://127.0.0.1:9/v1\n").unwrap();
+        let e = llm_env(&base, &cfg, Some("claude"), none);
+        assert!(!e.contains_key("TRACTUS_LLM_MODEL") && e["TRACTUS_LLM_PROVIDER"] == "claude");
+        assert_eq!(e["TRACTUS_LLM_BASE_URL"], "https://api.anthropic.com/v1");
+        std::fs::remove_file(home.join(".env")).unwrap();
+        // 키 없는 서비스를 골라도 다른 서비스의 키를 대신 싣지 않는다
+        llm_key::delete(&cfg, "claude").unwrap();
+        let e = llm_env(&base, &cfg, Some("claude"), none);
+        assert!(!e.keys().any(|k| k.contains("API_KEY")));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// 새 설정 항목은 더하기만 했다: 예전 settings.json은 그대로 읽히고 Upstage가 기본이다. 한 서비스만 저장하던 예전 값은 그 서비스의 프로필이 된다
+    #[test]
+    fn llm_settings_defaults_and_migration() {
+        let old = Settings::load(Some(r#"{"home": "/x", "rec_mode": "hybrid", "after_record": "later"}"#));
+        assert_eq!((old.llm_default.as_str(), old.llm_profiles.len(), old.embedding_provider.as_str()), ("upstage", 0, "local"));
+        assert_eq!((old.home.as_str(), old.rec_mode.as_str()), ("/x", "hybrid"));
+        let sel = Settings::load(Some(r#"{"llm_provider": "claude", "llm_base_url": "https://x.example.com/v1", "llm_model": "claude-x"}"#));
+        assert_eq!(sel.llm_default, "claude");
+        assert_eq!(sel.llm_profiles["claude"], llm_key::Profile { base_url: "https://x.example.com/v1".into(), model: "claude-x".into() });
+        assert_eq!(sel.llm_choice(Some("claude")).unwrap().model, "claude-x");
+        assert_eq!(sel.llm_choice(Some("openai")).unwrap().model, ""); // 다른 서비스는 기본값
+        // 새 형식은 그대로, 손으로 고친 모르는 서비스는 기본으로
+        let new = Settings::load(Some(r#"{"llm_default": "gemini", "llm_profiles": {"gemini": {"model": "gemini-flash-latest"}, "../x": {"model": "y"}}}"#));
+        assert_eq!((new.llm_default.as_str(), new.llm_profiles.len(), new.llm_profiles["gemini"].base_url.as_str()), ("gemini", 1, ""));
+        assert_eq!(Settings::load(Some(r#"{"llm_provider": "../etc"}"#)).llm_default, "upstage");
+        assert_eq!(Settings::load(Some(r#"{"llm_default": "../etc"}"#)).llm_default, "upstage");
+        assert_eq!(Settings::load(None).llm_default, "upstage");
+        // 파일에 쓰면 키는 없고 선택만 있다 (예전 필드도, 설정 폴더 경로도 없다)
+        let raw = serde_json::to_string(&sel.for_save()).unwrap();
+        assert!(raw.contains("llm_profiles") && !raw.contains("key") && !raw.contains("llm_provider") && !raw.contains("config_dir"));
+    }
+
+    /// 연결 테스트·모델 목록: `tractus llm test|models`를 인수 없이 (서비스·주소·AI 모델은 환경변수로) 돌리고 키를 선택한 서비스의 변수에만 싣는다. 코어는 가짜 스크립트
+    #[test]
+    fn llm_test_runs_the_core_with_injected_env() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("tractus-llmtest-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (home, cfg, bin) = (root.join("home"), root.join("config"), root.join("fake-tractus"));
+        std::fs::create_dir_all(&home).unwrap();
+        paths::NO_AUTO.set(true);
+        // 받은 인수와 환경을 JSON 한 줄로 돌려준다. 키는 있다는 사실만 (값은 출력하지 않는다)
+        let script = |ok: bool| {
+            let body = if ok {
+                r#"if [ "$2" = models ]; then printf '{"models": ["%s"]}\n' "$TRACTUS_LLM_PROVIDER"; else printf '{"ok": true, "provider": "%s", "model": "%s", "host": "%s", "latency_ms": 7}\n' "$TRACTUS_LLM_PROVIDER" "$*" "${ANTHROPIC_API_KEY:+key-set}${OPENAI_API_KEY:+WRONG}"; fi"#
+            } else {
+                r#"printf '{"event":"error","message":"boom","code":"llm_auth"}\n'; exit 1"#
+            };
+            std::fs::write(&bin, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        let s = Settings { tractus_bin: bin.to_string_lossy().into_owned(), home: home.to_string_lossy().into_owned(), llm_default: "openai".into(), llm_profiles: profiles(&[("claude", "", "claude-x")]), config_dir: Some(cfg.clone()), ..Default::default() };
+        let none = |_: &str| None;
+        llm_key::save(&cfg, "claude", "test-key-123").unwrap();
+        llm_key::save(&cfg, "openai", "other-key-4567").unwrap();
+        script(true);
+        // 고른 서비스(claude)로 돈다: 기본 서비스(openai)가 아니라
+        let r = llm_key::run_test_for(&s, Some(&cfg), Some("claude"), none).unwrap();
+        assert!(r.ok && r.provider.as_deref() == Some("claude"));
+        assert_eq!(r.model.as_deref(), Some("llm test")); // 인수는 `llm test`뿐
+        assert_eq!(r.host.as_deref(), Some("key-set")); // 키는 선택한 서비스의 변수에만
+        assert_eq!(llm_key::run_models_for(&s, Some(&cfg), Some("claude"), none).unwrap().models, ["claude"]);
+        assert_eq!(llm_key::run_models_for(&s, Some(&cfg), None, none).unwrap().models, ["openai"]); // 없으면 기본 서비스
+        // 실패: 코어의 코드와 문구가 그대로 온다
+        script(false);
+        let r = llm_key::run_test_for(&s, Some(&cfg), Some("claude"), none).unwrap();
+        assert_eq!((r.ok, r.code.as_deref(), r.message.as_deref()), (false, Some("llm_auth"), Some("boom")));
+        let m = llm_key::run_models_for(&s, Some(&cfg), Some("claude"), none).unwrap();
+        assert_eq!((m.models.len(), m.code.as_deref(), m.message.as_deref()), (0, Some("llm_auth"), Some("boom")));
+        // 직접 입력: 이 Mac이 아닌 주소에 키가 없으면 실행하지 않고 설정 오류
+        let custom = Settings { llm_profiles: profiles(&[("custom", "https://gw.example.com/v1", "")]), ..s.clone() };
+        let r = llm_key::run_test_for(&custom, Some(&cfg), Some("custom"), none).unwrap();
+        assert_eq!(r.code.as_deref(), Some("llm_config"));
+        assert_eq!(llm_key::run_models_for(&custom, Some(&cfg), Some("custom"), none).unwrap().code.as_deref(), Some("llm_config"));
+        // 이 Mac 주소는 키 없이도 실행한다
+        script(true);
+        let local = Settings { llm_profiles: profiles(&[("custom", "http://localhost:11434/v1", "")]), ..s.clone() };
+        assert!(llm_key::run_test_for(&local, Some(&cfg), Some("custom"), none).unwrap().ok);
+        // 모르는 서비스는 실행하지 않는다. 실행 파일이 없으면 오류 (첫 줄은 화면 문장)
+        assert!(llm_key::run_test_for(&local, Some(&cfg), Some("../x"), none).is_err());
+        let missing = Settings { tractus_bin: "/no/such/tractus".into(), ..local };
+        assert!(llm_key::run_test_for(&missing, Some(&cfg), Some("custom"), none).unwrap_err().contains("실행할 수 없습니다"));
         std::fs::remove_dir_all(&root).unwrap();
     }
 
