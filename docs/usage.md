@@ -2,6 +2,11 @@
 
 앱으로 노트를 만들고 다듬고 찾는 방법입니다. 터미널 명령은 [CLI](cli.md), 설치는 [설치 안내](setup.md)에 있습니다.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/memo-dark.png">
+  <img src="images/memo-light.png" alt="메모 노트: 글만 쓰는 노트도 요약·AI 질문·검색이 된다" width="100%">
+</picture>
+
 ## 앱에서
 
 <details open>
