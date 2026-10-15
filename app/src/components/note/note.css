@@ -1,0 +1,689 @@
+/* 노트 화면: 대화 내용·참석자·찾기·플레이어·정리 줄. 상태가 많은 선택자만 여기 두고 배치는 Tailwind(MeetingView.tsx)가 한다.
+   대본처럼: 말하는 사람이 바뀔 때만 이름, 같은 사람의 말은 왼쪽 참석자 색 줄로 묶는다 */
+
+.meeting {
+  --time-col: 3.5rem;
+}
+
+/* ── 대화 내용 ── */
+.transcript {
+  margin: 0;
+  padding: 8px 0 48px;
+  list-style: none;
+}
+
+.seg-button {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--time-col) minmax(0, 1fr);
+  width: 100%;
+  padding: 6px 12px 6px 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: left;
+  outline: none;
+  transition: background-color var(--fast);
+}
+
+.seg-button:hover {
+  background: color-mix(in srgb, var(--foreground) 3.5%, transparent);
+}
+
+.seg-button:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ring) 55%, transparent);
+}
+
+.seg-time {
+  padding-top: 0.42em;
+  font-size: 12px;
+  color: var(--subtle-foreground);
+  font-variant-numeric: tabular-nums;
+  transition: color var(--fast);
+}
+
+.seg-body {
+  display: block;
+}
+
+.seg-text {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--foreground);
+  -webkit-user-select: text; /* 버튼 안이라도 글을 고를 수 있게 (단어 클릭 위치도 이것으로 찾는다) */
+  user-select: text;
+}
+
+/* 지금 재생 중: 시각만 빨강 + 옅은 바탕. 큰 색 면을 만들지 않는다 */
+.seg.is-active .seg-button {
+  background: color-mix(in srgb, var(--rec) 6%, transparent);
+}
+
+.seg.is-active .seg-time {
+  color: var(--rec);
+  font-weight: 600;
+}
+
+/* 사람이 고친 문장: 메모 색 작은 표지. 원문은 title로 */
+.seg-edited {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--memo-wash);
+  color: var(--memo);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 0.12em;
+  white-space: nowrap;
+}
+
+.seg-button.is-editing {
+  cursor: text;
+  background: var(--background);
+  box-shadow: inset 0 0 0 1.5px var(--ring);
+}
+
+.seg-editor {
+  display: block;
+  outline: none;
+  white-space: pre-wrap;
+  caret-color: var(--rec);
+}
+
+/* 녹음 중에 남긴 메모·북마크 */
+.memo .seg-time {
+  color: var(--memo);
+}
+
+.memo-body {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  background: var(--memo-wash);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.memo-kind {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--memo);
+}
+
+/* 가라오케: 지금 말하는 단어. 찾기 강조가 위에 그려진다 */
+::highlight(karaoke) {
+  background-color: color-mix(in srgb, var(--rec) 20%, transparent);
+}
+
+::highlight(find) {
+  background-color: color-mix(in srgb, var(--memo) 30%, transparent);
+}
+
+::highlight(find-current) {
+  background-color: var(--memo);
+  color: var(--background);
+}
+
+@supports not selector(::highlight(find)) {
+  .seg.is-find .seg-button {
+    box-shadow: inset 0 0 0 1px var(--memo);
+  }
+}
+
+/* ── 참석자 ── */
+.spk-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--spk-fill, var(--spk));
+  box-shadow: inset 0 0 0 1.5px var(--spk); /* 9번째 참석자부터: 속 빈 점 */
+}
+
+.is-label {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.transcript.has-speakers .seg {
+  position: relative;
+}
+
+.transcript.has-speakers .seg.is-turn {
+  margin-top: 18px;
+}
+
+.transcript.has-speakers .seg-body,
+.transcript.has-speakers .seg-editor {
+  padding-left: 16px;
+}
+
+.transcript.has-speakers .seg-button::after {
+  content: "";
+  position: absolute;
+  left: var(--time-col);
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--spk) 45%, transparent);
+}
+
+.transcript.has-speakers .seg.is-active .seg-button::after {
+  background: var(--spk);
+}
+
+.spk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  transition: background-color var(--fast);
+}
+
+.spk-chip:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 55%, transparent);
+}
+
+.spk-chip.is-turn {
+  margin: 0 0 2px calc(var(--time-col) - 7px);
+  padding: 2px 9px 2px 4px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.spk-chip.is-turn .spk-dot {
+  box-shadow: inset 0 0 0 1.5px var(--spk), 0 0 0 3px var(--background);
+}
+
+.spk-chip.is-turn:hover {
+  background: color-mix(in srgb, var(--spk) 12%, transparent);
+}
+
+.spk-chip.is-unknown .spk-name {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+/* 이어지는 말: 줄 위의 작은 점. 눌러서 이 대화만 다른 참석자로 */
+.spk-chip.is-cont {
+  position: absolute;
+  z-index: 1;
+  left: calc(var(--time-col) - 8px);
+  top: 13px;
+  width: 18px;
+  height: 18px;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.spk-chip.is-cont .spk-dot {
+  width: 6px;
+  height: 6px;
+  opacity: 0;
+  box-shadow: inset 0 0 0 1.5px var(--spk), 0 0 0 2px var(--background);
+  transition: opacity var(--fast), transform var(--fast) var(--ease);
+}
+
+.seg:hover .spk-chip.is-cont .spk-dot,
+.spk-chip.is-cont:focus-visible .spk-dot {
+  opacity: 1;
+}
+
+.spk-chip.is-cont:hover .spk-dot,
+.spk-chip.is-cont:focus-visible .spk-dot {
+  transform: scale(1.6);
+}
+
+/* 노트 머리의 참석자 막대: 말한 시간 비율 + 거르기·편집 */
+.speakers {
+  margin-top: 20px;
+}
+
+.speakers-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.speakers-head h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.speakers-share {
+  display: flex;
+  gap: 2px;
+  height: 4px;
+  margin-bottom: 10px;
+}
+
+.speakers-share span {
+  flex: 1 1 0;
+  min-width: 3px;
+  border-radius: 2px;
+  background: var(--spk-bar, var(--spk));
+  transition: opacity var(--normal) var(--ease);
+}
+
+.speakers-share .is-dim {
+  opacity: 0.2;
+}
+
+.speakers-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.speakers-list li {
+  display: flex;
+  align-items: center;
+  border-radius: 999px;
+  transition: background-color var(--fast), box-shadow var(--fast), opacity var(--fast);
+}
+
+.speakers-list li.is-dim {
+  opacity: 0.5;
+}
+
+.speakers-list li.is-drop {
+  background: color-mix(in srgb, var(--spk) 12%, transparent);
+  box-shadow: 0 0 0 1.5px var(--spk);
+}
+
+.speaker-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 4px 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+  transition: background-color var(--fast), box-shadow var(--fast);
+}
+
+.speaker-filter:hover {
+  background: color-mix(in srgb, var(--spk) 10%, transparent);
+}
+
+.speaker-filter:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 55%, transparent);
+}
+
+.speaker-filter[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--spk) 15%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--spk) 55%, transparent);
+}
+
+.speaker-share {
+  font-size: 11px;
+  color: var(--subtle-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.speaker-filter.is-editing .spk-rename {
+  width: 9.5rem;
+}
+
+.speaker-more {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 2px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--subtle-foreground);
+  outline: none;
+  transition: color var(--fast), background-color var(--fast);
+}
+
+.speaker-more:hover:not(:disabled),
+.speaker-more:focus-visible {
+  color: var(--foreground);
+  background: var(--accent);
+}
+
+.speakers-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  font-size: 13px;
+}
+
+.speakers-confirm p {
+  flex: 1 1 18rem;
+  margin: 0;
+}
+
+.speakers-confirm b {
+  text-decoration: underline 2px var(--spk);
+  text-underline-offset: 4px;
+}
+
+.spk-rename {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--input);
+  border-radius: 6px;
+  background: var(--background);
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+}
+
+.spk-rename:focus {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 25%, transparent);
+}
+
+/* 이름 바꾸기 + 목소리 등록: 막대에서는 알약이 카드로 펼쳐진다 */
+.speakers-list li.is-editing {
+  align-items: flex-start;
+  border-radius: 10px;
+  background: var(--popover);
+  box-shadow: var(--shadow-pop);
+}
+
+.speakers-list li.is-editing .speaker-filter {
+  align-items: flex-start;
+  height: auto;
+  padding: 8px 10px 10px;
+}
+
+.speakers-list li.is-editing .spk-dot {
+  margin-top: 10px;
+}
+
+.spk-rename-form {
+  display: grid;
+  gap: 8px;
+  max-width: 19rem;
+}
+
+.spk-check {
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.spk-check input {
+  accent-color: var(--ring);
+}
+
+.spk-check.is-consent {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.spk-check small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--subtle-foreground);
+}
+
+.spk-check:has(input:disabled) {
+  cursor: not-allowed;
+  color: var(--subtle-foreground);
+}
+
+.spk-check-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.spk-rename-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--destructive);
+}
+
+/* 목소리 제안: 기계가 추측한 이름이라 점선으로 둘러 확정 전임을 보인다 */
+.spk-suggest {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 4px 0 2px;
+  padding: 2px 3px 2px 9px;
+  border: 1px dashed color-mix(in srgb, var(--spk) 70%, transparent);
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.spk-suggest-text {
+  margin-right: 4px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.spk-suggest button {
+  height: 20px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  transition: background-color var(--fast), color var(--fast);
+}
+
+.spk-suggest button:first-of-type {
+  background: color-mix(in srgb, var(--spk) 16%, transparent);
+  color: var(--foreground);
+}
+
+.spk-suggest button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--spk) 26%, transparent);
+  color: var(--foreground);
+}
+
+/* 참석자 편집·내보내기 메뉴 (네이티브 popover, 맨 위 층) */
+.spk-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  min-width: 220px;
+  max-width: 300px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-pop);
+}
+
+.spk-menu:popover-open {
+  animation: menu-pop 120ms var(--ease) both;
+}
+
+@keyframes menu-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.98);
+  }
+}
+
+.spk-menu-title,
+.spk-menu-sub {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.spk-menu-title .spk-dot + * {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.spk-menu-sub {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.spk-menu-group {
+  display: grid;
+}
+
+.spk-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+  outline: none;
+}
+
+.spk-menu button:hover:not(:disabled),
+.spk-menu button:focus-visible {
+  background: var(--accent);
+}
+
+.spk-menu button:disabled {
+  opacity: 0.45;
+}
+
+.spk-menu button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--spk) 14%, transparent);
+}
+
+.spk-menu button[aria-pressed="true"]::after {
+  content: "✓";
+  margin-left: auto;
+  color: var(--muted-foreground);
+}
+
+.spk-menu .spk-menu-group + * {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.spk-plus {
+  width: 8px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--subtle-foreground);
+}
+
+.spk-menu-rename {
+  padding: 2px 4px;
+}
+
+.spk-menu-hint {
+  display: block;
+  margin: 6px 2px 2px;
+  font-size: 12px;
+  color: var(--subtle-foreground);
+}
+
+.export-menu button {
+  justify-content: space-between;
+}
+
+.export-menu small {
+  font-size: 12px;
+  color: var(--subtle-foreground);
+}
+
+/* ── 재생 위치 막대 ── */
+.scrub {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 80px;
+  height: 24px;
+}
+
+.scrub input {
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.scrub input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(to right, var(--foreground) var(--p), var(--border-strong) var(--p));
+}
+
+.scrub input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--background);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity var(--fast);
+}
+
+.scrub:hover input::-webkit-slider-thumb,
+.scrub input:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+}
+
+.scrub-mark {
+  position: absolute;
+  top: 5px;
+  width: 2px;
+  height: 5px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--memo);
+  pointer-events: none;
+}

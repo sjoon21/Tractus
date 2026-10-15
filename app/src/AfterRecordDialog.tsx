@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import type { Decision } from "./caps";
 import { AFTER_ASK, askView, type AskChoice } from "./afterRecord";
 import { useCapabilities } from "./useCapabilities";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { DIALOG, DIALOG_BODY, DIALOG_FOOTER, DIALOG_TEXT, DIALOG_TITLE } from "@/components/ui/dialog";
+import { checkClass } from "@/components/ui/switch";
+import { cn } from "@/components/ui/utils";
 
 /**
  * 녹음을 끝낸 뒤 묻는 창 (WORDS.md §4.18): 바로 변환하기 | 나중에 변환하기. ConfirmDialog처럼 네이티브 모달 `<dialog>`다(뒤 화면이 비활성이 되고 Tab이 안에서만 돈다).
@@ -31,7 +35,7 @@ export function AfterRecordDialog({ seconds, convert, onChoose }: { seconds: num
   return (
     <dialog
       ref={dialog}
-      className="confirm after-record"
+      className={DIALOG}
       role="alertdialog"
       aria-labelledby="after-title"
       aria-describedby="after-body"
@@ -40,31 +44,33 @@ export function AfterRecordDialog({ seconds, convert, onChoose }: { seconds: num
         pick("later", false);
       }}
     >
-      <h2 id="after-title">{AFTER_ASK.title}</h2>
-      <p id="after-body">{AFTER_ASK.body(seconds)}</p>
-      {view.reason && !convert.ok && (
-        <p className="gate-hint" role="status">
-          <span>{view.reason}</span>{" "}
-          <button type="button" className="text-button" onClick={() => fixAction(convert.fix)}>
-            {convert.fix.label}
-          </button>
-        </p>
-      )}
-      <label className="check after-remember">
-        <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-        <span>
-          {AFTER_ASK.remember}
-          <small>{AFTER_ASK.rememberHint}</small>
-        </span>
-      </label>
-      <div className="confirm-actions">
-        <button ref={view.focus === "later" ? first : undefined} type="button" className="ghost-button" onClick={() => pick("later", remember)}>
+      <div className={DIALOG_BODY}>
+        <h2 id="after-title" className={DIALOG_TITLE}>{AFTER_ASK.title}</h2>
+        <p id="after-body" className={DIALOG_TEXT}>{AFTER_ASK.body(seconds)}</p>
+        {view.reason && !convert.ok && (
+          <p className="m-0 flex flex-wrap items-center gap-2 rounded-md bg-memo-wash px-3 py-2 text-xs" role="status">
+            <span>{view.reason}</span>
+            <Button variant="outline" size="sm" className="h-6" onClick={() => fixAction(convert.fix)}>
+              {convert.fix.label}
+            </Button>
+          </p>
+        )}
+        <label className="mt-2 flex items-start gap-2.5 text-[13px]">
+          <input type="checkbox" className={cn(checkClass, "mt-0.5")} checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+          <span>
+            {AFTER_ASK.remember}
+            <small className="mt-0.5 block text-xs text-muted-foreground">{AFTER_ASK.rememberHint}</small>
+          </span>
+        </label>
+      </div>
+      <div className={DIALOG_FOOTER}>
+        <button ref={view.focus === "later" ? first : undefined} type="button" className={buttonVariants({ variant: "outline" })} onClick={() => pick("later", remember)}>
           {AFTER_ASK.later}
         </button>
         <button
           ref={view.focus === "convert" ? first : undefined}
           type="button"
-          className="primary-button"
+          className={buttonVariants()}
           aria-disabled={view.convertEnabled ? undefined : true}
           title={view.reason ?? undefined}
           onClick={() => view.convertEnabled && pick("convert", remember)}

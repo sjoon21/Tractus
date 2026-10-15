@@ -4,6 +4,8 @@ import { useState, type ButtonHTMLAttributes } from "react";
 import type { Decision } from "./caps";
 import { useCapabilities } from "./useCapabilities";
 import { Popover } from "./Popover";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/components/ui/utils";
 
 type GateProps = { gate: Decision };
 
@@ -12,11 +14,11 @@ export function GateHint({ gate, className = "" }: GateProps & { className?: str
   const { fixAction } = useCapabilities();
   if (gate.ok) return null;
   return (
-    <p className={`gate-hint ${className}`} role="status">
-      <span>{gate.reason}</span>{" "}
-      <button type="button" className="text-button" onClick={() => fixAction(gate.fix)}>
+    <p className={cn("m-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground", className)} role="status">
+      <span>{gate.reason}</span>
+      <Button variant="outline" size="sm" className="h-6" onClick={() => fixAction(gate.fix)}>
         {gate.fix.label}
-      </button>
+      </Button>
     </p>
   );
 }
@@ -55,11 +57,12 @@ export function GatedButton({ gate, onClick, className = "", disabled, children,
       {open && anchor && (
         <Popover anchor={anchor} label="지금 쓸 수 없는 이유" role="dialog" onClose={() => setOpen(false)}>
           {(close) => (
-            <div className="gate-pop">
-              <p>{gate.reason}</p>
-              <button
-                type="button"
-                className="ghost-button"
+            <div className="grid max-w-[280px] gap-2.5 p-2">
+              <p className="m-0 text-[13px] leading-relaxed text-muted-foreground">{gate.reason}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="justify-self-start"
                 autoFocus
                 onClick={() => {
                   close();
@@ -67,7 +70,7 @@ export function GatedButton({ gate, onClick, className = "", disabled, children,
                 }}
               >
                 {gate.fix.label}
-              </button>
+              </Button>
             </div>
           )}
         </Popover>

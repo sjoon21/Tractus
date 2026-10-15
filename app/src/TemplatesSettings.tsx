@@ -1,11 +1,22 @@
 // 설정 › 요약 템플릿 (docs/desktop.md §2.13): 기본 유형(읽기 전용, `복사해서 만들기`)과 내 유형(만들기·고치기·삭제).
 // 입력 검사는 summaries.checkTemplate (코어와 같은 한도·문장). 삭제는 앱 안에서 한 번 더 묻는다. 글자 조합(IME) 중에는 Enter·Esc를 가로채지 않는다.
 import { useCallback, useEffect, useId, useState } from "react";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/components/ui/utils";
 import { api, errDetail, errText } from "./api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorDetail } from "./ErrorDetail";
 import { isImeKey } from "./lib";
 import { checkTemplate, copyDraft, MAX_DESC, MAX_NAME, promptCounter, type TemplateDraft, type TemplateInfo } from "./summaries";
+
+const CARD = "m-0 list-none divide-y divide-border overflow-hidden rounded-lg border border-border bg-card p-0";
+const SUB = "m-0 mt-2 px-1 text-xs font-medium text-muted-foreground";
+const NAME = "block text-[13px] font-medium text-foreground";
+const DESC = "mt-0.5 block text-xs leading-relaxed text-muted-foreground";
+const ERR = "text-xs text-destructive";
 
 const EMPTY: TemplateDraft = { name: "", description: "", prompt: "" };
 
@@ -62,69 +73,86 @@ export function TemplatesSection() {
   const builtin = (list ?? []).filter((t) => t.builtin);
   const mine = (list ?? []).filter((t) => !t.builtin);
 
+  const form = editing && <TemplateForm key={editing.id ?? "new"} id={editing.id} initial={editing.draft} busy={busy} onSave={save} onCancel={() => setEditing(null)} />;
   return (
-    <section className="templates" aria-labelledby="templates-title">
-      <h2 id="templates-title">요약 템플릿</h2>
-      <p className="field-hint">
-        요약 유형마다 AI에게 주는 요약 방법이 있습니다. 기본 유형은 고칠 수 없지만 ‘복사해서 만들기’로 내 유형을 만들어 다듬을 수 있습니다. 노트의 요약 탭에서 유형을 고르면 그 방법대로 요약합니다.
-      </p>
+    <section className="flex flex-col gap-2" aria-labelledby="templates-title">
+      <header className="flex items-end justify-between gap-3 px-1">
+        <div className="min-w-0">
+          <h2 id="templates-title" className="m-0 text-[13px] font-semibold">
+            요약 템플릿
+          </h2>
+          <p className="m-0 mt-0.5 text-xs leading-relaxed text-muted-foreground">
+            요약 방법을 정해 두고 요약 탭에서 고릅니다. 기본 유형은 복사해서 고칠 수 있습니다.
+          </p>
+        </div>
+        {list && !editing && (
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => setEditing({ id: null, draft: EMPTY })}>
+            <Plus aria-hidden />새 유형 만들기
+          </Button>
+        )}
+      </header>
       {error && (
-        <div className="inline-error" role="alert">
+        <div className={cn(ERR, "px-1")} role="alert">
           {error.text}
           <ErrorDetail detail={error.detail} />
         </div>
       )}
-      {!list && !error && <p className="voices-empty">불러오는 중…</p>}
+      {!list && !error && <p className="m-0 rounded-lg border border-border bg-card px-4 py-3 text-[13px] text-muted-foreground">불러오는 중…</p>}
 
       {list && (
         <>
-          <h3>기본 유형</h3>
-          <ul className="template-list">
+          <h3 className={SUB}>기본 유형</h3>
+          <ul className={CARD}>
             {builtin.map((t) => (
-              <li key={t.id}>
-                <span className="template-name">{t.name}</span>
-                <span className="template-desc">{t.description}</span>
-                <button type="button" className="text-button" disabled={busy} onClick={() => setEditing({ id: null, draft: copyDraft(t) })} aria-label={`${t.name} 복사해서 만들기`}>
-                  복사해서 만들기
-                </button>
-                <details className="template-prompt">
-                  <summary>요약 방법 보기</summary>
-                  <pre>{t.prompt}</pre>
+              <li key={t.id} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <span className={NAME}>{t.name}</span>
+                    <span className={DESC}>{t.description}</span>
+                  </div>
+                  <Button variant="ghost" size="sm" className="-my-0.5" disabled={busy} onClick={() => setEditing({ id: null, draft: copyDraft(t) })} aria-label={`${t.name} 복사해서 만들기`}>
+                    복사해서 만들기
+                  </Button>
+                </div>
+                <details className="mt-1.5">
+                  <summary className="w-fit cursor-pointer text-xs text-muted-foreground hover:text-foreground">요약 방법 보기</summary>
+                  <pre className="m-0 mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-secondary px-3 py-2 font-sans text-xs leading-relaxed text-muted-foreground">{t.prompt}</pre>
                 </details>
               </li>
             ))}
           </ul>
 
-          <h3>내 유형</h3>
-          {mine.length === 0 && !editing && <p className="voices-empty">아직 만든 요약 유형이 없습니다.</p>}
-          <ul className="template-list">
-            {mine.map((t) =>
-              editing?.id === t.id ? null : (
-                <li key={t.id}>
-                  <span className="template-name">{t.name}</span>
-                  <span className="template-desc">{t.description}</span>
-                  <button type="button" className="text-button" disabled={busy} onClick={() => setEditing({ id: t.id, draft: { name: t.name, description: t.description, prompt: t.prompt } })} aria-label={`${t.name} 고치기`}>
-                    고치기
-                  </button>
-                  <button type="button" className="text-button is-danger" disabled={busy} onClick={() => setAsking(t)} aria-label={`${t.name} 삭제`}>
-                    삭제
-                  </button>
-                </li>
-              ),
+          <h3 className={SUB}>내 유형</h3>
+          <div className={CARD}>
+            {mine.length === 0 && !editing && <p className="m-0 px-4 py-3 text-[13px] text-muted-foreground">아직 만든 요약 유형이 없습니다.</p>}
+            {mine.length > 0 && (
+              <ul className="m-0 list-none divide-y divide-border p-0">
+                {mine.map((t) =>
+                  editing?.id === t.id ? null : (
+                    <li key={t.id} className="flex items-start justify-between gap-4 px-4 py-3">
+                      <div className="min-w-0">
+                        <span className={NAME}>{t.name}</span>
+                        <span className={DESC}>{t.description}</span>
+                      </div>
+                      <div className="-my-0.5 flex shrink-0 gap-1">
+                        <Button variant="ghost" size="sm" disabled={busy} onClick={() => setEditing({ id: t.id, draft: { name: t.name, description: t.description, prompt: t.prompt } })} aria-label={`${t.name} 고치기`}>
+                          고치기
+                        </Button>
+                        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={busy} onClick={() => setAsking(t)} aria-label={`${t.name} 삭제`}>
+                          삭제
+                        </Button>
+                      </div>
+                    </li>
+                  ),
+                )}
+              </ul>
             )}
-          </ul>
-
-          {editing ? (
-            <TemplateForm key={editing.id ?? "new"} id={editing.id} initial={editing.draft} busy={busy} onSave={save} onCancel={() => setEditing(null)} />
-          ) : (
-            <button type="button" className="ghost-button" disabled={busy} onClick={() => setEditing({ id: null, draft: EMPTY })}>
-              새 유형 만들기
-            </button>
-          )}
+            {form}
+          </div>
         </>
       )}
       {msg && (
-        <p className="field-hint" role="status">
+        <p className="m-0 px-1 text-xs text-muted-foreground" role="status">
           {msg}
         </p>
       )}
@@ -164,29 +192,38 @@ function TemplateForm({ id, initial, busy, onSave, onCancel }: { id: string | nu
     }
   };
   const ime = { onCompositionStart: () => setComposing(true), onCompositionEnd: () => setComposing(false) };
+  const label = "mb-1.5 block text-xs font-medium text-muted-foreground";
   return (
-    <div className="template-form" role="group" aria-label={id ? "요약 유형 고치기" : "새 요약 유형"}>
-      <div className="field">
-        <label className="field-label" htmlFor={ids.name}>
+    <div className="flex flex-col gap-4 bg-muted/40 px-4 py-4" role="group" aria-label={id ? "요약 유형 고치기" : "새 요약 유형"}>
+      <div>
+        <label className={label} htmlFor={ids.name}>
           이름 ({MAX_NAME}자까지)
         </label>
-        <input id={ids.name} value={d.name} spellCheck={false} autoFocus aria-invalid={tried && !!check.name} onChange={(e) => setD({ ...d, name: e.target.value })} onKeyDown={(e) => key(e, true)} {...ime} />
-        {tried && check.name && <span className="inline-error" role="alert">{check.name}</span>}
+        <Input id={ids.name} className="max-w-sm" value={d.name} spellCheck={false} autoFocus aria-invalid={tried && !!check.name} onChange={(e) => setD({ ...d, name: e.target.value })} onKeyDown={(e) => key(e, true)} {...ime} />
+        {tried && check.name && (
+          <span className={cn(ERR, "mt-1 block")} role="alert">
+            {check.name}
+          </span>
+        )}
       </div>
-      <div className="field">
-        <label className="field-label" htmlFor={ids.desc}>
+      <div>
+        <label className={label} htmlFor={ids.desc}>
           한 줄 설명 (선택, {MAX_DESC}자까지)
         </label>
-        <input id={ids.desc} value={d.description} spellCheck={false} aria-invalid={!!check.description} onChange={(e) => setD({ ...d, description: e.target.value })} onKeyDown={(e) => key(e, true)} {...ime} />
-        {check.description && <span className="inline-error" role="alert">{check.description}</span>}
+        <Input id={ids.desc} className="max-w-md" value={d.description} spellCheck={false} aria-invalid={!!check.description} onChange={(e) => setD({ ...d, description: e.target.value })} onKeyDown={(e) => key(e, true)} {...ime} />
+        {check.description && (
+          <span className={cn(ERR, "mt-1 block")} role="alert">
+            {check.description}
+          </span>
+        )}
       </div>
-      <div className="field">
-        <label className="field-label" htmlFor={ids.prompt}>
+      <div>
+        <label className={label} htmlFor={ids.prompt}>
           요약 방법
         </label>
-        <textarea
+        <Textarea
           id={ids.prompt}
-          className="summary-prompt"
+          className="min-h-40 font-mono text-xs aria-invalid:border-destructive"
           rows={9}
           value={d.prompt}
           spellCheck={false}
@@ -195,21 +232,24 @@ function TemplateForm({ id, initial, busy, onSave, onCancel }: { id: string | nu
           onKeyDown={(e) => key(e, false)}
           {...ime}
         />
-        <div className="summary-prompt-foot">
-          <span className="inline-error" role="alert">
-            {tried || d.prompt.trim() ? check.prompt : null}
+        <div className="mt-1 flex items-start justify-between gap-3">
+          <span className="text-xs text-muted-foreground">
+            <span className={ERR} role="alert">
+              {tried || d.prompt.trim() ? check.prompt : null}
+            </span>
+            {!(tried || d.prompt.trim()) || !check.prompt ? "섹션 구성과 어투를 정합니다. 근거 표시와 출력 형식은 항상 앱이 정한 규칙을 따릅니다." : null}
           </span>
-          <span className={`tnum field-hint ${check.prompt && d.prompt.trim() ? "is-over" : ""}`}>{promptCounter(d.prompt)}</span>
+          <span className={cn("shrink-0 text-xs tabular-nums text-muted-foreground", check.prompt && d.prompt.trim() && "text-destructive")}>{promptCounter(d.prompt)}</span>
         </div>
-        <span className="field-hint">섹션 구성과 어투를 정합니다. 근거 표시와 출력 형식은 항상 앱이 정한 규칙을 따릅니다. ⌘Enter로 저장합니다.</span>
       </div>
-      <div className="template-form-actions">
-        <button type="button" className="primary-button" disabled={busy} aria-disabled={!check.ok} onClick={submit}>
-          저장
-        </button>
-        <button type="button" className="ghost-button" disabled={busy} onClick={onCancel}>
+      <div className="flex items-center justify-end gap-1.5">
+        <span className="mr-auto text-xs text-subtle-foreground">⌘Enter로 저장합니다.</span>
+        <Button variant="ghost" size="sm" disabled={busy} onClick={onCancel}>
           취소
-        </button>
+        </Button>
+        <Button size="sm" disabled={busy} aria-disabled={!check.ok} onClick={submit}>
+          저장
+        </Button>
       </div>
     </div>
   );

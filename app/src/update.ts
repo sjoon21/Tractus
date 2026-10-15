@@ -13,7 +13,7 @@ export const OPEN_SETTINGS_LABEL = "설정 열기";
 export const RELAUNCH_WAIT = "녹음·변환이 끝난 뒤 누르세요.";
 /** 저장소에서 install.sh로 만든 앱·개발 실행에서는 확인하지 않는다 */
 export const REPO_NOTE = "저장소에서 만든 앱은 scripts/update.sh로 업데이트합니다.";
-export const UPDATE_HINT = "새 버전이 있어도 ‘업데이트 설치’를 누르기 전에는 받지 않습니다. 업데이트마다 앱 전체(약 240 MB)를 받으니 받는 동안 앱을 닫지 마세요.";
+export const UPDATE_HINT = "‘업데이트 설치’를 누를 때만 받습니다(약 240 MB).";
 
 export const versionLine = (v: string | null): string => (v ? `지금 버전 ${v}` : "지금 버전을 읽는 중…");
 /** 시작 때 확인에서 새 버전이 있을 때의 알림 (같은 실행에서 한 번만) */

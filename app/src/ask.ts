@@ -217,9 +217,9 @@ export function sendNotice(c: LlmConfig): { text: string; warn: boolean } {
   if (!p) return { text: `알 수 없는 AI 서비스입니다: ${c.provider}`, warn: true };
   const host = c.host ?? (p.url ? new URL(p.url).host : null);
   const local = host !== null ? isLoopbackHost(host) : !!p.local; // 주소가 있으면 주소로 본다 (이 Mac의 AI라도 환경변수 주소가 원격이면 원격)
-  if (c.local_only && !local) return { text: `로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 외부 AI 서비스(${p.label})로 보내지 않습니다`, warn: true };
+  if (c.local_only && !local) return { text: `로컬 전용 모드라 외부 AI 서비스(${p.label})로 보내지 않습니다`, warn: true };
   const model = c.model || p.model;
-  if (!model) return { text: `사용할 ${p.label} AI 모델을 지정하세요 (TRACTUS_LLM_MODEL)`, warn: true };
+  if (!model) return { text: `설정에서 ${p.label}의 AI 모델을 지정하세요`, warn: true };
   return local
     ? { text: `질문과 관련 대화 일부를 이 Mac의 AI(${model})가 처리합니다`, warn: false }
     : { text: `질문과 관련 대화 일부가 ${p.label}(${model})로 전송됩니다${host ? `. 보내는 곳: ${host}` : ""}`, warn: false };

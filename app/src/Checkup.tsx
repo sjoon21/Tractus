@@ -1,6 +1,11 @@
 // 시작 점검 (docs/desktop.md §2.15): 처음 실행할 때 저절로 열리고, 설정·첫 화면에서 언제든 다시 연다. 행 구조는 checkupRows.ts.
 // 점검은 앱을 막지 않는다: 닫기·Esc·`점검 마치기` 어느 쪽이든 닫고, 고치는 길(모델 화면·설정)로 가려면 먼저 닫는다.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AlertTriangle, CheckCircle2, Info, XCircle, type LucideIcon } from "lucide-react";
+import { OK_TEXT, WARN_TEXT } from "@/components/settings/tone";
+import { Button } from "@/components/ui/button";
+import { DIALOG, DIALOG_FOOTER, DIALOG_TEXT, DIALOG_TITLE } from "@/components/ui/dialog";
+import { cn } from "@/components/ui/utils";
 import { api, errText } from "./api";
 import type { Fix } from "./caps";
 import { checkupHeadline, checkupSections, STATUS_LABEL, type CheckupRow } from "./checkupRows";
@@ -9,7 +14,12 @@ import { isPathFix } from "./paths";
 import { runPathFix } from "./pathFix";
 import { useCapabilities } from "./useCapabilities";
 
-const ICON: Record<CheckupRow["status"], string> = { ok: "✓", warn: "!", blocked: "✕", info: "i" };
+const ICON: Record<CheckupRow["status"], { Icon: LucideIcon; tone: string }> = {
+  ok: { Icon: CheckCircle2, tone: OK_TEXT },
+  warn: { Icon: AlertTriangle, tone: WARN_TEXT },
+  blocked: { Icon: XCircle, tone: "text-destructive" },
+  info: { Icon: Info, tone: "text-muted-foreground" },
+};
 
 export function Checkup({ onClose }: { onClose: () => void }) {
   const caps = useCapabilities();
@@ -69,7 +79,7 @@ export function Checkup({ onClose }: { onClose: () => void }) {
   return (
     <dialog
       ref={dialog}
-      className="confirm checkup"
+      className={cn(DIALOG, "max-h-[min(780px,calc(100vh-48px))] w-[min(620px,calc(100vw-32px))] flex-col overflow-hidden open:flex")}
       aria-labelledby="checkup-title"
       aria-busy={checking || caps.loading}
       onCancel={(e) => {
@@ -77,60 +87,66 @@ export function Checkup({ onClose }: { onClose: () => void }) {
         onClose();
       }}
     >
-      <h2 id="checkup-title" ref={title} tabIndex={-1}>
-        시작 점검
-      </h2>
-      <p className="field-hint" aria-live="polite">
-        {caps.loading || checking ? "확인하는 중…" : checkupHeadline(sections)} — 점검 결과와 상관없이 앱은 계속 쓸 수 있습니다. 설정이나 홈 화면에서 언제든 다시 열 수 있습니다.
-      </p>
-      {pathNote && (
-        <p className="field-hint" role="status">
-          {pathNote}
+      <header className="flex flex-col gap-1 border-b border-border px-5 pt-5 pb-4">
+        <h2 id="checkup-title" ref={title} tabIndex={-1} className={cn(DIALOG_TITLE, "outline-none")}>
+          시작 점검
+        </h2>
+        <p className={cn(DIALOG_TEXT, "text-foreground")} aria-live="polite">
+          {caps.loading || checking ? "확인하는 중…" : checkupHeadline(sections)}
+          <span className="mt-0.5 block text-xs text-muted-foreground">점검 결과와 상관없이 앱은 계속 쓸 수 있습니다. 설정이나 홈 화면에서 언제든 다시 열 수 있습니다.</span>
         </p>
-      )}
-      {sections.map((s) => (
-        <section key={s.id} className="checkup-section" aria-labelledby={`checkup-${s.id}`}>
-          <h3 id={`checkup-${s.id}`}>{s.title}</h3>
-          <ul className="checkup-rows">
-            {s.rows.map((r) => (
-              <li key={r.id} className={`checkup-row is-${r.status}`}>
-                <span className="checkup-icon" aria-hidden>
-                  {ICON[r.status]}
-                </span>
-                <div className="checkup-body">
-                  <p className="checkup-label">
-                    {r.label} <span className="sr-only">{STATUS_LABEL[r.status]}</span>
-                  </p>
-                  <p className="checkup-detail">{r.detail}</p>
-                  {r.copy && (
-                    <p className="checkup-copy">
-                      <code>{r.copy}</code>
-                      <button type="button" className="text-button" onClick={() => void copy(r)}>
-                        복사
-                      </button>
-                      {copied?.id === r.id && <span className="field-hint">{copied.ok ? "복사했습니다" : "복사하지 못했습니다. 직접 선택해 복사하세요"}</span>}
-                    </p>
-                  )}
-                  {r.fix && (
-                    <button type="button" className="text-button" onClick={() => fix(r.fix as Fix)}>
-                      {r.fix.label}
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-          {s.id === "models" && list && <PresetButtons list={list} dl={dl} />}
-          {s.id === "models" && <DownloadPanel dl={dl} />}
-        </section>
-      ))}
-      <div className="confirm-actions">
-        <button type="button" className="ghost-button" disabled={checking} onClick={() => void recheck()}>
+      </header>
+      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 py-4">
+        {pathNote && (
+          <p className="m-0 text-xs text-muted-foreground" role="status">
+            {pathNote}
+          </p>
+        )}
+        {sections.map((s) => (
+          <section key={s.id} className="flex flex-col gap-2" aria-labelledby={`checkup-${s.id}`}>
+            <h3 id={`checkup-${s.id}`} className="m-0 px-1 text-xs font-semibold text-muted-foreground">
+              {s.title}
+            </h3>
+            <ul className="m-0 list-none divide-y divide-border overflow-hidden rounded-lg border border-border bg-card p-0">
+              {s.rows.map((r) => {
+                const { Icon, tone } = ICON[r.status];
+                return (
+                  <li key={r.id} className="flex items-start gap-3 px-3 py-2">
+                    <Icon className={cn("mt-0.5 size-4 shrink-0", tone)} aria-hidden />
+                    <div className="min-w-0 flex-1">
+                      <p className="m-0 text-[13px]">
+                        {r.label} <span className="sr-only">{STATUS_LABEL[r.status]}</span>
+                      </p>
+                      <p className="m-0 mt-0.5 text-xs leading-relaxed break-words text-muted-foreground">{r.detail}</p>
+                      {r.copy && (
+                        <p className="m-0 mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <code className="min-w-0 rounded-md bg-secondary px-2 py-1 font-mono text-[11px] break-all">{r.copy}</code>
+                          <Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => void copy(r)}>
+                            복사
+                          </Button>
+                          {copied?.id === r.id && <span className="text-xs text-muted-foreground">{copied.ok ? "복사했습니다" : "복사하지 못했습니다. 직접 선택해 복사하세요"}</span>}
+                        </p>
+                      )}
+                    </div>
+                    {r.fix && (
+                      <Button variant="outline" size="sm" className="-my-0.5" onClick={() => fix(r.fix as Fix)}>
+                        {r.fix.label}
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            {s.id === "models" && list && <PresetButtons list={list} dl={dl} />}
+            {s.id === "models" && <DownloadPanel dl={dl} />}
+          </section>
+        ))}
+      </div>
+      <div className={DIALOG_FOOTER}>
+        <Button variant="outline" disabled={checking} onClick={() => void recheck()}>
           다시 확인
-        </button>
-        <button type="button" className="primary-button" onClick={onClose}>
-          점검 마치기
-        </button>
+        </Button>
+        <Button onClick={onClose}>점검 마치기</Button>
       </div>
     </dialog>
   );

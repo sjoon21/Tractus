@@ -81,9 +81,10 @@ describe("서비스 표", () => {
     expect(isLlmChoice("claude") && !isLlmChoice("gemma-local") && !isLlmChoice("../x")).toBe(true);
     for (const p of LLM_CHOICES) expect(PROVIDER_NOTE[p].length).toBeGreaterThan(10);
   });
-  it("tells Claude users about the compatibility mode and everybody what is sent", () => {
-    expect(PROVIDER_NOTE.claude).toContain("Claude는 호환 방식으로 연결됩니다. 일부 기능(엄격 JSON)은 쓰지 않고 검증 후 재요청으로 처리합니다");
-    expect(PRIVACY_NOTE).toContain("대화 내용(제목·참석자 이름 포함)이 선택한 AI 서비스로 전송됩니다");
+  it("says where to get each key and what is sent, briefly", () => {
+    expect(PROVIDER_NOTE.claude).toContain("console.anthropic.com");
+    expect(PRIVACY_NOTE).toContain("노트 내용이 선택한 AI 서비스로 전송됩니다");
+    expect(PRIVACY_NOTE).not.toMatch(/TRACTUS_/); // 환경변수 이름은 화면에 쓰지 않는다
   });
 });
 
@@ -249,8 +250,8 @@ describe("요약·질문마다 서비스 고르기", () => {
 
 describe("스마트 검색 방식", () => {
   it("states what is sent before switching to Upstage, in product words", () => {
-    expect(EMBED_CONFIRM.body).toContain("노트의 대화 내용(스마트 검색 정보를 만들 때)과 검색어(검색할 때)가 Upstage로 전송됩니다");
-    expect(EMBED_CONFIRM.body).toContain("Upstage의 데이터 보관·사용 정책은 확인하지 못했습니다");
+    expect(EMBED_CONFIRM.body).toContain("노트 내용과 검색어가 Upstage로 전송됩니다");
+    expect(EMBED_CONFIRM.body).toContain("Upstage의 데이터 보관 정책은 확인하지 못했습니다");
     expect(EMBED_LABEL).toBe("스마트 검색 방식");
     expect(EMBED_OPTIONS.local).toContain("이 Mac");
   });

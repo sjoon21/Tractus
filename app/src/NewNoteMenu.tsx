@@ -1,6 +1,10 @@
 // 사이드바의 `새 노트` 메뉴: 글쓰기 / 녹음 시작 / 파일 가져오기. 키보드와 열고 닫는 규칙은 menu.ts (menu.test.ts).
 // 단추는 aria-haspopup="menu", 항목은 role="menuitem"(초점이 가는 것만 tabIndex 0). 바깥을 누르거나 Esc·Tab이면 닫고, 닫힌 뒤에는 초점이 단추로 돌아온다(바깥을 누른 경우는 누른 곳에 둔다).
 import { useEffect, useRef, useState } from "react";
+import { SquarePen } from "lucide-react";
+import { buttonVariants } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
+import { MENU, MENU_ITEM } from "@/components/menu";
 import { menuKey, NEW_NOTE_ITEMS, openKey, type NewNoteAction } from "./menu";
 
 export function NewNoteMenu({ onPick, disabled }: { onPick: (a: NewNoteAction) => void; disabled: Partial<Record<NewNoteAction, string>> }) {
@@ -25,11 +29,12 @@ export function NewNoteMenu({ onPick, disabled }: { onPick: (a: NewNoteAction) =
   }, [open]);
 
   return (
-    <div className="new-note" ref={wrap}>
+    <div className="relative" ref={wrap}>
       <button
         ref={button}
         type="button"
-        className="new-note-button"
+        className={buttonVariants({ variant: "outline", size: "icon" }) + " bg-background"}
+        aria-label="새 노트"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? "new-note-menu" : undefined}
@@ -47,13 +52,12 @@ export function NewNoteMenu({ onPick, disabled }: { onPick: (a: NewNoteAction) =
           setOpen(true);
         }}
       >
-        <span>새 노트</span>
-        <kbd aria-hidden>⌘N</kbd>
+        <SquarePen aria-hidden />
       </button>
       {open && (
         <div
           id="new-note-menu"
-          className="new-note-menu"
+          className={`${MENU} absolute top-full right-0 z-30 mt-1 w-56`}
           role="menu"
           aria-label="새 노트 만들기"
           onKeyDown={(e) => {
@@ -79,6 +83,7 @@ export function NewNoteMenu({ onPick, disabled }: { onPick: (a: NewNoteAction) =
                 tabIndex={-1}
                 aria-disabled={why ? true : undefined}
                 title={why}
+                className={MENU_ITEM}
                 onClick={() => {
                   if (why) return; // 못 쓰는 항목은 초점은 받되 아무 일도 하지 않는다
                   close(true);
@@ -86,7 +91,7 @@ export function NewNoteMenu({ onPick, disabled }: { onPick: (a: NewNoteAction) =
                 }}
               >
                 <span>{it.label}</span>
-                {it.hint && <kbd aria-hidden>{it.hint}</kbd>}
+                {it.hint && <Kbd className="ml-auto">{it.hint}</Kbd>}
               </button>
             );
           })}

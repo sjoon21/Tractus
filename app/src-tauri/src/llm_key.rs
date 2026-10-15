@@ -31,7 +31,7 @@ pub const DEFAULT_PROVIDER: &str = "upstage";
 const MIN_LEN: usize = 5;
 const MAX_LEN: usize = 200;
 const MODEL_MAX: usize = 200;
-const LOCAL_ONLY_EMBED: &str = "로컬 전용 모드(TRACTUS_LOCAL_ONLY)에서는 스마트 검색을 Upstage로 처리할 수 없습니다.";
+const LOCAL_ONLY_EMBED: &str = "로컬 전용 모드에서는 스마트 검색을 Upstage로 처리할 수 없습니다.";
 /// 코어는 30초에 스스로 끝낸다 (llm.TEST_TIMEOUT_S). 그래도 안 끝나면 이 시간 뒤에 죽여 BusyGuard가 풀리게 한다
 const TEST_DEADLINE: Duration = Duration::from_secs(35);
 /// 연결 테스트가 도는 동안 표시하는 대상 (노트가 아니므로 삭제를 막지 않는다)

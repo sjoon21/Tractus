@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { attachAlignJobs } from "./alignJobs";
 import { api, errDetail, errFull, errText, useJob, useRecorder, type MeetingInfo, type PendingRecording } from "./api";
 import { AskPanel } from "./AskPanel";
-import { CHECKUP_LABEL, DROP_UNAVAILABLE, MODELS_LABEL, OK, recordNotice, UNCONVERTED_SAVED } from "./caps";
+import { CHECKUP_LABEL, DROP_UNAVAILABLE, MODELS_LABEL, OK, recordNotice, UNCONVERTED_SAVED, type Decision } from "./caps";
 import { Checkup } from "./Checkup";
 import { GatedButton } from "./GatedButton";
 import { DOWNLOAD_DONE, downloadErrorView } from "./models";
@@ -23,7 +23,7 @@ import { baseName, errorView, isImeKey, isRecLive, IDLE_JOB, JOB_ERROR, fmtTime,
 import { MeetingView } from "./MeetingView";
 import type { NewNoteAction } from "./menu";
 import { NewNoteMenu } from "./NewNoteMenu";
-import { dropMemo, flushMemos, isMemo, settleMemo } from "./memo";
+import { dropMemo, flushMemos, isMemo, noteTime, settleMemo } from "./memo";
 import { RecordView } from "./RecordView";
 import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, recordingLabel, type DeleteTarget } from "./remove";
 import { SearchView } from "./SearchView";
@@ -41,6 +41,16 @@ import { OrganizeContext, useOrganizeState } from "./useOrganize";
 import { PanelToggle, usePanels } from "./PanelToggle";
 import { RAIL_REC_LABEL, railPendingLabel, railRecState } from "./panels";
 import { check } from "@tauri-apps/plugin-updater";
+import { AudioLines, Box, ChevronRight, CircleAlert, FileText, House, Mic, Search, Settings, Sparkles, SquarePen, Stethoscope, Upload, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
+import { Progress } from "@/components/ui/progress";
+import { cn } from "@/components/ui/utils";
+import { FlickeringGrid } from "@/components/ui/flickering-grid";
+import { JOB_CARD, NOTE_LINK, SIDE_HEAD, SIDE_ITEM } from "@/components/sidebar";
+import { SparklesIcon } from "@/components/ui/sparkles-icon";
 import { newVersionToast, OPEN_SETTINGS_LABEL, START_DELAY_MS } from "./update";
 
 export type Seek = { segId?: string; t?: number; nonce: number };
@@ -124,6 +134,10 @@ export function App() {
   const go = useCallback(async (next: View) => {
     if (await flushMemos()) setView(next);
   }, []);
+  // 설정·모델 화면의 `뒤로`: 그 화면을 열기 전에 보던 화면 (노트·검색·녹음·홈)
+  const lastContent = useRef<View>({ kind: "home" });
+  if (view.kind !== "settings" && view.kind !== "models") lastContent.current = view;
+  const goBack = useCallback(() => void go(lastContent.current), [go]);
   // 요약·질문 오류의 `설정 열기` (llmKey.requestSettings)
   useEffect(() => {
     const open = () => {
@@ -709,204 +723,236 @@ export function App() {
   return (
     <CapsContext.Provider value={caps}>
     <OrganizeContext.Provider value={org}>
-    <div className={`shell${panels.state.left ? " is-left-collapsed" : ""}`}>
-      <aside className="sidebar">
+    <div className={cn("shell grid h-screen", panels.state.left ? "is-left-collapsed grid-cols-[80px_minmax(0,1fr)]" : "grid-cols-[var(--sidebar-w)_minmax(0,1fr)]")}>
+      <aside className="relative flex min-h-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+        {/* 타이틀바를 겹친 창: 신호등 단추 자리 + 창 끌기 */}
+        <div data-tauri-drag-region className="h-[52px] shrink-0" />
         <PanelToggle side="left" />
         {panels.state.left && (
           <GatedButton
             gate={recording || recordBlocked ? OK : recordGate}
-            className={`rail-rec ${recording ? "is-live" : ""}`}
+            className={cn("mt-10 grid size-9 place-items-center self-center rounded-full shadow-xs transition-colors", recording ? "bg-rec" : "bg-primary hover:bg-primary/85")}
             onClick={onRecordButton}
             aria-current={view.kind === "record"}
             aria-label={RAIL_REC_LABEL[railRec]}
             title={RAIL_REC_LABEL[railRec]}
           >
-            <span className="rec-dot" aria-hidden />
+            <span className={cn("size-2.5 rounded-full", recording ? "animate-rec-pulse bg-white" : "bg-rec")} aria-hidden />
           </GatedButton>
         )}
+        {panels.state.left && (
+          <nav className="mt-3 flex flex-col items-center gap-1" aria-label="이동">
+            <Button variant="sidebar" size="icon" className="justify-center" aria-label="홈" title="홈" aria-current={view.kind === "home"} onClick={() => void go({ kind: "home" })}>
+              <House aria-hidden />
+            </Button>
+            <Button variant="sidebar" size="icon" className="justify-center" aria-label="설정" title="설정" aria-current={view.kind === "settings"} onClick={() => void go({ kind: "settings" })}>
+              <Settings aria-hidden />
+            </Button>
+          </nav>
+        )}
         {panels.state.left && leftover.length > 0 && (
-          <span className="rail-badge" role="img" aria-label={railPendingLabel(leftover.length)} title={railPendingLabel(leftover.length)}>
+          <span className="mt-2 min-w-5 self-center rounded-full bg-rec px-1.5 text-center text-[11px] font-semibold leading-[18px] text-white" role="img" aria-label={railPendingLabel(leftover.length)} title={railPendingLabel(leftover.length)}>
             {leftover.length}
           </span>
         )}
-        <div id="sidebar-body" className="sidebar-body" hidden={panels.state.left}>
-        <header className="brand">
-          <span className="wordmark">Tractus</span>
-          <span className="brand-sub">노트와 녹음</span>
+        <div id="sidebar-body" className="flex min-h-0 flex-1 flex-col" hidden={panels.state.left}>
+        <header className="sr-only">
+          <span>Tractus</span>
+          <span>노트와 녹음</span>
         </header>
 
-        <div className="rec-row">
-          <GatedButton gate={recording || recordBlocked ? OK : recordGate} className={`rec-button ${recButtonView.live ? "is-live" : ""} ${rec.phase === "paused" ? "is-paused" : ""}`} onClick={onRecordButton} aria-current={view.kind === "record"}>
-            <span className="rec-dot" aria-hidden />
-            <span>{recButtonView.text}</span>
-            {recButtonView.time && <time className="tnum">{recButtonView.time}</time>}
-          </GatedButton>
-          <NewNoteMenu
-            onPick={onNewNote}
-            disabled={{ write: creating ? "만드는 중…" : undefined, record: recording ? "이미 녹음 중입니다" : asking ? ASK_BLOCKS_RECORD : recordBlocked ? "변환이 끝난 뒤에 녹음할 수 있습니다" : undefined }}
-          />
-        </div>
-
-        {!recording && recordNotice(convertGate) && (
-          <p className="rec-notice" role="note">
-            {recordNotice(convertGate)}
-          </p>
-        )}
-
-        <div className="mode-switch" role="radiogroup" aria-label="녹음 방식">
-          {REC_MODES.map((m) => (
-            <button
-              key={m.mode}
-              role="radio"
-              aria-checked={mode === m.mode}
-              title={m.note}
-              disabled={recording}
-              onClick={() => chooseMode(m.mode)}
+        <div className="flex flex-col gap-1.5 px-3">
+          <div className="flex gap-1.5">
+            <GatedButton
+              gate={recording || recordBlocked ? OK : recordGate}
+              className={cn(buttonVariants({ variant: recButtonView.live ? "rec" : "outline" }), "flex-1 justify-start gap-2 bg-background", recButtonView.live && "bg-rec", rec.phase === "paused" && "opacity-80")}
+              onClick={onRecordButton}
+              aria-current={view.kind === "record"}
             >
-              {m.label}
-            </button>
-          ))}
+              <span className={cn("size-2 shrink-0 rounded-full", recButtonView.live ? "bg-white" : "bg-rec", rec.phase === "recording" && "animate-rec-pulse")} aria-hidden />
+              <span>{recButtonView.text}</span>
+              {recButtonView.time && <time className="ml-auto tabular-nums opacity-90">{recButtonView.time}</time>}
+            </GatedButton>
+            <NewNoteMenu
+              onPick={onNewNote}
+              disabled={{ write: creating ? "만드는 중…" : undefined, record: recording ? "이미 녹음 중입니다" : asking ? ASK_BLOCKS_RECORD : recordBlocked ? "변환이 끝난 뒤에 녹음할 수 있습니다" : undefined }}
+            />
+          </div>
+
+          {!recording && recordNotice(convertGate) && (
+            <p className="px-1 text-xs text-muted-foreground" role="note">
+              {recordNotice(convertGate)}
+            </p>
+          )}
+
+          <div className="grid grid-cols-2 gap-0.5 rounded-md bg-sidebar-accent p-0.5" role="radiogroup" aria-label="녹음 방식">
+            {REC_MODES.map((m) => (
+              <button
+                key={m.mode}
+                type="button"
+                role="radio"
+                aria-checked={mode === m.mode}
+                title={m.note}
+                disabled={recording}
+                onClick={() => chooseMode(m.mode)}
+                className="h-6 whitespace-nowrap rounded-[5px] text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50 aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-xs"
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <GatedButton gate={convertGate} className="import-button" onClick={pickFiles} title={`${IMPORT_EXTS.join(" ")} — 창에 끌어 놓아도 됩니다`}>
-          파일 가져오기
-        </GatedButton>
+        <div className="mt-3 flex flex-col gap-px px-2">
+          <form
+            className="relative mb-1 px-1"
+            role="search"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const q = searchRef.current?.value.trim();
+              if (q) void go({ kind: "search", q });
+            }}
+          >
+            <Search className="pointer-events-none absolute top-1/2 left-3.5 size-3.5 -translate-y-1/2 text-subtle-foreground" aria-hidden />
+            <Input ref={searchRef} type="search" placeholder="노트 검색" aria-label="노트 검색" className="h-7 bg-background/70 pr-10 pl-7" />
+            <Kbd className="absolute top-1/2 right-2.5 -translate-y-1/2">⌘K</Kbd>
+          </form>
+          <button className={SIDE_ITEM} aria-current={view.kind === "home"} onClick={() => void go({ kind: "home" })}>
+            <House aria-hidden />
+            홈
+          </button>
+          <button
+            ref={askButton}
+            className={cn(SIDE_ITEM, "group/ai relative isolate hover:bg-transparent aria-expanded:bg-sidebar-accent")}
+            aria-expanded={askOpen}
+            aria-controls="ask-drawer"
+            aria-keyshortcuts="Meta+J"
+            aria-label="AI 어시스턴트"
+            title="AI 어시스턴트 (⌘J)"
+            onClick={() => setAskOpen((o) => !o)}
+          >
+            {/* 가리키면 옅은 보라→하늘색 바탕이 번진다 */}
+            <span className="pointer-events-none absolute inset-0 -z-10 rounded-md bg-gradient-to-r from-violet-500/14 via-sky-500/10 to-transparent opacity-0 transition-opacity duration-300 group-hover/ai:opacity-100" aria-hidden />
+            <SparklesIcon className="text-muted-foreground" />
+            <span className="group-hover/ai:bg-[linear-gradient(90deg,var(--sidebar-foreground)_0%,var(--sidebar-foreground)_35%,#8b5cf6_45%,#0ea5e9_55%,var(--sidebar-foreground)_65%,var(--sidebar-foreground)_100%)] bg-[length:200%_100%] bg-clip-text group-hover/ai:animate-shine group-hover/ai:text-transparent">AI 어시스턴트</span>
+            <Kbd className="ml-auto">⌘J</Kbd>
+          </button>
+          <GatedButton gate={convertGate} className={SIDE_ITEM} onClick={pickFiles} title={`${IMPORT_EXTS.join(" ")} — 창에 끌어 놓아도 됩니다`}>
+            <Upload aria-hidden />
+            파일 가져오기
+          </GatedButton>
+          {bulkIds.length >= BULK_MIN && !converting && (
+            <GatedButton gate={convertGate} className={SIDE_ITEM} disabled={transcribing || recording} onClick={convertAll} title={CONVERT_ALL_TITLE}>
+              <AudioLines aria-hidden />
+              {CONVERT_ALL(bulkIds.length)}
+            </GatedButton>
+          )}
+        </div>
+
         {(imp.job.running || queue.length > 0) && (
-          <section className="import-status" aria-live="polite" aria-label="가져오기 진행">
-            <p className="import-file">{importing ? baseName(importing) : "대기 중"}</p>
-            <p className="import-line tnum">
+          <section className={JOB_CARD} aria-live="polite" aria-label="가져오기 진행">
+            <p className="truncate font-medium text-foreground">{importing ? baseName(importing) : "대기 중"}</p>
+            <p className="flex justify-between gap-2 tabular-nums">
               <span>{STAGE_LABEL[imp.job.stage ?? ""] ?? STAGE_FALLBACK}</span>
               <span>{[importPct !== null && `${Math.round(importPct * 100)}%`, queue.length > 0 && `대기 ${queue.length}개`].filter(Boolean).join(" · ")}</span>
             </p>
-            <div className="job-track">
-              <div className={`job-fill ${importPct === null ? "is-indeterminate" : ""}`} style={{ transform: `scaleX(${importPct ?? 1})` }} />
-            </div>
+            <Progress value={importPct} />
             {imp.job.warnings
               .filter((w) => w.code !== "duplicate")
               .map((w) => (
-                <p key={w.code} className="import-warning">
+                <p key={w.code} className="text-memo">
                   {warningText(w)}
                 </p>
               ))}
           </section>
         )}
-
-        {bulkIds.length >= BULK_MIN && !converting && (
-          <GatedButton gate={convertGate} className="import-button" disabled={transcribing || recording} onClick={convertAll} title={CONVERT_ALL_TITLE}>
-            {CONVERT_ALL(bulkIds.length)}
-          </GatedButton>
-        )}
         {converting && (
-          <section className="import-status" aria-live="polite" aria-label="변환 전 노트 변환 진행">
-            <p className="import-file">{convProgress ? CONVERT_ALL_LINE(convProgress.n, convProgress.total, convTitle) : noteLabel(convTitle)}</p>
-            <p className="import-line tnum">
+          <section className={JOB_CARD} aria-live="polite" aria-label="변환 전 노트 변환 진행">
+            <p className="truncate font-medium text-foreground">{convProgress ? CONVERT_ALL_LINE(convProgress.n, convProgress.total, convTitle) : noteLabel(convTitle)}</p>
+            <p className="flex justify-between gap-2 tabular-nums">
               <span>{convertRunning ? (STAGE_LABEL[convJob.stage ?? ""] ?? STAGE_FALLBACK) : waitReason}</span>
               <span>{convertRunning && convPct !== null ? `${Math.round(convPct * 100)}%` : ""}</span>
             </p>
-            <div className="job-track">
-              <div className={`job-fill ${convPct === null || !convertRunning ? "is-indeterminate" : ""}`} style={{ transform: `scaleX(${convertRunning && convPct !== null ? convPct : 1})` }} />
-            </div>
+            <Progress value={convertRunning ? convPct : null} />
           </section>
         )}
 
-        <form
-          className="search-box"
-          role="search"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const q = searchRef.current?.value.trim();
-            if (q) void go({ kind: "search", q });
-          }}
-        >
-          <input ref={searchRef} type="search" placeholder="노트 검색" aria-label="노트 검색" />
-          <kbd aria-hidden>⌘K</kbd>
-        </form>
-        <button
-          ref={askButton}
-          className="ask-entry"
-          aria-expanded={askOpen}
-          aria-controls="ask-drawer"
-          aria-keyshortcuts="Meta+J"
-          aria-label="AI 어시스턴트에게 질문 (모든 노트 대상)"
-          title="AI 어시스턴트에게 질문 (모든 노트 대상)"
-          onClick={() => setAskOpen((o) => !o)}
-        >
-          <span>AI 어시스턴트에게 질문</span>
-          <kbd aria-hidden>⌘J</kbd>
-        </button>
-
-        <nav className="meeting-nav" aria-label="노트 목록">
+        <nav className="meeting-nav mt-2 min-h-0 flex-1 overflow-y-auto border-t border-sidebar-border px-2 pt-2 pb-6" aria-label="노트 목록">
           {listError && (
-            <div className="nav-note is-error">
+            <div className="m-2 text-xs text-destructive">
               <p>{listError.text}</p>
               <ErrorDetail detail={listError.detail} />
             </div>
           )}
           {leftover.length > 0 && (
-            <section className="day-group">
-              <h2 className="month-label">변환 대기 중인 녹음</h2>
-              <ul className="pending-list">
+            <section className="mb-2">
+              <h2 className={SIDE_HEAD}>변환 대기 중인 녹음</h2>
+              <ul>
                 {leftover.map((p) => {
                   // 글만 있는 노트에 추가하려던 녹음이면 그 노트(아직 글만 있을 때)에 이어서 추가한다. 노트가 없어졌으면 새 노트로 변환한다
                   const into = pendingTarget(p, meetings);
                   const label = into ? PENDING_LABEL(into.title) : recordingLabel(p.started_at);
                   return (
-                  <li key={p.dir} className="pending-item">
+                  <li key={p.dir} className="group relative">
                     <GatedButton
                       gate={convertGate}
-                      className="meeting-link"
+                      className={NOTE_LINK}
                       disabled={transcribing}
                       onClick={() => {
                         startTranscribe(p.dir, into);
                         void go({ kind: "record" });
                       }}
                     >
-                      <span className="meeting-link-title tnum">{label}</span>
-                      <span className="meeting-link-meta tnum">
+                      <span className="block truncate text-[13px] font-medium tabular-nums">{label}</span>
+                      <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
                         {p.duration === null ? "끊긴 녹음" : fmtTime(p.duration)}
-                        <span className="badge">{into ? ADD_BADGE : "변환하기"}</span>
+                        <Badge variant="rec">{into ? ADD_BADGE : "변환하기"}</Badge>
                       </span>
                     </GatedButton>
-                    {!into && (
-                      <button className="row-delete row-save" disabled={transcribing || recording} aria-label={`${label} ${SAVE_NOTE}`} title={SAVE_NOTE_TITLE} onClick={() => saveLeftover(p.dir)}>
-                        {SAVE_NOTE}
-                      </button>
-                    )}
-                    <button
-                      className="row-delete"
-                      disabled={transcribing}
-                      aria-label={`${label} 삭제`}
-                      title="삭제 (휴지통으로 이동)"
-                      onClick={() => askDelete({ kind: "recording", dir: p.dir, startedAt: p.started_at })}
-                    >
-                      삭제
-                    </button>
+                    <span className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+                      {!into && (
+                        <Button variant="outline" size="sm" className="h-6 px-2" disabled={transcribing || recording} aria-label={`${label} ${SAVE_NOTE}`} title={SAVE_NOTE_TITLE} onClick={() => saveLeftover(p.dir)}>
+                          {SAVE_NOTE}
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 hover:border-destructive hover:text-destructive"
+                        disabled={transcribing}
+                        aria-label={`${label} 삭제`}
+                        title="삭제 (휴지통으로 이동)"
+                        onClick={() => askDelete({ kind: "recording", dir: p.dir, startedAt: p.started_at })}
+                      >
+                        삭제
+                      </Button>
+                    </span>
                   </li>
                   );
                 })}
               </ul>
             </section>
           )}
-          {!listError && meetings.length === 0 && leftover.length === 0 && <p className="nav-note">아직 노트가 없습니다. 새 노트로 녹음을 시작하거나 글을 쓰거나, 설정에서 데이터 위치를 확인하세요.</p>}
+          {!listError && meetings.length === 0 && leftover.length === 0 && <p className="m-2 text-xs text-muted-foreground">아직 노트가 없습니다. 새 노트로 녹음을 시작하거나 글을 쓰거나, 설정에서 데이터 위치를 확인하세요.</p>}
           <NoteLibrary notes={meetings} activeId={activeId} onOpen={openMeeting} convertSlots={convertSlots} onConvert={convertNote} />
         </nav>
 
-        <footer className="sidebar-foot">
-          <span className="foot-links">
-            <button className="text-button" onClick={() => void go({ kind: "settings" })} aria-current={view.kind === "settings"}>
-              설정
-            </button>
-            <button className="text-button" onClick={() => void go({ kind: "models" })} aria-current={view.kind === "models"}>
-              {MODELS_LABEL}
-            </button>
-          </span>
-          <span className="foot-note">노트 {meetings.length}개</span>
+        <footer className="flex items-center gap-0.5 border-t border-sidebar-border px-2 py-1.5">
+          <Button variant="sidebar" size="sm" className="gap-1.5 text-muted-foreground aria-[current=true]:text-foreground" onClick={() => void go({ kind: "settings" })} aria-current={view.kind === "settings"}>
+            <Settings aria-hidden />
+            설정
+          </Button>
+          <Button variant="sidebar" size="sm" className="gap-1.5 text-muted-foreground aria-[current=true]:text-foreground" onClick={() => void go({ kind: "models" })} aria-current={view.kind === "models"}>
+            <Box aria-hidden />
+            {MODELS_LABEL}
+          </Button>
+          <span className="ml-auto pr-2 text-[11px] text-subtle-foreground tabular-nums">노트 {meetings.length}개</span>
         </footer>
         </div>
       </aside>
 
-      <main className="main">
-        {view.kind === "home" && <Welcome count={meetings.length} />}
+      <main className="main relative h-screen overflow-hidden bg-background">
+        {view.kind === "home" && <Welcome notes={meetings} onOpen={openMeeting} onAction={onNewNote} recordGate={recording || recordBlocked ? OK : recordGate} convertGate={convertGate} recording={recording} />}
         {view.kind === "meeting" && (
           <MeetingView
             key={noteEpoch.id === view.id ? `${view.id}.${noteEpoch.n}` : view.id}
@@ -923,13 +969,13 @@ export function App() {
         )}
         {view.kind === "search" && <SearchView key={view.q} query={view.q} onOpen={openMeeting} memoIds={memoIds} />}
         {view.kind === "record" && <RecordView rec={rec} captions={live} job={progressKind === "save" ? finish.job : waitDir ? { ...IDLE_JOB, running: true, stage: "wait_import" } : transcribe.job} progressKind={progressKind} choosing={afterAsk !== null} send={sendRec} retry={() => (progressKind === "save" ? finishDir.current && finishRecording(finishDir.current) : transcribeDir.current && startTranscribe(transcribeDir.current, transcribeTarget.current))} unconverted={unconverted ? UNCONVERTED_SAVED : null} attachTitle={attach.phase !== "idle" ? (attach.target?.title ?? null) : null} />}
-        {view.kind === "settings" && <SettingsView onSaved={() => void Promise.all([refresh(), caps.refresh()])} relaunchBlocked={recording || transcribing || imp.job.running || queue.length > 0} />}
-        {view.kind === "models" && <ModelsView />}
+        {view.kind === "settings" && <SettingsView onBack={goBack} onSaved={() => void Promise.all([refresh(), caps.refresh()])} relaunchBlocked={recording || transcribing || imp.job.running || queue.length > 0} />}
+        {view.kind === "models" && <ModelsView onBack={goBack} />}
       </main>
 
       <aside
         id="ask-drawer"
-        className="ask-drawer"
+        className="fixed inset-y-0 right-0 z-30 flex w-[min(440px,calc(100vw-var(--sidebar-w)))] flex-col overflow-y-auto border-l border-border bg-background px-5 shadow-pop animate-in slide-in-from-right-4 fade-in-0 duration-200"
         role="dialog"
         aria-labelledby="ask-drawer-title"
         hidden={!askOpen}
@@ -940,13 +986,14 @@ export function App() {
           }
         }}
       >
-        <header className="ask-drawer-head">
-          <h2 id="ask-drawer-title" className="eyebrow">
-            AI 어시스턴트에게 질문 (모든 노트 대상)
+        <header data-tauri-drag-region className="sticky top-0 z-10 -mx-5 flex h-[52px] shrink-0 items-center justify-between gap-2 bg-background/90 px-5 backdrop-blur-md">
+          <h2 id="ask-drawer-title" className="m-0 flex items-center gap-2 text-[13px] font-semibold">
+            <Sparkles className="size-4 text-muted-foreground" aria-hidden />
+            AI 어시스턴트
           </h2>
-          <button className="toast-close" aria-label="닫기 (Esc)" onClick={closeAsk}>
-            ×
-          </button>
+          <Button variant="ghost" size="icon-sm" aria-label="닫기 (Esc)" onClick={closeAsk}>
+            <X aria-hidden />
+          </Button>
         </header>
         <AskPanel scope={GLOBAL} inputRef={askInput} notes={knownNotes} memoIds={memoIds} onCite={(meetingId, segId, t) => openMeeting(meetingId, { segId, t })} />
       </aside>
@@ -980,12 +1027,13 @@ export function App() {
       )}
       {checkupOpen && <Checkup onClose={closeCheckup} />}
       {dropping && (
-        <div className="drop-overlay" aria-hidden>
-          <p>{!convertGate.ok ? DROP_UNAVAILABLE : dropNote.current && dropCount === 1 ? DROP_LABEL(dropNote.current.title) : "파일을 놓으면 텍스트로 변환합니다"}</p>
-          <small>{IMPORT_EXTS.join(" · ")}</small>
+        <div className="pointer-events-none fixed inset-3 z-50 grid place-content-center gap-2 rounded-2xl border-2 border-dashed border-ring bg-background/85 text-center backdrop-blur-sm animate-in fade-in-0 zoom-in-[0.98]" aria-hidden>
+          <Upload className="mx-auto size-8 text-ring" />
+          <p className="m-0 text-xl font-semibold">{!convertGate.ok ? DROP_UNAVAILABLE : dropNote.current && dropCount === 1 ? DROP_LABEL(dropNote.current.title) : "파일을 놓으면 텍스트로 변환합니다"}</p>
+          <small className="text-xs text-muted-foreground">{IMPORT_EXTS.join(" · ")}</small>
         </div>
       )}
-      <div className="toast-region" aria-live="polite">
+      <div className="fixed bottom-6 left-1/2 z-40 grid max-w-[min(560px,calc(100vw-32px))] -translate-x-1/2 justify-items-center gap-2" aria-live="polite">
         {toasts.map((t) => (
           <ToastItem key={t.id} toast={t} onClose={() => dismiss(t.id)} />
         ))}
@@ -1005,83 +1053,130 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
     return () => clearTimeout(h);
   }, [toast.error]);
   return (
-    <div className={`toast ${toast.error ? "is-error" : ""}`} role={toast.error ? "alert" : "status"}>
-      <div className="toast-body">
+    <div className={cn("flex items-center gap-2 rounded-lg border border-border bg-popover py-1.5 pr-1.5 pl-3.5 text-[13px] text-popover-foreground shadow-pop animate-in fade-in-0 slide-in-from-bottom-2", toast.error && "border-destructive/40")} role={toast.error ? "alert" : "status"}>
+      {toast.error && <CircleAlert className="size-4 shrink-0 text-destructive" aria-hidden />}
+      <div className="min-w-0 flex-1 py-1">
         {toast.text}
         <ErrorDetail detail={toast.detail} />
       </div>
       {toast.action && (
-        <button
-          className="text-button"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => {
             toast.action?.run();
             onClose();
           }}
         >
           {toast.action.label}
-        </button>
+        </Button>
       )}
-      <button className="toast-close" aria-label="알림 닫기" onClick={onClose}>
-        ×
-      </button>
+      <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label="알림 닫기" onClick={onClose}>
+        <X aria-hidden />
+      </Button>
     </div>
   );
 }
 
-function Welcome({ count }: { count: number }) {
+const RECENT_MAX = 6;
+
+function Welcome({ notes, onOpen, onAction, recordGate, convertGate, recording }: { notes: MeetingInfo[]; onOpen: (id: string) => void; onAction: (a: NewNoteAction) => void; recordGate: Decision; convertGate: Decision; recording: boolean }) {
   const { openCheckup, openModels } = useCapabilities();
+  const recent = useMemo(() => [...notes].sort((a, b) => (b.updated_at ?? b.created_at).localeCompare(a.updated_at ?? a.created_at)).slice(0, RECENT_MAX), [notes]);
+  const keys: [string[], string][] = [
+    [["⌘N"], "글쓰기 (새 메모)"],
+    [["⌘K"], "검색"],
+    [["Space"], "재생 / 일시정지"],
+    [["B"], "녹음 중 북마크"],
+    [["←", "→"], "5초 이동 (Shift 10초)"],
+    [["⌘F"], "찾아 바꾸기"],
+    [["⌘J"], "AI 어시스턴트"],
+    [["⌘B"], "노트 목록 접기·펼치기"],
+    [["⌥⌘B"], "오른쪽 패널 접기·펼치기"],
+  ];
+  const action = "flex flex-col items-start gap-3 rounded-lg border border-border bg-card p-4 text-left outline-none transition-colors hover:border-border-strong hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring/40 gated:opacity-50 [&_svg]:size-5";
   return (
-    <section className="welcome">
-      <h1 className="sr-only">Tractus</h1>
-      <p className="welcome-lead">
-        {count > 0 ? `노트 ${count}개가 이 Mac에 있습니다. 왼쪽에서 하나를 고르세요.` : "녹음하거나 메모를 써서 노트를 만드세요. 녹음은 이 Mac에서 텍스트로 변환되고, 파일로 남습니다."}
-      </p>
-      <dl className="shortcuts">
-        <div>
-          <dt><kbd>⌘N</kbd></dt>
-          <dd>글쓰기 (새 메모)</dd>
+    <section className="relative isolate flex h-full flex-col overflow-y-auto">
+      <FlickeringGrid className="absolute inset-x-0 top-0 -z-10 h-[360px] [mask-image:radial-gradient(ellipse_70%_100%_at_50%_0%,black_20%,transparent_75%)]" />
+      <div data-tauri-drag-region className="h-[52px] shrink-0" />
+      <div className="mx-auto flex w-full max-w-[760px] flex-col gap-10 px-8 pt-10 pb-16">
+        <h1 className="sr-only">홈</h1>
+        {notes.length === 0 && <p className="m-0 text-[15px] font-medium">녹음하거나 메모를 써서 노트를 만드세요. 녹음은 이 Mac에서 텍스트로 변환되고, 파일로 남습니다.</p>}
+
+        <div className="grid grid-cols-3 gap-3">
+          <GatedButton gate={recordGate} className={action} disabled={recording} onClick={() => onAction("record")}>
+            <span className="grid size-9 place-items-center rounded-full bg-rec-wash text-rec">
+              <Mic aria-hidden />
+            </span>
+            <span className="text-[13px] font-medium">녹음 시작</span>
+          </GatedButton>
+          <button type="button" className={action} onClick={() => onAction("write")}>
+            <span className="grid size-9 place-items-center rounded-full bg-memo-wash text-memo">
+              <SquarePen aria-hidden />
+            </span>
+            <span className="flex w-full items-center justify-between text-[13px] font-medium">
+              글쓰기 <Kbd>⌘N</Kbd>
+            </span>
+          </button>
+          <GatedButton gate={convertGate} className={action} onClick={() => onAction("import")}>
+            <span className="grid size-9 place-items-center rounded-full bg-secondary text-muted-foreground">
+              <Upload aria-hidden />
+            </span>
+            <span className="text-[13px] font-medium">파일 가져오기</span>
+          </GatedButton>
         </div>
-        <div>
-          <dt><kbd>⌘K</kbd></dt>
-          <dd>검색</dd>
-        </div>
-        <div>
-          <dt><kbd>Space</kbd></dt>
-          <dd>재생 / 일시정지</dd>
-        </div>
-        <div>
-          <dt><kbd>B</kbd></dt>
-          <dd>녹음 중 북마크</dd>
-        </div>
-        <div>
-          <dt><kbd>←</kbd> <kbd>→</kbd></dt>
-          <dd>5초 이동 (Shift 10초)</dd>
-        </div>
-        <div>
-          <dt><kbd>⌘F</kbd></dt>
-          <dd>찾아 바꾸기</dd>
-        </div>
-        <div>
-          <dt><kbd>⌘J</kbd></dt>
-          <dd>AI 어시스턴트에게 질문</dd>
-        </div>
-        <div>
-          <dt><kbd>⌘B</kbd></dt>
-          <dd>노트 목록 접기·펼치기</dd>
-        </div>
-        <div>
-          <dt><kbd>⌥⌘B</kbd></dt>
-          <dd>오른쪽 패널 접기·펼치기</dd>
-        </div>
-      </dl>
-      <p className="welcome-setup">
-        <button type="button" className="text-button" onClick={openCheckup}>
-          {CHECKUP_LABEL}
-        </button>
-        <button type="button" className="text-button" onClick={openModels}>
-          {MODELS_LABEL}
-        </button>
-      </p>
+
+        {recent.length > 0 && (
+          <section aria-labelledby="recent-title" className="flex flex-col gap-2">
+            <h2 id="recent-title" className="m-0 px-1 text-[13px] font-semibold">
+              최근 노트
+            </h2>
+            <ul className="m-0 list-none divide-y divide-border overflow-hidden rounded-lg border border-border bg-card p-0">
+              {recent.map((m) => (
+                <li key={m.id}>
+                  <button type="button" className="flex w-full items-center gap-3 px-4 py-2.5 text-left outline-none hover:bg-accent/60 focus-visible:bg-accent" onClick={() => onOpen(m.id)}>
+                    {isMemo(m) ? <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden /> : <AudioLines className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{m.title || "제목 없음"}</span>
+                    <span className="shrink-0 text-xs text-subtle-foreground tabular-nums">
+                      {new Date(m.updated_at ?? m.created_at).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })} · {noteTime(m)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <details className="group rounded-lg border border-border bg-card">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-2.5 text-[13px] font-semibold select-none">
+            단축키
+            <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" aria-hidden />
+          </summary>
+          <dl className="m-0 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-border px-4 py-3 text-[13px]">
+            {keys.map(([ks, label]) => (
+              <div key={label} className="flex items-center gap-3">
+                <dt className="flex w-16 shrink-0 gap-0.5">
+                  {ks.map((k) => (
+                    <Kbd key={k}>{k}</Kbd>
+                  ))}
+                </dt>
+                <dd className="m-0 text-muted-foreground">{label}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+
+        <p className="m-0 flex gap-2">
+          <Button variant="outline" size="sm" onClick={openCheckup}>
+            <Stethoscope aria-hidden />
+            {CHECKUP_LABEL}
+          </Button>
+          <Button variant="outline" size="sm" onClick={openModels}>
+            <Box aria-hidden />
+            {MODELS_LABEL}
+          </Button>
+        </p>
+      </div>
     </section>
   );
 }

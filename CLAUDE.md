@@ -2,6 +2,11 @@
 
 Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍스트 변환·요약·AI 질문·검색으로 확장하는 기능이다). ASR·저장·검색은 사용자 Mac에서 하고, LLM만 OpenAI 호환 API로 호출한다. 설계 결정은 `ARCHITECTURE.md`가 원본이다. 바꾸려면 그 문서부터 고친다.
 
+## 앱 화면 디자인
+
+- 앱 화면을 만들거나 고치기 전에 [app/DESIGN.md](app/DESIGN.md)를 읽는다(토큰·글자 크기·부품·규칙). 새 CSS 파일·색 상수를 만들지 않고 `app/src/theme.css` 토큰과 `app/src/components/ui/` 부품을 쓴다. 화면 확인은 `pnpm dev` 중 `/preview.html`(가짜 데이터)에서 라이트·다크, 폭 900·1280·1600으로 한다.
+- 테스트가 HTML 문자열에서 `aria-disabled`·`disabled`를 찾으므로 클래스 이름에 그 글자를 쓰지 않는다: 변형은 `gated:`(aria-disabled)·`off:`(입력창 disabled)다.
+
 ## UI 문구·용어
 
 - 사용자에게 보이는 문구(앱 UI·`aria-label`·토스트, 내보낸 문서, 앱이 보여 주는 코어 경고·오류·답변)를 쓰거나 고치기 전에 [WORDS.md](WORDS.md)를 읽고, 커밋 전에 그 문서 §5의 금지어 검사를 돌린다. 출력이 없어야 한다.

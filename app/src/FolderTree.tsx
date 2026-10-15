@@ -8,6 +8,9 @@ import { ItemMenu, Popover } from "./Popover";
 import { DROP_ATTR, DROP_NONE, onNoteDrop, useDragOver } from "./noteDrag";
 import { canNest, dropOutcome, FOLDER_DEPTH, folderOf, siblingsOf, subtreeIds, type Folder, type TreeNode } from "./organize";
 import { useOrganize } from "./useOrganize";
+import { ChevronRight, Ellipsis, Folder as FolderIcon, FolderX, Plus } from "lucide-react";
+import { cn } from "@/components/ui/utils";
+import { FOLDER_NAME, FOLDER_ROW, ROW_MORE, SIDE_ITEM, TWISTY } from "@/components/sidebar";
 
 type Edit = { kind: "create"; parent: string | null } | { kind: "rename"; id: string };
 
@@ -36,7 +39,7 @@ export function FolderTree({ expanded, onToggle, onExpand, notes }: { expanded: 
     const open = expanded.has(f.id);
     if (edit?.kind === "rename" && edit.id === f.id)
       return (
-        <li key={f.id} className="folder-row is-editing" style={{ paddingLeft: 8 + (n.depth - 1) * 14 }}>
+        <li key={f.id} className="py-0.5 pr-1" style={{ paddingLeft: 8 + (n.depth - 1) * 14 }}>
           <NameInput
             initial={f.name}
             self={f.id}
@@ -52,22 +55,22 @@ export function FolderTree({ expanded, onToggle, onExpand, notes }: { expanded: 
         </li>
       );
     return (
-      <li key={f.id} className={`folder-row ${over === f.id ? "is-over" : ""}`} style={{ paddingLeft: 8 + (n.depth - 1) * 14 }} {...dropKey(f.id)}>
+      <li key={f.id} className={cn(FOLDER_ROW, over === f.id && "bg-ring/12 ring-1 ring-ring/50")} style={{ paddingLeft: 4 + (n.depth - 1) * 14 }} {...dropKey(f.id)}>
         {n.children.length > 0 ? (
-          <button type="button" className="folder-twisty" aria-expanded={open} aria-label={`${f.name} ${open ? "접기" : "펼치기"}`} onClick={() => onToggle(f.id)}>
-            <span aria-hidden>{open ? "▾" : "▸"}</span>
+          <button type="button" className={TWISTY} aria-expanded={open} aria-label={`${f.name} ${open ? "접기" : "펼치기"}`} onClick={() => onToggle(f.id)}>
+            <ChevronRight className={cn("transition-transform", open && "rotate-90")} aria-hidden />
           </button>
         ) : (
-          <span className="folder-twisty is-empty" aria-hidden />
+          <span className="w-4 shrink-0" aria-hidden />
         )}
-        <button type="button" className="folder-name" aria-pressed={org.filter.folder === f.id} title={`${f.name} 폴더의 노트만 보기`} onClick={() => org.selectFolder(f.id)}>
-          <span className="folder-glyph" aria-hidden />
-          <span className="folder-label">{f.name}</span>
-          <span className="count tnum">{n.count}</span>
+        <button type="button" className={FOLDER_NAME} aria-pressed={org.filter.folder === f.id} title={`${f.name} 폴더의 노트만 보기`} onClick={() => org.selectFolder(f.id)}>
+          <FolderIcon aria-hidden />
+          <span className="min-w-0 flex-1 truncate">{f.name}</span>
+          <span className="text-[11px] text-subtle-foreground tabular-nums group-hover:opacity-0">{n.count}</span>
         </button>
         <button
           type="button"
-          className="row-more"
+          className={ROW_MORE + " top-0.5"}
           aria-label={`${f.name} 폴더 메뉴`}
           aria-haspopup="menu"
           aria-expanded={menu?.id === f.id}
@@ -76,7 +79,7 @@ export function FolderTree({ expanded, onToggle, onExpand, notes }: { expanded: 
             setMenu((m) => (m?.id === f.id ? null : { id: f.id, anchor }));
           }}
         >
-          …
+          <Ellipsis aria-hidden />
         </button>
       </li>
     );
@@ -90,7 +93,7 @@ export function FolderTree({ expanded, onToggle, onExpand, notes }: { expanded: 
     ]);
 
   const createRow = (parent: string | null, depth: number) => (
-    <li key={`new-${parent ?? "root"}`} className="folder-row is-editing" style={{ paddingLeft: 8 + (depth - 1) * 14 }}>
+    <li key={`new-${parent ?? "root"}`} className="py-0.5 pr-1" style={{ paddingLeft: 8 + (depth - 1) * 14 }}>
       <NameInput
         siblings={siblingsOf(org.folders, parent)}
         ariaLabel={parent ? "새 하위 폴더 이름 (Enter 만들기, Esc 취소)" : "새 폴더 이름 (Enter 만들기, Esc 취소)"}
@@ -119,22 +122,24 @@ export function FolderTree({ expanded, onToggle, onExpand, notes }: { expanded: 
 
   return (
     <>
-      {org.tree.length === 0 && edit?.kind !== "create" && <p className="nav-note side-hint">폴더를 만들어 노트를 나눠 두세요.</p>}
-      <ul className="folder-list" aria-label="폴더">
+      {org.tree.length === 0 && edit?.kind !== "create" && <p className="px-2 py-1 text-xs text-subtle-foreground">폴더를 만들어 노트를 나눠 두세요.</p>}
+      <ul aria-label="폴더">
         {flat(org.tree)}
         {edit?.kind === "create" && edit.parent === null && createRow(null, 1)}
         {org.tree.length > 0 && (
-          <li className={`folder-row ${over === "none" ? "is-over" : ""}`} {...dropKey(null)}>
-            <span className="folder-twisty is-empty" aria-hidden />
-            <button type="button" className="folder-name is-none" aria-pressed={org.filter.folder === "none"} title="폴더에 넣지 않은 노트만 보기 (노트를 놓으면 폴더에서 뺍니다)" onClick={() => org.selectFolder("none")}>
-              <span className="folder-label">폴더 없음</span>
-              <span className="count tnum">{loose}</span>
+          <li className={cn(FOLDER_ROW, "pl-1", over === "none" && "bg-ring/12 ring-1 ring-ring/50")} {...dropKey(null)}>
+            <span className="w-4 shrink-0" aria-hidden />
+            <button type="button" className={cn(FOLDER_NAME, "text-muted-foreground")} aria-pressed={org.filter.folder === "none"} title="폴더에 넣지 않은 노트만 보기 (노트를 놓으면 폴더에서 뺍니다)" onClick={() => org.selectFolder("none")}>
+              <FolderX aria-hidden />
+              <span className="min-w-0 flex-1 truncate">폴더 없음</span>
+              <span className="text-[11px] text-subtle-foreground tabular-nums">{loose}</span>
             </button>
           </li>
         )}
       </ul>
-      <button type="button" className="text-button side-add" onClick={() => setEdit({ kind: "create", parent: null })}>
-        + 새 폴더
+      <button type="button" className={cn(SIDE_ITEM, "text-muted-foreground")} onClick={() => setEdit({ kind: "create", parent: null })}>
+        <Plus aria-hidden />
+        새 폴더
       </button>
       {menu && target && (
         <Popover anchor={menu.anchor} label={`${target.name} 폴더 메뉴`} onClose={() => setMenu(null)}>

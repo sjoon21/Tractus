@@ -37,7 +37,7 @@ export function FolderPicker({
     <Popover anchor={anchor} label={creating ? "새 폴더 만들기" : exclude ? "옮길 위치 고르기" : "폴더 고르기"} role={creating ? "group" : "menu"} onClose={onClose}>
       {(close) =>
         creating ? (
-          <div className="popover-form">
+          <div className="p-1">
             <NameInput
               ariaLabel="새 폴더 이름 (Enter 만들기, Esc 취소)"
               placeholder="새 폴더 이름"

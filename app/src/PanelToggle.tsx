@@ -1,5 +1,6 @@
 // 양쪽 사이드 패널의 상태(앱 전체)와 접기·펼치기 단추. 순수 로직은 panels.ts. docs/desktop.md §3.2
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { PanelLeft, PanelRight } from "lucide-react";
 import { isImeKey } from "./lib";
 import { flushMemos } from "./memo";
 import { canCollapse, choose, EXPANDED, initialPanels, PANEL_TEXT, panelKey, readPanels, restore, revealFor, toggleLabel, writePanels, type PanelChoice, type PanelIntent, type PanelState, type Side } from "./panels";
@@ -82,12 +83,9 @@ export function PanelToggle({ side }: { side: Side }) {
   const collapsed = state[side];
   const t = PANEL_TEXT[side];
   const { label, title } = toggleLabel(side, collapsed);
-  const pointsLeft = side === "left" ? !collapsed : collapsed; // 접으면 가장자리 쪽으로, 펼치면 안쪽으로
   return (
-    <button type="button" id={t.toggleId} className={`panel-toggle is-${side}`} aria-label={label} title={title} aria-expanded={!collapsed} aria-controls={t.controls} aria-keyshortcuts={t.shortcut} onClick={() => void toggle(side)}>
-      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden focusable="false">
-        <path d={pointsLeft ? "M10 3.5 5.5 8l4.5 4.5" : "M6 3.5 10.5 8 6 12.5"} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+    <button type="button" id={t.toggleId} className={`panel-toggle is-${side} absolute z-30 grid size-7 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 [&_svg]:size-4 ${side === "left" ? (collapsed ? "top-[48px] left-1/2 -translate-x-1/2" : "top-[14px] right-2") : collapsed ? "top-[12px] left-1/2 -translate-x-1/2" : "top-[12px] right-3"}`} aria-label={label} title={title} aria-expanded={!collapsed} aria-controls={t.controls} aria-keyshortcuts={t.shortcut} onClick={() => void toggle(side)}>
+      {side === "left" ? <PanelLeft aria-hidden /> : <PanelRight aria-hidden />}
     </button>
   );
 }

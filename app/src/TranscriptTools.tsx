@@ -1,6 +1,11 @@
 // 전사 편집 도구 (docs/roadmap.md §2, Phase 5): 문장 편집기, 찾기·바꾸기 막대, 내보내기 메뉴.
 import { useLayoutEffect, useRef } from "react";
 import { EXPORT_FORMATS, isImeKey } from "./lib";
+import { ChevronDown, ChevronUp, Share, X } from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { inputClass } from "@/components/ui/input";
+import { checkClass } from "@/components/ui/switch";
+import { cn } from "@/components/ui/utils";
 
 /**
  * 세그먼트 문장 편집기. contentEditable="plaintext-only"라 붙여 넣어도 서식이 따라오지 않는다.
@@ -99,50 +104,50 @@ export function FindBar({
   const canReplace = count > 0;
 
   return (
-    <div className="find-bar" role="search" aria-label="대화 내용에서 찾기">
-      <div className="find-row">
+    <div className="find-bar sticky top-[52px] z-20 mx-auto grid w-full max-w-[860px] gap-2 border-b border-border bg-background/95 px-6 pt-1 pb-3 backdrop-blur-md" role="search" aria-label="대화 내용에서 찾기">
+      <div className="flex items-center gap-1.5">
         <input
           ref={inputRef}
           autoFocus
-          className="find-input"
+          className={cn(inputClass, "h-7 flex-1")}
           value={state.q}
           placeholder="찾기"
           aria-label="찾을 말"
           onChange={(e) => onChange({ ...state, q: e.target.value })}
           {...keys((shift) => onStep(shift ? -1 : 1))}
         />
-        <span className="find-count tnum" aria-live="polite">
+        <span className="min-w-[4.5em] text-right text-xs text-muted-foreground tabular-nums" aria-live="polite">
           {state.q ? (count ? `${current + 1} / ${count}` : "없음") : ""}
         </span>
-        <button className="find-step" onClick={() => onStep(-1)} disabled={!count} aria-label="이전 (Shift+Enter)">
-          ↑
-        </button>
-        <button className="find-step" onClick={() => onStep(1)} disabled={!count} aria-label="다음 (Enter)">
-          ↓
-        </button>
-        <button className="find-close" onClick={onClose} aria-label="찾기 닫기 (Esc)">
-          ×
-        </button>
+        <Button variant="ghost" size="icon-sm" onClick={() => onStep(-1)} disabled={!count} aria-label="이전 (Shift+Enter)">
+          <ChevronUp aria-hidden />
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => onStep(1)} disabled={!count} aria-label="다음 (Enter)">
+          <ChevronDown aria-hidden />
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="찾기 닫기 (Esc)">
+          <X aria-hidden />
+        </Button>
       </div>
-      <div className="find-row">
+      <div className="flex items-center gap-1.5">
         <input
-          className="find-input"
+          className={cn(inputClass, "h-7 flex-1")}
           value={state.r}
           placeholder="바꿀 말"
           aria-label="바꿀 말"
           onChange={(e) => onChange({ ...state, r: e.target.value })}
           {...keys(() => canReplace && onReplace())}
         />
-        <button className="ghost-button find-action" onClick={onReplace} disabled={!canReplace}>
+        <Button variant="outline" size="sm" onClick={onReplace} disabled={!canReplace}>
           바꾸기
-        </button>
-        <button className="ghost-button find-action" onClick={onReplaceAll} disabled={!canReplace}>
-          모두 바꾸기{count > 0 && <span className="tnum"> {count}</span>}
-        </button>
+        </Button>
+        <Button variant="outline" size="sm" onClick={onReplaceAll} disabled={!canReplace}>
+          모두 바꾸기{count > 0 && <span className="tabular-nums"> {count}</span>}
+        </Button>
       </div>
-      <label className="check find-glossary">
-        <input type="checkbox" checked={state.glossary} onChange={(e) => onChange({ ...state, glossary: e.target.checked })} />
-        바꾼 말을 자주 쓰는 단어에 추가 <small>다음 녹음부터 이 단어를 더 정확하게 인식합니다</small>
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <input type="checkbox" className={checkClass} checked={state.glossary} onChange={(e) => onChange({ ...state, glossary: e.target.checked })} />
+        <span className="text-foreground">바꾼 말을 자주 쓰는 단어에 추가</span> <span>다음 녹음부터 이 단어를 더 정확하게 인식합니다</span>
       </label>
     </div>
   );
@@ -159,7 +164,8 @@ export function ExportMenu({ onPick, onPrint, formats = EXPORT_FORMATS }: { onPi
   };
   return (
     <>
-      <button ref={button} className="ghost-button head-button" popoverTarget="export-menu" aria-haspopup="menu">
+      <button ref={button} className={buttonVariants({ variant: "ghost", size: "sm" })} popoverTarget="export-menu" aria-haspopup="menu">
+        <Share aria-hidden />
         내보내기
       </button>
       <div
@@ -174,7 +180,7 @@ export function ExportMenu({ onPick, onPrint, formats = EXPORT_FORMATS }: { onPi
           const el = menu.current;
           if (e.newState !== "open" || !a || !el) return;
           el.style.top = `${a.bottom + 6}px`;
-          el.style.left = `${Math.max(12, a.left)}px`;
+          el.style.right = `${Math.max(12, window.innerWidth - a.right)}px`; // 머리 오른쪽 끝의 단추라 오른쪽을 맞춘다
         }}
         onToggle={(e) => e.newState === "open" && menu.current?.querySelector<HTMLElement>("button")?.focus()}
       >

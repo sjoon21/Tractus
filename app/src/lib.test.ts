@@ -416,8 +416,8 @@ describe("화자", () => {
     expect(st(9)["--spk"]).toBe("var(--spk-1)");
     expect(st(9)["--spk-fill"]).toBe("transparent");
     expect(st(9)["--spk-bar"]).toContain("repeating-linear-gradient");
-    expect(st(-1)["--spk"]).toBe("var(--ink-3)");
-    expect(st(undefined)["--spk-fill"]).toBe("var(--ink-3)");
+    expect(st(-1)["--spk"]).toBe("var(--subtle-foreground)");
+    expect(st(undefined)["--spk-fill"]).toBe("var(--subtle-foreground)");
   });
 
   test("말한 시간 비율, 라벨 번호 순 (S10은 S2 뒤)", () => {

@@ -628,7 +628,7 @@ Tractus는 아래 오픈소스와 공개 모델 위에 만들었습니다. 라�
 [local-shield]: https://img.shields.io/badge/local--first-audio_stays_on_Mac-2ea44f?style=for-the-badge
 [arch-url]: ARCHITECTURE.md
 [status-shield]: https://img.shields.io/badge/status-beta-orange?style=for-the-badge
-[release-shield]: https://img.shields.io/badge/release-v0.1.1-blue?style=for-the-badge
+[release-shield]: https://img.shields.io/badge/release-v0.2.0-blue?style=for-the-badge
 [release-url]: https://github.com/sjoon21/Tractus/releases
 [roadmap-url]: docs/roadmap.md
 [python-badge]: https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white

@@ -1,0 +1,232 @@
+/* Tractus 디자인 토큰 — macOS 노트 앱 톤(Granola·Apple Notes).
+   무채색 바탕 위에 색은 의미로만 쓴다:
+   rec(시스템 빨강) = 지금·녹음·재생 위치, memo(노트 노랑) = 사람이 남긴 메모·북마크,
+   focus(시스템 파랑) = 키보드 초점, destructive = 되돌리기 어려운 동작(삭제),
+   spk-0…7 = 누가 말했는지(9번째부터 속 빈 점·빗금 막대, Speakers.spkStyle).
+   화면 규칙은 app/DESIGN.md. */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+/* 바탕 규칙·노트 화면: components 레이어라 Tailwind 유틸리티가 이긴다 */
+@import "./base.css" layer(components);
+@import "./components/note/note.css" layer(components);
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+/* 모델·도구가 없어 못 쓰는 단추 (aria-disabled, GatedButton). 클래스 이름에 aria-disabled를 쓰지 않는다: 테스트가 HTML에서 그 속성을 찾는다 */
+@custom-variant gated (&[aria-disabled="true"]);
+/* 꺼진 입력창. 같은 까닭으로 클래스 이름에 disabled를 쓰지 않는다 */
+@custom-variant off (&:disabled);
+
+:root {
+  --radius: 0.5rem;
+
+  --background: #ffffff;
+  --foreground: #1d1d1f;
+  --card: #ffffff;
+  --card-foreground: #1d1d1f;
+  --popover: #ffffff;
+  --popover-foreground: #1d1d1f;
+  --primary: #1d1d1f;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f2f2;
+  --secondary-foreground: #1d1d1f;
+  --muted: #f5f5f5;
+  --muted-foreground: #6e6e73;
+  --subtle-foreground: #a1a1a6;
+  --accent: #efefef;
+  --accent-foreground: #1d1d1f;
+  --destructive: #d70015;
+  --destructive-foreground: #ffffff;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.16);
+  --input: rgba(0, 0, 0, 0.12);
+  --ring: #007aff;
+
+  --sidebar: #f5f5f4;
+  --sidebar-foreground: #1d1d1f;
+  --sidebar-accent: rgba(0, 0, 0, 0.055);
+  --sidebar-accent-foreground: #1d1d1f;
+  --sidebar-border: rgba(0, 0, 0, 0.07);
+
+  --rec: #ff3b30;
+  --rec-wash: rgba(255, 59, 48, 0.08);
+  --memo: #a0711a;
+  --memo-wash: rgba(255, 204, 0, 0.16);
+
+  --spk-0: #1f7a74;
+  --spk-1: #6e4fa8;
+  --spk-2: #3f7d2c;
+  --spk-3: #2b62a8;
+  --spk-4: #a83c7e;
+  --spk-5: #4d6475;
+  --spk-6: #75731f;
+  --spk-7: #8a4b5c;
+
+  --shadow-pop: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 8px 24px -6px rgba(0, 0, 0, 0.16);
+
+  color-scheme: light;
+}
+
+/* 다크: themePref.ts가 시스템 설정이나 사용자의 선택으로 data-theme을 정한다 */
+:root[data-theme="dark"] {
+  --background: #1e1e1e;
+  --foreground: #f5f5f7;
+  --card: #262626;
+  --card-foreground: #f5f5f7;
+  --popover: #2a2a2a;
+  --popover-foreground: #f5f5f7;
+  --primary: #f5f5f7;
+  --primary-foreground: #1d1d1f;
+  --secondary: #2c2c2c;
+  --secondary-foreground: #f5f5f7;
+  --muted: #262626;
+  --muted-foreground: #a1a1a6;
+  --subtle-foreground: #6e6e73;
+  --accent: #2f2f2f;
+  --accent-foreground: #f5f5f7;
+  --destructive: #ff6961;
+  --destructive-foreground: #1e1e1e;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #0a84ff;
+
+  --sidebar: #252525;
+  --sidebar-foreground: #f5f5f7;
+  --sidebar-accent: rgba(255, 255, 255, 0.07);
+  --sidebar-accent-foreground: #f5f5f7;
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+
+  --rec: #ff453a;
+  --rec-wash: rgba(255, 69, 58, 0.12);
+  --memo: #f2c14e;
+  --memo-wash: rgba(255, 214, 10, 0.12);
+
+  --spk-0: #5cc2b8;
+  --spk-1: #a98be0;
+  --spk-2: #8cc46f;
+  --spk-3: #74a7e8;
+  --spk-4: #e283bd;
+  --spk-5: #9db3c4;
+  --spk-6: #c4c063;
+  --spk-7: #d491a3;
+
+  --shadow-pop: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
+}
+
+/* 글꼴·폭·움직임 */
+:root {
+  --font: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+
+  --sidebar-w: 260px;
+  --rail: 340px;
+  --time-col: 4.25rem;
+
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --fast: 120ms;
+  --normal: 220ms;
+}
+
+@theme inline {
+  --font-sans: var(--font);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-rec: var(--rec);
+  --color-rec-wash: var(--rec-wash);
+  --color-memo: var(--memo);
+  --color-memo-wash: var(--memo-wash);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 4px);
+  --shadow-pop: var(--shadow-pop);
+
+  --animate-rec-pulse: rec-pulse 1.4s cubic-bezier(0.2, 0, 0, 1) infinite;
+  /* AI 어시스턴트: 큰 별은 한 번 돌고, 작은 반짝임은 가리키는 동안 깜빡이고, 글자에는 빛이 지나간다 */
+  --animate-sparkle-turn: sparkle-turn 700ms cubic-bezier(0.2, 0, 0, 1);
+  --animate-sparkle-twinkle: sparkle-twinkle 1.2s ease-in-out infinite;
+  --animate-shine: shine 2.4s linear infinite;
+  @keyframes sparkle-turn {
+    0% {
+      transform: rotate(0) scale(1);
+    }
+    50% {
+      transform: rotate(60deg) scale(1.18);
+    }
+    100% {
+      transform: rotate(90deg) scale(1);
+    }
+  }
+  @keyframes sparkle-twinkle {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.25;
+      transform: scale(0.55);
+    }
+  }
+  @keyframes shine {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: -100% 0;
+    }
+  }
+  @keyframes rec-pulse {
+    50% {
+      opacity: 0.35;
+      transform: scale(0.8);
+    }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+@keyframes progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+:root {
+  --chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m7 15 5 5 5-5'/><path d='m7 9 5-5 5 5'/></svg>");
+}

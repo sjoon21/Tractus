@@ -68,7 +68,7 @@ export const AFTER_ASK = {
 
 export const AFTER_SETTING = {
   label: "녹음을 끝내면",
-  hint: "녹음을 끝낸 뒤 텍스트 변환을 언제 할지 정합니다. 나중에 변환하면 녹음은 ‘변환 전’ 노트로 저장되고, 노트에서 변환할 수 있습니다. 글만 있는 노트에 추가하는 녹음은 언제나 바로 변환합니다.",
+  hint: "나중에 변환하면 ‘변환 전’ 노트로 저장됩니다.",
   options: [
     { value: "ask", label: "매번 묻기" },
     { value: "convert", label: "바로 변환하기" },

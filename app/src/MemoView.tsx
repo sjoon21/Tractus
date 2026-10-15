@@ -7,6 +7,11 @@ import { editQueue } from "./editQueue";
 import { isImeKey, type Segment } from "./lib";
 import { checkTitle, citedRange, createAutosave, registerMemo, SAVE_STATUS, TITLE_MAX, type Autosave, type SaveState } from "./memo";
 import { EDIT_BLOCKED } from "./remove";
+import { Pencil } from "lucide-react";
+import { cn } from "@/components/ui/utils";
+
+/** 노트 제목 (보기·입력 모두 같은 크기, DESIGN.md §2) */
+const TITLE = "m-0 text-[22px] font-semibold leading-tight tracking-tight";
 
 export interface MemoTarget {
   /** 고를 줄. null이면 줄을 고르지 않고 본문 끝에 초점만 둔다 (탭을 눌러 연 경우) */
@@ -103,10 +108,14 @@ export function MemoEditor({
 
   const flushSoon = () => void a.flush();
   return (
-    <div className={`memo-pane ${variant === "rail" ? "is-rail" : ""}`}>
+    <div className={cn("flex min-h-0 flex-1 flex-col", variant === "rail" ? "pb-2" : "max-w-[46rem] pb-7")}>
       <textarea
         ref={box}
-        className="memo-editor"
+        // 종이 위에 바로 쓰는 글상자: 테두리·초점 상자 없이 캐럿이 초점을 보인다
+        className={cn(
+          "w-full flex-1 resize-none border-0 bg-transparent p-0 text-foreground outline-none placeholder:text-subtle-foreground read-only:text-muted-foreground",
+          variant === "rail" ? "min-h-[50vh] text-[14px] leading-6" : "min-h-[55vh] text-[15px] leading-7",
+        )}
         value={text}
         placeholder="여기에 메모를 쓰세요. 쓰는 대로 자동으로 저장됩니다"
         aria-label="메모 내용"
@@ -124,7 +133,7 @@ export function MemoEditor({
           flushSoon();
         }}
       />
-      <p className={`memo-status ${state.status === "failed" ? "inline-error" : ""}`} role="status">
+      <p className={cn("sticky bottom-0 m-0 bg-background pt-2 text-xs", state.status === "failed" ? "text-destructive" : "text-subtle-foreground")} role="status">
         {locked ?? SAVE_STATUS[state.status]}
       </p>
     </div>
@@ -168,21 +177,21 @@ export function TitleEditor({ title, onSave, onReject }: { title: string; onSave
 
   if (draft === null)
     return (
-      <h1 className="note-title">
-        <button className="title-button" onClick={start} title="제목 수정" aria-label={`제목 수정: ${title || "제목 없음"}`}>
-          <span>{title || "제목 없음"}</span>
-          <span className="title-pencil" aria-hidden>
-            수정
+      <h1 className={TITLE}>
+        <button className="group inline-flex max-w-full cursor-text items-center gap-1.5 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40" onClick={start} title="제목 수정" aria-label={`제목 수정: ${title || "제목 없음"}`}>
+          <span className="[overflow-wrap:anywhere]">{title || "제목 없음"}</span>
+          <span className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:bg-accent group-hover:opacity-100 group-focus-visible:opacity-100" aria-hidden>
+            <Pencil className="size-3.5" />
           </span>
         </button>
       </h1>
     );
   return (
     <div>
-      <h1 className="note-title">
+      <h1 className={TITLE}>
         <input
           ref={input}
-          className="title-input"
+          className="-mx-1.5 -my-0.5 w-[calc(100%+0.75rem)] rounded-md border-0 bg-foreground/[0.05] px-1.5 py-0.5 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30 aria-invalid:ring-[3px] aria-invalid:ring-destructive/30"
           value={draft}
           maxLength={TITLE_MAX + 40} // 붙여 넣은 긴 글을 잘라 버리지 않고 문장으로 알린다
           autoFocus
@@ -210,7 +219,7 @@ export function TitleEditor({ title, onSave, onReject }: { title: string; onSave
         />
       </h1>
       {error && (
-        <p className="inline-error title-error" role="alert">
+        <p className="m-0 mt-2 text-xs text-destructive" role="alert">
           {error}
         </p>
       )}

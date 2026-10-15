@@ -129,11 +129,11 @@ export const toForm = (provider: string, storedBase: string, storedModel: string
 export const keyReady = (provider: string, baseUrl: string, saved: boolean): boolean => saved || (provider === "custom" && isLoopbackUrl(baseUrl));
 
 export const PROVIDER_NOTE: Record<LlmChoice, string> = {
-  upstage: "키는 console.upstage.ai 에서 받을 수 있습니다.",
-  openai: "키는 platform.openai.com 의 API keys에서 받을 수 있습니다. AI 모델 이름은 직접 입력합니다.",
-  claude: "키는 console.anthropic.com 에서 받을 수 있습니다. Claude는 호환 방식으로 연결됩니다. 일부 기능(엄격 JSON)은 쓰지 않고 검증 후 재요청으로 처리합니다.",
-  gemini: "키는 aistudio.google.com 에서 받을 수 있습니다. AI 모델 이름을 비워 두면 항상 최신 Flash를 씁니다. 다른 이름은 ‘AI 모델 목록 불러오기’에서 고를 수 있습니다.",
-  custom: "OpenAI와 호환되는 서비스(예: OpenRouter, 사내 게이트웨이, Ollama)의 주소·키·AI 모델 이름을 입력합니다. 이 Mac의 주소(localhost)는 키 없이 쓸 수 있습니다.",
+  upstage: "키는 console.upstage.ai에서 받을 수 있습니다.",
+  openai: "키는 platform.openai.com에서 받을 수 있습니다.",
+  claude: "키는 console.anthropic.com에서 받을 수 있습니다.",
+  gemini: "키는 aistudio.google.com에서 받을 수 있습니다.",
+  custom: "OpenAI 호환 서비스(OpenRouter, Ollama 등)의 주소와 키를 입력합니다.",
 };
 
 /** 서비스가 돌려준 AI 모델 이름에서 대화용이 아닌 것(검색용·음성·이미지·영상)을 뺀다. 다 빠지면 그대로 둔다. 제안 목록일 뿐이라 이름으로 어림한다 */
@@ -143,9 +143,8 @@ export const chatModels = (ids: readonly string[]): string[] => {
   return chat.length > 0 ? chat : [...ids];
 };
 
-export const PRIVACY_NOTE = "요약·질문을 요청하면 그 노트의 대화 내용(제목·참석자 이름 포함)이 선택한 AI 서비스로 전송됩니다. 키는 이 Mac의 앱 설정 폴더에만 저장되고 노트 폴더에는 저장되지 않습니다.";
-export const LOCAL_ONLY_NOTE = "로컬 전용 모드(TRACTUS_LOCAL_ONLY)가 켜져 있으면 이 Mac의 주소(localhost)만 쓸 수 있습니다.";
-export const ENV_OVERRIDE_NOTE = "셸이나 .env.local, 노트 폴더의 .env에 TRACTUS_LLM_ 설정이 있어 그 값이 이 화면의 선택보다 먼저 적용됩니다.";
+export const PRIVACY_NOTE = "요약·질문할 때 노트 내용이 선택한 AI 서비스로 전송됩니다. 키는 이 Mac에만 저장됩니다.";
+export const ENV_OVERRIDE_NOTE = "셸이나 .env의 설정이 이 화면보다 먼저 적용되고 있습니다.";
 export const TEST_HINT = "연결 테스트는 입력한 내용을 먼저 저장합니다.";
 
 /** 연결 테스트 결과 한 줄. 응답이 비어 와도 연결은 된 것이다 */
@@ -184,12 +183,12 @@ export const showServicePicker = (registered: readonly string[], fixed: boolean)
 export type EmbeddingChoice = "local" | "upstage";
 export const EMBED_LABEL = "스마트 검색 방식";
 export const EMBED_OPTIONS: Record<EmbeddingChoice, string> = { local: "이 Mac(기본)", upstage: "Upstage solar-embedding-2" };
-export const EMBED_LOCAL_ONLY = "로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 Upstage로 보내지 않습니다. Upstage를 골라 둔 상태에서는 단어 일치로만 찾습니다.";
+export const EMBED_LOCAL_ONLY = "로컬 전용 모드라 Upstage로 보내지 않고 단어 일치로만 찾습니다.";
 export const EMBED_NO_KEY = "Upstage API 키를 등록하면 고를 수 있습니다.";
-export const EMBED_NOTE = "기본은 이 Mac에서 처리합니다. Upstage를 고르면 스마트 검색에 쓸 노트 내용과 검색어가 Upstage로 전송됩니다. 바꾸면 스마트 검색 정보를 새로 만듭니다.";
+export const EMBED_NOTE = "기본은 이 Mac에서 처리합니다. Upstage를 고르면 노트 내용과 검색어가 전송됩니다.";
 export const EMBED_CONFIRM = {
   title: "스마트 검색을 Upstage로 바꿀까요?",
-  body: "노트의 대화 내용(스마트 검색 정보를 만들 때)과 검색어(검색할 때)가 Upstage로 전송됩니다. Upstage의 데이터 보관·사용 정책은 확인하지 못했습니다. 바꾸면 스마트 검색 정보를 새로 만들고, 끝날 때까지는 단어 일치로만 찾습니다.",
+  body: "노트 내용과 검색어가 Upstage로 전송됩니다. Upstage의 데이터 보관 정책은 확인하지 못했습니다. 검색 정보를 새로 만드는 동안에는 단어 일치로만 찾습니다.",
   cancel: "취소",
   confirm: "Upstage로 바꾸기",
 } as const;

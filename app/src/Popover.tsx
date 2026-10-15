@@ -1,8 +1,12 @@
 // 단추 옆에 뜨는 작은 창과 그 안의 메뉴 (노트 줄의 `…`, 폴더 고르기, 폴더 `…`). 사이드바 목록은 스크롤 영역이라 잘리지 않게 body에 띄운다 (position: fixed).
 // 규칙은 새 노트 메뉴와 같다 (menu.ts): ↑↓는 끝에서 돌고 Home·End는 처음·끝, Esc는 닫고 단추로 초점을 돌려주고, Tab은 닫고 초점이 자연히 옮겨 가게 둔다.
 // 바깥을 누르거나 스크롤·창 크기를 바꾸면 닫는다.
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { Check } from "lucide-react";
+import { Kbd } from "@/components/ui/kbd";
+import { MENU, MENU_ITEM } from "@/components/menu";
+import { cn } from "@/components/ui/utils";
 import { menuKey } from "./menu";
 
 export type Close = (refocus?: boolean) => void;
@@ -11,12 +15,15 @@ export function Popover({
   anchor,
   label,
   role = "menu",
+  align = "end",
   onClose,
   children,
 }: {
   anchor: HTMLElement;
   label: string;
   role?: "menu" | "group" | "dialog";
+  /** 단추의 어느 끝에 맞출지: end(오른쪽, 기본) | start(왼쪽) */
+  align?: "start" | "end";
   onClose: () => void;
   children: (close: Close) => ReactNode;
 }) {
@@ -29,12 +36,12 @@ export function Popover({
   const closeRef = useRef(close);
   closeRef.current = close;
 
-  // 단추 아래, 오른쪽 끝을 맞춘다. 아래가 모자라면 위로 연다
+  // 단추 아래, 오른쪽(start면 왼쪽) 끝을 맞춘다. 아래가 모자라면 위로 연다
   useLayoutEffect(() => {
     const r = anchor.getBoundingClientRect();
     const w = box.current?.offsetWidth ?? 220;
     const h = box.current?.offsetHeight ?? 0;
-    const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w));
+    const left = Math.max(8, Math.min(window.innerWidth - w - 8, align === "start" ? r.left : r.right - w));
     const below = r.bottom + 4;
     const top = below + h > window.innerHeight - 8 ? Math.max(8, r.top - 4 - h) : below;
     // 같은 자리면 상태를 바꾸지 않는다: 이 효과는 매 렌더 뒤에 돌므로, 새 객체를 그대로 넣으면 끝없이 다시 그린다
@@ -71,7 +78,7 @@ export function Popover({
   }, [anchor, role]);
 
   return createPortal(
-    <div ref={box} className="popover" role={role} aria-label={label} style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? "visible" : "hidden" }}>
+    <div ref={box} className={cn(MENU, "fixed z-50 min-w-[200px] max-w-[320px]")} role={role} aria-label={label} style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? "visible" : "hidden" }}>
       {children(close)}
     </div>,
     document.body,
@@ -107,7 +114,7 @@ export function ItemMenu({ entries, close }: { entries: MenuEntry[]; close: Clos
   }, []);
   return (
     <div
-      className="popover-items"
+      className="flex max-h-[min(420px,70vh)] flex-col overflow-y-auto"
       onKeyDown={(e) => {
         if (e.nativeEvent.isComposing) return;
         const move = menuKey(e.code, entries.length, items.current.findIndex((el) => el === document.activeElement));
@@ -119,8 +126,9 @@ export function ItemMenu({ entries, close }: { entries: MenuEntry[]; close: Clos
       }}
     >
       {entries.map((it, i) => (
+        <Fragment key={it.id}>
+        {it.divider && <hr className="my-1 border-border" />}
         <button
-          key={it.id}
           ref={(el) => void (items.current[i] = el)}
           type="button"
           role={it.checked === undefined ? "menuitem" : "menuitemradio"}
@@ -128,20 +136,19 @@ export function ItemMenu({ entries, close }: { entries: MenuEntry[]; close: Clos
           aria-disabled={it.disabled ? true : undefined}
           title={it.disabled}
           tabIndex={-1}
-          className={`popover-item ${it.divider ? "has-divider" : ""} ${it.danger ? "is-danger" : ""}`}
-          style={it.indent ? { paddingLeft: 12 + it.indent * 14 } : undefined}
+          className={cn(MENU_ITEM, it.danger && "text-destructive")}
+          style={it.indent ? { paddingLeft: 8 + it.indent * 14 } : undefined}
           onClick={() => {
             if (it.disabled) return;
             it.onSelect();
             if (!it.stay) close(true);
           }}
         >
-          <span className="popover-check" aria-hidden>
-            {it.checked ? "✓" : ""}
-          </span>
-          <span className="popover-label">{it.label}</span>
-          {it.hint && <kbd aria-hidden>{it.hint}</kbd>}
+          {it.checked !== undefined && <span className="grid w-4 shrink-0 place-items-center" aria-hidden>{it.checked && <Check />}</span>}
+          <span className="min-w-0 flex-1 truncate">{it.label}</span>
+          {it.hint && <Kbd>{it.hint}</Kbd>}
         </button>
+        </Fragment>
       ))}
     </div>
   );

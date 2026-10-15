@@ -1,6 +1,14 @@
 // 모델 화면 (docs/desktop.md §2.15): 구성 단추, 모델 표(이름·용도·크기·필수/권장/선택·상태·이 기능에 필요), 받기 진행, 지우기.
 // 시작 점검(Checkup.tsx)도 구성 단추와 진행 표시를 같이 쓴다. 문구는 WORDS.md §4.14.
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { AlertTriangle, CheckCircle2, FolderOpen } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { OK_BADGE, OK_TEXT, WARN_TEXT } from "@/components/settings/tone";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { PageBody, PageHeader } from "@/components/ui/page";
+import { Progress } from "@/components/ui/progress";
+import { Row, Section } from "@/components/ui/section";
+import { cn } from "@/components/ui/utils";
 import { api, errDetail, errText } from "./api";
 import { trackOf } from "./caps";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -103,23 +111,19 @@ export function PresetButtons({ list, dl }: { list: ModelsList; dl: DownloadStat
   const track = report?.doctor?.recommended_track;
   const free = list.disk_free_bytes;
   return (
-    <div className="preset-row" role="group" aria-label="모델 구성">
+    <div className="grid gap-2 sm:grid-cols-3" role="group" aria-label="모델 구성">
       {PRESETS.map((p) => {
         const plan = planOf(toInstall(presetIds(p.id as Preset, list.models, track), list.models), list.models);
         const short = diskShort(plan, free);
         const done = plan.length === 0;
+        const main = p.id === "standard" && trackOf(track) === "std";
         return (
-          <div key={p.id} className="preset">
-            <button
-              type="button"
-              className={p.id === "standard" && trackOf(track) === "std" ? "primary-button" : "ghost-button"}
-              disabled={busy || done || !!short}
-              onClick={() => void startPreset(plan, list.models)}
-            >
+          <div key={p.id} className="flex flex-col items-start gap-2 rounded-lg border border-border bg-card p-3">
+            <Button variant={main ? "default" : "outline"} size="sm" disabled={busy || done || !!short} onClick={() => void startPreset(plan, list.models)}>
               {p.label}
-              <span className="preset-size tnum">{done ? "설치됨" : `약 ${fmtBytes(planSize(plan))}`}</span>
-            </button>
-            <p className="field-hint">{short ?? p.note}</p>
+              <span className={cn("text-[11px] font-normal tabular-nums", main ? "opacity-70" : "text-muted-foreground")}>{done ? "설치됨" : `약 ${fmtBytes(planSize(plan))}`}</span>
+            </Button>
+            <p className={cn("m-0 text-xs leading-relaxed", short ? WARN_TEXT : "text-muted-foreground")}>{short ?? p.note}</p>
           </div>
         );
       })}
@@ -134,31 +138,38 @@ export function DownloadPanel({ dl }: { dl: DownloadState }) {
   const idle = !dl.running && !dl.completed && !dl.stopped && !err && dl.warnings.length === 0;
   if (idle) return null;
   return (
-    <div className="download-panel" aria-live="polite">
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-4 py-3 text-xs" aria-live="polite">
       {dl.running && (
-        <>
-          <p className="download-line tnum">
-            <span>{progressLine(dl)}</span>
-            {frac !== null && <span>{Math.round(frac * 100)}%</span>}
-          </p>
-          <div className="job-track" role="progressbar" aria-label="모델 받기 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={frac === null ? undefined : Math.round(frac * 100)}>
-            <div className={`job-fill ${frac === null ? "is-indeterminate" : ""}`} style={{ transform: `scaleX(${frac ?? 1})` }} />
+        <div className="flex items-center gap-4">
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <p className="m-0 flex justify-between gap-3 text-[13px] tabular-nums">
+              <span className="min-w-0 truncate">{progressLine(dl)}</span>
+              {frac !== null && <span className="text-muted-foreground">{Math.round(frac * 100)}%</span>}
+            </p>
+            <div role="progressbar" aria-label="모델 받기 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={frac === null ? undefined : Math.round(frac * 100)}>
+              <Progress value={frac} />
+            </div>
+            {dl.file && <p className="m-0 truncate text-muted-foreground tabular-nums">{dl.file}</p>}
           </div>
-          {dl.file && <p className="field-hint tnum">{dl.file}</p>}
-          <button type="button" className="ghost-button" disabled={dl.cancelling} onClick={cancelDownload}>
+          <Button variant="outline" size="sm" disabled={dl.cancelling} onClick={cancelDownload}>
             멈추기
-          </button>
-        </>
+          </Button>
+        </div>
       )}
-      {!dl.running && dl.completed && <p className="download-ok">{DOWNLOAD_DONE}</p>}
-      {!dl.running && dl.stopped && <p className="field-hint">{DOWNLOAD_STOPPED}</p>}
+      {!dl.running && dl.completed && (
+        <p className={cn("m-0 flex items-center gap-1.5 text-[13px]", OK_TEXT)}>
+          <CheckCircle2 className="size-4" aria-hidden />
+          {DOWNLOAD_DONE}
+        </p>
+      )}
+      {!dl.running && dl.stopped && <p className="m-0 text-muted-foreground">{DOWNLOAD_STOPPED}</p>}
       {dl.warnings.map((w, i) => (
-        <p key={`${w.code}${i}`} className="record-warning" role="status">
+        <p key={`${w.code}${i}`} className={cn("m-0", WARN_TEXT)} role="status">
           {warningText(w)}
         </p>
       ))}
       {err && (
-        <div className="inline-error" role="alert">
+        <div className="text-destructive" role="alert">
           {err.text}
           <ErrorDetail detail={err.detail} />
         </div>
@@ -170,19 +181,21 @@ export function DownloadPanel({ dl }: { dl: DownloadState }) {
 /** 이름 아래 한 줄: 이 모델이 무엇인지 (옛 코어면 아무것도 보이지 않는다) */
 function ModelSubtitle({ m }: { m: ModelRow }) {
   const subtitle = modelSubtitle(m);
-  return subtitle ? <span className="models-subtitle">{subtitle}</span> : null;
+  return subtitle ? <span className="block text-xs text-subtle-foreground">{subtitle}</span> : null;
 }
 
 /** 접힌 자세히. 표 읽기 도우미가 행 머리글로 읽지 않도록 이름 칸이 아니라 행 아래 칸에 둔다 */
 function ModelDetails({ m, rows }: { m: ModelRow; rows: DetailRow[] }) {
   return (
-    <details className="models-more">
-      <summary aria-label={`${m.name} ${MODEL_DETAIL_LABEL}`}>{MODEL_DETAIL_LABEL}</summary>
-      <dl className="models-facts">
+    <details className="mt-2">
+      <summary aria-label={`${m.name} ${MODEL_DETAIL_LABEL}`} className="w-fit cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+        {MODEL_DETAIL_LABEL}
+      </summary>
+      <dl className="m-0 mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-md bg-secondary px-3 py-2 text-xs">
         {rows.map((r) => (
-          <div key={r.label} className="models-fact">
-            <dt>{r.label}</dt>
-            <dd title={r.title}>
+          <div key={r.label} className="contents">
+            <dt className="text-muted-foreground">{r.label}</dt>
+            <dd className="m-0 min-w-0 break-words" title={r.title}>
               {r.value}
               {r.title && <span className="sr-only">{` (${MODEL_FULL_REVISION_LABEL} ${r.title})`}</span>}
             </dd>
@@ -192,6 +205,8 @@ function ModelDetails({ m, rows }: { m: ModelRow; rows: DetailRow[] }) {
     </details>
   );
 }
+
+const STATE_TONE: Record<ModelRow["state"], string> = { installed: OK_BADGE, missing: "", partial: "bg-memo-wash text-memo", corrupt: "bg-rec-wash text-rec" };
 
 /** 스마트 검색에 쓰는 이 Mac의 모델 ID (코어 models_registry) */
 const EMBEDDING_ID = "embedding";
@@ -211,7 +226,7 @@ function useViaUpstage(): boolean {
 
 const needsHelperNote = (m: ModelRow, helperFound: boolean | undefined) => m.id === "fluid" && helperFound === false;
 
-export function ModelsView() {
+export function ModelsView({ onBack }: { onBack: () => void }) {
   const { list, error, load, dl, external } = useModelsList();
   const busy = dl.running || external;
   const caps = useCapabilities();
@@ -295,132 +310,144 @@ export function ModelsView() {
   const engine = list ? engineSummary(list.models) : null;
   const dialog = asking && removeDialog(asking);
   return (
-    <section className="settings models" aria-labelledby="models-title">
-      <p className="eyebrow">모델</p>
-      <h1 id="models-title">모델과 기능</h1>
-      <p className="field-hint models-lead">
-        음성 인식과 참석자 구분 같은 기능은 이 Mac에 받아 두는 모델 파일로 돕니다. 필수 모델만 있어도 녹음하고 텍스트로 바꾸고 요약할 수 있습니다. 나머지는 필요한 기능만 설치하세요. 없는 모델이 필요한 단추는 이유를 알려 주고 이 화면으로 안내합니다.
-      </p>
-      <p className="field-hint tnum models-where">
-        {list ? (
-          <>
-            모델 폴더 {list.models_dir} · 디스크 여유 {fmtBytes(list.disk_free_bytes)}
-            {sum && ` · 설치됨 ${sum.installed}/${sum.total}개 (${fmtBytes(sum.bytes)})`}
-          </>
-        ) : (
-          !error && "불러오는 중…"
+    <section className="h-full overflow-y-auto" aria-labelledby="models-title">
+      <PageHeader title="모델" onBack={onBack} />
+      <PageBody wide>
+        <div className="flex flex-col gap-1 px-1">
+          <h2 id="models-title" className="m-0 text-[13px] font-semibold">
+            모델과 기능
+          </h2>
+          <p className="m-0 max-w-[640px] text-xs leading-relaxed text-muted-foreground">
+            음성 인식과 참석자 구분 같은 기능은 이 Mac에 받아 두는 모델 파일로 돕니다. 필수 모델만 있어도 녹음하고 텍스트로 바꾸고 요약할 수 있습니다. 나머지는 필요한 기능만 설치하세요. 없는 모델이 필요한 단추는 이유를 알려 주고 이 화면으로 안내합니다.
+          </p>
+        </div>
+
+        {error && (
+          <div className="text-xs text-destructive" role="alert">
+            {error.text}
+            <ErrorDetail detail={error.detail} />
+          </div>
         )}
-      </p>
-      {list && (
-        <p className="models-folder">
-          <button type="button" className="ghost-button" disabled={busy || folderBusy} onClick={() => void chooseFolder()}>
-            위치 바꾸기…
-          </button>
-          {unused && (
-            <button type="button" className="ghost-button" disabled={busy || folderBusy} onClick={() => setFolderAsk({ kind: "prune" })}>
-              {pruneLabel(unused)}
-            </button>
+
+        <Section title="모델 폴더">
+          <Row
+            label={list ? <code className="block truncate font-mono text-xs" title={list.models_dir}>{list.models_dir}</code> : !error && <span className="text-muted-foreground">불러오는 중…</span>}
+            hint={
+              list && (
+                <span className="tabular-nums">
+                  디스크 여유 {fmtBytes(list.disk_free_bytes)}
+                  {sum && ` · 설치됨 ${sum.installed}/${sum.total}개 (${fmtBytes(sum.bytes)})`}
+                </span>
+              )
+            }
+            control={
+              list && (
+                <>
+                  {unused && (
+                    <Button variant="ghost" size="sm" disabled={busy || folderBusy} onClick={() => setFolderAsk({ kind: "prune" })}>
+                      {pruneLabel(unused)}
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" disabled={busy || folderBusy} onClick={() => void chooseFolder()}>
+                    <FolderOpen aria-hidden />
+                    위치 바꾸기…
+                  </Button>
+                </>
+              )
+            }
+          />
+          {engine && (
+            <p className={cn("m-0 flex items-center gap-2 px-4 py-2.5 text-[13px]", engine.ok ? "text-foreground" : WARN_TEXT)} role="status">
+              {engine.ok ? <CheckCircle2 className={cn("size-4 shrink-0", OK_TEXT)} aria-hidden /> : <AlertTriangle className="size-4 shrink-0" aria-hidden />}
+              {engine.text}
+            </p>
           )}
-        </p>
-      )}
-      {engine && (
-        <p className={`field-hint models-required${engine.ok ? " is-ok" : ""}`} role="status">
-          {engine.text}
-        </p>
-      )}
-      {error && (
-        <div className="inline-error" role="alert">
-          {error.text}
-          <ErrorDetail detail={error.detail} />
-        </div>
-      )}
-      {external && <p className="field-hint" role="status">{EXTERNAL_NOTICE}</p>}
-      {list && <PresetButtons list={list} dl={dl} />}
-      <DownloadPanel dl={dl} />
-      {msg && (
-        <div className={msg.error ? "inline-error" : "field-hint"} role={msg.error ? "alert" : "status"}>
-          {msg.text}
-          <ErrorDetail detail={msg.detail} />
-        </div>
-      )}
-      {list && (
-        <div className="models-scroll">
-          <table className="models-table">
-            <caption className="sr-only">모델 목록</caption>
-            <thead>
-              <tr>
-                <th scope="col">모델</th>
-                <th scope="col">크기</th>
-                <th scope="col">구분</th>
-                <th scope="col">상태</th>
-                <th scope="col">이 기능에 필요</th>
-                <th scope="col">
-                  <span className="sr-only">동작</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.models.map((m) => {
-                const detailRows = modelDetailRows(m);
-                const hasMore = detailRows.length > 0;
-                return (
-                <Fragment key={m.id}>
-                <tr className={hasMore ? "has-more" : undefined}>
-                  <th scope="row">
-                    <span className="models-name">{m.name}</span>
-                    <ModelSubtitle m={m} />
-                    <span className="models-purpose">{m.purpose}</span>
-                    {needsHelperNote(m, helperFound) && <span className="models-purpose">먼저 recorder/diar 폴더에서 swift build -c release로 tractus-diar를 만들어야 합니다.</span>}
-                  </th>
-                  <td className="tnum">{fmtBytes(m.size_bytes)}</td>
-                  <td>
-                    <span className={`badge level-${m.level}`}>{levelLabel(m)}</span>
-                  </td>
-                  <td>
-                    {m.id === EMBEDDING_ID && viaUpstage ? (
-                      <span className="model-state">{NOT_IN_USE}</span>
-                    ) : (
-                      <span className={`model-state is-${m.state}`}>{STATE_LABEL[m.state]}</span>
-                    )}
-                    {m.state === "partial" && m.installed_bytes > 0 && <span className="models-purpose tnum">{fmtBytes(m.installed_bytes)} 받음</span>}
-                  </td>
-                  <td>
-                    <ul className="chips" aria-label={`${m.name}이(가) 필요한 기능`}>
-                      {m.needed_by.length === 0 && <li className="models-purpose">—</li>}
-                      {m.needed_by.map((c) => (
-                        <li key={c} className="chip">
-                          {capChip(c)}
-                        </li>
-                      ))}
-                    </ul>
-                  </td>
-                  <td className="models-actions">
-                    {m.state !== "installed" && !(m.id === EMBEDDING_ID && viaUpstage) && (
-                      <button type="button" className="ghost-button" disabled={busy} onClick={() => (m.state === "corrupt" ? void reinstall(m) : install(m))}>
-                        {installLabel(m.state)}
-                      </button>
-                    )}
-                    {m.state !== "missing" && (
-                      <button type="button" className="text-button is-danger" disabled={busy || removing} onClick={() => setAsking(m)} aria-label={`${m.name} 삭제`}>
-                        삭제
-                      </button>
-                    )}
-                  </td>
-                </tr>
-                {hasMore && (
-                  <tr className="models-detail-row">
-                    <td colSpan={6}>
-                      <ModelDetails m={m} rows={detailRows} />
-                    </td>
-                  </tr>
-                )}
-                </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+        </Section>
+
+        {external && (
+          <p className="m-0 px-1 text-xs text-muted-foreground" role="status">
+            {EXTERNAL_NOTICE}
+          </p>
+        )}
+
+        {list && (
+          <section className="flex flex-col gap-2" aria-label="모델 구성">
+            <h2 className="m-0 px-1 text-[13px] font-semibold">모델 구성</h2>
+            <PresetButtons list={list} dl={dl} />
+            <DownloadPanel dl={dl} />
+          </section>
+        )}
+        {msg && (
+          <div className={cn("px-1 text-xs", msg.error ? "text-destructive" : "text-muted-foreground")} role={msg.error ? "alert" : "status"}>
+            {msg.text}
+            <ErrorDetail detail={msg.detail} />
+          </div>
+        )}
+
+        {list && (
+          <Section title="모델 목록">
+            {list.models.map((m) => {
+              const detailRows = modelDetailRows(m);
+              const unusedHere = m.id === EMBEDDING_ID && viaUpstage;
+              return (
+                <article key={m.id} className="px-4 py-3" aria-label={m.name}>
+                  <div className="flex items-start gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[13px] font-medium">{m.name}</span>
+                        <Badge variant="outline" className={cn(m.level === "required" && "border-border-strong text-foreground")}>
+                          {levelLabel(m)}
+                        </Badge>
+                      </div>
+                      <ModelSubtitle m={m} />
+                      <p className="m-0 mt-1 text-xs leading-relaxed text-muted-foreground">{m.purpose}</p>
+                      {needsHelperNote(m, helperFound) && <p className={cn("m-0 mt-1 text-xs leading-relaxed", WARN_TEXT)}>먼저 recorder/diar 폴더에서 swift build -c release로 tractus-diar를 만들어야 합니다.</p>}
+                      <ul className="m-0 mt-2 flex list-none flex-wrap gap-1 p-0" aria-label={`${m.name}이(가) 필요한 기능`}>
+                        {m.needed_by.length === 0 && <li className="text-xs text-subtle-foreground">—</li>}
+                        {m.needed_by.map((c) => (
+                          <li key={c}>
+                            <Badge>{capChip(c)}</Badge>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {m.state === "partial" && m.installed_bytes > 0 ? `${fmtBytes(m.installed_bytes)} 받음 / ` : ""}
+                          {fmtBytes(m.size_bytes)}
+                        </span>
+                        {unusedHere ? (
+                          <Badge>{NOT_IN_USE}</Badge>
+                        ) : (
+                          <Badge variant={m.state === "missing" ? "outline" : "default"} className={STATE_TONE[m.state]}>
+                            {STATE_LABEL[m.state]}
+                          </Badge>
+                        )}
+                      </div>
+                      {(m.state !== "installed" && !unusedHere) || m.state !== "missing" ? (
+                        <div className="flex items-center gap-1">
+                          {m.state !== "missing" && (
+                            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={busy || removing} onClick={() => setAsking(m)} aria-label={`${m.name} 삭제`}>
+                              삭제
+                            </Button>
+                          )}
+                          {m.state !== "installed" && !unusedHere && (
+                            <Button variant="outline" size="sm" disabled={busy} onClick={() => (m.state === "corrupt" ? void reinstall(m) : install(m))}>
+                              {installLabel(m.state)}
+                            </Button>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  {detailRows.length > 0 && <ModelDetails m={m} rows={detailRows} />}
+                </article>
+              );
+            })}
+          </Section>
+        )}
+      </PageBody>
       {folderAsk && folderDialog && (
         <ConfirmDialog title={folderDialog.title} body={folderDialog.body} cancelLabel={folderDialog.cancel} confirmLabel={folderDialog.confirm} busy={folderBusy} onCancel={() => setFolderAsk(null)} onConfirm={() => void runFolder(folderAsk)} />
       )}

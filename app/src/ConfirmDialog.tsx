@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import { Button } from "@/components/ui/button";
+import { DIALOG, DIALOG_BODY, DIALOG_FOOTER, DIALOG_TEXT, DIALOG_TITLE } from "@/components/ui/dialog";
 
 /**
  * 확인 대화상자. 브라우저 `<dialog>`의 모달(showModal)을 쓴다: 뒤 화면이 비활성이 되어 Tab이 안에서만 돌고, Esc는 취소다.
@@ -34,7 +36,7 @@ export function ConfirmDialog({
   return (
     <dialog
       ref={dialog}
-      className="confirm"
+      className={DIALOG}
       role="alertdialog"
       aria-labelledby="confirm-title"
       aria-describedby="confirm-body"
@@ -44,15 +46,17 @@ export function ConfirmDialog({
         if (!busy) onCancel();
       }}
     >
-      <h2 id="confirm-title">{title}</h2>
-      <p id="confirm-body">{body}</p>
-      <div className="confirm-actions">
-        <button ref={safe} className="ghost-button" disabled={busy} onClick={onCancel}>
+      <div className={DIALOG_BODY}>
+        <h2 id="confirm-title" className={DIALOG_TITLE}>{title}</h2>
+        <p id="confirm-body" className={DIALOG_TEXT}>{body}</p>
+      </div>
+      <div className={DIALOG_FOOTER}>
+        <Button ref={safe} variant="outline" disabled={busy} onClick={onCancel}>
           {cancelLabel}
-        </button>
-        <button className="danger-button" disabled={busy} onClick={onConfirm}>
+        </Button>
+        <Button variant="destructive" disabled={busy} onClick={onConfirm}>
           {confirmLabel}
-        </button>
+        </Button>
       </div>
     </dialog>
   );

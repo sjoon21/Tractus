@@ -8,6 +8,9 @@ import { CONVERT_ROW, isRecorded, keptTitle, RECORDED_BADGE, ROW_QUEUED, ROW_RUN
 import { startNoteDrag } from "./noteDrag";
 import { ItemMenu, Popover } from "./Popover";
 import { useOrganize } from "./useOrganize";
+import { Ellipsis, Star } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { NOTE_LINK, ROW_MORE } from "@/components/sidebar";
 
 const TAGS_SHOWN = 2;
 
@@ -31,42 +34,40 @@ export const NoteRow = memo(function NoteRow({
   const tags = m.tags ?? [];
   return (
     <li
-      className="note-row"
+      className="note-row group relative pb-px [contain-intrinsic-size:auto_48px] [content-visibility:auto]"
       onPointerDown={(e) => startNoteDrag(e, m.id, title)}
     >
-      <button className="meeting-link" aria-current={active} onClick={() => onOpen(m.id)}>
-        <span className="meeting-link-title">
+      <button className={NOTE_LINK} aria-current={active} onClick={() => onOpen(m.id)}>
+        <span className="flex items-center gap-1 truncate text-[13px] font-medium leading-5">
           {m.favorite && (
             <>
-              <span className="row-star" aria-hidden>
-                ★
-              </span>
+              <Star className="size-3 shrink-0 fill-memo text-memo" aria-hidden />
               <span className="sr-only">즐겨찾기 </span>
             </>
           )}
-          {title}
+          <span className="truncate">{title}</span>
         </span>
-        <span className="meeting-link-meta tnum">
+        <span className="flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground tabular-nums">
           {noteTime(m)}
-          {isMemo(m) ? <span className="badge">메모</span> : isRecorded(m) ? <span className="badge is-pending" title={keptTitle(m.tracks_bytes)}>{slot === "running" ? ROW_RUNNING : slot === "queued" ? ROW_QUEUED : RECORDED_BADGE}</span> : !m.has_summary && <span className="badge">요약 없음</span>}
+          {isMemo(m) ? <Badge>메모</Badge> : isRecorded(m) ? <Badge variant="memo" title={keptTitle(m.tracks_bytes)}>{slot === "running" ? ROW_RUNNING : slot === "queued" ? ROW_QUEUED : RECORDED_BADGE}</Badge> : !m.has_summary && <Badge>요약 없음</Badge>}
           {tags.slice(0, TAGS_SHOWN).map((t) => (
-            <span key={t} className="row-tag">
+            <span key={t} className="max-w-[6.5em] truncate before:text-subtle-foreground before:content-['#']">
               {t}
             </span>
           ))}
-          {tags.length > TAGS_SHOWN && <span className="row-tag">+{tags.length - TAGS_SHOWN}</span>}
+          {tags.length > TAGS_SHOWN && <span>+{tags.length - TAGS_SHOWN}</span>}
         </span>
       </button>
       <button
         type="button"
-        className="row-more"
+        className={ROW_MORE}
         aria-label={`${title} 노트 메뉴`}
         aria-haspopup="menu"
         aria-expanded={!!anchor}
         title="즐겨찾기·폴더·태그"
         onClick={(e) => setAnchor((a) => (a ? null : e.currentTarget))}
       >
-        …
+        <Ellipsis aria-hidden />
       </button>
       {anchor && <RowMenu anchor={anchor} m={m} onClose={() => setAnchor(null)} onOpen={onOpen} convert={isRecorded(m) && !slot ? onConvert : undefined} />}
     </li>

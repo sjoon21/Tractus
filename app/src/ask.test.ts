@@ -153,10 +153,10 @@ describe("전송 안내", () => {
   });
   test("공급자 없음·로컬 전용 모드는 경고", () => {
     expect(sendNotice({ provider: null, model: null, local_only: false })).toEqual({ text: "AI 서비스가 설정되지 않았습니다. 설정에서 API 키를 등록하세요", warn: true });
-    expect(sendNotice({ provider: "upstage", model: null, local_only: true })).toEqual({ text: "로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 외부 AI 서비스(Upstage)로 보내지 않습니다", warn: true });
+    expect(sendNotice({ provider: "upstage", model: null, local_only: true })).toEqual({ text: "로컬 전용 모드라 외부 AI 서비스(Upstage)로 보내지 않습니다", warn: true });
     expect(sendNotice({ provider: "mystery", model: null, local_only: false })).toEqual({ text: "알 수 없는 AI 서비스입니다: mystery", warn: true });
-    expect(sendNotice({ provider: "openai", model: null, local_only: false })).toEqual({ text: "사용할 OpenAI AI 모델을 지정하세요 (TRACTUS_LLM_MODEL)", warn: true });
-    expect(sendNotice({ provider: "claude", model: null, local_only: true })).toEqual({ text: "로컬 전용 모드(TRACTUS_LOCAL_ONLY)라 외부 AI 서비스(Claude)로 보내지 않습니다", warn: true });
+    expect(sendNotice({ provider: "openai", model: null, local_only: false })).toEqual({ text: "설정에서 OpenAI의 AI 모델을 지정하세요", warn: true });
+    expect(sendNotice({ provider: "claude", model: null, local_only: true })).toEqual({ text: "로컬 전용 모드라 외부 AI 서비스(Claude)로 보내지 않습니다", warn: true });
     // Gemini는 기본 AI 모델이 있다: 모델 이름을 비워 둬도 경고하지 않는다
     expect(sendNotice({ provider: "gemini", model: null, local_only: false })).toMatchObject({ warn: false, text: expect.stringContaining("Gemini(gemini-flash-latest)") });
   });

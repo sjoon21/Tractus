@@ -11,6 +11,12 @@ import { LlmServicePicker, useLlmServices } from "./LlmServicePicker";
 import { OpenSettings } from "./OpenSettings";
 import { flushMemos } from "./memo";
 import { NOTE_GONE } from "./remove";
+import { ArrowUp, ChevronRight, Square } from "lucide-react";
+import { CHIP } from "@/components/panel/chip";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { inputClass } from "@/components/ui/input";
+import { cn } from "@/components/ui/utils";
 
 /**
  * memoNote: 이 노트가 메모 노트인가. memoLines: 줄 ID → 본문의 줄 번호 (인용 칩 `n번째 줄`).
@@ -118,18 +124,16 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
   const notice = llm && sendNotice(llm);
 
   return (
-    <div className="ask">
+    <div className="flex flex-1 flex-col">
       {turns.length === 0 && (
-        <div className="ask-empty">
-          <p>
-            {meetingId
-              ? "이 노트 내용을 바탕으로 AI가 답변합니다. 답변 속 시각을 누르면 그 부분으로 이동합니다."
-              : "모든 노트 내용을 바탕으로 AI가 답변합니다. 시각을 누르면 그 노트의 해당 부분을 엽니다."}
-          </p>
-        </div>
+        <p className="m-0 mb-4 max-w-[34ch] text-[13px] leading-relaxed text-muted-foreground">
+          {meetingId
+            ? "이 노트 내용을 바탕으로 AI가 답변합니다. 답변 속 시각을 누르면 그 부분으로 이동합니다."
+            : "모든 노트 내용을 바탕으로 AI가 답변합니다. 시각을 누르면 그 노트의 해당 부분을 엽니다."}
+        </p>
       )}
-      {loadError && <p className="inline-error ask-note">{loadError}</p>}
-      <ol className="ask-log" aria-label="질문과 답변">
+      {loadError && <p className="m-0 mb-3 text-xs text-destructive">{loadError}</p>}
+      <ol className="m-0 flex flex-1 list-none flex-col gap-7 p-0" aria-label="질문과 답변">
         {turns.map((t) => (
           <TurnItem key={t.id} turn={t} scope={scope} onCite={onCite} notes={notes} memoIds={memoIds} />
         ))}
@@ -137,65 +141,70 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
       <div ref={end} aria-hidden />
 
       <form
-        className="ask-form"
+        // 바닥에 붙는 입력: 위로 흘러가는 답이 비치지 않게 놓인 곳의 바탕을 깐다 (노트 패널은 본문 바탕, 질문 서랍은 muted)
+        className={cn("sticky bottom-0 mt-4 flex flex-col gap-2 pt-2 pb-4", "bg-background")}
         onSubmit={(e) => {
           e.preventDefault();
           void send();
         }}
       >
         {!meetingId && (
-          <fieldset className="ask-range">
-            <legend>기간</legend>
-            <input type="date" aria-label="시작 날짜" value={range.from} max={range.to || undefined} onChange={(e) => setRange({ ...range, from: e.target.value })} />
+          <fieldset className="m-0 flex min-w-0 items-center gap-1.5 border-0 p-0 text-xs text-muted-foreground">
+            <legend className="float-left mr-1 p-0 font-medium">기간</legend>
+            <input type="date" className={DATE} aria-label="시작 날짜" value={range.from} max={range.to || undefined} onChange={(e) => setRange({ ...range, from: e.target.value })} />
             <span aria-hidden>–</span>
-            <input type="date" aria-label="끝 날짜" value={range.to} min={range.from || undefined} onChange={(e) => setRange({ ...range, to: e.target.value })} />
+            <input type="date" className={DATE} aria-label="끝 날짜" value={range.to} min={range.from || undefined} onChange={(e) => setRange({ ...range, to: e.target.value })} />
           </fieldset>
         )}
-        <textarea
-          ref={inputRef}
-          className="ask-input"
-          rows={2}
-          maxLength={2000}
-          value={draft}
-          placeholder={meetingId ? "예: 예산은 얼마로 정했나요?" : "예: 지난주 노트들에서 정한 출시일은?"}
-          aria-label={meetingId ? "이 노트에 대해 AI에게 질문" : "AI 어시스턴트에게 질문 (모든 노트 대상)"}
-          aria-description="Enter 보내기, Shift+Enter 줄바꿈"
-          onChange={(e) => setDraft(e.target.value)}
-          onCompositionStart={() => (composing.current = true)}
-          onCompositionEnd={() => (composing.current = false)}
-          onKeyDown={(e) => {
-            // 한글 조합 중 Enter는 조합만 끝낸다 (lib.isImeKey)
-            if (e.key !== "Enter" || e.shiftKey || isImeKey(e.nativeEvent, composing.current)) return;
-            e.preventDefault();
-            void send();
-          }}
-        />
-        <div className="ask-form-foot">
-          <LlmServicePicker services={services} disabled={!!running} />
-          <p className={`ask-notice ${notice?.warn ? "is-warn" : ""}`}>{notice?.text}</p>
-          {running ? (
-            <button type="button" className="ghost-button ask-send" onClick={cancel}>
-              멈추기
-            </button>
-          ) : (
-            <button type="submit" className="primary-button ask-send" disabled={!draft.trim()}>
-              보내기
-            </button>
-          )}
+        <div className="flex flex-col rounded-lg border border-input bg-background shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25">
+          <textarea
+            ref={inputRef}
+            className="max-h-[14em] min-h-[3.25rem] w-full resize-none border-0 bg-transparent px-3 pt-2.5 pb-1 text-[14px] leading-6 outline-none [field-sizing:content] placeholder:text-subtle-foreground"
+            rows={2}
+            maxLength={2000}
+            value={draft}
+            placeholder={meetingId ? "예: 예산은 얼마로 정했나요?" : "예: 지난주 노트들에서 정한 출시일은?"}
+            aria-label={meetingId ? "이 노트에 대해 AI에게 질문" : "AI 어시스턴트에게 질문"}
+            aria-description="Enter 보내기, Shift+Enter 줄바꿈"
+            onChange={(e) => setDraft(e.target.value)}
+            onCompositionStart={() => (composing.current = true)}
+            onCompositionEnd={() => (composing.current = false)}
+            onKeyDown={(e) => {
+              // 한글 조합 중 Enter는 조합만 끝낸다 (lib.isImeKey)
+              if (e.key !== "Enter" || e.shiftKey || isImeKey(e.nativeEvent, composing.current)) return;
+              e.preventDefault();
+              void send();
+            }}
+          />
+          <div className="flex items-center gap-2 px-2 pb-2">
+            <LlmServicePicker services={services} disabled={!!running} />
+            {running ? (
+              <Button variant="secondary" size="icon-sm" className="ml-auto rounded-full" aria-label="멈추기" title="멈추기" onClick={cancel}>
+                <Square className="size-3 fill-current" />
+              </Button>
+            ) : (
+              <Button type="submit" size="icon-sm" className="ml-auto rounded-full" aria-label="보내기" title="보내기 (Enter)" disabled={!draft.trim()}>
+                <ArrowUp />
+              </Button>
+            )}
+          </div>
         </div>
+        <p className={cn("m-0 text-xs leading-snug empty:hidden", notice?.warn ? "text-memo" : "text-subtle-foreground")}>{notice?.text}</p>
       </form>
     </div>
   );
 }
 
+const DATE = cn(inputClass, "h-7 w-auto px-1.5 text-xs");
+
 function TurnItem({ turn: { question, state: s }, scope, onCite, notes, memoIds }: { turn: Turn; scope: AskScope; onCite: OnCite; notes?: ReadonlySet<string> | null; memoIds?: ReadonlySet<string> }) {
   const ctx = { meetingId: scope.kind === "meeting" ? scope.id : undefined, citations: s.citations, sources: s.sources, starts: scope.kind === "meeting" ? scope.starts : undefined };
   const status = STATUS[s.phase];
   return (
-    <li className="ask-turn">
-      <p className="ask-q">{question}</p>
+    <li className="flex flex-col gap-2 animate-in fade-in-0 slide-in-from-bottom-1 duration-300">
+      <p className="m-0 ml-auto max-w-[88%] rounded-lg bg-foreground/[0.06] px-3 py-1.5 text-[14px] leading-6 whitespace-pre-wrap">{question}</p>
       {(s.answer || s.phase === "done") && (
-        <p className={`ask-a ${s.phase === "answer" ? "is-streaming" : ""}`}>
+        <p className={cn("m-0 text-[14px] leading-6 whitespace-pre-wrap", s.phase === "answer" && "after:ml-0.5 after:inline-block after:h-[1em] after:w-[0.45em] after:animate-pulse after:bg-rec after:align-[-0.14em] after:content-['']")}>
           {answerParts(s.answer).map((p, i) => {
             if (p.kind === "text") return <Fragment key={i}>{p.text}</Fragment>;
             const to = citeTarget(p, ctx);
@@ -215,13 +224,13 @@ function TurnItem({ turn: { question, state: s }, scope, onCite, notes, memoIds 
           })}
         </p>
       )}
-      <p className="ask-status" role="status">
+      <p className="m-0 flex items-center gap-2 text-xs text-subtle-foreground empty:hidden" role="status">
         {status && !(s.phase === "answer" && s.answer) ? status : null}
-        {s.phase === "done" && s.citations.length === 0 && <span className="badge">근거 대화 없음</span>}
+        {s.phase === "done" && s.citations.length === 0 && <Badge>근거 대화 없음</Badge>}
         {s.phase === "cancelled" && "멈췄습니다"}
       </p>
       {s.error && <AskError error={s.error} code={s.errorCode} />}
-      {s.warning && <p className="ask-note is-warn">{s.warning}</p>}
+      {s.warning && <p className="m-0 text-xs text-memo">{s.warning}</p>}
       {s.sources.length > 0 && <Sources sources={s.sources} scope={scope} onCite={onCite} notes={notes} memoIds={memoIds} />}
     </li>
   );
@@ -231,7 +240,7 @@ function TurnItem({ turn: { question, state: s }, scope, onCite, notes, memoIds 
 function AskError({ error, code }: { error: string; code: string | null }) {
   const e = llmErrorView("ask", error, code);
   return (
-    <div className="inline-error ask-note" role="alert">
+    <div className="text-xs leading-5 text-destructive" role="alert">
       {e.text}
       {e.settings && <OpenSettings />}
       <ErrorDetail detail={e.detail} />
@@ -245,7 +254,7 @@ const chipLabel = (t: number, o: { src?: AskSource | null; memo?: boolean; tagge
 /** gone: 삭제된 노트의 인용. 누를 수 없고 설명만 보인다 (오류 없이) */
 function CiteChip({ label, title, gone, onClick }: { label: string; title: string; gone?: boolean; onClick: () => void }) {
   return (
-    <button type="button" className={`time-chip cite-chip tnum ${gone ? "is-gone" : ""}`} title={gone ? NOTE_GONE : title} aria-disabled={gone || undefined} aria-label={gone ? `${label} (${NOTE_GONE})` : undefined} onClick={gone ? undefined : onClick}>
+    <button type="button" className={cn(CHIP, "mx-0.5 align-[0.1em]", gone && "cursor-default line-through opacity-60 hover:border-border-strong hover:bg-transparent hover:text-muted-foreground")} title={gone ? NOTE_GONE : title} aria-disabled={gone || undefined} aria-label={gone ? `${label} (${NOTE_GONE})` : undefined} onClick={gone ? undefined : onClick}>
       {label}
     </button>
   );
@@ -254,22 +263,23 @@ function CiteChip({ label, title, gone, onClick }: { label: string; title: strin
 function Sources({ sources, scope, onCite, notes, memoIds }: { sources: AskSource[]; scope: AskScope; onCite: OnCite; notes?: ReadonlySet<string> | null; memoIds?: ReadonlySet<string> }) {
   const global = scope.kind === "global";
   return (
-    <details className="ask-sources">
-      <summary>
-        참고한 대화 <span className="tnum">{sources.length}</span>
+    <details className="group text-xs">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 font-medium text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" aria-hidden />
+        참고한 대화 <span className="text-subtle-foreground tabular-nums">{sources.length}</span>
       </summary>
-      <ol>
+      <ol className="m-0 mt-2 ml-1.5 flex list-none flex-col gap-2 border-l border-border-strong p-0 pl-3">
         {sources.map((s) => (
-          <li key={`${s.meeting_id}#${s.segment_id}`}>
+          <li key={`${s.meeting_id}#${s.segment_id}`} className="flex items-baseline gap-2 leading-5 text-muted-foreground">
             <CiteChip
               label={chipLabel(s.start, { src: global ? s : undefined, memo: isMemoCite(s, inMemoNote(scope, memoIds, s.meeting_id, s.line)), tagged: isTaggedMemo(s), line: (scope.kind === "meeting" ? scope.memoLines?.get(s.segment_id) : undefined) ?? s.line })}
               title={isMemoCite(s, inMemoNote(scope, memoIds, s.meeting_id, s.line)) ? `${s.title} · 메모의 줄` : `${s.title} · ${fmtTime(s.start)}`}
               gone={global && isNoteGone(notes, s.meeting_id)}
               onClick={() => onCite(s.meeting_id, s.segment_id, s.start)}
             />
-            <span>
-              {global && <span className="ask-src-title">{s.title}</span>}
-              {s.speaker && <span className="ask-src-speaker">{s.speaker}</span>}
+            <span className="min-w-0">
+              {global && <span className="mr-1.5 font-medium text-foreground">{s.title}</span>}
+              {s.speaker && <span className="mr-1.5 font-medium text-foreground">{s.speaker}</span>}
               {s.text}
             </span>
           </li>

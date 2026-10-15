@@ -39,7 +39,7 @@ describe("sidebar library", () => {
     expect(html).toContain("전체 노트");
     expect(html).toContain("2002"); // 전체 노트 수
     expect(html).toContain('aria-pressed="false"');
-    expect(html.match(/class="note-row"/g)?.length).toBe(2002 + 1); // 목록 + 즐겨찾기 한 줄
+    expect(html.match(/class="note-row[ "]/g)?.length).toBe(2002 + 1); // 목록 + 즐겨찾기 한 줄
     expect(ms).toBeLessThan(2000);
   });
   test("shows the filter summary and the empty message", () => {

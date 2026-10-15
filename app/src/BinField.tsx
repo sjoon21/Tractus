@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { pickPath } from "./pathFix";
 import { AUTO_BADGE, BIN_LABEL, binView, BROWSE, CHECKING, CUSTOM_BADGE, FULL_PATH_HINT, PICK_CUSTOM, REVERT_AUTO, type BinKind } from "./paths";
 import type { DoctorReport } from "./caps";
@@ -10,39 +13,46 @@ export function BinField({ kind, value, onChange, report }: { kind: BinKind; val
   const view = binView(report, kind);
   const label = `${BIN_LABEL[kind]} ${custom ? CUSTOM_BADGE : AUTO_BADGE}`;
   return (
-    <div className="field bin-field" role="group" aria-label={label}>
-      <span className="field-label">
-        {BIN_LABEL[kind]} <span className="badge">{custom ? CUSTOM_BADGE : AUTO_BADGE}</span>
-      </span>
+    <div className="px-4 py-3" role="group" aria-label={label}>
+      <div className="flex items-center justify-between gap-4">
+        <span className="flex min-w-0 items-center gap-1.5 text-[13px]">
+          {BIN_LABEL[kind]} <Badge variant={custom ? "memo" : "default"}>{custom ? CUSTOM_BADGE : AUTO_BADGE}</Badge>
+        </span>
+        <span className="flex shrink-0 items-center gap-1">
+          {custom ? (
+            <>
+              <Button variant="outline" size="sm" onClick={() => void pickPath(false).then((p) => p && onChange(p))}>
+                {BROWSE}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setEditing(false);
+                  onChange("");
+                }}
+              >
+                {REVERT_AUTO}
+              </Button>
+            </>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+              {PICK_CUSTOM}
+            </Button>
+          )}
+        </span>
+      </div>
       {custom ? (
         <>
-          <input aria-label={BIN_LABEL[kind]} value={value} onChange={(e) => onChange(e.target.value)} spellCheck={false} />
-          <span className="bin-actions">
-            <button type="button" className="ghost-button" onClick={() => void pickPath(false).then((p) => p && onChange(p))}>
-              {BROWSE}
-            </button>
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => {
-                setEditing(false);
-                onChange("");
-              }}
-            >
-              {REVERT_AUTO}
-            </button>
-          </span>
-          <span className="field-hint">{FULL_PATH_HINT}</span>
+          <Input aria-label={BIN_LABEL[kind]} className="mt-2 font-mono text-xs" value={value} onChange={(e) => onChange(e.target.value)} spellCheck={false} />
+          <p className="m-0 mt-1 text-xs text-muted-foreground">{FULL_PATH_HINT}</p>
         </>
       ) : (
         <>
-          <code className="bin-path">{view?.path ?? CHECKING}</code>
-          <span className="bin-actions">
-            <button type="button" className="text-button" onClick={() => setEditing(true)}>
-              {PICK_CUSTOM}
-            </button>
-          </span>
-          {view && <span className="field-hint">{view.note}</span>}
+          <code className="mt-2 block truncate rounded-md bg-secondary px-2.5 py-1.5 font-mono text-xs text-muted-foreground" title={view?.path}>
+            {view?.path ?? CHECKING}
+          </code>
+          {view && <p className="m-0 mt-1 text-xs text-muted-foreground">{view.note}</p>}
         </>
       )}
     </div>

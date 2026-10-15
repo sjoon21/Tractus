@@ -4,6 +4,12 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { isImeKey } from "./lib";
 import { checkCustom, customSpec, MAX_NAME, promptCounter, type SummarySpec } from "./summaries";
+import { Button } from "@/components/ui/button";
+import { DIALOG, DIALOG_BODY, DIALOG_FOOTER, DIALOG_TEXT, DIALOG_TITLE } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { checkClass } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/components/ui/utils";
 
 export const EXAMPLE_PROMPT = "예: 고객이 말한 불만을 유형별로 모아서, 유형마다 어떤 대화에서 나왔는지 정리해 줘";
 
@@ -39,7 +45,7 @@ export function CustomSummaryDialog({ onCancel, onSubmit }: { onCancel: () => vo
   return (
     <dialog
       ref={dialog}
-      className="confirm summary-dialog"
+      className={cn(DIALOG, "w-[min(540px,calc(100vw-32px))]")}
       aria-labelledby="custom-summary-title"
       aria-describedby={ids.hint}
       onCancel={(e) => {
@@ -47,62 +53,73 @@ export function CustomSummaryDialog({ onCancel, onSubmit }: { onCancel: () => vo
         if (!composing) onCancel();
       }}
     >
-      <h2 id="custom-summary-title">직접 프롬프트로 요약</h2>
-      <p id={ids.hint}>원하는 요약 방법을 적으면 AI가 그대로 정리합니다. 항목마다 근거가 된 대화가 함께 표시됩니다.</p>
-      <label className="field-label" htmlFor={ids.prompt}>
-        요약 방법
-      </label>
-      <textarea
-        id={ids.prompt}
-        className="summary-prompt"
-        rows={7}
-        value={prompt}
-        placeholder={EXAMPLE_PROMPT}
-        spellCheck={false}
-        autoFocus
-        aria-invalid={tried && !!check.prompt}
-        aria-describedby={tried && check.prompt ? ids.promptErr : undefined}
-        onChange={(e) => setPrompt(e.target.value)}
-        onKeyDown={(e) => enter(e, true)}
-        {...imeProps}
-      />
-      <div className="summary-prompt-foot">
-        <span id={ids.promptErr} className="inline-error" role="alert">
-          {tried || prompt.trim().length > 0 ? check.prompt : null}
-        </span>
-        <span className={`tnum field-hint ${check.prompt && prompt.trim() ? "is-over" : ""}`}>{promptCounter(prompt)}</span>
-      </div>
-      <label className="check">
-        <input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} />
-        <span>템플릿으로 저장 — 다음에도 이 요약 유형으로 고를 수 있습니다</span>
-      </label>
-      {save && (
-        <div className="field">
-          <label className="field-label" htmlFor={ids.name}>
-            이름 ({MAX_NAME}자까지)
+      <div className={cn(DIALOG_BODY, "gap-3")}>
+        <div className="flex flex-col gap-1">
+          <h2 id="custom-summary-title" className={DIALOG_TITLE}>
+            직접 프롬프트로 요약
+          </h2>
+          <p id={ids.hint} className={DIALOG_TEXT}>
+            원하는 요약 방법을 적으면 AI가 그대로 정리합니다. 항목마다 근거가 된 대화가 함께 표시됩니다.
+          </p>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[13px] font-medium" htmlFor={ids.prompt}>
+            요약 방법
           </label>
-          <input
-            id={ids.name}
-            value={name}
+          <Textarea
+            id={ids.prompt}
+            className="min-h-36 resize-y aria-invalid:border-destructive aria-invalid:ring-destructive/20"
+            rows={7}
+            value={prompt}
+            placeholder={EXAMPLE_PROMPT}
             spellCheck={false}
-            aria-invalid={tried && !!check.name}
-            aria-describedby={tried && check.name ? ids.nameErr : undefined}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => enter(e, false)}
+            autoFocus
+            aria-invalid={tried && !!check.prompt}
+            aria-describedby={tried && check.prompt ? ids.promptErr : undefined}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => enter(e, true)}
             {...imeProps}
           />
-          <span id={ids.nameErr} className="inline-error" role="alert">
-            {tried ? check.name : null}
-          </span>
+          <div className="flex min-h-4 justify-between gap-3 text-xs">
+            <span id={ids.promptErr} className="text-destructive" role="alert">
+              {tried || prompt.trim().length > 0 ? check.prompt : null}
+            </span>
+            <span className={cn("shrink-0 tabular-nums", check.prompt && prompt.trim() ? "text-destructive" : "text-subtle-foreground")}>{promptCounter(prompt)}</span>
+          </div>
         </div>
-      )}
-      <div className="confirm-actions">
-        <button type="button" className="ghost-button" onClick={onCancel}>
+        <label className="flex cursor-pointer items-start gap-2 text-[13px]">
+          <input type="checkbox" className={cn(checkClass, "mt-0.5")} checked={save} onChange={(e) => setSave(e.target.checked)} />
+          <span>템플릿으로 저장 — 다음에도 이 요약 유형으로 고를 수 있습니다</span>
+        </label>
+        {save && (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[13px] font-medium" htmlFor={ids.name}>
+              이름 ({MAX_NAME}자까지)
+            </label>
+            <Input
+              id={ids.name}
+              className="max-w-sm aria-invalid:border-destructive aria-invalid:ring-destructive/20"
+              value={name}
+              spellCheck={false}
+              aria-invalid={tried && !!check.name}
+              aria-describedby={tried && check.name ? ids.nameErr : undefined}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => enter(e, false)}
+              {...imeProps}
+            />
+            <span id={ids.nameErr} className="min-h-4 text-xs text-destructive" role="alert">
+              {tried ? check.name : null}
+            </span>
+          </div>
+        )}
+      </div>
+      <div className={DIALOG_FOOTER}>
+        <Button variant="outline" onClick={onCancel}>
           취소
-        </button>
-        <button type="button" className="primary-button" aria-disabled={!check.ok} onClick={submit}>
+        </Button>
+        <Button aria-disabled={!check.ok} title="⌘Enter" onClick={submit}>
           요약 만들기
-        </button>
+        </Button>
       </div>
     </dialog>
   );

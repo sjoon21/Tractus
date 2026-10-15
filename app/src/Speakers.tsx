@@ -5,6 +5,7 @@ import { FIX_MODELS, OK, type Decision } from "./caps";
 import { GateHint } from "./GatedButton";
 import { fmtTime, renameRequest, SPEAKER_INKS, suggestionText, VOICE_MODEL_MISSING, voiceModelReady, type Segment, type SpeakerStat } from "./lib";
 import { useCapabilities } from "./useCapabilities";
+import { Button } from "@/components/ui/button";
 
 /** 목소리 인식 파일을 쓸 수 있는지 한 번 물어 두고 잠시 기억한다 (코어를 띄우는 일이라 이름 바꾸기를 열 때마다 묻지 않는다). 읽지 못하면 쓸 수 있다고 본다 */
 const VOICE_MODEL_TTL_MS = 30_000;
@@ -42,7 +43,7 @@ function useVoicesGate(): Decision {
 /** 화자 색 (SpeakerStat.slot). 화자 미상이면 무채색. 슬롯 8..15는 같은 잉크에 속 빈 점(--spk-fill)·빗금 막대(--spk-bar).
  *  세 변수를 늘 함께 정한다: 중첩된 요소가 바깥 화자의 표시를 물려받지 않게 */
 export const spkStyle = (slot: number | undefined) => {
-  const ink = slot === undefined || slot < 0 ? "var(--ink-3)" : `var(--spk-${slot % SPEAKER_INKS})`;
+  const ink = slot === undefined || slot < 0 ? "var(--subtle-foreground)" : `var(--spk-${slot % SPEAKER_INKS})`;
   const second = slot !== undefined && slot >= SPEAKER_INKS;
   return {
     "--spk": ink,
@@ -212,13 +213,13 @@ export function SpeakersBar({
   return (
     <section className="speakers" aria-labelledby="speakers-title">
       <div className="speakers-head">
-        <h2 className="eyebrow" id="speakers-title">
-          참석자 {stats.length}명 <span>(자동 감지)</span>
+        <h2 id="speakers-title">
+          참석자 {stats.length}명 <span className="text-subtle-foreground">(자동 감지)</span>
         </h2>
         {only && (
-          <button className="text-button" onClick={() => onFilter(null)}>
+          <Button variant="ghost" size="sm" className="h-6" onClick={() => onFilter(null)}>
             전체 보기
-          </button>
+          </Button>
         )}
       </div>
 
@@ -307,12 +308,12 @@ export function SpeakersBar({
             {into.display}(으)로 옮겨집니다.
             {!into.named && from.named && ` 이름 ‘${from.display}’도 함께 옮깁니다.`} 되돌리려면 대화마다 참석자를 다시 골라야 합니다.
           </p>
-          <button className="primary-button" onClick={onMerge} disabled={busy} autoFocus>
+          <Button size="sm" onClick={onMerge} disabled={busy} autoFocus>
             동일 인물로 합치기
-          </button>
-          <button className="text-button" onClick={onCancelMerge}>
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onCancelMerge}>
             취소
-          </button>
+          </Button>
         </div>
       )}
     </section>

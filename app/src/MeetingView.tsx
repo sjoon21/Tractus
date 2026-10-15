@@ -67,6 +67,12 @@ import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments
 import { RAIL_LABEL, railKey, railLabel, railTabs, validTab, type RailTab } from "./rail";
 import { PanelToggle, usePanels } from "./PanelToggle";
 import { releaseVoiceBoost, resumeVoiceBoost, setVoiceBoost, voiceBoostSupported } from "./voice";
+import { AudioLines, FastForward, LocateFixed, Mic, Pause, Play, TextSearch, Trash2, Upload } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { selectClass } from "@/components/ui/select";
+import { cn } from "@/components/ui/utils";
+import { CHIP } from "@/components/panel/chip";
 
 const RATE_KEY = "tractus.playbackRate";
 const readRate = () => {
@@ -630,12 +636,12 @@ export function MeetingView({
 
   if (error)
     return (
-      <div className="page-error">
+      <div className="page-error m-auto max-w-md p-8 text-center text-[13px] text-destructive">
         <p>{error.text}</p>
         <ErrorDetail detail={error.detail} />
       </div>
     );
-  if (!detail) return <p className="page-loading">불러오는 중…</p>;
+  if (!detail) return <p className="page-loading m-0 grid h-full place-items-center text-[13px] text-muted-foreground">불러오는 중…</p>;
 
   const { info } = detail;
   const recorded = isRecorded(info);
@@ -661,8 +667,68 @@ export function MeetingView({
   const noteBody = detail.note_memo?.body ?? "";
 
   return (
-    <div className={`meeting${railCollapsed ? " is-rail-collapsed" : ""}`}>
-      <article className="transcript-col" onWheel={() => playing && setFollow(false)} onScroll={() => menu && setMenu(null)}>
+    <div className={cn("meeting grid h-full max-[1180px]:block max-[1180px]:overflow-y-auto", railCollapsed ? "is-rail-collapsed grid-cols-[minmax(0,1fr)_52px]" : "grid-cols-[minmax(0,1fr)_var(--rail)]")}>
+      <article className="transcript-col relative flex min-h-0 flex-col overflow-y-auto max-[1180px]:overflow-visible" onWheel={() => playing && setFollow(false)} onScroll={() => menu && setMenu(null)}>
+        <div data-tauri-drag-region className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-2 bg-background/90 pr-3 pl-6 backdrop-blur-md">
+          <p className="m-0 flex min-w-0 items-center gap-2 truncate text-xs text-muted-foreground tabular-nums" data-tauri-drag-region>
+            {created?.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" })}
+            {created && " · "}
+            {created?.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+            {recorded && <Badge variant="memo">{RECORDED_BADGE}</Badge>}
+          </p>
+          <div className="ml-auto flex shrink-0 items-center gap-0.5">
+            {!memoNote && segments.length > 0 && !hasWords && detail.audio_path && (
+              <GatedButton
+                gate={alignGate}
+                className={buttonVariants({ variant: "ghost", size: "sm" })}
+                disabled={align.job.running}
+                onClick={align.startAlign}
+                title="음성과 대화 내용을 단어 단위로 맞춥니다. 재생 중인 단어가 강조되고, 단어를 누르면 그 단어부터 재생합니다"
+              >
+                <AudioLines aria-hidden />
+                {align.job.running
+                  ? `${STAGE_LABEL[align.job.stage ?? ""] ?? "시작하는 중…"}${align.job.total ? ` ${Math.round((align.job.done / align.job.total) * 100)}%` : ""}`
+                  : "단어 싱크 맞추기"}
+              </GatedButton>
+            )}
+            {memoNote && attach && (
+              <>
+                <Button variant="ghost" size="sm" disabled={!!attach.blocked} title={attach.blocked ?? ADD_TITLE} onClick={() => attach.onRecord({ id, title: info.title })}>
+                  <Mic aria-hidden />
+                  {ADD_RECORDING}
+                </Button>
+                <GatedButton gate={attach.convert ?? OK} className={buttonVariants({ variant: "ghost", size: "sm" })} disabled={!!attach.blocked} title={attach.blocked ?? ADD_FILE_TITLE} onClick={() => attach.onFile({ id, title: info.title })}>
+                  <Upload aria-hidden />
+                  {ADD_FILE}
+                </GatedButton>
+              </>
+            )}
+            {!memoNote && !recorded && (
+              <Button variant="ghost" size="icon-sm" aria-label="찾아 바꾸기" title="찾아 바꾸기 (⌘F)" onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
+                <TextSearch aria-hidden />
+              </Button>
+            )}
+            <ExportMenu
+              formats={exportFormatsFor(memoNote, recorded)}
+              onPick={(f) => void exportAs(f)}
+              onPrint={() => {
+                // 메모는 쓰던 글까지 인쇄한다
+                void flushMemos().then((ok) => ok && setPrintNonce((n) => n + 1));
+              }}
+            />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              aria-label="삭제"
+              disabled={align.job.running || summaryRunning || !!attach?.lock || !!convertBlock}
+              title={convertBlock ?? (align.job.running || summaryRunning || attach?.lock ? "작업이 끝난 뒤에 삭제할 수 있습니다" : "노트를 휴지통으로 옮깁니다")}
+              onClick={() => onDelete({ kind: "note", id, title: info.title, dir: info.dir, memo: memoNote, withMemo: !memoNote && memoLines.size > 0 })}
+            >
+              <Trash2 aria-hidden />
+            </Button>
+          </div>
+        </div>
         {find && (
           <FindBar
             state={find}
@@ -676,96 +742,40 @@ export function MeetingView({
             inputRef={findInput}
           />
         )}
-        <header className="meeting-head">
-          <div className="meeting-head-top">
-            <p className="eyebrow tnum">
-              {created?.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}
-              {created && " · "}
-              {created?.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
-              {recorded && (
-                <>
-                  {" "}
-                  <span className="badge is-pending">{RECORDED_BADGE}</span>
-                </>
-              )}
-            </p>
-            <div className="head-actions">
-              {!memoNote && segments.length > 0 && !hasWords && detail.audio_path && (
-                <GatedButton
-                  gate={alignGate}
-                  className="ghost-button head-button"
-                  disabled={align.job.running}
-                  onClick={align.startAlign}
-                  title="음성과 대화 내용을 단어 단위로 맞춥니다. 재생 중인 단어가 강조되고, 단어를 누르면 그 단어부터 재생합니다"
-                >
-                  {align.job.running
-                    ? `${STAGE_LABEL[align.job.stage ?? ""] ?? "시작하는 중…"}${align.job.total ? ` ${Math.round((align.job.done / align.job.total) * 100)}%` : ""}`
-                    : "단어 싱크 맞추기"}
-                </GatedButton>
-              )}
-              {!memoNote && !recorded && (
-                <button className="ghost-button head-button" onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
-                  찾아 바꾸기
-                </button>
-              )}
-              {memoNote && attach && (
-                <>
-                  <button className="ghost-button head-button" disabled={!!attach.blocked} title={attach.blocked ?? ADD_TITLE} onClick={() => attach.onRecord({ id, title: info.title })}>
-                    {ADD_RECORDING}
-                  </button>
-                  <GatedButton gate={attach.convert ?? OK} className="ghost-button head-button" disabled={!!attach.blocked} title={attach.blocked ?? ADD_FILE_TITLE} onClick={() => attach.onFile({ id, title: info.title })}>
-                    {ADD_FILE}
-                  </GatedButton>
-                </>
-              )}
-              <ExportMenu
-                formats={exportFormatsFor(memoNote, recorded)}
-                onPick={(f) => void exportAs(f)}
-                onPrint={() => {
-                  // 메모는 쓰던 글까지 인쇄한다
-                  void flushMemos().then((ok) => ok && setPrintNonce((n) => n + 1));
-                }}
-              />
-              <button
-                className="ghost-button head-button is-danger"
-                disabled={align.job.running || summaryRunning || !!attach?.lock || !!convertBlock}
-                title={convertBlock ?? (align.job.running || summaryRunning || attach?.lock ? "작업이 끝난 뒤에 삭제할 수 있습니다" : "노트를 휴지통으로 옮깁니다")}
-                onClick={() => onDelete({ kind: "note", id, title: info.title, dir: info.dir, memo: memoNote, withMemo: !memoNote && memoLines.size > 0 })}
-              >
-                삭제
-              </button>
-            </div>
-          </div>
+        <div className={cn("mx-auto flex w-full max-w-[860px] flex-1 flex-col px-6", memoNote ? "pb-10" : "")}>
+        <header className={cn("meeting-head pt-4 pb-5", !memoNote && "mb-2 border-b border-border", !memoNote && "pl-[var(--time-col)]")}>
           <TitleEditor title={info.title} onSave={renameNote} onReject={(error) => notify({ text: error, error: true })} />
-          <NoteOrganizer id={id} />
-          {memoNote ? (
-            <p className="meeting-stats tnum">
-              메모 · 줄 {info.segments}개 · {(detail.body ?? "").length.toLocaleString("ko-KR")}자
-            </p>
-          ) : recorded ? (
-            <p className="meeting-stats tnum">{recordedStats(info.duration_sec, detail.memos.length)}</p>
-          ) : (
-            <p className="meeting-stats tnum">
-              {fmtTime(info.duration_sec)} · 대화 {info.segments}개{detail.memos.length > 0 && ` · 녹음 중 메모 ${detail.memos.length}개`}
-              <span className="edit-hint"> · 대화를 두 번 누르거나 Enter를 눌러 내용을 수정합니다</span>
-            </p>
-          )}
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+            {memoNote ? (
+              <p className="meeting-stats m-0 text-xs text-muted-foreground tabular-nums">
+                메모 · 줄 {info.segments}개 · {(detail.body ?? "").length.toLocaleString("ko-KR")}자
+              </p>
+            ) : recorded ? (
+              <p className="meeting-stats m-0 text-xs text-muted-foreground tabular-nums">{recordedStats(info.duration_sec, detail.memos.length)}</p>
+            ) : (
+              <p className="meeting-stats m-0 text-xs text-muted-foreground tabular-nums" title="대화를 두 번 누르거나 Enter를 눌러 내용을 수정합니다">
+                {fmtTime(info.duration_sec)} · 대화 {info.segments}개{detail.memos.length > 0 && ` · 녹음 중 메모 ${detail.memos.length}개`}
+              </p>
+            )}
+            <NoteOrganizer id={id} />
+          </div>
           {!memoNote && !diarized && !diarizeGate.ok && speakerHintVisible({ diarize: diarizeGate, isRecording: true, segments: segments.length, speakers: stats.length, dismissed: hintGone }) && (
-            <p className="speaker-hint" role="status">
-              <span>{SPEAKER_HINT}</span>
-              <button type="button" className="text-button" onClick={() => caps.fixAction(diarizeGate.fix)}>
+            <p className="speaker-hint mt-4 mb-0 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground" role="status">
+              <span className="mr-auto">{SPEAKER_HINT}</span>
+              <Button variant="outline" size="sm" className="h-6" onClick={() => caps.fixAction(diarizeGate.fix)}>
                 {diarizeGate.fix.label}
-              </button>
-              <button
-                type="button"
-                className="text-button"
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6"
                 onClick={() => {
                   dismiss(speakerHintKey(id));
                   setHintGone(true);
                 }}
               >
                 {SPEAKER_HINT_DISMISS}
-              </button>
+              </Button>
             </p>
           )}
           {!memoNote && diarized && (
@@ -800,9 +810,9 @@ export function MeetingView({
         )}
         {!memoNote && recorded && convert && <ConvertPanel id={id} job={convertJob} controls={convert} kept={keptNotice(info.tracks_bytes, info.created_at, Date.now())} />}
         {!memoNote && !recorded && segments.length === 0 && (
-          <div className="transcript-empty" role="status">
-            <p className="eyebrow">인식된 대화가 없습니다</p>
-            <p>이 녹음에서 말소리를 찾지 못했습니다. 아래 플레이어로 녹음된 소리를 확인해 보세요. 마이크가 멀었거나 녹음이 너무 짧았을 수 있습니다.</p>
+          <div className="transcript-empty mx-auto my-16 max-w-sm text-center" role="status">
+            <p className="m-0 text-[13px] font-semibold">인식된 대화가 없습니다</p>
+            <p className="mt-1.5 mb-0 text-xs leading-relaxed text-muted-foreground">이 녹음에서 말소리를 찾지 못했습니다. 아래 플레이어로 녹음된 소리를 확인해 보세요. 마이크가 멀었거나 녹음이 너무 짧았을 수 있습니다.</p>
           </div>
         )}
         {!memoNote && <ol className={`transcript ${diarized ? "has-speakers" : ""}`} ref={list}>
@@ -829,8 +839,9 @@ export function MeetingView({
             ),
           )}
         </ol>}
+        </div>
 
-        {!memoNote && <div className="player" role="group" aria-label="오디오 플레이어">
+        {!memoNote && <div className="player sticky bottom-0 z-10 mt-auto flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-background/90 px-6 py-2.5 backdrop-blur-md" role="group" aria-label="오디오 플레이어">
           {detail.audio_path ? (
             <audio
               ref={audio}
@@ -855,15 +866,15 @@ export function MeetingView({
             />
           ) : null}
           <button
-            className="play-button"
+            className="play-button grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground shadow-xs outline-none transition-transform hover:scale-105 focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:opacity-40 disabled:hover:scale-100 [&_svg]:size-3.5 [&_svg]:fill-current"
             onClick={() => (audio.current?.paused ? void audio.current.play().catch(() => {}) : audio.current?.pause())}
             disabled={!detail.audio_path || !!audioError}
             aria-label={playing ? "일시정지" : "재생"}
           >
-            {playing ? <PauseIcon /> : <PlayIcon />}
+            {playing ? <Pause aria-hidden /> : <Play aria-hidden className="translate-x-px" />}
           </button>
-          <time className="tnum player-time">
-            {fmtTime(t)} <span>/ {fmtTime(duration)}</span>
+          <time className="shrink-0 text-xs font-medium tabular-nums">
+            {fmtTime(t)} <span className="font-normal text-subtle-foreground">/ {fmtTime(duration)}</span>
           </time>
           <div className="scrub" hidden={!detail.audio_path}>
             <input
@@ -881,42 +892,45 @@ export function MeetingView({
             ))}
           </div>
           {detail.audio_path && (
-            <>
+            <div className="flex shrink-0 items-center gap-0.5">
               <button
-                className="toggle-button"
+                className={TOGGLE}
                 aria-pressed={skip}
                 onClick={() => setSkip((v) => !v)}
                 title={filter ? "이 참석자의 말만 듣습니다 (다른 참석자의 말과 1초 넘는 침묵을 건너뜀)" : "침묵 구간 건너뛰기: 말 사이 1초 넘는 침묵을 건너뜁니다. 참석자를 고르면 그 참석자만 듣습니다"}
                 aria-label={filter ? "이 참석자만 듣기" : "침묵 구간 건너뛰기"}
               >
+                <FastForward aria-hidden />
                 {filter ? "이 참석자만 듣기" : "침묵 건너뛰기"}
-                {skip && saved >= 1 && <span className="tnum toggle-meta">−{fmtTime(saved)}</span>}
+                {skip && saved >= 1 && <span className="font-normal tabular-nums opacity-70">−{fmtTime(saved)}</span>}
               </button>
               <button
-                className="toggle-button"
+                className={TOGGLE}
                 aria-pressed={voice}
                 aria-disabled={!!voiceError}
                 onClick={toggleVoice}
                 title={voiceError ?? "말소리를 또렷하게 하고 낮은 웅웅거림을 줄입니다. 큰 소리와 작은 소리의 차이도 줄입니다"}
               >
+                <AudioLines aria-hidden />
                 목소리 선명하게
               </button>
-              <select className="rate-select tnum" value={rate} onChange={(e) => setRate(Number(e.target.value))} aria-label="재생 속도 (Shift+, 느리게 · Shift+. 빠르게)" title="재생 속도 (Shift+, / Shift+.)">
+              <select className={cn(selectClass, "h-7 w-[4.25rem] border-transparent bg-transparent pr-6 pl-2 text-xs font-medium tabular-nums shadow-none hover:bg-accent")} value={rate} onChange={(e) => setRate(Number(e.target.value))} aria-label="재생 속도 (Shift+, 느리게 · Shift+. 빠르게)" title="재생 속도 (Shift+, / Shift+.)">
                 {RATES.map((r) => (
                   <option key={r} value={r}>
                     {r}×
                   </option>
                 ))}
               </select>
-            </>
+            </div>
           )}
           {!follow && playing && (
-            <button className="text-button follow-button" onClick={() => setFollow(true)}>
+            <Button variant="outline" size="sm" className="h-7" onClick={() => setFollow(true)}>
+              <LocateFixed aria-hidden />
               현재 위치로
-            </button>
+            </Button>
           )}
-          {(audioError || !detail.audio_path) && <span className="player-note">{audioError ?? "오디오 파일이 없습니다"}</span>}
-          <span className={`player-note ${editError ? "inline-error" : ""}`} role="status">
+          {(audioError || !detail.audio_path) && <span className="text-xs text-subtle-foreground">{audioError ?? "오디오 파일이 없습니다"}</span>}
+          <span className={cn("text-xs empty:hidden", editError ? "text-destructive" : "text-muted-foreground")} role="status">
             {editing ? "저장하는 중…" : editError}
           </span>
         </div>}
@@ -934,11 +948,12 @@ export function MeetingView({
         )}
       </article>
 
-      <aside className="summary-col" aria-label={railLabel(memoNote)}>
+      <aside className="summary-col relative flex min-h-0 flex-col border-l border-border bg-background max-[1180px]:overflow-visible max-[1180px]:border-t max-[1180px]:border-l-0" aria-label={railLabel(memoNote)}>
         <PanelToggle side="right" />
-        <div id="rail-body" className="rail-body" hidden={railCollapsed}>
+        <div id="rail-body" className="rail-body flex min-h-0 flex-1 flex-col overflow-y-auto max-[1180px]:overflow-visible" hidden={railCollapsed}>
         <div
-          className="rail-tabs"
+          className="sticky top-0 z-10 flex h-[52px] shrink-0 items-center gap-1 bg-background/90 pr-12 pl-4 backdrop-blur-md"
+          data-tauri-drag-region
           role="tablist"
           aria-label="오른쪽 패널"
           onKeyDown={(e) => {
@@ -952,14 +967,24 @@ export function MeetingView({
           }}
         >
           {tabs.map((k) => (
-            <button key={k} id={`tab-${k}`} role="tab" aria-selected={tabNow === k} aria-controls={k === "summary" || (k === "ask" ? askSeen : memoSeen) ? `panel-${k}` : undefined} tabIndex={tabNow === k ? 0 : -1} onClick={() => showTab(k, k === "memo")}>
+            <button
+              key={k}
+              id={`tab-${k}`}
+              role="tab"
+              aria-selected={tabNow === k}
+              aria-controls={k === "summary" || (k === "ask" ? askSeen : memoSeen) ? `panel-${k}` : undefined}
+              tabIndex={tabNow === k ? 0 : -1}
+              onClick={() => showTab(k, k === "memo")}
+              className="h-7 rounded-md px-2.5 text-[13px] font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 aria-selected:bg-accent aria-selected:text-foreground"
+            >
               {RAIL_LABEL[k]}
             </button>
           ))}
         </div>
+        <div className={cn("flex flex-1 flex-col px-5 pt-2", tabNow === "ask" ? "pb-0" : "pb-10")}>
         <div id="panel-summary" role="tabpanel" aria-labelledby="tab-summary" hidden={tabNow !== "summary"}>
           {recorded ? (
-            <p className="rail-pending" role="status">
+            <p className={PENDING} role="status">
               {railNotice("summary", true)}
             </p>
           ) : (
@@ -983,9 +1008,9 @@ export function MeetingView({
           )}
         </div>
         {askSeen && (
-          <div id="panel-ask" role="tabpanel" aria-labelledby="tab-ask" className="rail-ask" hidden={tabNow !== "ask"}>
+          <div id="panel-ask" role="tabpanel" aria-labelledby="tab-ask" className="rail-ask flex flex-1 flex-col" hidden={tabNow !== "ask"}>
             {recorded ? (
-              <p className="rail-pending" role="status">
+              <p className={PENDING} role="status">
                 {railNotice("ask", true)}
               </p>
             ) : (
@@ -995,10 +1020,11 @@ export function MeetingView({
         )}
         {memoSeen && !memoNote && (
           <div id="panel-memo" role="tabpanel" aria-labelledby="tab-memo" className="rail-memo" hidden={tabNow !== "memo"}>
-            <p className="rail-memo-hint">내가 적는 메모입니다. 요약과 AI 질문에 대화 내용과 함께 쓰입니다.</p>
+            <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">내가 적는 메모입니다. 요약과 AI 질문에 대화 내용과 함께 쓰입니다.</p>
             <MemoEditor variant="rail" id={id} initial={noteBody} savedBody={noteBody} segments={memoSegs} target={memoTarget} notify={notify} onSaved={onMemoSaved} onState={setMemoSave} />
           </div>
         )}
+        </div>
         </div>
       </aside>
       {printable && <PrintSheet doc={printable} />}
@@ -1138,12 +1164,12 @@ function TimeChip({ ids, starts, onSeek, memo }: { ids: string[]; starts: Map<st
   return (
     <>
       {t !== null && (
-        <button className="time-chip tnum" onClick={() => onSeek(t)} title={`근거 대화로 이동 (${fmtTime(t)})`}>
+        <button className={CHIP} onClick={() => onSeek(t)} title={`근거 대화로 이동 (${fmtTime(t)})`}>
           {fmtTime(t)}
         </button>
       )}
       {memo && line && (
-        <button className="time-chip tnum" onClick={() => memo.onPick(line)} title="메모의 줄로 이동">
+        <button className={CHIP} onClick={() => memo.onPick(line)} title="메모의 줄로 이동">
           {citeLabel(0, { memo: true, line: memo.lines.get(line), tagged: memo.tagged })}
         </button>
       )}
@@ -1151,13 +1177,7 @@ function TimeChip({ ids, starts, onSeek, memo }: { ids: string[]; starts: Map<st
   );
 }
 
-const PlayIcon = () => (
-  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
-    <path d="M7 4.5v15l12.5-7.5z" fill="currentColor" />
-  </svg>
-);
-const PauseIcon = () => (
-  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
-    <path d="M6.5 4.5h4v15h-4zM13.5 4.5h4v15h-4z" fill="currentColor" />
-  </svg>
-);
+/** 플레이어의 켜고 끄는 단추 */
+const TOGGLE = "inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 gated:opacity-45 aria-pressed:bg-rec-wash aria-pressed:text-rec [&_svg]:size-3.5";
+/** 오른쪽 패널: 변환 전 노트 안내 */
+const PENDING = "rail-pending m-0 rounded-md border border-border bg-muted px-3 py-2.5 text-xs leading-relaxed text-muted-foreground";

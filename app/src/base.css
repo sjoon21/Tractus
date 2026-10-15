@@ -1,0 +1,193 @@
+/* 앱 전체 바탕 규칙 (Tailwind 레이어 components). 화면 모양은 각 컴포넌트의 Tailwind 클래스와 components/note/note.css에 있다 */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-size: 14px;
+  line-height: 1.55;
+  letter-spacing: -0.006em;
+  word-break: keep-all; /* 한국어는 어절 단위로 줄바꿈 */
+  overflow-wrap: anywhere;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss06"; /* Pretendard: 숫자 1 꼬리 */
+  cursor: default; /* macOS 앱처럼: 단추에서도 화살표 */
+}
+
+/* 클래스를 따로 주지 않은 요소의 키보드 초점 (부품은 outline-none + ring을 쓴다) */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* 스크롤 막대: '항상 보기' 설정에서도 얇게 (macOS 오버레이 막대처럼) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 18%, transparent) padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--foreground) 32%, transparent);
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* 모델·도구가 없어 못 쓰는 단추 (GatedButton): 눌리면 이유가 뜬다. 흐림은 gated: 변형이 한다 */
+.is-gated {
+  cursor: help;
+}
+
+/* 노트를 끌어 폴더에 놓을 때 커서 옆에 뜨는 이름표 (noteDrag.ts) */
+.note-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  max-width: 240px;
+  padding: 4px 10px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow-pop);
+}
+
+body.is-note-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* PDF: 화면에는 없고 인쇄할 때만 나온다. 테마와 상관없이 흰 종이에 검은 글자 */
+.print-sheet {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 18mm 16mm;
+  }
+  html,
+  body {
+    height: auto;
+    background: #fff;
+  }
+  body::after,
+  #root {
+    display: none !important;
+  }
+  .print-sheet {
+    display: block;
+    /* 화면의 ss06(숫자 1 꼬리)·tnum 대체 글리프는 PDF에서 글자로 복사되지 않는다(2026 → 202!) → 기본 글리프 */
+    font-feature-settings: normal;
+    font-variant-numeric: normal;
+    font-family: var(--font);
+    font-size: 10pt;
+    line-height: 1.6;
+    color: #111;
+  }
+  .print-head {
+    margin-bottom: 14pt;
+    padding-bottom: 10pt;
+    border-bottom: 1.5pt solid #111;
+  }
+  .print-head h1 {
+    margin: 0 0 4pt;
+    font-size: 20pt;
+    font-weight: 750;
+    line-height: 1.2;
+    letter-spacing: -0.03em;
+  }
+  .print-meta,
+  .print-dim {
+    font-size: 9pt;
+    color: #555;
+  }
+  .print-sheet h2 {
+    margin: 16pt 0 6pt;
+    font-size: 11pt;
+    font-weight: 750;
+    letter-spacing: 0.04em;
+    break-after: avoid;
+  }
+  .print-sheet h3 {
+    margin: 10pt 0 3pt;
+    font-size: 10pt;
+    font-weight: 700;
+    break-after: avoid;
+  }
+  .print-summary > p {
+    margin: 0 0 6pt;
+  }
+  .print-summary ul {
+    margin: 0;
+    padding-left: 14pt;
+  }
+  .print-summary li {
+    margin: 2pt 0;
+    break-inside: avoid;
+  }
+  .print-rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .print-rows li {
+    display: grid;
+    grid-template-columns: 4.2em minmax(0, 1fr);
+    gap: 8pt;
+    padding: 2pt 0;
+    break-inside: avoid;
+  }
+  .print-rows.is-memo li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  
+  .print-rows time {
+    padding-top: 1pt;
+    font-size: 8.5pt;
+    color: #666;
+  }
+  .print-rows p {
+    margin: 0;
+  }
+  .print-rows strong {
+    display: block;
+    font-size: 9pt;
+    font-weight: 700;
+  }
+}

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { isImeKey } from "./lib";
 import { checkFolderName, MAX_FOLDER_NAME, type Folder } from "./organize";
+import { inputClass } from "@/components/ui/input";
+import { cn } from "@/components/ui/utils";
 
 export function NameInput({
   initial = "",
@@ -44,8 +46,9 @@ export function NameInput({
   };
   const id = `name-error-${self ?? "new"}`;
   return (
-    <div className="name-input">
+    <div className="min-w-0 flex-1">
       <input
+        className={cn(inputClass, "h-7")}
         ref={input}
         value={draft}
         maxLength={MAX_FOLDER_NAME + 20} // 붙여 넣은 긴 글을 잘라 버리지 않고 문장으로 알린다
@@ -79,7 +82,7 @@ export function NameInput({
         }}
       />
       {error && (
-        <p id={id} className="inline-error name-error" role="alert">
+        <p id={id} className="m-0 mt-1 text-xs text-destructive" role="alert">
           {error}
         </p>
       )}

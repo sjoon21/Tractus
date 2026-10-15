@@ -4,6 +4,10 @@ import { FolderPicker } from "./FolderPicker";
 import { isImeKey } from "./lib";
 import { addTags, folderPath, removeTag, suggestTags } from "./organize";
 import { useOrganize } from "./useOrganize";
+import { Folder, Hash, Star, X } from "lucide-react";
+import { cn } from "@/components/ui/utils";
+
+const PILL = "inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 [&_svg]:size-3.5";
 
 const FRESH_MS = 3000; // 사이드바 줄 메뉴의 `태그 편집`이 노트를 여는 사이에 지나간 요청은 버린다
 let handledFocus = 0; // 이미 처리한 초점 요청 (노트를 다시 열어도 같은 요청으로 또 초점을 달라고 하지 않게)
@@ -17,29 +21,29 @@ export function NoteOrganizer({ id }: { id: string }) {
   const path = at ? folderPath(org.folders, at) : "";
 
   return (
-    <div className="note-organize">
-      <div className="note-organize-row">
+    <div className="note-organize flex min-w-0 flex-wrap items-center gap-0.5">
+      <div className="contents">
         <button
           type="button"
-          className={`organize-button favorite-button ${meta.favorite ? "is-on" : ""}`}
+          className={cn(PILL, "aria-pressed:text-memo")}
+          aria-label="즐겨찾기"
           aria-pressed={meta.favorite}
           title={meta.favorite ? "즐겨찾기에서 뺍니다" : "즐겨찾기에 추가합니다"}
           onClick={() => void org.setFavorite(id, !meta.favorite)}
         >
-          <span aria-hidden>{meta.favorite ? "★" : "☆"}</span>
-          <span>즐겨찾기</span>
+          <Star aria-hidden className={meta.favorite ? "fill-memo" : ""} />
         </button>
         <button
           type="button"
-          className="organize-button folder-button"
+          className={PILL}
           aria-haspopup="menu"
           aria-expanded={!!picking}
           aria-label={path ? `폴더: ${path} — 바꾸기` : "폴더 고르기 (지금은 폴더 없음)"}
           title="노트를 넣을 폴더 고르기"
           onClick={(e) => setPicking((p) => (p ? null : e.currentTarget))}
         >
-          <span className="folder-glyph" aria-hidden />
-          <span className="folder-path">{path || "폴더 없음"}</span>
+          <Folder aria-hidden />
+          <span className="max-w-[14rem] truncate">{path || "폴더 없음"}</span>
         </button>
         {picking && (
           <FolderPicker
@@ -96,21 +100,22 @@ function TagEditor({ id }: { id: string }) {
   };
 
   return (
-    <div className="tag-editor" role="group" aria-label="태그">
-      <ul className="tag-list">
+    <div className="relative flex min-w-0 flex-wrap items-center gap-0.5" role="group" aria-label="태그">
+      <ul className="m-0 flex list-none flex-wrap gap-1 p-0">
         {tags.map((t) => (
-          <li key={t} className="tag-chip">
-            <span>{t}</span>
-            <button type="button" aria-label={`태그 ${t} 빼기`} title="태그 빼기" onClick={() => void org.setTags(id, removeTag(tags, t))}>
-              ×
+          <li key={t} className="inline-flex h-6 items-center gap-0.5 rounded-md bg-secondary pr-0.5 pl-2 text-xs text-secondary-foreground">
+            <span className="before:text-subtle-foreground before:content-['#']">{t}</span>
+            <button type="button" className="grid size-5 place-items-center rounded-[4px] text-subtle-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={`태그 ${t} 빼기`} title="태그 빼기" onClick={() => void org.setTags(id, removeTag(tags, t))}>
+              <X className="size-3" aria-hidden />
             </button>
           </li>
         ))}
       </ul>
-      <div className="tag-input-wrap">
+      <div className="relative flex items-center">
+        <Hash className="pointer-events-none absolute left-1.5 size-3.5 text-subtle-foreground" aria-hidden />
         <input
           ref={input}
-          className="tag-input"
+          className={cn("h-6 rounded-md bg-transparent pr-1.5 pl-6 text-xs outline-none transition-[width,background-color] placeholder:text-subtle-foreground hover:bg-accent focus:w-52 focus:bg-accent", tags.length ? "w-24" : "w-52")}
           value={draft}
           placeholder={tags.length ? "태그 추가" : "태그 추가 (Enter 또는 쉼표)"}
           aria-label="태그 추가 (Enter 또는 쉼표로 더하고, 비어 있을 때 Backspace로 마지막 태그를 뺍니다)"
@@ -164,14 +169,14 @@ function TagEditor({ id }: { id: string }) {
           }}
         />
         {suggestions.length > 0 && (
-          <ul id={list} className="tag-suggest" role="listbox" aria-label="이미 쓴 태그">
+          <ul id={list} className="absolute top-full left-0 z-30 m-0 mt-1 flex min-w-40 list-none flex-col rounded-lg border border-border bg-popover p-1 text-[13px] shadow-pop" role="listbox" aria-label="이미 쓴 태그">
             {suggestions.map((s, i) => (
               <li
                 key={s}
                 id={`${list}-${i}`}
                 role="option"
                 aria-selected={i === active}
-                className={i === active ? "is-active" : ""}
+                className="cursor-default rounded-[5px] px-2 py-1 hover:bg-accent aria-selected:bg-accent"
                 onMouseDown={(e) => {
                   e.preventDefault(); // 입력창을 벗어나지 않게
                   if (add(s)) setDraft("");
@@ -184,7 +189,7 @@ function TagEditor({ id }: { id: string }) {
         )}
       </div>
       {error && (
-        <p id={`${list}-error`} className="inline-error tag-error" role="alert">
+        <p id={`${list}-error`} className="m-0 w-full text-xs text-destructive" role="alert">
           {error}
         </p>
       )}

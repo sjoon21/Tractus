@@ -378,7 +378,7 @@ export const MODEL_ERROR: Record<string, string> = {
   helper_missing: "9명 이상 구분 도구(tractus-diar)가 없어 받지 못했습니다. 저장소의 recorder/diar 폴더에서 swift build -c release로 먼저 만드세요.",
   busy: "다른 모델을 받는 중입니다. 끝난 뒤에 다시 시도하세요.",
   corrupt: "받아 둔 파일이 손상되어 있습니다. 삭제한 뒤 다시 받으세요.",
-  unsafe_path: "모델 위치 밖의 폴더라 지우지 않았습니다. 설정의 모델 위치(TRACTUS_MODELS_DIR)를 확인하세요.",
+  unsafe_path: "모델 위치 밖의 폴더라 지우지 않았습니다. 모델 위치를 확인하세요.",
 };
 
 /** 오류 → 화면 문장과 자세히 (앱이 시작하지 못한 오류 `app`은 첫 줄이 문장이다) */
