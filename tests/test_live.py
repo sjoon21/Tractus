@@ -467,6 +467,7 @@ def rec(tmp_path, monkeypatch):
         return energy_vad, FakeASR(), None
 
     monkeypatch.setattr(live, "load_models", fake_load)
+    monkeypatch.setattr(cli, "physical_memory", lambda: 32 * 1024**3)  # 실시간 변환은 16GB 미만을 거절한다: 시험 기계(CI 러너 7GB)와 무관하게 (거절은 따로 시험한다)
     return d, seen
 
 

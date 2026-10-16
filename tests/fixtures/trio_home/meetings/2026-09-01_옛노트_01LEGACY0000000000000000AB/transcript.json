@@ -1,0 +1,1 @@
+{"schema_version": 2, "meeting_id": "01LEGACY0000000000000000AB", "title": "옛 노트", "created_at": "2026-09-01T10:00:00+09:00", "audio": {"file": "audio.ogg", "duration_sec": 30}, "asr": {}, "speakers": {}, "segments": [{"id": "s0001", "start": 0, "end": 5, "text": "옛날 회의에서 예산을 확정했습니다", "speaker": null}]}

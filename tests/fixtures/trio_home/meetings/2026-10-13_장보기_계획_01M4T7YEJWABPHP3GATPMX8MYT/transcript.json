@@ -1,0 +1,173 @@
+{
+ "meeting_id": "01M4T7YEJWABPHP3GATPMX8MYT",
+ "title": "장보기 계획",
+ "created_at": "2026-10-13T18:01:55+09:00",
+ "favorite": true,
+ "tags": [
+  "장보기",
+  "급함"
+ ],
+ "folder": "01M4T7YETDCCCY0Z1SZP4P098P",
+ "schema_version": 2,
+ "audio": {
+  "file": "audio.ogg",
+  "duration_sec": 9.66,
+  "source": "a.wav",
+  "sha256": "44e0e93d29d6f12fe1ff6830eed9af322d4ec087d929f14b2fdb59f89d87c4f2"
+ },
+ "asr": {
+  "model": "mlx-community/Qwen3-ASR-1.7B-8bit",
+  "track": "standard",
+  "runtime": "mlx-audio",
+  "language": "auto",
+  "hotwords": []
+ },
+ "speakers": {
+  "S1": {
+   "name": null
+  }
+ },
+ "diarization": {
+  "engine": "nemotron",
+  "model": "mlx-community/Nemotron-3-Diarization",
+  "revision": "59ed2dbfc1346dcea9d423c71306a3a2499c568f",
+  "params": {
+   "threshold": 0.5,
+   "median_frames": 11,
+   "min_turn_s": 1.0,
+   "fill_gap_s": 1.0,
+   "min_piece_s": 1.0,
+   "max_speakers": null
+  }
+ },
+ "segments": [
+  {
+   "id": "s0001",
+   "start": 0.0,
+   "end": 9.66,
+   "text": "다음 주 수요일까지 김철수 님이 업체 견적을 받기로 했습니다. 예산은 이번 분기에 동결하고 청소 용역은 다음 달에 다시 검토합니다.",
+   "lang": "ko",
+   "speaker": "S1",
+   "corrected_text": null,
+   "words": [
+    {
+     "text": "다음",
+     "start": 0.0,
+     "end": 0.32
+    },
+    {
+     "text": "주",
+     "start": 0.32,
+     "end": 0.4
+    },
+    {
+     "text": "수요일까지",
+     "start": 0.8,
+     "end": 1.2
+    },
+    {
+     "text": "김철수",
+     "start": 1.2,
+     "end": 1.76
+    },
+    {
+     "text": "님이",
+     "start": 1.76,
+     "end": 2.0
+    },
+    {
+     "text": "업체",
+     "start": 2.0,
+     "end": 2.48
+    },
+    {
+     "text": "견적을",
+     "start": 2.56,
+     "end": 3.04
+    },
+    {
+     "text": "받기로",
+     "start": 3.12,
+     "end": 3.6
+    },
+    {
+     "text": "했습니다.",
+     "start": 3.6,
+     "end": 4.24
+    },
+    {
+     "text": "예산은",
+     "start": 4.48,
+     "end": 4.96
+    },
+    {
+     "text": "이번",
+     "start": 4.96,
+     "end": 5.36
+    },
+    {
+     "text": "분기에",
+     "start": 5.36,
+     "end": 5.84
+    },
+    {
+     "text": "동결하고",
+     "start": 5.84,
+     "end": 6.56
+    },
+    {
+     "text": "청소",
+     "start": 6.8,
+     "end": 7.2
+    },
+    {
+     "text": "용역은",
+     "start": 7.2,
+     "end": 7.68
+    },
+    {
+     "text": "다음",
+     "start": 7.68,
+     "end": 8.08
+    },
+    {
+     "text": "달에",
+     "start": 8.08,
+     "end": 8.4
+    },
+    {
+     "text": "다시",
+     "start": 8.4,
+     "end": 8.8
+    },
+    {
+     "text": "검토합니다.",
+     "start": 8.8,
+     "end": 9.6
+    }
+   ]
+  }
+ ],
+ "updated_at": "2026-10-13T18:02:25+09:00",
+ "memo": {
+  "body": "예산은 동결합니다\n\n견적은 김철수 님이 받습니다\n\n청소 용역은 다음 달 검토",
+  "lines": [
+   {
+    "id": "m0001",
+    "line": 1,
+    "text": "예산은 동결합니다"
+   },
+   {
+    "id": "m0002",
+    "line": 3,
+    "text": "견적은 김철수 님이 받습니다"
+   },
+   {
+    "id": "m0003",
+    "line": 5,
+    "text": "청소 용역은 다음 달 검토"
+   }
+  ],
+  "seq": 3
+ }
+}

@@ -1,0 +1,92 @@
+# PR 검사 (모든 PR, 쌓인 PR 포함 + main push). 모델이 필요한 테스트(slow)·실제 AI(llm)·내려받기(network)·AI Hub 데이터는 돌리지 않는다.
+# 러너는 Apple Silicon Mac(macos-latest): MLX·Core Audio·EventKit 코드가 macOS 전용이다. 공개 저장소라 표준 러너는 무료다.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: 코어 (pytest)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      UV_PYTHON_PREFERENCE: only-managed # uv가 받은 파이썬만 (Homebrew 파이썬의 sqlite3는 확장(sqlite-vec)을 못 불러온다)
+    steps:
+      - uses: actions/checkout@v4
+      - name: ffmpeg (테스트 일부가 실제 FFmpeg를 쓴다)
+        run: brew install ffmpeg
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.12" # 번들과 같은 계열 (러너의 Homebrew 파이썬은 3.15라 onnxruntime 휠이 없다)
+      - run: uv sync --locked
+      - run: uv run pytest -q
+      - name: copyleft 검사 (Python)
+        run: uv run python scripts/check_licenses.py --only py
+
+  app:
+    name: 앱 (tsc · vitest · build · cargo test)
+    runs-on: macos-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - name: build (tsc + vite. cargo test가 dist를 읽는다)
+        run: pnpm build
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - run: cargo test --locked
+        working-directory: app/src-tauri
+      - name: copyleft 검사 (npm · Rust)
+        working-directory: .
+        run: |
+          python3 scripts/check_licenses.py --only npm
+          python3 scripts/check_licenses.py --only cargo
+
+  recorder:
+    name: 녹음 프로그램 (swift test)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: recorder
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift --version
+      - run: swift build -c release
+      - name: swift test (가짜 녹음 E2E 포함, 마이크 권한 불필요)
+        run: swift test
+
+  words:
+    name: 금지어 검사 (WORDS.md §5)
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: ripgrep (PCRE2)
+        run: brew install ripgrep
+      - run: scripts/check_words.sh

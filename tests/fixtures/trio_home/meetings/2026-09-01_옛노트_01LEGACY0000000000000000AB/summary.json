@@ -1,0 +1,1 @@
+{"schema_version": 1, "meeting_id": "01LEGACY0000000000000000AB", "provider": "upstage", "model": "m", "generated_at": "2026-09-01T11:00:00+09:00", "title": "옛 노트", "summary": "예산 확정.", "topics": [{"title": "예산", "segment_ids": ["s0001"]}], "decisions": [{"text": "예산 확정", "segment_ids": ["s0001"]}], "action_items": []}

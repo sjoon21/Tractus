@@ -1,0 +1,67 @@
+{
+ "schema_version": 1,
+ "meeting_id": "01M4T7YEJWABPHP3GATPMX8MYT",
+ "provider": "upstage",
+ "model": "solar-pro4",
+ "generated_at": "2026-10-13T18:02:07+09:00",
+ "title": "장보기 계획",
+ "summary": "장보기 계획 관련 메모에서 예산을 동결하기로 했다. 견적은 김철수 님이 받기로 했으며, 청소 용역은 다음 달에 검토하기로 했다.",
+ "topics": [
+  {
+   "title": "예산",
+   "segment_ids": [
+    "m0001"
+   ]
+  },
+  {
+   "title": "견적",
+   "segment_ids": [
+    "m0002"
+   ]
+  },
+  {
+   "title": "청소 용역",
+   "segment_ids": [
+    "m0003"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "text": "예산은 동결한다.",
+   "segment_ids": [
+    "m0001"
+   ]
+  },
+  {
+   "text": "견적은 김철수 님이 받는다.",
+   "segment_ids": [
+    "m0002"
+   ]
+  },
+  {
+   "text": "청소 용역은 다음 달에 검토한다.",
+   "segment_ids": [
+    "m0003"
+   ]
+  }
+ ],
+ "action_items": [
+  {
+   "task": "견적 받기",
+   "owner": "김철수",
+   "due": null,
+   "segment_ids": [
+    "m0002"
+   ]
+  },
+  {
+   "task": "청소 용역 검토",
+   "owner": null,
+   "due": "다음 달",
+   "segment_ids": [
+    "m0003"
+   ]
+  }
+ ]
+}
