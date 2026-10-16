@@ -17,12 +17,12 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6 # 파이썬은 build_app_bundle.sh가 고른다 (--managed-python 3.12). UV_PYTHON*을 주면 그 옵션과 부딪힌다
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7 # 파이썬은 build_app_bundle.sh가 고른다 (--managed-python 3.12). UV_PYTHON*을 주면 그 옵션과 부딪힌다
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
