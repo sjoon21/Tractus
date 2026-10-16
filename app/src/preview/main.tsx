@@ -78,7 +78,7 @@ const detail = (id: string): T => {
   };
 };
 
-const settings = { tractus_bin: "", rec_bin: "", home: "~/Tractus", models_dir: "", fake_recorder: false, rec_mode: "in_person", live_captions: false, checkup_done: true, tray_enabled: true, keep_in_tray: true, after_record: "ask" };
+const settings = { tractus_bin: "", rec_bin: "", home: "~/Tractus", models_dir: "", fake_recorder: false, rec_mode: "in_person", live_captions: false, checkup_done: true, tray_enabled: true, keep_in_tray: true, after_record: "ask", obsidian_vault: "/Users/me/Documents/My Vault", obsidian_audio: false };
 const llm = {
   default: "upstage",
   profiles: Object.fromEntries(["upstage", "openai", "claude", "gemini", "custom"].map((p) => [p, { base_url: "", model: "" }])),
@@ -151,6 +151,8 @@ const handlers: Record<string, (a: T) => unknown> = {
   },
   load_chat: (a) => (a.id === notes[0].t.meeting_id ? CHAT : []),
   get_settings: () => settings,
+  set_obsidian: ({ vault, audio }: T) => void Object.assign(settings, { obsidian_vault: vault, obsidian_audio: audio }),
+  obsidian_send: ({ id }: T) => ({ status: "created", path: `/Users/me/Documents/My Vault/Tractus/${id}.md`, audio: null }),
   doctor: () => ({ doctor, core_error: null, tractus_bin: "tractus", tractus_bin_exists: true, rec_bin: "tractus-rec", rec_bin_exists: true, tractus_source: "repo", rec_source: "repo", home: "~/Tractus", home_risk: null }),
   models_list: () => models,
   templates_list: () => (templates as T).templates,

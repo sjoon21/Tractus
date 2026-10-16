@@ -8,6 +8,7 @@ mod mcp;
 mod media;
 mod meetings;
 mod models;
+mod obsidian;
 mod organize;
 mod paths;
 mod procs;
@@ -62,6 +63,10 @@ pub struct Settings {
     pub llm_profiles: BTreeMap<String, llm_key::Profile>,
     /// 스마트 검색 방식: "local"(이 Mac, 기본) | "upstage"(문장·검색어를 Upstage로 보낸다. 옵트인)
     pub embedding_provider: String,
+    /// Obsidian으로 보내기의 볼트 폴더 (비어 있으면 아직 고르지 않음). 노트는 <볼트>/Tractus/ 아래에 쓴다 (obsidian.rs)
+    pub obsidian_vault: String,
+    /// Obsidian으로 보낼 때 오디오도 볼트에 복사한다 (기본 꺼짐: 1시간 약 14MB가 볼트와 함께 동기화된다)
+    pub obsidian_audio: bool,
     /// 앱 설정 폴더 (키가 있는 곳). 파일에는 쓰지 않고 `AppState::settings()`가 채운다
     #[serde(skip)]
     pub config_dir: Option<PathBuf>,
@@ -90,6 +95,8 @@ impl Default for Settings {
             llm_default: llm_key::DEFAULT_PROVIDER.into(),
             llm_profiles: BTreeMap::new(),
             embedding_provider: "local".into(),
+            obsidian_vault: String::new(),
+            obsidian_audio: false,
             config_dir: None,
             stale: vec![],
         }
@@ -407,6 +414,7 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, tray: State<'_, tra
     // AI 서비스·스마트 검색 방식 선택은 llm_key.rs의 명령이 따로 저장한다: 오래된 화면 값이 덮어쓰지 못하게 지금 값을 지킨다
     let cur = state.settings();
     (settings.llm_default, settings.llm_profiles, settings.embedding_provider, settings.config_dir) = (cur.llm_default, cur.llm_profiles, cur.embedding_provider, cur.config_dir);
+    (settings.obsidian_vault, settings.obsidian_audio) = (cur.obsidian_vault, cur.obsidian_audio); // obsidian.rs set_obsidian이 바로 저장한다
     let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
     state.mcp.set_spawn(settings.mcp_spawn());
@@ -1236,6 +1244,9 @@ pub fn run() {
             tray::tray_show_if_hidden,
             tray::set_tray_prefs,
             deferred::set_after_record,
+            obsidian::set_obsidian,
+            obsidian::obsidian_send,
+            obsidian::obsidian_open,
             deferred::recording_finish,
             deferred::convert_note,
             models::models_list,

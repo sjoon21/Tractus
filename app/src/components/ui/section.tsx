@@ -3,13 +3,18 @@ import { cn } from "./utils";
 
 // macOS 시스템 설정처럼 묶은 목록: 제목 + 둥근 카드 안의 행들
 
-export function Section({ title, description, actions, children, className, id }: { title?: ReactNode; description?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; id?: string }) {
+export function Section({ title, icon, description, actions, children, className, id }: { title?: ReactNode; icon?: ReactNode; description?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; id?: string }) {
   return (
     <section id={id} className={cn("flex flex-col gap-2", className)} aria-label={typeof title === "string" ? title : undefined}>
       {(title || actions) && (
         <header className="flex items-end justify-between gap-3 px-1">
           <div className="min-w-0">
-            {title && <h2 className="m-0 text-[13px] font-semibold text-foreground">{title}</h2>}
+            {title && (
+              <h2 className="m-0 flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
+                {icon}
+                {title}
+              </h2>
+            )}
             {description && <p className="m-0 mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>}
           </div>
           {actions && <div className="flex shrink-0 items-center gap-1.5">{actions}</div>}

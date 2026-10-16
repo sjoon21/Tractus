@@ -130,3 +130,9 @@ channels; `tractus transcribe --diarizer fluid` runs it always.
    License: MIT (the icon artwork). The logos and names are trademarks of
    their owners (OpenAI, Anthropic, Google, Upstage) and are shown only to
    identify which service a request is sent to.
+
+11. Obsidian logo in the export menu and settings
+   https://github.com/simple-icons/simple-icons (simple-icons 15.0.0, icons/obsidian.svg)
+   File used: app/src/components/ui/obsidian-logo.tsx (path copied, brand color #7C3AED)
+   License: CC0-1.0 (the icon artwork). Obsidian and its logo are trademarks of
+   Dynalist Inc. and are shown only to identify where a note is sent.

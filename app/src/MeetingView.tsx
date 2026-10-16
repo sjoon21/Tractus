@@ -56,6 +56,7 @@ import { PrintSheet } from "./PrintSheet";
 import { SummariesPanel } from "./SummariesPanel";
 import type { SummaryDoc } from "./summaries";
 import { SpeakerChip, SpeakerMenu, SpeakersBar, spkStyle, type MenuTarget, type MergeAsk } from "./Speakers";
+import { sendToObsidian } from "./obsidian";
 import { ExportMenu, FindBar, SegmentEditor, type FindState } from "./TranscriptTools";
 import { MemoEditor, TitleEditor, type MemoTarget } from "./MemoView";
 import { NoteOrganizer } from "./NoteOrganizer";
@@ -636,6 +637,11 @@ export function MeetingView({
     });
   };
 
+  const toObsidian = async () => {
+    if (!(await flushMemos())) return; // 쓰던 글까지 보낸다
+    void serial(() => sendToObsidian(id, selectedSummary?.key, notify)); // 요약 탭에서 고른 요약이 들어간다
+  };
+
   if (error)
     return (
       <div className="page-error m-auto max-w-md p-8 text-center text-[13px] text-destructive">
@@ -713,6 +719,7 @@ export function MeetingView({
             <ExportMenu
               formats={exportFormatsFor(memoNote, recorded)}
               onPick={(f) => void exportAs(f)}
+              onObsidian={() => void toObsidian()}
               onPrint={() => {
                 // 메모는 쓰던 글까지 인쇄한다
                 void flushMemos().then((ok) => ok && setPrintNonce((n) => n + 1));

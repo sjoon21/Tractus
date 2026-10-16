@@ -117,6 +117,17 @@ export interface Settings {
   llm_default?: string;
   llm_profiles?: Record<string, LlmProfile>;
   embedding_provider?: string;
+  /** Obsidian으로 보내기의 볼트 (비면 아직 안 고름). set_obsidian으로 바로 저장한다 */
+  obsidian_vault?: string;
+  /** 오디오도 볼트에 복사한다. 없으면 꺼짐 */
+  obsidian_audio?: boolean;
+}
+
+/** `tractus obsidian` 결과. edited면 볼트에서 고친 파일이라 아무것도 쓰지 않았다 */
+export interface ObsidianSent {
+  status: "created" | "updated" | "unchanged" | "edited";
+  path: string;
+  audio: string | null;
 }
 
 /** 한 서비스에 저장한 주소·AI 모델 (비어 있으면 서비스 기본값) */
@@ -256,6 +267,10 @@ export const api = {
   setListPrefs: (sort: SortKey, order: SortOrder) => invoke<void>("set_list_prefs", { sort, order }),
   /** `tractus export` 후 Finder에서 보여 준다. 저장한 절대 경로 */
   exportMeeting: (id: string, format: string, out: string, summary?: string) => invoke<string>("export_meeting", { id, format, out, summary: summary ?? null }),
+  setObsidian: (vault: string, audio: boolean) => invoke<void>("set_obsidian", { vault, audio }),
+  /** 노트를 설정의 볼트로 보낸다. force: 볼트에서 고친 파일도 덮어쓴다 */
+  obsidianSend: (id: string, summary: string | undefined, force: boolean) => invoke<ObsidianSent>("obsidian_send", { id, summary: summary ?? null, force }),
+  obsidianOpen: (path: string) => invoke<void>("obsidian_open", { path }),
   /** 노트 폴더를 휴지통으로 옮긴다 (되돌릴 수 있다). 처리 중이거나 변환이 끝나지 않은 노트는 거절한다. 검색 색인은 백그라운드로 정리 */
   deleteMeeting: (id: string) => invoke<void>("delete_meeting", { id }),
   /** 변환하지 않은 녹음 폴더를 휴지통으로 옮긴다 */
