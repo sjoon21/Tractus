@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { enhancedView, findEnhanced } from "./enhanced";
+import { enhancedView, findEnhanced, memoTabShowing } from "./enhanced";
 import { parseSummaryDoc, parseSummaryDocs, rerunSpec } from "./summaries";
 
 const raw = {
@@ -46,5 +46,14 @@ describe("노트 완성 문서", () => {
 
   it("can be made again from the summary tab even though it is not in the template list", () => {
     expect(rerunSpec(parseSummaryDoc(raw)!, [])).toEqual({ template: "enhanced", label: "노트 완성", key: "enhanced" });
+  });
+
+  it("shows my memo when a memo line is requested after the last view change, otherwise the chosen view", () => {
+    expect(memoTabShowing(false, "done", 0, null)).toBe("mine"); // 아직 없으면 언제나 내 메모
+    expect(memoTabShowing(true, "done", 0, null)).toBe("done");
+    expect(memoTabShowing(true, "done", 0, { segId: null, nonce: 50 })).toBe("done"); // 탭을 눌러 연 것은 줄 요청이 아니다
+    expect(memoTabShowing(true, "done", 100, { segId: "m0003", nonce: 200 })).toBe("mine"); // 칩으로 줄을 가리킴
+    expect(memoTabShowing(true, "done", 300, { segId: "m0003", nonce: 200 })).toBe("done"); // 그 뒤 사용자가 완성된 노트로 바꿈
+    expect(memoTabShowing(true, "mine", 300, null)).toBe("mine");
   });
 });

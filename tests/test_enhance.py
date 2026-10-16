@@ -174,3 +174,20 @@ def test_enhanced_summary_can_be_deleted_like_any_summary(home, fake):
     assert run("summaries", mid, "delete", "enhanced").exit_code == 0
     assert not (d / "summaries" / "enhanced.json").exists()
     shutil.rmtree(d)
+
+
+def test_a_note_without_details_still_appears_in_markdown_and_docx(home, fake):
+    # 화면은 `대화에서 관련 내용을 찾지 못했습니다`로 그 줄을 보인다. 내보낸 문서에서도 빠지면 안 된다 (메모를 하나도 빠뜨리지 않는다)
+    import zipfile
+    from io import BytesIO
+
+    from tractus.export import render_export
+
+    mid, d = make_recording(home)
+    fake.replies = [reply(blocks=[{"source": "m0001", "heading": "", "items": [item("p95", "s0002")]}, {"source": "m0002", "heading": "", "items": []}], todos=[])]
+    assert run("summarize", mid, "--template", "enhanced").exit_code == 0
+    md = (d / "summaries" / "enhanced.md").read_text(encoding="utf-8")
+    assert "## 담당자 정하기\n\n- 대화에서 관련 내용을 찾지 못했습니다" in md
+    docx = render_export(d, "docx", "enhanced")
+    xml = zipfile.ZipFile(BytesIO(docx)).read("word/document.xml").decode()
+    assert "담당자 정하기" in xml and "대화에서 관련 내용을 찾지 못했습니다" in xml

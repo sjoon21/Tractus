@@ -829,7 +829,7 @@ tractus transcribe --into <노트> [--track …] [--language …] [--term …] [
 - **검증(1회 재요청):** 근거는 대화 줄 `s####`만이고 비어 있지 않다. 모든 메모 ID가 블록 `source`에 빠짐없이 한 번씩 나온다. 없는 메모 ID를 쓰지 않는다. **후처리(재요청 없음):** 메모 원문을 제목으로 덮어쓰고(북마크는 `북마크 m:ss`) 입력 순서로 다시 정렬한다. owner 정리는 요약과 같다.
 - **거절:** 메모 노트 → 종료 코드 2, code `no_recording`. 변환 전 → `not_converted`. 대화 없음 → `no_segments`. `--custom`과 함께 쓰면 `bad_input`. `templates list`에는 나오지 않는다.
 - **이벤트:** 요약과 같다(`stage summarize` → `done`의 `summary_key: "enhanced"`). 검색 색인은 갱신하지 않는다.
-- **앱:** 메모 탭의 `EnhancedNote`가 `summary_start`(template `enhanced`)로 만든다. `내 메모 | 완성된 노트` 전환이 있고, 내 메모 편집기는 숨기기만 하고 언마운트하지 않는다. 낡음은 요약과 같은 편집 횟수 비교다. 요약 탭 목록에도 한 칸으로 보이고, `다시 만들기`는 같은 명령이다(`rerunSpec`). 만드는 동안 노트 삭제를 막는다. 내보내기·MCP는 요약 key `enhanced`로 읽는다.
+- **앱:** 메모 탭의 `EnhancedNote`가 `summary_start`(template `enhanced`)로 만든다. `내 메모 | 완성된 노트` 전환이 있고, 내 메모 편집기는 숨기기만 하고 언마운트하지 않는다. 요약·AI 질문의 `메모 n번째 줄` 칩이 사용자의 마지막 보기 전환보다 나중이면 내 메모를 보인다(`memoTabShowing`, 그리는 시점에 정해야 편집기가 보이는 채로 줄을 고른다). 세부를 못 찾은 내 메모 줄은 화면·`enhanced.md`·docx 모두 `대화에서 관련 내용을 찾지 못했습니다`로 남는다. 낡음은 요약과 같은 편집 횟수 비교다. 요약 탭 목록에도 한 칸으로 보이고, `다시 만들기`는 같은 명령이다(`rerunSpec`). 만드는 동안 노트 삭제를 막는다. 내보내기·MCP는 요약 key `enhanced`로 읽는다.
 - **확인:** `tests/test_enhance.py`(가짜 응답), `pytest -m llm -k enhance`(가상 회의 + 메모 3줄·녹음 중 메모·북마크, Upstage solar-pro4로 3회 통과, 2026-10-16), 미리보기(`/preview.html`) 라이트·다크.
 
 **알려진 한계.** 완성된 노트는 읽기 전용이다(고치려면 내 메모를 고친 뒤 `다시 완성`). 녹음이 길면 대화 전체를 한 번에 보낸다(요약과 같다). 메모가 대화보다 단정적인 표현으로 바뀌는 경우가 있다(가상 회의에서 '모으면 좋겠다'를 '모으기로 했다'에 가깝게 씀). WKWebView에서 손으로 확인하지 못했다(미리보기·vitest·tsc만).

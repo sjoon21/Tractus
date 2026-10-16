@@ -1038,6 +1038,7 @@ export function MeetingView({
               }}
               onRunning={setEnhanceRunning}
               notify={notify}
+              pick={memoTarget}
               mine={
                 <>
                   <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">내가 적는 메모입니다. 요약과 AI 질문에 대화 내용과 함께 쓰입니다.</p>

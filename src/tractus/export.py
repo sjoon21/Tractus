@@ -13,7 +13,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from tractus.summaries import DEFAULT_KEY, list_summaries, read_data, read_markdown
+from tractus.summaries import DEFAULT_KEY, NO_DETAIL, list_summaries, read_data, read_markdown
 from tractus.store import MEMOS_FILE, _hms, _vtt_time, is_memo, is_recorded, load_memos, memo_lines, one_line, render_markdown, render_vtt, seg_text, speaker_display
 
 FORMATS = ("txt", "md", "srt", "vtt", "csv", "docx", "bundle")
@@ -118,6 +118,9 @@ def _docx_summary(doc, s: dict, key: str) -> None:
     for sec in s.get("sections") or []:
         items = [i for i in sec.get("items") or [] if isinstance(i, dict)]
         if not items:
+            if sec.get("part") == "memo":  # 노트 완성: 세부를 못 찾은 내 메모 줄도 빠뜨리지 않는다
+                doc.add_heading(str(sec.get("heading") or ""), 1)
+                doc.add_paragraph(NO_DETAIL, style="List Bullet")
             continue
         doc.add_heading(str(sec.get("heading") or ""), 1)
         style = "List Number" if sec.get("style") == "numbered" else "List Bullet"

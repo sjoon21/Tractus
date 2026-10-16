@@ -5,12 +5,13 @@ import { useCallback, useEffect, useRef, useState, type MutableRefObject, type R
 import { LoaderCircle } from "lucide-react";
 import { api, errText, useJob, type JobState } from "./api";
 import type { Notify } from "./App";
-import { ENHANCE_HINT, ENHANCE_LABEL, ENHANCED_KEY, enhancedView, EXTRA_TITLE, findEnhanced, NO_MEMO_NOTICE, REDO_LABEL, RUNNING_TEXT, staleNotice, VIEW_DONE, VIEW_MINE } from "./enhanced";
+import { ENHANCE_HINT, ENHANCE_LABEL, ENHANCED_KEY, enhancedView, EXTRA_TITLE, findEnhanced, memoTabShowing, NO_MEMO_NOTICE, REDO_LABEL, RUNNING_TEXT, staleNotice, VIEW_DONE, VIEW_MINE } from "./enhanced";
 import { ErrorDetail } from "./ErrorDetail";
 import { fmtTime } from "./lib";
 import { LlmServicePicker, useLlmServices } from "./LlmServicePicker";
 import { llmErrorView } from "./llmKey";
 import { staleSentence, type EditKind } from "./memo";
+import type { MemoTarget } from "./MemoView";
 import { OpenSettings } from "./OpenSettings";
 import type { SummaryDoc, SummaryItem, SummarySection } from "./summaries";
 import { buttonVariants } from "@/components/ui/button";
@@ -18,7 +19,7 @@ import { CHIP } from "@/components/panel/chip";
 import { SparklesIcon } from "@/components/ui/sparkles-icon";
 import { cn } from "@/components/ui/utils";
 
-const NO_DETAIL = "대화에서 관련 내용을 찾지 못했습니다";
+const NO_DETAIL = "대화에서 관련 내용을 찾지 못했습니다"; // 코어 summaries.NO_DETAIL과 같은 문장 (내보낸 문서와 화면이 같게)
 
 export function EnhancedNote(p: {
   id: string;
@@ -39,10 +40,17 @@ export function EnhancedNote(p: {
   notify: Notify;
   /** 내 메모 화면 (안내 줄 + 편집기) */
   mine: ReactNode;
+  /** 편집기가 고를 줄 (요약·AI 질문의 `메모 n번째 줄` 칩). 사용자가 마지막으로 보기를 바꾼 뒤에 온 줄 요청이면 내 메모를 보인다 */
+  pick: MemoTarget | null;
 }) {
   const { id, rev, onRunning, onMade, notify } = p;
   const [doc, setDoc] = useState<SummaryDoc | null>(null);
-  const [view, setView] = useState<"mine" | "done">("done");
+  const [view, setViewState] = useState<"mine" | "done">("done");
+  const [viewAt, setViewAt] = useState(0); // 보기를 바꾼 시각: 이보다 나중의 줄 요청만 내 메모로 돌린다
+  const setView = (v: "mine" | "done") => {
+    setViewState(v);
+    setViewAt(Date.now());
+  };
   const [madeSeq, setMadeSeq] = useState(0); // 이 노트 완성이 반영한 편집 횟수 (그 뒤 편집이 있으면 낡음)
   const launchSeq = useRef(0);
   const services = useLlmServices("summary");
@@ -80,7 +88,7 @@ export function EnhancedNote(p: {
     void job.runJob("summary_start", { id, template: ENHANCED_KEY, custom: null, provider: services.provider });
   };
 
-  const showing = doc && view === "done" ? "done" : "mine";
+  const showing = memoTabShowing(!!doc, view, viewAt, p.pick);
   const changed = p.editKinds.current.slice(madeSeq);
   return (
     <div className="flex flex-col gap-3">
