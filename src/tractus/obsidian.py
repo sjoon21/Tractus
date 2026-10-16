@@ -15,6 +15,7 @@ from tractus.export import _rows, pick_summary
 from tractus.organize import load_folders, meta_of
 from tractus.store import NOT_CONVERTED_NOTE, _hms, _meta_lines, _write_atomic, _yaml_scalar, is_memo, is_recorded, memo_lines, seg_text
 from tractus.summaries import list_summaries, read_markdown
+from tractus.calendar_event import load_event
 from tractus.enhance import KEY as ENHANCED
 
 ROOT = "Tractus"
@@ -62,6 +63,7 @@ def render(d: Path, t: dict, home: Path, summary: str | None = None, audio: str 
         f"created: {t['created_at']}",
         *([f"duration: {_hms(t['audio']['duration_sec'])}"] if recording and isinstance(t.get("audio"), dict) else []),
         *([f"participants: [{', '.join(_yaml_scalar(x) for x in names)}]"] if names else []),
+        *([f"attendees: [{', '.join(_yaml_scalar(x) for x in ev['attendees'])}]"] if (ev := load_event(d)) and ev["attendees"] else []),  # 캘린더 일정의 참석자
         *_meta_lines(t, parts[-1] if parts else None),
         "---",
         "",

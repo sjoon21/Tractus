@@ -86,6 +86,14 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 
 권한 상태를 JSON 한 줄로 출력하고 종료한다: `{"mic":"granted|denied|undetermined","system":"ok|zero|error","macos":"26.6"}`. `system`은 1초 동안 tap을 열어 0이 아닌 표본이 들어오는지 본다(재생 중인 소리가 없으면 `zero`일 수 있으니 참고용).
 
+### `tractus-rec calendar access|request|list|next` (v3.38)
+
+macOS 캘린더(EventKit) 읽기. 설계: [docs/design/calendar.md](design/calendar.md). 모두 한 줄 JSON이고 권한이 없으면 목록은 빈 채 성공한다.
+
+- `access` → `{"access": "granted|denied|undetermined|restricted|write_only"}` (묻지 않는다). `request` → 권한 창(처음일 때만) 뒤 같은 모양.
+- `list` → `{"access", "calendars": [{"id", "title", "source"}]}` (계정 → 이름 순).
+- `next [--ahead 분(1~1440, 기본 15)] [--exclude 캘린더ID]…` → `{"access", "events": [{"id", "title", "start", "end", "calendar", "attendees": ["이름"]}]}`. 끝나지 않았고 `ahead`분 안에 시작하는 일정을 시작 순으로(종일·제목 없음·취소·내가 거절한 일정 제외, 제목은 200자까지). 참석자는 이름 있는 사람만이고 **이메일은 내보내지 않는다**(`@`가 든 이름은 뺀다. 앱 `calendar::clean_event`·코어 `clean_event`도 같다).
+
 ### `recording.json`
 
 ```jsonc
@@ -103,7 +111,7 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 
 ### 권한
 
-- 실행 파일에 Info.plist(`NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`)를 `-sectcreate __TEXT __info_plist`로 넣는다.
+- 실행 파일에 Info.plist(`NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`, `NSCalendarsFullAccessUsageDescription`)를 `-sectcreate __TEXT __info_plist`로 넣는다.
 - 앱이 하위 프로세스로 실행하면 macOS는 권한을 **부모 앱**(Tractus.app)에 묻는다. 그래서 Tauri 앱의 Info.plist에도 같은 키를 넣는다.
 
 ## 2. Python 코어 변경 (src/tractus/)
@@ -844,6 +852,15 @@ tractus transcribe --into <노트> [--track …] [--language …] [--term …] [
 - **기록:** `<볼트>/Tractus/.tractus.json` `{"notes": {<id>: {"path": <Tractus/ 기준>, "sha256"}}}`. 기록된 위치에 없으면 `Tractus/` 아래에서 frontmatter `tractus_id`로 찾는다. 기록이 없거나 sha256이 다르면 `edited`이고 `--force`로만 덮어쓴다. 위치가 바뀌면 새 위치에 쓰고, 고치지 않은 옛 파일만 지운다.
 - **앱:** 설정 `obsidian_vault`(비면 안 고름)·`obsidian_audio`(기본 꺼짐)는 `set_obsidian(vault, audio)`이 바로 저장하고 `save_settings`는 지금 값을 지킨다. 내보내기 메뉴의 `Obsidian`은 쓰던 메모를 저장한 뒤 `obsidian_send(id, summary, force)`(요약 탭에서 고른 요약), 볼트를 안 골랐으면 먼저 폴더를 고르게 하고, `edited`면 묻고 `force`로 다시 부른다. `obsidian_open(path)`는 `<볼트>/Tractus` 안의 `.md`만 `obsidian://open?path=…`로 연다.
 
+### 2.19 캘린더 일정으로 녹음하기: 녹음 폴더의 `event.json` (v3.38)
+
+설계: [docs/design/calendar.md](design/calendar.md). 문구: WORDS.md §4.24.
+
+- 앱이 녹음을 시작할 때 녹음 폴더에 `event.json` `{"title", "start", "end", "calendar", "attendees": ["이름"]}`을 쓴다. 코어는 `calendar_event.load_event`로 검사해 읽고(제목 1~200자, ISO 8601 시각, 참석자 한 줄 80자 이하·중복 제거·50명까지, 깨졌으면 없는 것), 노트 폴더로 옮긴다(`memos.json`처럼, 이미 있으면 그대로). transcript.json은 바뀌지 않는다.
+- **제목:** `transcribe --recording`·`recording finish`의 기본 제목이 `녹음 HH:MM` 대신 일정 제목이다(`--title`이 이긴다).
+- **hotwords:** 참석자 이름을 그 노트의 변환에만 더한다(자주 쓰는 단어 다음, `--term`과 같다). `transcribe --into`는 노트 폴더의 `event.json`을 읽는다. `glossary.md`에는 쓰지 않는다.
+- **읽는 곳:** Obsidian frontmatter `attendees`, 내보내기 ZIP, 앱의 노트 상세 `attendees`(참석자 이름 고르기).
+
 ## 3. Tauri 앱 (app/)
 
 - **스택:** Tauri 2 + React + TypeScript + Vite. 오디오는 자체 `media://` URI 스킴(`convertFileSrc(path, "media")`, MIME `audio/ogg`, HTTP Range 지원, `TRACTUS_HOME` 밖 경로 거부)으로 `<audio>`에 연결한다. Tauri 기본 asset protocol은 `.ogg`/`.opus`의 MIME과 Range 처리가 맞지 않아 쓰지 않는다(`app/README.md`).
@@ -966,6 +983,13 @@ macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음�
 ### 제외 (v1)
 
 실시간 전사(Phase 7.2에서 옵트인 미리보기로 추가, §2.8), 전사 텍스트 직접 편집(찾아 바꾸기는 다음 단계), 회의 자동 감지, 자동 설치 업데이트(v3.34에서 알림 뒤 사용자가 누를 때만 설치하는 방식으로 추가, §3.5), 공증.
+
+### 3.6 캘린더 (v3.38)
+
+- 설정 `calendar_enabled`(기본 꺼짐: 연결하기 전에는 권한을 묻지 않는다)·`calendar_hidden`(끈 캘린더 ID, 처음에는 모두 읽는다)은 `calendar_set`·`calendar_connect`가 바로 저장하고 `save_settings`는 지금 값을 지킨다.
+- 명령(`calendar.rs`): `calendar_status`(`list` + 설정), `calendar_connect`(`request`, 허락되면 켠다), `calendar_set(enabled, hidden)`, `calendar_next`(꺼져 있으면 빈 목록, `next --ahead 15 --exclude …`), `calendar_privacy`(시스템 설정의 캘린더 화면).
+- 홈은 1분마다·창이 다시 보일 때 `calendar_next`를 읽어 첫 일정을 카드로 보인다(실패하면 카드가 없다). `이 일정으로 녹음`은 `rec_start(flags, target, event)`이고 Rust가 다시 검사해 녹음 폴더에 `event.json`을 쓴다(시작에 실패하면 지운다).
+- 참석자 이름 고르기: 이름 바꾸기 폼에 `일정 참석자` 버튼(다른 참석자에게 이미 붙인 이름은 뺀다). 누르면 입력한 것과 같은 `rename`이다.
 
 ## 4. B안 판정 기준 (D안으로 갈지 정할 때)
 

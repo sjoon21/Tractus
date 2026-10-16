@@ -18,6 +18,7 @@ import { onIndexed } from "./indexer";
 import { recMode, statusLine, withRecMode } from "./lib";
 import { LlmKeySection } from "./LlmKeySettings";
 import { ObsidianSection } from "./ObsidianSettings";
+import { CalendarSection } from "./CalendarSettings";
 import { TemplatesSection } from "./TemplatesSettings";
 import { TRAY_KEEP_HINT, TRAY_KEEP_LABEL, TRAY_SHOW_HINT, TRAY_SHOW_LABEL } from "./trayText";
 import { getVersion } from "@tauri-apps/api/app";
@@ -202,6 +203,8 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack }: { onSaved: ()
         />
         <TemplatesSection />
         <VoicesSection />
+
+        <CalendarSection />
 
         <ObsidianSection initial={s} />
 

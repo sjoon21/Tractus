@@ -7,5 +7,8 @@
 <dict>
   <key>com.apple.security.device.audio-input</key>
   <true/>
+  <!-- 캘린더(tractus-rec calendar)도 하드런타임에서는 이 entitlement가 있어야 권한 창이 뜬다 (docs/design/calendar.md) -->
+  <key>com.apple.security.personal-information.calendars</key>
+  <true/>
 </dict>
 </plist>

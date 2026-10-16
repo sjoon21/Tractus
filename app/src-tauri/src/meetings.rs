@@ -248,6 +248,8 @@ pub struct MeetingDetail {
     pub note_memo: Option<NoteMemo>,
     /// 오디오 절대 경로. 프론트엔드가 convertFileSrc(path, "media")로 URL을 만든다 (media.rs).
     pub audio_path: Option<String>,
+    /// 캘린더 일정으로 시작한 녹음이면 그 일정의 참석자 이름 (참석자 이름 고르기). 아니면 빈 목록
+    pub attendees: Vec<String>,
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
@@ -398,7 +400,8 @@ pub fn load(home: &Path, id: &str) -> Result<MeetingDetail, String> {
     let is_memo = kind_of(&t) == "memo";
     let body = if is_memo { Some(t.body.clone().unwrap_or_default()) } else { None };
     let note_memo = if is_memo { None } else { parse_note_memo(t.memo.as_ref()) };
-    Ok(MeetingDetail { info: info(&dir, &t), speakers: t.speakers, segments: t.segments, summary, memos, body, note_memo, audio_path })
+    let attendees = crate::calendar::attendees(&dir);
+    Ok(MeetingDetail { info: info(&dir, &t), speakers: t.speakers, segments: t.segments, summary, memos, body, note_memo, audio_path, attendees })
 }
 
 /// chat.json 항목 (`tractus ask --save`가 덧붙인다, 최근 50개). 없는 필드는 기본값으로 읽는다

@@ -58,6 +58,27 @@ export interface MeetingDetail {
   /** 녹음 노트에 사용자가 적은 메모(오른쪽 패널의 메모 탭). 없으면(메모 노트·아직 안 씀·읽을 수 없음) null. `memos`(녹음 중 메모·북마크)와 다르다 */
   note_memo: NoteMemo | null;
   audio_path: string | null;
+  /** 캘린더 일정으로 시작한 녹음이면 그 일정의 참석자 이름 (참석자 이름 고르기). 옛 앱·없음은 빈 목록 */
+  attendees?: string[];
+}
+
+/** `tractus-rec calendar next`의 일정 하나 (docs/design/calendar.md). 시각은 ISO 8601 */
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  calendar: string;
+  attendees: string[];
+}
+
+export type CalendarAccess = "granted" | "denied" | "undetermined" | "restricted" | "write_only";
+
+export interface CalendarStatus {
+  enabled: boolean;
+  access: CalendarAccess;
+  calendars: { id: string; title: string; source: string }[];
+  hidden: string[];
 }
 
 /** `tractus speakers <회의> rename | set | merge | dismiss` (docs/desktop.md §2.1·§2.7). set의 label은 "new"면 새 화자.
@@ -271,6 +292,13 @@ export const api = {
   /** 노트를 설정의 볼트로 보낸다. force: 볼트에서 고친 파일도 덮어쓴다 */
   obsidianSend: (id: string, summary: string | undefined, force: boolean) => invoke<ObsidianSent>("obsidian_send", { id, summary: summary ?? null, force }),
   obsidianOpen: (path: string) => invoke<void>("obsidian_open", { path }),
+  calendarStatus: () => invoke<CalendarStatus>("calendar_status"),
+  /** 권한을 묻고(처음이면 macOS 창) 허락되면 연결한다 */
+  calendarConnect: () => invoke<CalendarAccess>("calendar_connect"),
+  calendarSet: (enabled: boolean, hidden: string[]) => invoke<void>("calendar_set", { enabled, hidden }),
+  /** 진행 중이거나 15분 안에 시작하는 일정 (연결 안 했으면 빈 목록) */
+  calendarNext: () => invoke<CalendarEvent[]>("calendar_next"),
+  calendarPrivacy: () => invoke<void>("calendar_privacy"),
   /** 노트 폴더를 휴지통으로 옮긴다 (되돌릴 수 있다). 처리 중이거나 변환이 끝나지 않은 노트는 거절한다. 검색 색인은 백그라운드로 정리 */
   deleteMeeting: (id: string) => invoke<void>("delete_meeting", { id }),
   /** 변환하지 않은 녹음 폴더를 휴지통으로 옮긴다 */
@@ -442,12 +470,12 @@ export function useRecorder(onStopped: (dir: string, seconds: number) => void) {
     return () => clearInterval(id);
   }, [rec.phase]);
 
-  /** target: 글만 있는 노트의 ID. 있으면 그 노트에 추가하는 녹음이다 (녹음 폴더에 attach.json) */
-  const start = useCallback(async (mode: RecMode, target?: string | null) => {
+  /** target: 글만 있는 노트의 ID. 있으면 그 노트에 추가하는 녹음이다 (녹음 폴더에 attach.json). event: 캘린더 일정으로 시작하는 녹음 (녹음 폴더에 event.json) */
+  const start = useCallback(async (mode: RecMode, target?: string | null, event?: CalendarEvent | null) => {
     setRec({ ...IDLE_REC, phase: "starting", mode });
     setLive(IDLE_LIVE);
     try {
-      await invoke<string>("rec_start", { flags: recFlags(mode), target: target ?? null });
+      await invoke<string>("rec_start", { flags: recFlags(mode), target: target ?? null, event: event ?? null });
     } catch (e) {
       setRec({ ...IDLE_REC, mode, phase: "error", error: errText(e) });
     }

@@ -8,6 +8,7 @@ let usage = """
 사용법:
   tractus-rec record --out <dir> [--no-mic] [--no-system] [--echo-cancel] [--fake]
   tractus-rec check
+  tractus-rec calendar access|request|list|next [--ahead 분] [--exclude 캘린더ID]…
 """
 
 signal(SIGPIPE, SIG_IGN)  // 부모가 먼저 죽어도 파일을 닫고 끝내도록
@@ -89,6 +90,7 @@ let args = Array(CommandLine.arguments.dropFirst())
 switch args.first {
 case "record": runRecord(Array(args.dropFirst()))
 case "check": runCheck()
+case "calendar": runCalendar(Array(args.dropFirst()))
 default:
     fputs(usage + "\n", stderr)
     exit(args.isEmpty || args.first == "--help" || args.first == "-h" ? 0 : 1)

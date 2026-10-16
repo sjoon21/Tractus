@@ -790,6 +790,7 @@ export function MeetingView({
           {!memoNote && diarized && (
             <SpeakersBar
               stats={stats}
+              attendees={detail.attendees}
               only={filter}
               onFilter={setOnly}
               busy={editing}
@@ -947,6 +948,7 @@ export function MeetingView({
           <SpeakerMenu
             target={menu}
             stats={stats}
+            attendees={detail.attendees}
             busy={editing}
             onClose={() => setMenu(null)}
             onSet={(segment, label) => void editSpeakers({ op: "set", segment, label })}

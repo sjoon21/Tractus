@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Callable
 
 from tractus import audio
+from tractus.calendar_event import load_event, save_event
 from tractus.store import (
     MEMOS_FILE, RECORDED, SCHEMA_VERSION, SR, Job, _clean_stale_job, _write_atomic, build_transcript, is_memo, is_recorded, meeting_dir_name, new_ulid, note_lock,
     read_transcript, save_transcript,
@@ -115,7 +116,7 @@ def finish_recording(rec: Path, meetings: Path, title: str | None, stage: Callab
         digest = audio.sha256(paths)
         duration = round(len(audio.decode(paths)) / SR, 2)  # ponytail: 길이를 재려고 통째로 디코딩한다 (1시간 약 230MB). 더 길면 ffprobe로 바꾼다
         meeting_id = new_ulid()
-        title = title or f"녹음 {info.started:%H:%M}"
+        title = title or (ev["title"] if (ev := load_event(rec)) else f"녹음 {info.started:%H:%M}")
         d = meetings / meeting_dir_name(info.started.date().isoformat(), title, meeting_id)
         d.mkdir(parents=True)
         _write_atomic(d / MARKER, json.dumps({"recording": rec.name, "meeting_id": meeting_id, "title": title, "sha256": digest, "duration_sec": duration}, ensure_ascii=False))
@@ -125,6 +126,8 @@ def finish_recording(rec: Path, meetings: Path, title: str | None, stage: Callab
         (d / "audio.part.ogg").replace(d / "audio.ogg")
     if info.marks and not (d / MEMOS_FILE).is_file():
         _write_atomic(d / MEMOS_FILE, json.dumps(info.marks, ensure_ascii=False, indent=1))
+    if ev := load_event(rec):
+        save_event(d, ev)
     tracks = d / TRACKS_DIR
     tracks.mkdir(exist_ok=True)
     for p in [*paths, rec / "recording.json"]:  # 복사다(옮기지 않는다): 원본은 transcript.json 뒤 _cleanup에서 지운다. 끊겨도 녹음 폴더가 온전해 앱 목록에서 사라지지 않고 일부 트랙만 변환되는 일이 없다

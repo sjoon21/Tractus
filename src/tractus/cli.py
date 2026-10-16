@@ -41,6 +41,7 @@ from tractus.store import IncompleteError, load_glossary, meeting_dir_name, new_
 from tractus.store import CHUNKS_FILE, JOB_FILE, edit_transcript, forget_person, note_lock, read_transcript, render_files  # noqa: E402
 from tractus.store import NOT_CONVERTED, _hms, is_memo, is_recorded, memo_lines, stamp  # noqa: E402
 from tractus.vad import find_chunks  # noqa: E402
+from tractus.calendar_event import load_event, save_event  # noqa: E402
 from tractus import models_cli, organize_cli  # noqa: E402
 from tractus import models_registry as registry  # noqa: E402
 from tractus.models_registry import STANDARD_MIN_MEMORY, physical_memory  # noqa: E402,F401  (테스트가 cli.physical_memory를 바꿔 끼운다)
@@ -150,6 +151,7 @@ class Source:
     recorded: datetime
     marks: list[dict]
     recording_dir: Path | None = None
+    event: dict | None = None  # 캘린더 일정으로 시작한 녹음 (calendar_event)
 
 
 def _source_from_recording(d: Path) -> Source:
@@ -163,7 +165,8 @@ def _source_from_recording(d: Path) -> Source:
     if not tracks:
         raise typer.BadParameter(f"{d}에 녹음된 소리가 없습니다", param_hint="--recording")
     marks = [m for m in rec.get("marks") or [] if isinstance(m, dict) and isinstance(m.get("t"), (int, float))]
-    return Source(paths=tracks, name=d.name, title=f"녹음 {started:%H:%M}", recorded=started, marks=marks, recording_dir=d)
+    ev = load_event(d)
+    return Source(paths=tracks, name=d.name, title=ev["title"] if ev else f"녹음 {started:%H:%M}", recorded=started, marks=marks, recording_dir=d, event=ev)
 
 
 def _source_from_file(file: Path) -> Source:
@@ -461,8 +464,11 @@ def _new_job(
             audio.encode_opus(source.paths, d / "audio.ogg")
     if source.marks:
         (d / MEMOS_FILE).write_text(json.dumps(source.marks, ensure_ascii=False, indent=1), encoding="utf-8")
+    if source.event:
+        save_event(d, source.event)
 
-    hotwords = list(dict.fromkeys(load_glossary(home_dir() / "glossary.md") + terms))
+    ev = source.event or load_event(d)  # 나중에 변환(--into)은 노트 폴더의 일정을 읽는다
+    hotwords = list(dict.fromkeys(load_glossary(home_dir() / "glossary.md") + terms + (ev["attendees"] if ev else [])))  # 참석자 이름은 이 노트의 변환에만
     job = Job(
         dir=d, meeting_id=meeting_id, sha256=digest, source=source.name, title=title,
         created_at=created_at, duration_sec=round(len(pcm) / SR, 2),

@@ -2,6 +2,7 @@
 
 mod ask;
 mod attach;
+mod calendar;
 mod deferred;
 mod llm_key;
 mod mcp;
@@ -67,6 +68,10 @@ pub struct Settings {
     pub obsidian_vault: String,
     /// Obsidian으로 보낼 때 오디오도 볼트에 복사한다 (기본 꺼짐: 1시간 약 14MB가 볼트와 함께 동기화된다)
     pub obsidian_audio: bool,
+    /// macOS 캘린더를 연결했는가 (calendar.rs). 기본 꺼짐: 연결하기 전에는 권한을 묻지 않는다
+    pub calendar_enabled: bool,
+    /// 홈 카드에서 뺄 캘린더 ID (처음에는 모두 읽는다)
+    pub calendar_hidden: Vec<String>,
     /// 앱 설정 폴더 (키가 있는 곳). 파일에는 쓰지 않고 `AppState::settings()`가 채운다
     #[serde(skip)]
     pub config_dir: Option<PathBuf>,
@@ -97,6 +102,8 @@ impl Default for Settings {
             embedding_provider: "local".into(),
             obsidian_vault: String::new(),
             obsidian_audio: false,
+            calendar_enabled: false,
+            calendar_hidden: vec![],
             config_dir: None,
             stale: vec![],
         }
@@ -415,6 +422,7 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, tray: State<'_, tra
     let cur = state.settings();
     (settings.llm_default, settings.llm_profiles, settings.embedding_provider, settings.config_dir) = (cur.llm_default, cur.llm_profiles, cur.embedding_provider, cur.config_dir);
     (settings.obsidian_vault, settings.obsidian_audio) = (cur.obsidian_vault, cur.obsidian_audio); // obsidian.rs set_obsidian이 바로 저장한다
+    (settings.calendar_enabled, settings.calendar_hidden) = (cur.calendar_enabled, cur.calendar_hidden); // calendar.rs도 바로 저장한다
     let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
     state.mcp.set_spawn(settings.mcp_spawn());
@@ -547,8 +555,9 @@ fn stop_live(live: &LiveSlot) {
 /// 녹음 시작. 이벤트는 "rec"로 보낸다. 반환값은 녹음 폴더.
 /// target: 글만 있는 노트의 ID. 있으면 그 노트에 녹음을 추가하는 녹음이다 (녹음 폴더에 attach.json을 쓰고, 녹음하는 동안 노트를 쓰는 중으로 표시한다. docs/desktop.md §2.11)
 #[tauri::command]
-fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>, target: Option<String>) -> Result<String, String> {
+fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>, target: Option<String>, event: Option<Value>) -> Result<String, String> {
     check_rec_flags(&flags)?;
+    let event = event.as_ref().map(calendar::clean_event).transpose()?; // 캘린더 일정으로 시작한 녹음 (docs/design/calendar.md)
     let mut rec = state.rec.lock().unwrap();
     if rec.is_some() {
         return Err("이미 녹음 중입니다".into());
@@ -562,6 +571,13 @@ fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>, tar
     if let Some(id) = &target {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         attach::write_attach(&dir, id).inspect_err(|_| attach::discard(&dir))?;
+    }
+    if let Some(ev) = &event {
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        calendar::write_event(&dir, ev).inspect_err(|_| {
+            attach::discard(&dir); // 먼저 쓴 attach.json이 있으면 폴더가 남지 않게
+            calendar::discard(&dir);
+        })?;
     }
     let mut cmd = Command::new(s.rec_path());
     cmd.arg("record").arg("--out").arg(&dir).args(&flags).envs(s.child_env());
@@ -602,6 +618,9 @@ fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>, tar
             }
             if target.is_some() {
                 attach::discard(&dir);
+            }
+            if event.is_some() {
+                calendar::discard(&dir);
             }
             return Err(e);
         }
@@ -1247,6 +1266,11 @@ pub fn run() {
             obsidian::set_obsidian,
             obsidian::obsidian_send,
             obsidian::obsidian_open,
+            calendar::calendar_status,
+            calendar::calendar_connect,
+            calendar::calendar_set,
+            calendar::calendar_next,
+            calendar::calendar_privacy,
             deferred::recording_finish,
             deferred::convert_note,
             models::models_list,
