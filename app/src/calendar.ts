@@ -9,6 +9,8 @@ export const CAL_CONNECT_HINT = "곧 시작하는 일정을 홈에 보여 주고
 export const CAL_DISCONNECT = "연결 끊기";
 export const CAL_DENIED = "캘린더 접근이 거부되어 있습니다. 시스템 설정에서 Tractus를 허용하세요.";
 export const CAL_PRIVACY = "시스템 설정 열기";
+/** 요청했는데 권한 창이 뜨지 않았다 (터미널에서 띄운 개발용 앱 등 macOS가 묻지 않은 경우) */
+export const CAL_NO_PROMPT = "macOS가 권한 창을 띄우지 않았습니다. 시스템 설정 › 개인정보 보호 및 보안 › 캘린더에서 Tractus를 허용하세요.";
 export const CAL_LIST_HINT = "끈 캘린더의 일정은 홈에 보이지 않습니다.";
 export const CARD_LABEL = "곧 시작하는 일정";
 export const CARD_RECORD = "이 일정으로 녹음";

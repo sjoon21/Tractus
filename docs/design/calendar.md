@@ -50,6 +50,11 @@ Google·Exchange 계정도 macOS 캘린더에 추가돼 있으면 읽힌다(OAut
 | 홈 | 연결돼 있으면 1분마다 `calendar next`를 부른다. 카드: 일정 제목, `10:00–11:00 · 진행 중`/`5분 뒤`, 참석자 수, `녹음` 단추 |
 | 녹음 | `rec_start(flags, target, event)`가 녹음 폴더에 `event.json`을 쓴다 |
 
+## 알아 둘 것
+
+- **권한 창은 "책임 앱"이 정한다.** Finder에서 연 Tractus.app은 자기가 책임 앱이다. 터미널에서 `pnpm tauri dev`로 띄우면 터미널 앱이 책임 앱이 되고, 그 앱이 하드런타임인데 캘린더 entitlement가 없으면 macOS는 창을 띄우지 않는다(tccd: `requires entitlement com.apple.security.personal-information.calendars`). 그때 화면은 안내와 `시스템 설정 열기`를 보인다. 개발 중 확인은 `pnpm tauri build --debug --bundles app`으로 만든 앱을 `open`으로 연다.
+- 정식 서명(하드런타임)을 켤 때를 위해 `Entitlements.plist`에 `com.apple.security.personal-information.calendars`를 넣어 두었다.
+
 ## 하지 않는 것
 
 - 알림, 메뉴 막대 표시, 일정 목록 화면, 일정과 기존 노트 이어 붙이기.

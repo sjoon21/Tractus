@@ -4,12 +4,13 @@ import { api, errText, type CalendarStatus } from "./api";
 import { Button } from "@/components/ui/button";
 import { Row, Section } from "@/components/ui/section";
 import { Switch } from "@/components/ui/switch";
-import { CAL_CONNECT, CAL_CONNECT_HINT, CAL_DENIED, CAL_DISCONNECT, CAL_LIST_HINT, CAL_PRIVACY, CAL_SECTION } from "./calendar";
+import { CAL_CONNECT, CAL_CONNECT_HINT, CAL_DENIED, CAL_DISCONNECT, CAL_LIST_HINT, CAL_NO_PROMPT, CAL_PRIVACY, CAL_SECTION } from "./calendar";
 
 export function CalendarSection() {
   const [st, setSt] = useState<CalendarStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [noPrompt, setNoPrompt] = useState(false); // 요청했는데 여전히 묻지 않은 상태: 안내와 시스템 설정 단추
   const load = () => api.calendarStatus().then(setSt, (e) => setErr(errText(e)));
   useEffect(() => void load(), []);
   const run = async (f: () => Promise<unknown>) => {
@@ -48,12 +49,19 @@ export function CalendarSection() {
                 {CAL_PRIVACY}
               </Button>
             ) : (
-              <Button size="sm" disabled={busy || !st} onClick={() => void run(() => api.calendarConnect())}>
-                {CAL_CONNECT}
-              </Button>
+              <span className="flex items-center gap-1.5">
+                {noPrompt && (
+                  <Button variant="outline" size="sm" onClick={() => void run(() => api.calendarPrivacy())}>
+                    {CAL_PRIVACY}
+                  </Button>
+                )}
+                <Button size="sm" disabled={busy || !st} onClick={() => void run(async () => setNoPrompt((await api.calendarConnect()) === "undetermined"))}>
+                  {CAL_CONNECT}
+                </Button>
+              </span>
             )
           }
-          below={err ? <p className="m-0 text-xs text-destructive" role="alert">{err}</p> : undefined}
+          below={err || (noPrompt && !denied) ? <p className="m-0 text-xs text-destructive" role="alert">{err ?? CAL_NO_PROMPT}</p> : undefined}
         />
       )}
       {connected &&
