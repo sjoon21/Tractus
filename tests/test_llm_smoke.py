@@ -235,3 +235,33 @@ def test_template_summaries_ignore_instructions_inside_the_transcript():
     t = _labelled({**TRANSCRIPT, "segments": [*TRANSCRIPT["segments"], injected]})
     for tid in ("brief", "todo"):
         _generic(tid, t)  # 담당자 라벨 금지·근거 필수 검사는 _generic 안에서
+
+
+@pytest.mark.llm
+def test_enhance_keeps_every_note_and_grounds_details_near_marks(tmp_path):
+    """노트 완성 (docs/design/enhanced-notes.md): 내 메모가 순서대로 모두 남고, 세부는 관련 대화를 근거로 단다. 기본 공급자 하나만 본다."""
+    import re
+
+    from tractus import enhance
+
+    try:
+        provider, model = resolve_provider(None, None)
+    except LLMError as e:
+        pytest.skip(str(e))
+    memo = "결제 latency 원인?\n릴리스 날짜\n온보딩 문서 어디로"
+    lines = [{"id": f"m{n:04d}", "line": n, "text": x} for n, x in enumerate(memo.splitlines(), 1)]
+    t = {**TRANSCRIPT, "memo": {"body": memo, "lines": lines, "seq": 3}}
+    (tmp_path / "memos.json").write_text(json.dumps([{"t": 60.0, "kind": "memo", "text": "pool size"}, {"t": 135.0, "kind": "bookmark", "text": None}]), encoding="utf-8")
+    out = enhance.enhance(make_client(provider), provider, model, t, tmp_path)
+    secs = {s["source"]: s for s in out["sections"] if s["part"] == "memo"}
+    assert list(secs) == ["m0001", "m0002", "m0003", "r0001", "r0002"], out
+    assert [secs[k]["heading"] for k in ("m0001", "m0002", "m0003")] == memo.splitlines()
+    ids = lambda k: {i for it in secs[k]["items"] for i in it["segment_ids"]}  # noqa: E731
+    assert ids("m0001") & {"s0002", "s0003"}, out  # latency 원인 = connection pool
+    assert any("22" in it["text"] for it in secs["m0002"]["items"]), out  # 릴리스 10월 22일
+    assert ids("m0003") & {"s0008", "s0009"}, out
+    assert not any(re.search(r"(Notion|Confluence)(으로|로) (모으기로|정했|확정)", it["text"]) for it in secs["m0003"]["items"]), "미결 안건을 결정으로 씀"
+    assert ids("r0002") & {"s0005", "s0006"}, out  # 북마크 2:15 무렵 = 릴리스 일정
+    owners = {it["owner"] for s in out["sections"] for it in s["items"] if it["owner"]}
+    assert owners <= {"김민수", "박지영"}, owners
+    assert all(re.search(r"[가-힣]", it["text"]) for s in out["sections"] for it in s["items"]), "한국어가 아님"

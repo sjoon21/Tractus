@@ -28,10 +28,19 @@ export interface SummaryItem {
   due: string | null;
 }
 
+/** 노트 완성(kind "enhanced")의 섹션 종류: 내 메모 한 줄 | 메모에 없던 내용 | 할 일 */
+export type SectionPart = "memo" | "extra" | "todos";
+
 export interface SummarySection {
   heading: string;
   style: SectionStyle;
   items: SummaryItem[];
+  /** 노트 완성에만 있다 (다른 요약은 undefined) */
+  part?: SectionPart;
+  /** 내 메모 줄 ID: m0003(메모 탭) | r0002(녹음 중 메모·북마크). 노트 완성의 memo 섹션에만 */
+  source?: string;
+  /** 녹음 중 메모·북마크의 녹음 시각(초) */
+  at?: number;
 }
 
 /** 옛 요약 원본 (결정 사항·할 일·주제). 화면·복사·인쇄가 옛 경로로 그린다 */
@@ -52,6 +61,8 @@ export interface SummaryDoc {
   prompt: string | null;
   /** 만든 유형의 ID (직접 요약은 custom) */
   template: string;
+  /** "enhanced"면 노트 완성 (메모 탭이 전용 모양으로 그린다) */
+  kind: "enhanced" | null;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -60,6 +71,7 @@ const strOrNull = (v: unknown): string | null => (typeof v === "string" && v ? v
 const ids = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 const list = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter(isObj) : []);
 const STYLES: readonly string[] = ["bullets", "checklist", "numbered"];
+const PARTS: readonly string[] = ["memo", "extra", "todos"];
 
 /** Rust가 준 요약 파일(원본 JSON + key) 하나 → 화면 모델. 모양이 다르거나 비어 있는 곳은 너그럽게 읽는다. key가 없으면 null */
 export function parseSummaryDoc(raw: unknown): SummaryDoc | null {
@@ -71,12 +83,16 @@ export function parseSummaryDoc(raw: unknown): SummaryDoc | null {
     model: strOrNull(raw.model),
     prompt: strOrNull(raw.prompt),
     template: str(raw.template) || raw.key,
+    kind: raw.kind === "enhanced" ? ("enhanced" as const) : null,
   };
   if (Array.isArray(raw.sections)) {
     const sections = list(raw.sections).map((s) => ({
       heading: str(s.heading),
       style: (STYLES.includes(str(s.style)) ? s.style : "bullets") as SectionStyle,
       items: list(s.items).map((i) => ({ text: str(i.text), segment_ids: ids(i.segment_ids), owner: strOrNull(i.owner), due: strOrNull(i.due) })),
+      ...(PARTS.includes(str(s.part)) ? { part: s.part as SectionPart } : {}),
+      ...(typeof s.source === "string" && s.source ? { source: s.source } : {}),
+      ...(typeof s.at === "number" && Number.isFinite(s.at) && s.at >= 0 ? { at: s.at } : {}),
     }));
     const custom = base.template === "custom" || base.key.startsWith("c-");
     return { ...base, name: str(raw.template_name) || (custom ? CUSTOM_NAME : base.key), overview: str(raw.overview), sections, legacy: null };
@@ -195,6 +211,7 @@ export function pickLabel(picked: string[], templates: TemplateInfo[]): string {
 /** '다시 만들기': 같은 유형이 있으면 그 유형으로, 지운 유형이거나 직접 요약이면 저장해 둔 요약 방법으로(직접 요약은 같은 key를 덮어쓴다). 방법을 모르면 null */
 export function rerunSpec(doc: SummaryDoc, templates: TemplateInfo[]): SummarySpec | null {
   if (doc.key === DEFAULT_KEY) return { label: doc.name, key: DEFAULT_KEY };
+  if (doc.kind === "enhanced") return { template: doc.key, label: doc.name, key: doc.key }; // 노트 완성: 요약 유형 목록에 없지만 같은 명령으로 다시 만든다
   const t = templates.find((x) => x.id === doc.key);
   if (t) return templateSpec(t);
   if (!doc.prompt) return null;

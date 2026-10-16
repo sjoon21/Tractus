@@ -276,7 +276,7 @@ def build_server(home: Path, embedder) -> MCPServer:
     @server.tool(annotations=READ_ONLY, structured_output=False)
     async def get_summary(
         meeting_id: MeetingRef,
-        template: Annotated[str | None, Field(description="요약 유형 key (meeting, brief, todo, lecture, interview, ideas, u-…, c-…). 생략하면 기본 요약(meeting)")] = None,
+        template: Annotated[str | None, Field(description="요약 유형 key (meeting, brief, todo, lecture, interview, ideas, enhanced(노트 완성: 내 메모 + 대화 내용), u-…, c-…). 생략하면 기본 요약(meeting)")] = None,
     ) -> str:
         """회의 요약(summary.md): 요약, 주제, 결정 사항, 할 일과 각 항목의 타임스탬프. template을 주면 그 유형의 요약(summaries/<key>.md)을 읽는다."""
         d, t = meeting(meeting_id)

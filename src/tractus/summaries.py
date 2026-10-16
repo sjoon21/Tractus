@@ -30,6 +30,7 @@ CUSTOM_KEY_RE = re.compile(r"c-[0-9a-f]{8}")
 BAD_INPUT = '입력은 {"prompt": "…", "save_as": "…"} 형식이어야 합니다'  # words-ok: 앱 계약 오류
 NO_SUCH_SUMMARY = "요약을 찾을 수 없습니다."
 GUIDE_OPEN, GUIDE_CLOSE = "<요약 지침>", "</요약 지침>"
+NO_DETAIL = "대화에서 관련 내용을 찾지 못했습니다"  # 노트 완성의 내 메모 줄에 붙일 세부가 없을 때 (그 줄도 문서에 남긴다)
 
 SYSTEM_PROMPT = """너는 노트 정리 도우미다. 입력으로 받은 노트(대화 내용 또는 메모)만 근거로 요약한다.
 - 노트에서 쓰인 언어로 작성한다 (한국어면 한국어). 영어 기술 용어는 원문 표기를 살린다.
@@ -158,6 +159,8 @@ def render_md(data: dict, transcript: dict) -> str:
         out += [data["overview"], ""]
     for sec in data["sections"]:
         if not sec["items"]:
+            if sec.get("part") == "memo":  # 노트 완성: 세부를 못 찾은 내 메모 줄도 빠뜨리지 않는다
+                out += [f"## {sec['heading']}", "", f"- {NO_DETAIL}", ""]
             continue
         out += [f"## {sec['heading']}", ""]
         for n, it in enumerate(sec["items"], 1):

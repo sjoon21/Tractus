@@ -35,7 +35,7 @@ from tractus.asr import SR, Transcriber  # noqa: E402
 from tractus.diarize import FLUID, FLUID_MIN_CLIP_S, MAX_SPEAKERS, NEMOTRON, MODEL_DIR as DIARIZER_DIR  # noqa: E402
 from tractus.diarize import fluid_hint, load_diarizer, load_fluid, split_chunks  # noqa: E402
 from tractus.export import FORMATS as EXPORT_FORMATS, UnsupportedFormat, render_export, write_bytes_atomic  # noqa: E402
-from tractus import attach, deferred, notes  # noqa: E402
+from tractus import attach, deferred, enhance, notes  # noqa: E402
 from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_suggestions, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
 from tractus.store import IncompleteError, load_glossary, meeting_dir_name, new_ulid, save_transcript, seg_text, speaker_name, write_transcript  # noqa: E402
 from tractus.store import CHUNKS_FILE, JOB_FILE, edit_transcript, forget_person, note_lock, read_transcript, render_files  # noqa: E402
@@ -761,6 +761,10 @@ def summarize(
     except typer.BadParameter as e:
         _emit_error(str(e))
         raise
+    if template == enhance.KEY:  # 노트 완성: 요약 유형 목록에 없는 전용 경로 (docs/design/enhanced-notes.md)
+        if custom:
+            _fail("요약 유형과 직접 입력은 함께 쓸 수 없습니다.", code="bad_input", exit_code=2)
+        return _enhance(d, provider, model)
     try:
         spec = sums.resolve_spec(home_dir(), template, sys.stdin.read() if custom else None)
     except ValueError as e:
@@ -793,6 +797,31 @@ def summarize(
     Events.emit("done", meeting_id=transcript["meeting_id"], meeting_dir=str(d), summary_key=key)
     detail = f"주제 {len(result.topics)}개, 결정 {len(result.decisions)}개, 할 일 {len(result.action_items)}개" if spec.is_default else f"항목 {sum(len(x.items) for x in result.sections)}개"
     console.print(f"완료: {detail} ({time.perf_counter() - t0:.0f}초)\n{sums.paths(d, key)[1]}")
+
+
+def _enhance(d: Path, provider: str | None, model: str | None) -> None:
+    """summarize --template enhanced: 내 메모를 뼈대로 대화 내용의 세부를 붙인 완성된 노트 (summaries/enhanced.json)."""
+    transcript = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+    if is_memo(transcript):
+        _fail(enhance.NO_RECORDING, code="no_recording", exit_code=2)
+    if is_recorded(transcript):
+        _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
+    if not transcript["segments"]:
+        _fail("인식된 대화가 없어 노트를 완성할 수 없습니다", code="no_segments")
+    try:
+        p, m = resolve_provider(provider, model)
+        t0 = time.perf_counter()
+        Events.emit("stage", stage="summarize")
+        with console.status(f"{p.name}/{m}로 노트 완성 중… (세그먼트 {len(transcript['segments'])}개)"):
+            result = enhance.enhance(make_client(p), p, m, transcript, d)
+    except LLMError as e:
+        if e.code == "llm_invalid":
+            console.print(f"[red]{escape(str(e))}[/red]")
+            _fail("AI 응답이 형식에 맞지 않아 노트를 완성하지 못했습니다", code=e.code)
+        _fail(str(e), code=e.code)
+    key = enhance.write(d, transcript, result, p.name, m)
+    Events.emit("done", meeting_id=transcript["meeting_id"], meeting_dir=str(d), summary_key=key)
+    console.print(f"완료: 블록 {len(result['sections'])}개 ({time.perf_counter() - t0:.0f}초)\n{sums.paths(d, key)[1]}")
 
 
 def _save_chat(d: Path, question: str, done: dict) -> None:

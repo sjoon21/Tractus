@@ -62,7 +62,7 @@ import { NoteOrganizer } from "./NoteOrganizer";
 import { ADD_FILE, ADD_FILE_TITLE, ADD_RECORDING, ADD_TITLE, LOCK_NOTICE, type AttachControls } from "./attach";
 import { ConvertPanel } from "./ConvertPanel";
 import { useConvertJob } from "./convertJobs";
-import { deleteBlockedWhileConverting, isRecorded, keptNotice, railNotice, RECORDED_BADGE, recordedStats, type ConvertControls } from "./recorded";
+import { CONVERT_FIRST, deleteBlockedWhileConverting, isRecorded, keptNotice, railNotice, RECORDED_BADGE, recordedStats, type ConvertControls } from "./recorded";
 import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type EditKind, type SaveState } from "./memo";
 import { RAIL_LABEL, railKey, railLabel, railTabs, validTab, type RailTab } from "./rail";
 import { PanelToggle, usePanels } from "./PanelToggle";
@@ -73,6 +73,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { selectClass } from "@/components/ui/select";
 import { cn } from "@/components/ui/utils";
 import { CHIP } from "@/components/panel/chip";
+import { EnhancedNote } from "./EnhancedNote";
 
 const RATE_KEY = "tractus.playbackRate";
 const readRate = () => {
@@ -158,6 +159,7 @@ export function MeetingView({
     setEditSeq(++editSeqRef.current);
   }, []);
   const [summaryRunning, setSummaryRunning] = useState(false); // 요약 탭이 요약을 만드는 중 (삭제를 막는다)
+  const [enhanceRunning, setEnhanceRunning] = useState(false); // 메모 탭이 노트를 완성하는 중 (삭제를 막는다)
   const [selectedSummary, setSelectedSummary] = useState<SummaryDoc | null>(null); // 요약 탭에서 고른 요약 (인쇄가 쓴다)
   const onMemoSaved = useCallback(
     (m: MeetingDetail) => {
@@ -721,8 +723,8 @@ export function MeetingView({
               size="icon-sm"
               className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               aria-label="삭제"
-              disabled={align.job.running || summaryRunning || !!attach?.lock || !!convertBlock}
-              title={convertBlock ?? (align.job.running || summaryRunning || attach?.lock ? "작업이 끝난 뒤에 삭제할 수 있습니다" : "노트를 휴지통으로 옮깁니다")}
+              disabled={align.job.running || summaryRunning || enhanceRunning || !!attach?.lock || !!convertBlock}
+              title={convertBlock ?? (align.job.running || summaryRunning || enhanceRunning || attach?.lock ? "작업이 끝난 뒤에 삭제할 수 있습니다" : "노트를 휴지통으로 옮깁니다")}
               onClick={() => onDelete({ kind: "note", id, title: info.title, dir: info.dir, memo: memoNote, withMemo: !memoNote && memoLines.size > 0 })}
             >
               <Trash2 aria-hidden />
@@ -1020,8 +1022,30 @@ export function MeetingView({
         )}
         {memoSeen && !memoNote && (
           <div id="panel-memo" role="tabpanel" aria-labelledby="tab-memo" className="rail-memo" hidden={tabNow !== "memo"}>
-            <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">내가 적는 메모입니다. 요약과 AI 질문에 대화 내용과 함께 쓰입니다.</p>
-            <MemoEditor variant="rail" id={id} initial={noteBody} savedBody={noteBody} segments={memoSegs} target={memoTarget} notify={notify} onSaved={onMemoSaved} onState={setMemoSave} />
+            <EnhancedNote
+              id={id}
+              rev={summaryRev}
+              disabled={recorded ? CONVERT_FIRST : segments.length === 0 ? "인식된 대화가 없습니다" : editing || memoBusy ? "저장이 끝난 뒤에 완성할 수 있습니다" : null}
+              prepare={flushMemos}
+              editSeq={editSeq}
+              editSeqRef={editSeqRef}
+              editKinds={editKinds}
+              chip={(ids) => <TimeChip ids={ids} starts={rail} onSeek={seekTo} />}
+              onSeek={(t) => seekTo(t)}
+              onMade={() => {
+                setSummaryRev((r) => r + 1);
+                onChanged();
+              }}
+              onRunning={setEnhanceRunning}
+              notify={notify}
+              pick={memoTarget}
+              mine={
+                <>
+                  <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">내가 적는 메모입니다. 요약과 AI 질문에 대화 내용과 함께 쓰입니다.</p>
+                  <MemoEditor variant="rail" id={id} initial={noteBody} savedBody={noteBody} segments={memoSegs} target={memoTarget} notify={notify} onSaved={onMemoSaved} onState={setMemoSave} />
+                </>
+              }
+            />
           </div>
         )}
         </div>
