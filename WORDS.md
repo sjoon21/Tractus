@@ -761,6 +761,20 @@ LLM 프롬프트(요약·AI 질문)도 이름 없는 참석자를 `참석자 N`�
 
 `보내기`를 쓴다. `동기화`·`연동`·`내보내기`(메뉴 이름이라 항목에는 쓰지 않는다)는 이 기능을 부르는 말로 쓰지 않는다: 한 번 누를 때 한 번 쓰는 동작이다.
 
+### 4.24 캘린더 (v3.38)
+
+홈의 `곧 시작하는 일정` 카드, 설정의 `캘린더` 섹션, 이름 바꾸기 폼의 `일정 참석자`다. 문구는 `app/src/calendar.ts`·`CalendarSettings.tsx`·`Speakers.tsx`, 권한 창 문구는 Info.plist(앱·녹음 프로그램)에 둔다.
+
+| 위치 | 문구 |
+| --- | --- |
+| 홈 카드 (`aria-label` `곧 시작하는 일정`) | `{HH:MM}–{HH:MM} · 진행 중` / `· 곧 시작` / `· {N}분 뒤`, 일정 제목, 참석자 `김민수, 이지은 외 {N}명`, 단추 `이 일정으로 녹음` |
+| 설정 `캘린더` | 연결 전 설명 `곧 시작하는 일정을 홈에 보여 주고, 그 일정 제목과 참석자 이름으로 녹음합니다. 일정은 이 Mac에서만 읽습니다.` + `캘린더 연결` / 거부됨 `캘린더 접근이 거부되어 있습니다. 시스템 설정에서 Tractus를 허용하세요.` + `시스템 설정 열기` / 연결 뒤 `끈 캘린더의 일정은 홈에 보이지 않습니다.` + 캘린더마다 스위치(이름, 계정) + `연결 끊기` |
+| 이름 바꾸기 | 버튼 묶음 `aria-label` `일정 참석자` |
+| 권한 창 (Info.plist) | `곧 시작하는 일정을 보여 주고 그 일정 제목과 참석자 이름으로 녹음합니다. 일정은 이 Mac에서만 읽습니다.` |
+| 오류 | `캘린더를 읽지 못했습니다` / `일정 정보가 올바르지 않습니다` |
+
+`일정`·`캘린더`를 쓴다. 일정의 참석자는 대화 내용의 `참석자`와 같은 말이지만 목소리로 찾은 사람과 다를 수 있어 고르기 묶음은 `일정 참석자`라고 부른다. `회의`는 쓰지 않는다(일정이 회의가 아닐 수 있다).
+
 ## 5. 금지어 검사
 
 사용자에게 보이는 문구를 바꾼 뒤, 커밋하기 전에 저장소 루트에서 돌린다. **출력이 없으면 통과다.**
@@ -774,7 +788,7 @@ T='회의|전사|세그먼트|화자|청크|벡터|임베딩|색인|(?<!AI )모�
   rg -n --pcre2 "$T" app/src/{caps,models,checkupRows}.ts app/src/ModelsSettings.tsx | sed 's/모델//g'
   awk '/#\[cfg\(test\)\]/{exit} {print FILENAME":"FNR":"$0}' app/src-tauri/src/models.rs | sed 's/모델//g'
   rg -n --pcre2 '^(?!\s*#).*(raise [\w.]+\(|_fail\(|\bfail\(|emit\("error"|console\.print\(|add_heading|add_paragraph|writerow|_HEADER =|NO_EVIDENCE =)' \
-    src/tractus/{store,export,summarize,ask,cli,llm,audio,voices,notes,attach,deferred,organize,organize_cli,summaries,summary_templates,models_registry,models_install,models_cli,doctor,enhance,obsidian}.py
+    src/tractus/{store,export,summarize,ask,cli,llm,audio,voices,notes,attach,deferred,organize,organize_cli,summaries,summary_templates,models_registry,models_install,models_cli,doctor,enhance,obsidian,calendar_event}.py
   rg -n '^(name|description):' src/tractus/templates | sed 's/회의록//g'  # 요약 유형 이름·설명 (회의록은 문서 이름이라 뺀다)
 } | rg -v '^[^:]+:\d+:\s*(//|/\*|\*|\{/\*)' | rg -v 'words-ok|code=|eprintln!' \
   | sed -E 's#[[:space:]]//[^"`]*$##' | rg --pcre2 "$T"

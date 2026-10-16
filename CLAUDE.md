@@ -115,6 +115,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `summaries.py` | 유형별 요약(스키마 v2, `summaries/<key>.json`), 시스템 프롬프트 + 지침 구분자, 근거·owner 검증, 목록·삭제 |
 | `enhance.py` | 노트 완성(`summarize --template enhanced`): 뼈대(메모 탭 `m####` → 녹음 중 메모·북마크 `r####`), 입력, 검증, 원문 덮어쓰기·정렬, `summaries/enhanced.json`(v2 + `kind`·`part`·`source`·`at`) |
 | `obsidian.py` | Obsidian으로 보내기(`tractus obsidian`): 볼트/Tractus/<폴더…>/<날짜 제목>.md 하나, `.tractus.json`(경로·sha256)으로 고친 파일은 `--force` 없이 덮어쓰지 않음, 데이터 폴더와 겹치는 볼트 거부 |
+| `calendar_event.py` | 캘린더 일정으로 시작한 녹음(`event.json`, 녹음 폴더 → 노트 폴더): 검사(`clean_event`·`load_event`), 기본 제목·참석자 hotwords(그 노트만, glossary에 쓰지 않음) |
 | `ask.py` | 회의 질의: 근거 모으기(회의 전사 전체 / 검색 8개 + 앞뒤 이웃), 프롬프트, 인용 대조·정리(`finalize`), 대화 기록 자르기, `chat.json` |
 | `env.py` | `.env` / `.env.local` 로더 |
 | `paths.py` | `TRACTUS_HOME`, `TRACTUS_MODELS_DIR` 해석 (CLI·MCP 공용). 녹음·도우미 프로그램 위치 `tool_bin`(`TRACTUS_REC_BIN`·`TRACTUS_DIAR_BIN` → 앱 번들 `bin/` → 저장소에서 빌드한 것)과 빌드 안내 `build_hint`(저장소 배치일 때만 `swift build` 명령, 아니면 일반 안내). 모델 폴더 순서: `TRACTUS_MODELS_DIR` → 등록된 모델이 이미 있는 `$TRACTUS_HOME/models` → 앱 설정 폴더의 `models` |

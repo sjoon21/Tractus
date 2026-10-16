@@ -75,6 +75,7 @@ const detail = (id: string): T => {
     body: n.t.kind === "memo" ? (n.t.body ?? "") : null,
     note_memo: n.t.memo ?? null,
     audio_path: null,
+    attendees: n.t.title?.includes("3분기") ? ["김지훈", "박소연", "최도윤", "정하은"] : [],
   };
 };
 
@@ -151,6 +152,11 @@ const handlers: Record<string, (a: T) => unknown> = {
   },
   load_chat: (a) => (a.id === notes[0].t.meeting_id ? CHAT : []),
   get_settings: () => settings,
+  calendar_next: () => {
+    const start = new Date(Date.now() + 6 * 60_000);
+    return [{ id: "e1", title: "주간 인프라 점검", start: start.toISOString(), end: new Date(start.getTime() + 3_600_000).toISOString(), calendar: "회사", attendees: ["김지훈", "박소연", "최도윤", "정하은"] }];
+  },
+  calendar_status: () => ({ enabled: true, access: "granted", hidden: ["c3"], calendars: [{ id: "c1", title: "회사", source: "Google" }, { id: "c2", title: "팀 일정", source: "Google" }, { id: "c3", title: "대한민국 공휴일", source: "구독" }] }),
   set_obsidian: ({ vault, audio }: T) => void Object.assign(settings, { obsidian_vault: vault, obsidian_audio: audio }),
   obsidian_send: ({ id }: T) => ({ status: "created", path: `/Users/me/Documents/My Vault/Tractus/${id}.md`, audio: null }),
   doctor: () => ({ doctor, core_error: null, tractus_bin: "tractus", tractus_bin_exists: true, rec_bin: "tractus-rec", rec_bin_exists: true, tractus_source: "repo", rec_source: "repo", home: "~/Tractus", home_risk: null }),

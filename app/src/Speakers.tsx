@@ -87,15 +87,26 @@ export const SpeakerChip = memo(function SpeakerChip({
  * keydown보다 먼저 와서 조합 플래그만으로는 못 거른다 → isComposing·keyCode 229로 본다). Esc·폼 밖으로 초점 이탈은 취소.
  * 기억하기는 동의 확인을 한 번 더 받는다(생체정보). 확인 전에는 제출하지 않는다.
  */
+export const ATTENDEE_PICKS = "일정 참석자";
+
+/** 고를 수 있는 일정 참석자: 이미 다른 참석자에게 붙인 이름은 뺀다 */
+export function unusedNames(attendees: string[], stats: Pick<SpeakerStat, "named" | "display">[]): string[] {
+  const used = new Set(stats.filter((s) => s.named).map((s) => s.display));
+  return attendees.filter((n) => !used.has(n));
+}
+
 export function RenameForm({
   display,
   initial,
   onSubmit,
   onCancel,
+  picks = [],
 }: {
   /** 지금 보이는 이름 ("참석자 1" 또는 붙인 이름) */
   display: string;
   initial: string;
+  /** 캘린더 일정의 참석자 이름: 누르면 그 이름으로 정한다 (docs/design/calendar.md) */
+  picks?: string[];
   onSubmit: (name: string, remember: boolean) => void;
   onCancel: () => void;
 }) {
@@ -105,8 +116,8 @@ export function RenameForm({
   const [error, setError] = useState<string | null>(null);
   const voicesGate = useVoicesGate();
   const modelReady = voicesGate.ok;
-  const submit = () => {
-    const r = renameRequest(input.current?.value ?? "", modelReady && remember, consent);
+  const submit = (name = input.current?.value ?? "") => {
+    const r = renameRequest(name, modelReady && remember, consent);
     if ("error" in r) setError(r.error);
     else onSubmit(r.name, r.remember);
   };
@@ -131,6 +142,15 @@ export function RenameForm({
       }}
     >
       <input ref={input} className="spk-rename" defaultValue={initial} placeholder={display} aria-label={`${display} 이름`} autoFocus onFocus={(e) => e.currentTarget.select()} />
+      {picks.length > 0 && (
+        <div className="flex flex-wrap gap-1" role="group" aria-label={ATTENDEE_PICKS}>
+          {picks.map((n) => (
+            <button key={n} type="button" className="h-6 rounded-full border border-border bg-card px-2.5 text-xs text-foreground hover:bg-accent" onClick={() => submit(n)}>
+              {n}
+            </button>
+          ))}
+        </div>
+      )}
       <label className="spk-check">
         <input
           type="checkbox"
@@ -186,7 +206,10 @@ export function SpeakersBar({
   onMenu,
   onConfirm,
   onDismiss,
+  attendees = [],
 }: {
+  /** 캘린더 일정의 참석자 이름 (이름 정하기에서 고를 수 있다) */
+  attendees?: string[];
   stats: SpeakerStat[];
   only: string | null;
   onFilter: (label: string | null) => void;
@@ -264,6 +287,7 @@ export function SpeakersBar({
                 <RenameForm
                   display={s.display}
                   initial={s.named ? s.display : (s.suggested?.name ?? "")}
+                  picks={unusedNames(attendees, stats)}
                   onSubmit={(name, remember) => onRename(s.label, name, remember)}
                   onCancel={onCancelRename}
                 />
@@ -330,7 +354,9 @@ export function SpeakerMenu({
   onRename,
   onStartRename,
   onAskMerge,
+  attendees = [],
 }: {
+  attendees?: string[];
   target: MenuTarget;
   stats: SpeakerStat[];
   busy: boolean;
@@ -398,6 +424,7 @@ export function SpeakerMenu({
                 <RenameForm
                   display={current.display}
                   initial={current.named ? current.display : (current.suggested?.name ?? "")}
+                  picks={unusedNames(attendees, stats)}
                   onSubmit={(name, remember) => done(() => onRename(current.label, name, remember))}
                   onCancel={() => setRenaming(false)}
                 />

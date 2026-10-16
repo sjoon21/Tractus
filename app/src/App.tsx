@@ -4,7 +4,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { attachAlignJobs } from "./alignJobs";
-import { api, errDetail, errFull, errText, useJob, useRecorder, type MeetingInfo, type PendingRecording } from "./api";
+import { api, errDetail, errFull, errText, useJob, useRecorder, type CalendarEvent, type MeetingInfo, type PendingRecording } from "./api";
+import { attendeeLine, CARD_LABEL, CARD_RECORD, eventWhen, useNextEvent } from "./calendar";
 import { AskPanel } from "./AskPanel";
 import { CHECKUP_LABEL, DROP_UNAVAILABLE, MODELS_LABEL, OK, recordNotice, UNCONVERTED_SAVED, type Decision } from "./caps";
 import { Checkup } from "./Checkup";
@@ -41,7 +42,7 @@ import { OrganizeContext, useOrganizeState } from "./useOrganize";
 import { PanelToggle, usePanels } from "./PanelToggle";
 import { RAIL_REC_LABEL, railPendingLabel, railRecState } from "./panels";
 import { check } from "@tauri-apps/plugin-updater";
-import { AudioLines, Box, ChevronRight, CircleAlert, FileText, House, Mic, Search, Settings, Sparkles, SquarePen, Stethoscope, Upload, X } from "lucide-react";
+import { AudioLines, Box, CalendarClock, ChevronRight, CircleAlert, FileText, House, Mic, Search, Settings, Sparkles, SquarePen, Stethoscope, Upload, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -558,13 +559,14 @@ export function App() {
     convertStore.cancel(convQ.current);
     notify({ text: CONVERT_PAUSED });
   };
-  const onRecordButton = () => {
+  /** event: 홈의 `곧 시작하는 일정` 카드에서 시작한 녹음 (일정 제목·참석자를 녹음 폴더에 남긴다) */
+  const onRecordButton = (event?: CalendarEvent) => {
     if (!recording && !recordBlocked && !recordGate.ok) return notifyBlocked(recordGate); // 새 노트 메뉴의 `녹음 시작`
     if (!recording && !recordBlocked) {
       pauseConvert();
       resetRec();
       setUnconverted(false);
-      void startRec(mode);
+      void startRec(mode, null, event);
     }
     void go({ kind: "record" });
   };
@@ -732,7 +734,7 @@ export function App() {
           <GatedButton
             gate={recording || recordBlocked ? OK : recordGate}
             className={cn("mt-10 grid size-9 place-items-center self-center rounded-full shadow-xs transition-colors", recording ? "bg-rec" : "bg-primary hover:bg-primary/85")}
-            onClick={onRecordButton}
+            onClick={() => onRecordButton()}
             aria-current={view.kind === "record"}
             aria-label={RAIL_REC_LABEL[railRec]}
             title={RAIL_REC_LABEL[railRec]}
@@ -766,7 +768,7 @@ export function App() {
             <GatedButton
               gate={recording || recordBlocked ? OK : recordGate}
               className={cn(buttonVariants({ variant: recButtonView.live ? "rec" : "outline" }), "flex-1 justify-start gap-2 bg-background", recButtonView.live && "bg-rec", rec.phase === "paused" && "opacity-80")}
-              onClick={onRecordButton}
+              onClick={() => onRecordButton()}
               aria-current={view.kind === "record"}
             >
               <span className={cn("size-2 shrink-0 rounded-full", recButtonView.live ? "bg-white" : "bg-rec", rec.phase === "recording" && "animate-rec-pulse")} aria-hidden />
@@ -952,7 +954,7 @@ export function App() {
       </aside>
 
       <main className="main relative h-screen overflow-hidden bg-background">
-        {view.kind === "home" && <Welcome notes={meetings} onOpen={openMeeting} onAction={onNewNote} recordGate={recording || recordBlocked ? OK : recordGate} convertGate={convertGate} recording={recording} />}
+        {view.kind === "home" && <Welcome notes={meetings} onOpen={openMeeting} onAction={onNewNote} onRecordEvent={onRecordButton} recordGate={recording || recordBlocked ? OK : recordGate} convertGate={convertGate} recording={recording} />}
         {view.kind === "meeting" && (
           <MeetingView
             key={noteEpoch.id === view.id ? `${view.id}.${noteEpoch.n}` : view.id}
@@ -1080,8 +1082,9 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
 
 const RECENT_MAX = 6;
 
-function Welcome({ notes, onOpen, onAction, recordGate, convertGate, recording }: { notes: MeetingInfo[]; onOpen: (id: string) => void; onAction: (a: NewNoteAction) => void; recordGate: Decision; convertGate: Decision; recording: boolean }) {
+function Welcome({ notes, onOpen, onAction, onRecordEvent, recordGate, convertGate, recording }: { notes: MeetingInfo[]; onOpen: (id: string) => void; onAction: (a: NewNoteAction) => void; onRecordEvent: (ev: CalendarEvent) => void; recordGate: Decision; convertGate: Decision; recording: boolean }) {
   const { openCheckup, openModels } = useCapabilities();
+  const next = useNextEvent();
   const recent = useMemo(() => [...notes].sort((a, b) => (b.updated_at ?? b.created_at).localeCompare(a.updated_at ?? a.created_at)).slice(0, RECENT_MAX), [notes]);
   const keys: [string[], string][] = [
     [["⌘N"], "글쓰기 (새 메모)"],
@@ -1102,6 +1105,8 @@ function Welcome({ notes, onOpen, onAction, recordGate, convertGate, recording }
       <div className="mx-auto flex w-full max-w-[760px] flex-col gap-10 px-8 pt-10 pb-16">
         <h1 className="sr-only">홈</h1>
         {notes.length === 0 && <p className="m-0 text-[15px] font-medium">녹음하거나 메모를 써서 노트를 만드세요. 녹음은 이 Mac에서 텍스트로 변환되고, 파일로 남습니다.</p>}
+
+        {next && <NextEventCard ev={next} gate={recordGate} recording={recording} onRecord={() => onRecordEvent(next)} />}
 
         <div className="grid grid-cols-3 gap-3">
           <GatedButton gate={recordGate} className={action} disabled={recording} onClick={() => onAction("record")}>
@@ -1177,6 +1182,34 @@ function Welcome({ notes, onOpen, onAction, recordGate, convertGate, recording }
           </Button>
         </p>
       </div>
+    </section>
+  );
+}
+
+/** 홈: 진행 중이거나 15분 안에 시작하는 캘린더 일정 하나 (calendar.ts) */
+function NextEventCard({ ev, gate, recording, onRecord }: { ev: CalendarEvent; gate: Decision; recording: boolean; onRecord: () => void }) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const people = attendeeLine(ev.attendees);
+  return (
+    <section aria-label={CARD_LABEL} className="flex items-center gap-4 rounded-lg border border-border bg-card/90 p-4 shadow-xs backdrop-blur-sm">
+      <span className="grid size-9 shrink-0 place-items-center rounded-full bg-rec-wash text-rec">
+        <CalendarClock className="size-5" aria-hidden />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="m-0 text-xs font-medium text-muted-foreground tabular-nums">{eventWhen(ev, now)}</p>
+        <p className="m-0 truncate text-[15px] font-semibold leading-6" title={ev.title}>
+          {ev.title}
+        </p>
+        {people && <p className="m-0 truncate text-xs text-subtle-foreground">{people}</p>}
+      </div>
+      <GatedButton gate={gate} className={buttonVariants({ variant: "rec", size: "sm" })} disabled={recording} onClick={onRecord}>
+        <Mic aria-hidden />
+        {CARD_RECORD}
+      </GatedButton>
     </section>
   );
 }
