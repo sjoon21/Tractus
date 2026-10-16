@@ -1,0 +1,28 @@
+# Dependabot의 GitHub Actions 버전 업데이트 PR만 자동으로 합친다 (사용자 결정 2026-10-16).
+# 자동 합치기는 main의 필수 검사 4개(코어·앱·녹음 프로그램·금지어)가 통과해야만 실제로 합쳐진다.
+# 라이브러리(uv·npm·cargo) 보안 업데이트는 손으로 합친다: copyleft·모델 동작을 사람이 본다 (CLAUDE.md).
+# 번들 점검(bundle-smoke.yml)은 자동 합치기 전에 돌지 않는다. 매주 월요일 점검이 뒤늦게 잡는다.
+name: Dependabot auto-merge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    name: Actions 업데이트 자동 합치기
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'sjoon21/Tractus'
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: 자동 합치기 켜기 (GitHub Actions 업데이트만, squash)
+        if: steps.meta.outputs.package-ecosystem == 'github_actions'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
