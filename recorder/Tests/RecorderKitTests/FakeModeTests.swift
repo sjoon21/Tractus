@@ -205,7 +205,8 @@ final class FakeModeTests: XCTestCase {
         XCTAssertEqual(mic, duration, accuracy: 0.05)
         XCTAssertEqual(system, duration, accuracy: 0.05)
         XCTAssertEqual(mic, system, accuracy: 0.03, "트랙 정렬")
-        XCTAssertLessThan(try longestZeroRun(r.dir.appendingPathComponent("mic.wav")), 100)
+        // 일시정지(1.5초 = 72,000표본)를 0으로 메웠다면 잡힌다. 재개·늦은 트랙 정렬로 메우는 몇 ms는 정상이다 (CI 러너에서 137표본)
+        XCTAssertLessThan(try longestZeroRun(r.dir.appendingPathComponent("mic.wav")), 4_800)  // 0.1초 (48kHz)
 
         let json = try info(r)
         XCTAssertEqual(json["duration"] as? Double, duration)
