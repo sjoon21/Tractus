@@ -1,4 +1,4 @@
-# 버전 업데이트는 워크플로의 GitHub Actions만 (매주). 라이브러리(uv·npm·cargo)는 저장소 설정의 "Dependabot 보안 업데이트"로
+# 버전 업데이트는 워크플로의 GitHub Actions만 (매주). 필수 검사가 통과하면 dependabot-automerge.yml이 자동으로 합친다. 라이브러리(uv·npm·cargo)는 저장소 설정의 "Dependabot 보안 업데이트"로
 # 취약점이 있을 때만 PR이 온다: 라이선스(copyleft 금지)·모델 동작을 사람이 보고 올린다 (CI의 scripts/check_licenses.py가 함께 검사).
 version: 2
 updates:
