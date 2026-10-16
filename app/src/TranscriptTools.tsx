@@ -2,6 +2,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { EXPORT_FORMATS, isImeKey } from "./lib";
 import { OBSIDIAN_ITEM } from "./obsidian";
+import { ObsidianLogo } from "@/components/ui/obsidian-logo";
 import { ChevronDown, ChevronUp, Share, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/input";
@@ -202,7 +203,10 @@ export function ExportMenu({ onPick, onPrint, onObsidian, formats = EXPORT_FORMA
           <small className="tnum">.pdf · 인쇄 → PDF로 저장</small>
         </button>
         <button role="menuitem" onClick={() => pick(onObsidian)}>
-          <span>{OBSIDIAN_ITEM.label}</span>
+          <span className="flex items-center gap-1.5">
+            <ObsidianLogo />
+            {OBSIDIAN_ITEM.label}
+          </span>
           <small>{OBSIDIAN_ITEM.note}</small>
         </button>
       </div>

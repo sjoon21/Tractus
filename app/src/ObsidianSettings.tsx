@@ -4,6 +4,7 @@ import { api, errText, type Settings } from "./api";
 import { Button } from "@/components/ui/button";
 import { Row, Section } from "@/components/ui/section";
 import { Switch } from "@/components/ui/switch";
+import { ObsidianLogo } from "@/components/ui/obsidian-logo";
 import { AUDIO_HINT, AUDIO_LABEL, OBSIDIAN_SECTION, pickVault, VAULT_HINT, VAULT_LABEL, VAULT_NONE, VAULT_PICK } from "./obsidian";
 
 export function ObsidianSection({ initial }: { initial: Settings }) {
@@ -19,7 +20,7 @@ export function ObsidianSection({ initial }: { initial: Settings }) {
     }
   };
   return (
-    <Section title={OBSIDIAN_SECTION}>
+    <Section title={OBSIDIAN_SECTION} icon={<ObsidianLogo />}>
       <Row
         label={VAULT_LABEL}
         hint={VAULT_HINT}
