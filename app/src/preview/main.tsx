@@ -102,15 +102,52 @@ const fakeRecording = () => {
   return "/tmp/preview-rec";
 };
 
+// 노트 완성 (첫 노트): 메모 탭 글 + 누르면 완성된 노트를 만든다
+const FIRST = notes[0].t;
+FIRST.memo = { body: "AWS 비용 줄일 방법\n\nGPU 서버 살지?\n\n채용 몇 명", lines: [
+  { id: "m0001", line: 1, text: "AWS 비용 줄일 방법" }, { id: "m0002", line: 3, text: "GPU 서버 살지?" }, { id: "m0003", line: 5, text: "채용 몇 명" }], seq: 3 };
+const it = (text: string, ids: string[], owner: string | null = null, due: string | null = null) => ({ text, segment_ids: ids, owner, due });
+const ENHANCED = {
+  key: "enhanced", kind: "enhanced", template: "enhanced", template_name: "노트 완성", title: "3분기 예산 계획", overview: "",
+  sections: [
+    { heading: "AWS 비용 줄일 방법", part: "memo", source: "m0001", style: "bullets", items: [
+      it("2분기 AWS 비용이 월 평균 4,200만 원으로 예산보다 15% 많았다", ["s0002"]),
+      it("개발 EKS 클러스터를 야간에 0으로 줄이면 월 600만 원 정도 아낄 수 있다", ["s0003"]),
+      it("야간 scale down은 7월 31일까지 적용하기로 했다", ["s0004", "s0005"])] },
+    { heading: "GPU 서버 살지?", part: "memo", source: "m0002", style: "bullets", items: [
+      it("H100 두 장 서버 견적은 대당 9,800만 원이었다", ["s0006"]),
+      it("3분기에는 구매를 보류하고 클라우드 GPU를 월 800만 원 한도로 쓴다", ["s0008"])] },
+    { heading: "채용 몇 명", part: "memo", source: "m0003", style: "bullets", items: [
+      it("하반기에는 backend 개발자 2명만 뽑고 ML 엔지니어는 보류한다", ["s0009", "s0010"])] },
+    { heading: "북마크 1:56", part: "memo", source: "r0001", at: 116, style: "bullets", items: [it("GPU 구매 보류에 모두 동의했다", ["s0008"])] },
+    { heading: "3분기 총예산", part: "extra", source: null, style: "bullets", items: [it("인프라 5억 1천, 채용 1억 2천", ["s0012"])] },
+    { heading: "할 일", part: "todos", source: null, style: "checklist", items: [
+      it("개발 클러스터 야간 scale down 적용", ["s0004"], "최도윤", "7월 31일"), it("backend 채용 공고 게시", ["s0011"], "정하은", "이번 주 금요일")] },
+  ],
+};
+const made = new Set<string>();
+const fakeSummary = (a: T) => {
+  const job = (payload: T) => void emit("job", { job: a.job, kind: "summarize", ...payload });
+  setTimeout(() => job({ event: "stage", stage: "summarize" }), 50);
+  setTimeout(() => {
+    if (a.template === "enhanced") made.add(a.id);
+    job({ event: "done", meeting_id: a.id, meeting_dir: "/tmp", summary_key: a.template ?? "meeting" });
+    job({ event: "exit", code: 0 });
+  }, 1500);
+  return null;
+};
+
 const handlers: Record<string, (a: T) => unknown> = {
   rec_start: fakeRecording,
+  summary_start: fakeSummary,
   list_meetings: () => notes.map(info),
   list_recordings: () => [],
   list_folders: () => [{ id: "f1", name: "고객사", parent: null, order: 0, created_at: "2026-10-01T09:00:00+09:00" }],
   load_meeting: (a) => detail(a.id),
   summaries_list: (a) => {
     const n = notes.find((x) => x.t.meeting_id === a.id);
-    return n?.summary ? [{ ...n.summary, key: "meeting" }, ...(n === notes[0] ? [BRIEF] : [])] : [];
+    const extra = made.has(a.id) && n === notes[0] ? [ENHANCED] : [];
+    return n?.summary ? [{ ...n.summary, key: "meeting" }, ...(n === notes[0] ? [BRIEF] : []), ...extra] : extra;
   },
   load_chat: (a) => (a.id === notes[0].t.meeting_id ? CHAT : []),
   get_settings: () => settings,

@@ -113,6 +113,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `summarize.py` | 요약 스키마, segment_ids 검증, summary.md/json |
 | `summary_templates.py` | 요약 유형: 기본(`templates/*.md`)·내 유형(`$TRACTUS_HOME/templates/u-*.md`) 로더·CRUD·검증 |
 | `summaries.py` | 유형별 요약(스키마 v2, `summaries/<key>.json`), 시스템 프롬프트 + 지침 구분자, 근거·owner 검증, 목록·삭제 |
+| `enhance.py` | 노트 완성(`summarize --template enhanced`): 뼈대(메모 탭 `m####` → 녹음 중 메모·북마크 `r####`), 입력, 검증, 원문 덮어쓰기·정렬, `summaries/enhanced.json`(v2 + `kind`·`part`·`source`·`at`) |
 | `ask.py` | 회의 질의: 근거 모으기(회의 전사 전체 / 검색 8개 + 앞뒤 이웃), 프롬프트, 인용 대조·정리(`finalize`), 대화 기록 자르기, `chat.json` |
 | `env.py` | `.env` / `.env.local` 로더 |
 | `paths.py` | `TRACTUS_HOME`, `TRACTUS_MODELS_DIR` 해석 (CLI·MCP 공용). 녹음·도우미 프로그램 위치 `tool_bin`(`TRACTUS_REC_BIN`·`TRACTUS_DIAR_BIN` → 앱 번들 `bin/` → 저장소에서 빌드한 것)과 빌드 안내 `build_hint`(저장소 배치일 때만 `swift build` 명령, 아니면 일반 안내). 모델 폴더 순서: `TRACTUS_MODELS_DIR` → 등록된 모델이 이미 있는 `$TRACTUS_HOME/models` → 앱 설정 폴더의 `models` |
@@ -171,6 +172,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - **로컬 전용 모드(`TRACTUS_LOCAL_ONLY`)는 이름이 아니라 주소의 호스트로 판단한다.** `urlsplit`으로 파싱한 호스트가 정확히 `localhost`·`127.0.0.1`·`::1`이 아니면 `llm_local_only`다(부분 문자열 비교 금지: `localhost.evil.com`, `user@host`). 앱(`llm_key.rs`)·화면(`llmKey.ts`)에도 같은 규칙이 있다: 셋을 함께 바꾼다.
 - **SDK 오류는 `llm.map_error`가 `LLMError`로 바꾼다**(`llm_auth` 401·403 / `llm_rate` 429 / `llm_busy` 503·529·`UNAVAILABLE`·`overloaded` / `llm_model` 404(서버 안내 문장을 키 가리고 200자로 `자세히`에 싣는다) / `llm_context` / `llm_conn` 연결·시간 초과 / `llm_api`). 실제 호출은 SDK가 408·409·429·5xx를 4회 지수 백오프로 다시 보낸다. `cli.py`는 `LLMError`만 잡고 `code`를 오류 이벤트에 싣는다. 새 코드를 더하면 `app/src/lib.ts` `ERROR_TEXT`·WORDS.md·docs/desktop.md 표도 고친다. `tractus llm test`는 같은 해석·환경으로 짧은 요청 한 번(`max_tokens` 256, 재시도 없음)을 보내고 HTTP 200이면 성공이다(`empty: true`: 생각하는 AI가 토큰을 생각에 다 써 답이 비어도 연결은 된 것). `tractus llm models [--provider P]`는 `GET /models`로 `{"models": [ID…]}`를 낸다(앞의 `models/` 제거).
 - 모든 추출 항목은 근거 `segment_ids`가 필수다. 프롬프트·스키마를 바꾸면 `uv run pytest -m llm`으로 확인한다.
+- **노트 완성(`enhance.py`, docs/design/enhanced-notes.md).** 녹음 중 메모·북마크는 노트 완성에만 쓰고 기존 요약 프롬프트에는 넣지 않는다(넣으려면 요약 품질을 따로 잰다). 메모 원문은 모델이 아니라 코어가 제목으로 쓴다. 프롬프트·스키마를 바꾸면 `uv run pytest -m llm -k enhance`를 돌린다.
 - **요약 유형·직접 프롬프트(v3.21).** 기본 유형(회의록)은 옛 스키마의 `summary.json`이고 다른 유형·직접 요약은 `summaries/<key>.json`(스키마 v2)이다. 요약 지침(유형 본문·내가 쓴 방법)은 시스템 규칙(`summaries.SYSTEM_PROMPT`)이 항상 이기고 `<요약 지침>`으로 감싼다. 새 유형 파일이나 시스템 프롬프트를 바꾸면 `uv run pytest -m llm -k template`을 돌린다(유형마다 스키마·근거·owner 라벨·한국어를 본다). 직접 요약이 내 유형으로 저장되는 것은 요약이 성공한 뒤다.
 - 화자는 자동 추정이다. owner에는 사용자가 이름을 붙인 화자만 쓰고 `S1` 같은 라벨은 쓰지 않는다. 프롬프트만으로는 새어 나와서 `summarize.clean_owners`가 null로 바꾼다.
 - **회의 질의(`ask`)는 원격 공급자로 질문, 최근 대화, 근거 세그먼트 텍스트만 보낸다.** 오디오·요약·근거 밖 전사는 보내지 않는다. 답의 인용은 `ask.finalize`가 근거와 대조해 없는 ID를 지운다. 프롬프트를 바꾸면 `uv run pytest -m llm`과 `bench/ask_eval.py`(가상 회의만)를 돌린다. 전체 범위 질의는 단독 질문에 keyword 일치가 없으면 직전 사용자 질문 2개를 보탠 검색을 섞는다(`ask._hits`). `done`·`chat.json`의 `no_evidence`는 인용이 하나도 안 남았다는 뜻이다(거절 문장과 같은 말이 아니다).

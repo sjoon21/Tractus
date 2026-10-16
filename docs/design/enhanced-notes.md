@@ -1,6 +1,6 @@
 # 설계: 노트 완성 (내 메모 + 대화 내용 → 완성된 노트)
 
-> 상태: 확정 (2026-10-16, 브랜치 `feat/enhanced-notes`). 구현이 끝나면 ARCHITECTURE.md 변경 이력과 docs/desktop.md에 옮긴다.
+> 상태: 구현됨 (2026-10-16, v3.36). 계약은 docs/desktop.md §2.17, 문구는 WORDS.md §4.22, 결정은 ARCHITECTURE.md 변경 이력 v3.36.
 
 ## 한 줄 요약
 

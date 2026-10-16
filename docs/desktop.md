@@ -820,6 +820,20 @@ tractus transcribe --into <노트> [--track …] [--language …] [--term …] [
 
 **테스트.** `tests/test_deferred.py`(가짜 ASR·화자 분리 + 실제 FFmpeg, 42개 + `slow` 1개): 저장(메모·북마크·md·`audio.ogg`·`tracks/`·길이·제목·stdout JSON), 잘못된 입력(제목·없는 폴더·소리 없음·ffmpeg 없음)과 중단 뒤 이어하기(transcript.json 직전 끊김, 인코딩 실패, 정리 직전 끊김), 변환(제자리 변환·`--keep-tracks`·화자·바로 변환과 같은 결과·중단 뒤 이어하기·바로 변환과 작업 파일 분리·변환 중 메모·제목·태그 수정이 살아남음·트랙 없이 `audio.ogg`로·`not_recorded`·옵션 충돌·덧붙이기 대상 거절·다른 실행이 먼저 변환), 읽는 쪽 전부(색인·검색·summarize·ask·내보내기 7형식·MCP·notes list·편집 명령 거절·note save/title/meta·render). `slow`는 실제 모델로 `say` 음성을 저장 → SIGKILL → 이어서 저장 → 변환 → SIGKILL → 이어서 변환하고 바로 변환한 결과와 대화 텍스트·시각·참석자를 비교한다.
 
+### 2.17 노트 완성: `tractus summarize <노트> --template enhanced` (v3.36)
+
+설계: [docs/design/enhanced-notes.md](design/enhanced-notes.md). 문구: WORDS.md §4.22.
+
+- **입력:** 대화 내용(요약과 같은 줄 모양) + `내가 적은 메모`. 메모 탭 줄(`m####`)을 적은 순서로 먼저, 녹음 중 메모·북마크(`memos.json`)를 시각 순으로 그 뒤에 둔다. 녹음 중 메모에는 저장하지 않는 ID `r####`를 시각 순으로 매번 같은 규칙으로 붙인다. 기존 요약 프롬프트는 바뀌지 않는다(녹음 중 메모는 노트 완성에만 쓴다).
+- **출력:** `summaries/enhanced.json`(요약 v2) + `kind: "enhanced"`, 섹션마다 `part`(`memo` | `extra` | `todos`)·`source`(`m####`·`r####`, memo만)·`at`(녹음 중 메모·북마크의 초). `overview`는 비고, `prompt`는 없다(`prompt_hash`만). 순서는 내 메모(입력 순서) → 메모에 없던 내용 → `할 일`.
+- **검증(1회 재요청):** 근거는 대화 줄 `s####`만이고 비어 있지 않다. 모든 메모 ID가 블록 `source`에 빠짐없이 한 번씩 나온다. 없는 메모 ID를 쓰지 않는다. **후처리(재요청 없음):** 메모 원문을 제목으로 덮어쓰고(북마크는 `북마크 m:ss`) 입력 순서로 다시 정렬한다. owner 정리는 요약과 같다.
+- **거절:** 메모 노트 → 종료 코드 2, code `no_recording`. 변환 전 → `not_converted`. 대화 없음 → `no_segments`. `--custom`과 함께 쓰면 `bad_input`. `templates list`에는 나오지 않는다.
+- **이벤트:** 요약과 같다(`stage summarize` → `done`의 `summary_key: "enhanced"`). 검색 색인은 갱신하지 않는다.
+- **앱:** 메모 탭의 `EnhancedNote`가 `summary_start`(template `enhanced`)로 만든다. `내 메모 | 완성된 노트` 전환이 있고, 내 메모 편집기는 숨기기만 하고 언마운트하지 않는다. 낡음은 요약과 같은 편집 횟수 비교다. 요약 탭 목록에도 한 칸으로 보이고, `다시 만들기`는 같은 명령이다(`rerunSpec`). 만드는 동안 노트 삭제를 막는다. 내보내기·MCP는 요약 key `enhanced`로 읽는다.
+- **확인:** `tests/test_enhance.py`(가짜 응답), `pytest -m llm -k enhance`(가상 회의 + 메모 3줄·녹음 중 메모·북마크, Upstage solar-pro4로 3회 통과, 2026-10-16), 미리보기(`/preview.html`) 라이트·다크.
+
+**알려진 한계.** 완성된 노트는 읽기 전용이다(고치려면 내 메모를 고친 뒤 `다시 완성`). 녹음이 길면 대화 전체를 한 번에 보낸다(요약과 같다). 메모가 대화보다 단정적인 표현으로 바뀌는 경우가 있다(가상 회의에서 '모으면 좋겠다'를 '모으기로 했다'에 가깝게 씀). WKWebView에서 손으로 확인하지 못했다(미리보기·vitest·tsc만).
+
 ## 3. Tauri 앱 (app/)
 
 - **스택:** Tauri 2 + React + TypeScript + Vite. 오디오는 자체 `media://` URI 스킴(`convertFileSrc(path, "media")`, MIME `audio/ogg`, HTTP Range 지원, `TRACTUS_HOME` 밖 경로 거부)으로 `<audio>`에 연결한다. Tauri 기본 asset protocol은 `.ogg`/`.opus`의 MIME과 Range 처리가 맞지 않아 쓰지 않는다(`app/README.md`).

@@ -730,6 +730,22 @@ LLM 프롬프트(요약·AI 질문)도 이름 없는 참석자를 `참석자 N`�
 
 `새 버전`·`지금 버전`·`업데이트`·`받기`·`설치`·`다시 열기`·`릴리스`를 쓴다. `버전 확인`(무엇을 확인하는지 모호하다)·`재시작`·`자동 업데이트`는 쓰지 않는다. 0.1.0 사용자는 이 절이 없으니 한 번은 새 디스크 이미지로 직접 설치해야 하고, 임시 서명이라 업데이트 뒤 마이크·시스템 오디오 권한을 다시 물을 수 있다(미확인, docs/setup.md).
 
+### 4.22 노트 완성 (v3.36)
+
+녹음 노트의 `메모` 탭이다. 내가 적은 메모(메모 탭 줄, 녹음 중 메모·북마크)를 뼈대로 AI가 대화 내용의 세부를 붙인다. 문구는 `app/src/enhanced.ts`·`EnhancedNote.tsx`, 코어 문구는 `src/tractus/enhance.py`에 둔다. 결과는 요약 목록에도 `노트 완성` 한 칸으로 보이고, 내보내기·MCP에서는 요약 key `enhanced`다.
+
+| 위치 | 문구 |
+| --- | --- |
+| 단추 | `노트 완성` (이미 있으면 `다시 완성`). `title` `내가 적은 메모를 뼈대로, 대화 내용에서 찾은 세부를 붙여 노트를 완성합니다.` |
+| 보기 전환 (완성된 노트가 있을 때) | `내 메모` / `완성된 노트` (`aria-label` `메모 보기`) |
+| 진행 | `노트를 완성하는 중…` |
+| 못 쓸 때 (단추 `title`) | 변환 전 `먼저 텍스트로 변환하세요` / 대화 없음 `인식된 대화가 없습니다` / 저장 중 `저장이 끝난 뒤에 완성할 수 있습니다` |
+| 완성된 노트 | 내 메모 줄은 원문 그대로 제목이 되고, 북마크는 `북마크 {m:ss}`. 관련 대화가 없으면 `대화에서 관련 내용을 찾지 못했습니다`. 메모에 없던 내용은 `메모에 없던 내용` 아래, 할 일은 `할 일` 아래 |
+| 안내 | 메모가 하나도 없었으면 `적은 메모가 없어 AI가 구성했습니다.` / 만든 뒤 고쳤으면 `{대화 내용을·메모를} 수정했습니다. 다시 완성하면 반영됩니다.` |
+| 코어 오류 | 메모 노트 `녹음이 없는 노트는 노트 완성을 할 수 없습니다`(code `no_recording`) / 대화 없음 `인식된 대화가 없어 노트를 완성할 수 없습니다` / 형식 오류 `AI 응답이 형식에 맞지 않아 노트를 완성하지 못했습니다` |
+
+`노트 완성`·`완성된 노트`·`내 메모`·`다시 완성`을 쓴다. `향상`·`보강`·`enhance`·`AI 노트`는 쓰지 않는다. AI가 붙인 내용은 내 글과 모양(옅은 글씨·들여쓰기)으로 가르고, 말로 `AI가 쓴 부분` 같은 표시를 붙이지 않는다.
+
 ## 5. 금지어 검사
 
 사용자에게 보이는 문구를 바꾼 뒤, 커밋하기 전에 저장소 루트에서 돌린다. **출력이 없으면 통과다.**
@@ -737,19 +753,19 @@ LLM 프롬프트(요약·AI 질문)도 이름 없는 참석자를 `참석자 N`�
 ```bash
 T='회의|전사|세그먼트|화자|청크|벡터|임베딩|색인|(?<!AI )모델|정렬|타이밍|용어집|묶음|무음|대목|미상|출처 없음|실시간 자막|발화|발언|확정|공급자|\bLLM\b|\bMCP\b|\bs\d{4}\b'
 {
-  rg -n --pcre2 -g '*.{ts,tsx}' -g '!*.test.ts' -g '!fixtures/**' -g '!{caps,models,checkupRows}.ts' -g '!ModelsSettings.tsx' "$T" app/src
+  rg -n --pcre2 -g '*.{ts,tsx}' -g '!*.test.ts' -g '!fixtures/**' -g '!**/preview/**' -g '!{caps,models,checkupRows}.ts' -g '!ModelsSettings.tsx' "$T" app/src
   for f in app/src-tauri/src/*.rs; do awk '/#\[cfg\(test\)\]/{exit} {print FILENAME":"FNR":"$0}' "$f"; done | rg -v '/models\.rs:'
   # 모델 화면(개발자용, §4.15): 이 파일들에서만 `모델`이 제품 말이라 뺀다. 그 밖의 금지어는 똑같이 검사한다
   rg -n --pcre2 "$T" app/src/{caps,models,checkupRows}.ts app/src/ModelsSettings.tsx | sed 's/모델//g'
   awk '/#\[cfg\(test\)\]/{exit} {print FILENAME":"FNR":"$0}' app/src-tauri/src/models.rs | sed 's/모델//g'
   rg -n --pcre2 '^(?!\s*#).*(raise [\w.]+\(|_fail\(|\bfail\(|emit\("error"|console\.print\(|add_heading|add_paragraph|writerow|_HEADER =|NO_EVIDENCE =)' \
-    src/tractus/{store,export,summarize,ask,cli,llm,audio,voices,notes,attach,deferred,organize,organize_cli,summaries,summary_templates,models_registry,models_install,models_cli,doctor}.py
+    src/tractus/{store,export,summarize,ask,cli,llm,audio,voices,notes,attach,deferred,organize,organize_cli,summaries,summary_templates,models_registry,models_install,models_cli,doctor,enhance}.py
   rg -n '^(name|description):' src/tractus/templates | sed 's/회의록//g'  # 요약 유형 이름·설명 (회의록은 문서 이름이라 뺀다)
 } | rg -v '^[^:]+:\d+:\s*(//|/\*|\*|\{/\*)' | rg -v 'words-ok|code=|eprintln!' \
   | sed -E 's#[[:space:]]//[^"`]*$##' | rg --pcre2 "$T"
 ```
 
-- 검사 대상: 앱 TS/TSX(테스트·픽스처 제외. 새 파일은 자동으로 들어온다), 요약 유형 파일(`src/tractus/templates/*.md`)의 `name`·`description` 줄, Rust(`#[cfg(test)]` 아래 제외), 코어에서 앱·문서로 나가는 줄(예외 메시지(`raise typer.BadParameter(` 포함), 오류 이벤트, `console.print(`(`run_tractus` 명령의 stderr 마지막 줄이 될 수 있다), docx·csv 생성, 머리말 상수).
+- 검사 대상: 앱 TS/TSX(테스트·픽스처·`app/src/preview/`(개발 서버 전용 미리보기, 빌드에 들어가지 않는다) 제외. 새 파일은 자동으로 들어온다), 요약 유형 파일(`src/tractus/templates/*.md`)의 `name`·`description` 줄, Rust(`#[cfg(test)]` 아래 제외), 코어에서 앱·문서로 나가는 줄(예외 메시지(`raise typer.BadParameter(` 포함), 오류 이벤트, `console.print(`(`run_tractus` 명령의 stderr 마지막 줄이 될 수 있다), docx·csv 생성, 머리말 상수).
 - **`모델`을 허용하는 파일은 다섯 개뿐이다**: `caps.ts`·`models.ts`·`checkupRows.ts`·`ModelsSettings.tsx`·`models.rs`(§4.15). 새 문구가 `모델`을 쓰면 이 파일 안에 둔다 (`MODELS_LABEL`·`FIX_MODELS`처럼 상수로 내보내 다른 화면이 가져다 쓴다).
 - 빼는 줄: 주석, `eprintln!`(stderr 전용), `code=`를 넘기는 코어 줄(앱이 코드로 문장을 바꾼다).
 - **의도한 예외**는 줄 끝에 `# words-ok` 또는 `// words-ok`를 붙이고 이유를 적는다. 예: 앱 계약 오류(`store.py`의 편집 형식 오류), LLM 재시도용 검증 문구, 성공 경로에서만 찍는 터미널 전용 `console.print`. 화면에 보이는 줄에는 붙이지 않는다.
