@@ -191,3 +191,34 @@ final class JsonTests: XCTestCase {
         XCTAssertTrue(s.contains(#""x":null"#), s)
     }
 }
+
+final class CalendarPickTests: XCTestCase {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    func ev(_ title: String, _ start: TimeInterval, _ end: TimeInterval, allDay: Bool = false) -> CalendarEvent {
+        CalendarEvent(id: title, title: title, start: now.addingTimeInterval(start), end: now.addingTimeInterval(end), allDay: allDay, calendar: "회사", attendees: [])
+    }
+
+    func testUpcomingKeepsOngoingAndSoonButNotEndedLaterOrAllDay() {
+        let events = [ev("later", 20 * 60, 80 * 60), ev("soon", 10 * 60, 70 * 60), ev("ongoing", -600, 600), ev("ended", -3600, -60), ev("allday", -3600, 86400, allDay: true)]
+        XCTAssertEqual(upcoming(events, now: now, ahead: 15 * 60).map(\.title), ["ongoing", "soon"])
+    }
+
+    func testAttendeeNamesDropEmptyAndDuplicates() {
+        XCTAssertEqual(attendeeNames(["김민수", nil, "  ", "이지은 ", "김민수", "Kim  Minsu", "guest@example.com"]), ["김민수", "이지은", "Kim Minsu"])
+    }
+
+    func testEventTitleTrimsAndDropsEmpty() {
+        XCTAssertNil(eventTitle(nil))
+        XCTAssertNil(eventTitle("  \n "))
+        XCTAssertEqual(eventTitle(" 주간\n개발 "), "주간 개발")
+        XCTAssertEqual(eventTitle(String(repeating: "가", count: 300))?.count, 200)
+    }
+
+    func testNextOptions() throws {
+        XCTAssertEqual(try NextOptions.parse([]), NextOptions())
+        XCTAssertEqual(try NextOptions.parse(["--ahead", "30", "--exclude", "A", "--exclude", "B"]), NextOptions(ahead: 30, exclude: ["A", "B"]))
+        XCTAssertThrowsError(try NextOptions.parse(["--ahead", "0"]))
+        XCTAssertThrowsError(try NextOptions.parse(["--exclude"]))
+        XCTAssertThrowsError(try NextOptions.parse(["--x"]))
+    }
+}

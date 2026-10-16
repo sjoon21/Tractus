@@ -6,5 +6,7 @@
 	<string>녹음하려면 마이크 권한이 필요합니다. 녹음은 이 Mac에만 저장됩니다.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>화상 통화 상대방 목소리를 녹음하려면 시스템 오디오 녹음 권한이 필요합니다. 녹음은 이 Mac에만 저장됩니다.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>곧 시작하는 일정을 보여 주고 그 일정 제목과 참석자 이름으로 녹음합니다. 일정은 이 Mac에서만 읽습니다.</string>
 </dict>
 </plist>
