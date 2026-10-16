@@ -44,7 +44,11 @@ cd app && pnpm tauri dev                            # 개발 실행 (브라우�
    ```text
    feat: 노트 제목 수정 추가
    ```
-4. 브랜치를 올리고 풀 리퀘스트를 엽니다
+4. 브랜치를 올리고 풀 리퀘스트를 엽니다. GitHub Actions(`CI`)가 Apple Silicon Mac에서 다음을 돌리고, 모두 통과해야 main에 합칠 수 있습니다
+   - 코어 `pytest`(모델·실제 AI·내려받기 테스트는 빼고)
+   - 앱 `pnpm test`·`pnpm build`·`cargo test`
+   - 녹음 프로그램 `swift test`
+   - 금지어 검사 `scripts/check_words.sh`, copyleft 검사 `scripts/check_licenses.py`
 
 기여 전에 알아 둘 규칙은 [CLAUDE.md](CLAUDE.md)에 있습니다.
 
@@ -52,4 +56,5 @@ cd app && pnpm tauri dev                            # 개발 실행 (브라우�
 - 사용자에게 보이는 말은 [WORDS.md](WORDS.md)를 따릅니다 (`노트`, `텍스트로 변환`, `참석자`).
 - 표시 텍스트는 `store.seg_text(s)`로 읽습니다. 원문 `text`는 바꾸지 않습니다.
 - `models/`, `data/`, `bench/results/raw/`, API 키는 커밋하지 않습니다. AI Hub 데이터와 그 전사는 재배포가 금지되어 있고, 원격 LLM에도 보내지 않습니다.
-- copyleft 의존성(GPL, LGPL 등)을 넣지 않습니다.
+- copyleft 의존성(GPL, LGPL 등)을 넣지 않습니다. `uv run python scripts/check_licenses.py`가 Python·npm·Rust 의존성을 검사합니다.
+- 보안 문제는 공개 이슈가 아니라 [SECURITY.md](SECURITY.md)의 비공개 신고로 알려 주세요.

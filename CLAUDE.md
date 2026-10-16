@@ -198,7 +198,9 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 개발 도구(Rust·Node·pnpm·uv·ffmpeg)는 `scripts/bootstrap.sh [--check] [--yes] [--with-install]`가 `Brewfile`로 빠진 것만 설치한다(Xcode 명령줄 도구·Homebrew는 안내만, sudo·curl|sh 없음). 설치(코어 + 녹음 프로그램 + 앱 빌드)는 `scripts/install.sh [--check] [--with-fluid] [--models <구성>] [--copy-app]`(끝에 `tractus doctor` 점검과, 앱 설정의 직접 지정 경로가 맞는지 읽기만 하는 경고)이고, 업데이트는 `scripts/update.sh [--check] [install.sh 옵션]`(작업 폴더가 깨끗하고 origin을 따라가는 브랜치에서만 `git pull --ff-only` 뒤 install), 빌드 산출물 정리는 `scripts/clean.sh [--all] [--yes] [--force]`(`target`·`.build`만, 정해진 폴더 밖·`.venv`·`models/`·노트는 안 지운다, 실행 중이면 거부)이다. 미리 만든 앱은 `scripts/build_app_bundle.sh [--check] [--out D] [--with-fluid]`(→ `<out>/Tractus.app`)와 `scripts/make_dmg.sh <앱> [--version X] [--out dist]`(→ `dist/Tractus-<버전>-arm64.dmg`)다. 릴리스 한 벌은 `scripts/release.sh [--publish]`(번들 → `Tractus.app.tar.gz` + `.sig` + `latest.json` → `.dmg` + sha256 → `dist/release/<버전>/`, 기본은 `gh release create` 명령 출력만, 키는 `~/.tauri/tractus.key`)다. 설치 안내는 `docs/setup.md`가 원본이다. **`clean.sh` 같은 삭제 스크립트는 실제 저장소에서 시험하지 않는다(빌드한 앱이 지워진다). 저장소 복사본(`git archive`)에서 시험한다.** 앱은 빌드한 저장소 안의 `.venv/bin/tractus`·`recorder/.build/release/tractus-rec`를 쓰므로(컴파일 때 경로가 들어간다) 설치 뒤 저장소를 옮기면 다시 설치한다. 필수 도구·버전 하한을 바꾸면 `Brewfile`, `scripts/bootstrap.sh`, `scripts/install.sh`, `docs/setup.md`를 같이 고친다. Swift 하한: `recorder/`(tractus-rec)는 tools 5.10(Xcode 15.3), `recorder/diar/`(tractus-diar, FluidAudio `traits: []`)는 tools 6.2(Xcode 26)이고 `--with-fluid`일 때만 요구한다. `recorder/`의 tools-version을 6.x로 올리지 않는다.
 
 ```bash
-uv run pytest                                       # 단위·CLI 테스트 (모델 불필요)
+uv run pytest                                       # 단위·CLI 테스트 (모델 불필요). PR마다 GitHub Actions CI(.github/workflows/ci.yml)가 같은 것을 돈다
+scripts/check_words.sh                              # WORDS.md §5 금지어 검사 (출력 없으면 통과)
+uv run python scripts/check_licenses.py             # copyleft(GPL·LGPL·AGPL) 의존성 검사: Python·npm·Rust
 uv run pytest -m slow                               # 실제 모델 테스트
 uv run pytest -m llm                                # 실제 LLM API 스모크 (키 있는 공급자만)
 uv run pytest -m network                            # 작은 VAD(1.3MB)를 임시 폴더에 실제로 받는다

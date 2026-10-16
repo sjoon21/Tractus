@@ -1,0 +1,52 @@
+# 깨끗한 Mac에서 미리 만든 앱 점검 (CLAUDE.md "앱 번들 규칙": 깨끗한 Mac에서의 확인이 없었다).
+# 러너에서 scripts/build_app_bundle.sh로 Tractus.app을 만들고, 저장소 밖으로 복사해 최소 환경(env -i)에서 코어·녹음 프로그램을 돌린다.
+# 무거워서 PR마다 돌리지 않는다: 손으로(workflow_dispatch)와 매주 월요일. 서명 키·업데이트 파일은 다루지 않는다(scripts/release.sh는 이 Mac에서만).
+name: Bundle smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 1" # 매주 월요일 09:00 KST
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    name: 미리 만든 앱 빌드·점검
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: app
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - run: scripts/build_app_bundle.sh --check
+      - run: scripts/build_app_bundle.sh --out "$RUNNER_TEMP/out"
+
+      - name: 저장소 밖에서 최소 환경으로 점검
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/elsewhere/Tractus.app"
+          mkdir -p "$RUNNER_TEMP/elsewhere" "$RUNNER_TEMP/home"
+          ditto "$RUNNER_TEMP/out/Tractus.app" "$APP"
+          RES="$APP/Contents/Resources"
+          run() { env -i HOME="$RUNNER_TEMP/home" PATH=/usr/bin:/bin:/usr/sbin:/sbin TRACTUS_HOME="$RUNNER_TEMP/home/Tractus" "$@"; }
+          run "$RES/runtime/bin/tractus" doctor --json | tee doctor.json
+          python3 -c "import json; d=json.load(open('doctor.json')); assert d['tools']['recorder']['found'], 'tractus-rec를 찾지 못했다'"
+          echo '{"title": "점검", "body": "번들에서 만든 메모"}' | run "$RES/runtime/bin/tractus" note new
+          run "$RES/runtime/bin/tractus" notes list --json | python3 -c "import json,sys; assert len(json.load(sys.stdin)['notes']) == 1"
+          (sleep 3; echo stop) | run "$RES/bin/tractus-rec" record --out "$RUNNER_TEMP/rec" --fake --no-system
+          test -s "$RUNNER_TEMP/rec/recording.json"
+          codesign --verify --deep --strict "$APP"
