@@ -35,7 +35,7 @@ from tractus.asr import SR, Transcriber  # noqa: E402
 from tractus.diarize import FLUID, FLUID_MIN_CLIP_S, MAX_SPEAKERS, NEMOTRON, MODEL_DIR as DIARIZER_DIR  # noqa: E402
 from tractus.diarize import fluid_hint, load_diarizer, load_fluid, split_chunks  # noqa: E402
 from tractus.export import FORMATS as EXPORT_FORMATS, UnsupportedFormat, render_export, write_bytes_atomic  # noqa: E402
-from tractus import attach, deferred, enhance, notes  # noqa: E402
+from tractus import attach, deferred, enhance, notes, obsidian  # noqa: E402
 from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_suggestions, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
 from tractus.store import IncompleteError, load_glossary, meeting_dir_name, new_ulid, save_transcript, seg_text, speaker_name, write_transcript  # noqa: E402
 from tractus.store import CHUNKS_FILE, JOB_FILE, edit_transcript, forget_person, note_lock, read_transcript, render_files  # noqa: E402
@@ -1437,7 +1437,30 @@ def export_cmd(
     print(json.dumps({"path": str(out.resolve())}, ensure_ascii=False))
 
 
-templates_app = typer.Typer(help="요약 유형($TRACTUS_HOME/templates/): 기본 유형(읽기 전용)과 내 유형 만들기·고치기·삭제 (docs/desktop.md §2.13)")
+@app.command("obsidian")
+def obsidian_cmd(
+    meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
+    vault: Path = typer.Option(..., "--vault", help="Obsidian 볼트 폴더. 노트는 <볼트>/Tractus/<폴더…>/ 아래에 쓴다"),
+    summary: str = typer.Option(None, "--summary", help="넣을 요약의 key. 생략하면 기본 요약, 그것도 없으면 처음 있는 요약"),
+    with_audio: bool = typer.Option(False, "--audio", help="오디오를 <볼트>/Tractus/attachments/에 복사해 노트에 붙인다"),
+    force: bool = typer.Option(False, "--force", help="볼트에서 고친 파일도 덮어쓴다"),
+) -> None:
+    """노트를 Obsidian 볼트에 Markdown 하나로 보낸다 (docs/design/obsidian-export.md).
+    stdout: {"status": "created|updated|unchanged|edited", "path", "audio"}. edited면 쓰지 않았다 (--force로 덮어쓴다)."""
+    d = resolve_meeting(meeting)
+    if summary and sums.read_data(d, summary) is None:
+        _fail(sums.NO_SUCH_SUMMARY, exit_code=2)
+    t = read_transcript(d)
+    try:
+        r = obsidian.send(d, t, home_dir(), vault.expanduser(), summary, with_audio, force)
+    except ValueError as e:
+        _fail(str(e), code="obsidian_vault", exit_code=2)
+    except OSError as e:
+        _fail(f"볼트에 쓰지 못했습니다 ({e.strerror or e})", code="obsidian_write")
+    print(json.dumps(r, ensure_ascii=False))
+
+
+templates_app =typer.Typer(help="요약 유형($TRACTUS_HOME/templates/): 기본 유형(읽기 전용)과 내 유형 만들기·고치기·삭제 (docs/desktop.md §2.13)")
 app.add_typer(templates_app, name="templates")
 
 
