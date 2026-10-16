@@ -23,10 +23,10 @@ jobs:
     env:
       UV_PYTHON_PREFERENCE: only-managed # uv가 받은 파이썬만 (Homebrew 파이썬의 sqlite3는 확장(sqlite-vec)을 못 불러온다)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: ffmpeg (테스트 일부가 실제 FFmpeg를 쓴다)
         run: brew install ffmpeg
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           python-version: "3.12" # 번들과 같은 계열 (러너의 Homebrew 파이썬은 3.15라 onnxruntime 휠이 없다)
@@ -43,11 +43,11 @@ jobs:
       run:
         working-directory: app
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -75,7 +75,7 @@ jobs:
       run:
         working-directory: recorder
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: swift --version
       - run: swift build -c release
       - name: swift test (가짜 녹음 E2E 포함, 마이크 권한 불필요)
@@ -86,7 +86,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: ripgrep (PCRE2)
         run: brew install ripgrep
       - run: scripts/check_words.sh
