@@ -72,8 +72,11 @@ step "1. 옮길 수 있는 파이썬"
 [ -n "$PY" ] || { uv python install "$PY_SERIES"; PY="$(uv python find --no-project --managed-python "$PY_SERIES")"; }
 BASE="$("$PY" -c 'import sys; print(sys.base_prefix)')"
 cp -R "$BASE" "$RT"   # 심볼릭 링크는 그대로 둔다
-# 옮겨도 되는지: 실행 파일이 libpython 을 @executable_path 기준으로 찾아야 하고, 설치 위치의 절대 경로가 남아 있으면 안 된다
-otool -L "$RT/bin/python$PY_SERIES" | grep -q '@executable_path/../lib/libpython' || { echo "이 파이썬은 옮길 수 없습니다(libpython 이 @executable_path 기준이 아님)" >&2; exit 1; }
+# 옮겨도 되는지: 실행 파일이 불러오는 라이브러리는 시스템 것(/usr/lib·/System)이거나 실행 파일 기준(@executable_path·@loader_path)이어야 한다.
+# libpython 을 정적으로 품은 빌드(3.12.15 이후 python-build-standalone)도, @executable_path/../lib/libpython 을 쓰는 옛 빌드도 통과하고,
+# Homebrew 처럼 설치 위치의 절대 경로(…/Python.framework)를 부르는 파이썬은 막는다. 설치 위치의 절대 경로는 아래 2단계에서도 찾는다
+FOREIGN="$(otool -L "$RT/bin/python$PY_SERIES" | tail -n +2 | awk '{print $1}' | grep -vE '^(/usr/lib/|/System/|@executable_path/|@loader_path/)' || true)"
+[ -z "$FOREIGN" ] || { echo "이 파이썬은 옮길 수 없습니다(다른 위치의 라이브러리를 부름: $FOREIGN)" >&2; exit 1; }
 ok "python $("$RT/bin/python$PY_SERIES" -c 'import sys; print(sys.version.split()[0])') 복사 ($(kb "$RT"))"
 
 step "2. 파이썬 줄이기 (tkinter·idle·테스트·pip·헤더 등 안 쓰는 것)"
