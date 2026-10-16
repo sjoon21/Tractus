@@ -17,7 +17,7 @@ from tractus.summaries import DEFAULT_KEY, NO_DETAIL, list_summaries, read_data,
 from tractus.store import MEMOS_FILE, _hms, _vtt_time, is_memo, is_recorded, load_memos, memo_lines, one_line, render_markdown, render_vtt, seg_text, speaker_display
 
 FORMATS = ("txt", "md", "srt", "vtt", "csv", "docx", "bundle")
-BUNDLE_FILES = ("audio.ogg", "audio.opus", "transcript.json", "transcript.md", "transcript.vtt", "summary.md", "summary.json", MEMOS_FILE)
+BUNDLE_FILES = ("audio.ogg", "audio.opus", "transcript.json", "transcript.md", "transcript.vtt", "summary.md", "summary.json", MEMOS_FILE, "event.json")
 MEMO_FORMATS = ("txt", "md", "csv", "docx", "bundle")  # 메모는 시각이 없어 자막(srt·vtt)으로 내보낼 수 없다
 NO_SUBTITLES = "메모는 자막 파일로 내보낼 수 없습니다."
 NO_SUBTITLES_RECORDED = "아직 텍스트로 변환하지 않아 자막 파일로 내보낼 수 없습니다. 먼저 텍스트로 변환하세요."  # "변환 전" 노트: 대화 내용이 없다
