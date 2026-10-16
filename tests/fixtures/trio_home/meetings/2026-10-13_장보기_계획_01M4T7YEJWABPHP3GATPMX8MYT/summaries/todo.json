@@ -1,0 +1,47 @@
+{
+ "schema_version": 2,
+ "meeting_id": "01M4T7YEJWABPHP3GATPMX8MYT",
+ "template": "todo",
+ "template_name": "할 일 중심",
+ "prompt_hash": "b9d665d7eb93",
+ "provider": "upstage",
+ "model": "solar-pro4",
+ "generated_at": "2026-10-13T18:02:36+09:00",
+ "title": "장보기 계획",
+ "overview": "다음 주 수요일까지 김철수 님이 업체 견적을 받기로 했고, 예산은 이번 분기에 동결하며 청소 용역은 다음 달에 다시 검토하기로 했다.",
+ "sections": [
+  {
+   "heading": "할 일",
+   "style": "checklist",
+   "items": [
+    {
+     "text": "김철수 님이 업체 견적을 받는다",
+     "segment_ids": [
+      "s0001",
+      "m0002"
+     ],
+     "owner": "김철수",
+     "due": "다음 주 수요일"
+    },
+    {
+     "text": "예산을 이번 분기에 동결한다",
+     "segment_ids": [
+      "s0001",
+      "m0001"
+     ],
+     "owner": null,
+     "due": null
+    },
+    {
+     "text": "청소 용역을 다음 달에 다시 검토한다",
+     "segment_ids": [
+      "s0001",
+      "m0003"
+     ],
+     "owner": null,
+     "due": "다음 달"
+    }
+   ]
+  }
+ ]
+}

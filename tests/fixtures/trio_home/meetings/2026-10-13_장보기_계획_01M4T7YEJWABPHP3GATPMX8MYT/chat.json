@@ -1,0 +1,23 @@
+{
+ "schema_version": 1,
+ "meeting_id": "01M4T7YEJWABPHP3GATPMX8MYT",
+ "turns": [
+  {
+   "question": "견적은 누가 받나요?",
+   "answer": "김철수 님이 받습니다. [m0002]",
+   "citations": [
+    {
+     "meeting_id": "01M4T7YEJWABPHP3GATPMX8MYT",
+     "segment_id": "m0002",
+     "start": 0.0,
+     "line": 3,
+     "source": "memo"
+    }
+   ],
+   "provider": "upstage",
+   "model": "solar-pro4",
+   "no_evidence": false,
+   "created_at": "2026-10-13T18:02:12+09:00"
+  }
+ ]
+}

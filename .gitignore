@@ -31,6 +31,8 @@ meetings/
 !tests/fixtures/eval/meetings/
 # 코어가 실제로 만든 메모 폴더 (앱 파서 테스트용, 가상 내용)
 !tests/fixtures/memo_home/meetings/
+# 실제 코어가 만든 노트 세 개 (앱·Rust 파서 테스트 trio.test.ts·meetings.rs용, 가상 내용). 빠져 있어 CI에서만 실패했다
+!tests/fixtures/trio_home/meetings/
 # (그 안의 audio.ogg는 `say`로 만든 가상 음성이라 일부러 커밋한다: 앱 테스트가 audio_path를 확인한다)
 # 노트 폴더의 쓰기 잠금 파일은 커밋하지 않는다
 .lock

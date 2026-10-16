@@ -1,0 +1,48 @@
+{
+ "schema_version": 2,
+ "meeting_id": "01M4T7YEJWABPHP3GATPMX8MYT",
+ "template": "u-83fc6d3d",
+ "template_name": "한 문장 결정",
+ "prompt_hash": "4cca8cac4253",
+ "prompt": "한 문장으로 오늘 결정만 적어라. 섹션은 하나.",
+ "provider": "upstage",
+ "model": "solar-pro4",
+ "generated_at": "2026-10-13T18:02:45+09:00",
+ "title": "장보기 계획",
+ "overview": "다음 주 수요일까지 김철수 님이 업체 견적을 받고, 예산은 이번 분기에 동결하며 청소 용역은 다음 달에 다시 검토하기로 했다.",
+ "sections": [
+  {
+   "heading": "결정 사항",
+   "style": "bullets",
+   "items": [
+    {
+     "text": "다음 주 수요일까지 김철수 님이 업체 견적을 받는다.",
+     "segment_ids": [
+      "s0001",
+      "m0002"
+     ],
+     "owner": "김철수",
+     "due": "다음 주 수요일"
+    },
+    {
+     "text": "예산은 이번 분기에 동결한다.",
+     "segment_ids": [
+      "s0001",
+      "m0001"
+     ],
+     "owner": null,
+     "due": null
+    },
+    {
+     "text": "청소 용역은 다음 달에 다시 검토한다.",
+     "segment_ids": [
+      "s0001",
+      "m0003"
+     ],
+     "owner": null,
+     "due": "다음 달"
+    }
+   ]
+  }
+ ]
+}
