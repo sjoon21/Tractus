@@ -1,6 +1,7 @@
 // 전사 편집 도구 (docs/roadmap.md §2, Phase 5): 문장 편집기, 찾기·바꾸기 막대, 내보내기 메뉴.
 import { useLayoutEffect, useRef } from "react";
 import { EXPORT_FORMATS, isImeKey } from "./lib";
+import { OBSIDIAN_ITEM } from "./obsidian";
 import { ChevronDown, ChevronUp, Share, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/input";
@@ -154,7 +155,7 @@ export function FindBar({
 }
 
 /** 머리말의 '내보내기' 메뉴. 네이티브 popover라 Esc·바깥 클릭으로 닫힌다. PDF는 코어가 아니라 인쇄 대화상자로 만든다 */
-export function ExportMenu({ onPick, onPrint, formats = EXPORT_FORMATS }: { onPick: (f: (typeof EXPORT_FORMATS)[number]) => void; onPrint: () => void; formats?: typeof EXPORT_FORMATS }) {
+export function ExportMenu({ onPick, onPrint, onObsidian, formats = EXPORT_FORMATS }: { onPick: (f: (typeof EXPORT_FORMATS)[number]) => void; onPrint: () => void; onObsidian: () => void; formats?: typeof EXPORT_FORMATS }) {
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const pick = (run: () => void) => {
@@ -199,6 +200,10 @@ export function ExportMenu({ onPick, onPrint, formats = EXPORT_FORMATS }: { onPi
         <button role="menuitem" onClick={() => pick(onPrint)}>
           <span>PDF</span>
           <small className="tnum">.pdf · 인쇄 → PDF로 저장</small>
+        </button>
+        <button role="menuitem" onClick={() => pick(onObsidian)}>
+          <span>{OBSIDIAN_ITEM.label}</span>
+          <small>{OBSIDIAN_ITEM.note}</small>
         </button>
       </div>
     </>

@@ -114,6 +114,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `summary_templates.py` | 요약 유형: 기본(`templates/*.md`)·내 유형(`$TRACTUS_HOME/templates/u-*.md`) 로더·CRUD·검증 |
 | `summaries.py` | 유형별 요약(스키마 v2, `summaries/<key>.json`), 시스템 프롬프트 + 지침 구분자, 근거·owner 검증, 목록·삭제 |
 | `enhance.py` | 노트 완성(`summarize --template enhanced`): 뼈대(메모 탭 `m####` → 녹음 중 메모·북마크 `r####`), 입력, 검증, 원문 덮어쓰기·정렬, `summaries/enhanced.json`(v2 + `kind`·`part`·`source`·`at`) |
+| `obsidian.py` | Obsidian으로 보내기(`tractus obsidian`): 볼트/Tractus/<폴더…>/<날짜 제목>.md 하나, `.tractus.json`(경로·sha256)으로 고친 파일은 `--force` 없이 덮어쓰지 않음, 데이터 폴더와 겹치는 볼트 거부 |
 | `ask.py` | 회의 질의: 근거 모으기(회의 전사 전체 / 검색 8개 + 앞뒤 이웃), 프롬프트, 인용 대조·정리(`finalize`), 대화 기록 자르기, `chat.json` |
 | `env.py` | `.env` / `.env.local` 로더 |
 | `paths.py` | `TRACTUS_HOME`, `TRACTUS_MODELS_DIR` 해석 (CLI·MCP 공용). 녹음·도우미 프로그램 위치 `tool_bin`(`TRACTUS_REC_BIN`·`TRACTUS_DIAR_BIN` → 앱 번들 `bin/` → 저장소에서 빌드한 것)과 빌드 안내 `build_hint`(저장소 배치일 때만 `swift build` 명령, 아니면 일반 안내). 모델 폴더 순서: `TRACTUS_MODELS_DIR` → 등록된 모델이 이미 있는 `$TRACTUS_HOME/models` → 앱 설정 폴더의 `models` |
@@ -229,6 +230,7 @@ uv run tractus notes list --json [--favorite] [--tag T] [--folder ID|이름|none
 uv run tractus models prune [--yes] [--json]         # 등록되지 않은 모델 폴더(옛 버전 등) 지우기 → {removed: [{name, bytes}], freed_bytes}
 uv run tractus models move <새 폴더> [--yes]         # 등록된 모델만 모델 폴더에서 옮김 → {moved, freed_bytes}
 uv run tractus export <meeting_id> --format docx --out 회의.docx [--force] [--summary KEY]   # txt|md|srt|vtt|csv|docx|bundle → {"path": …}. md·docx에 넣을 요약(기본: meeting, 없으면 있는 것)
+uv run tractus obsidian <meeting_id> --vault <볼트> [--summary KEY] [--audio] [--force]   # Obsidian으로 보내기 → {"status": created|updated|unchanged|edited, "path", "audio"}
 uv run python bench/search_eval.py                  # 검색 평가 (가상)
 uv run python bench/ask_eval.py [--memo]            # 질의 평가 (가상 회의만 원격 LLM으로, --memo: 메모가 달린 가상 노트 3건 + 메모 질문 6개)
 uv run tractus transcribe <파일> [--no-align] [--diarizer auto|nemotron|fluid]   # 전사 (+ 단어 타이밍)

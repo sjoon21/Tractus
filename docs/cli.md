@@ -14,6 +14,7 @@ uv run tractus summarize 01K6X3 --template brief           # todo | lecture | in
 echo "GPU 서버 구매는 어떻게 하기로 했어?" | uv run tractus ask --meeting 01K6X3
 uv run tractus search "GPU 서버 구매" --from 2026-07-01 --to 2026-09-30
 uv run tractus export 01K6X3 --format docx --out 주간회의.docx   # txt | md | srt | vtt | csv | docx | bundle
+uv run tractus obsidian 01K6X3 --vault ~/Documents/MyVault [--audio] [--force]   # 볼트/Tractus/ 아래 Markdown 하나 → {"status","path","audio"}
 uv run tractus note new --title "장보기"                   # 메모 노트 (save · title · meta)
 uv run tractus render --all                                # transcript.md·vtt를 다시 만듭니다
 ```

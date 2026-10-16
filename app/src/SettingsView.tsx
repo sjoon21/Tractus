@@ -17,6 +17,7 @@ import { BinField } from "./BinField";
 import { onIndexed } from "./indexer";
 import { recMode, statusLine, withRecMode } from "./lib";
 import { LlmKeySection } from "./LlmKeySettings";
+import { ObsidianSection } from "./ObsidianSettings";
 import { TemplatesSection } from "./TemplatesSettings";
 import { TRAY_KEEP_HINT, TRAY_KEEP_LABEL, TRAY_SHOW_HINT, TRAY_SHOW_LABEL } from "./trayText";
 import { getVersion } from "@tauri-apps/api/app";
@@ -201,6 +202,8 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack }: { onSaved: ()
         />
         <TemplatesSection />
         <VoicesSection />
+
+        <ObsidianSection initial={s} />
 
         <Section title="메뉴 막대">
           <Row label={TRAY_SHOW_LABEL} hint={TRAY_SHOW_HINT} htmlFor="tray-show" control={<Switch id="tray-show" checked={trayOn} onChange={(e) => void setTray(e.target.checked, keepOn)} />} />

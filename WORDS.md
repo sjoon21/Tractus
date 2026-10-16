@@ -746,6 +746,21 @@ LLM 프롬프트(요약·AI 질문)도 이름 없는 참석자를 `참석자 N`�
 
 `노트 완성`·`완성된 노트`·`내 메모`·`다시 완성`을 쓴다. `향상`·`보강`·`enhance`·`AI 노트`는 쓰지 않는다. AI가 붙인 내용은 내 글과 모양(옅은 글씨·들여쓰기)으로 가르고, 말로 `AI가 쓴 부분` 같은 표시를 붙이지 않는다.
 
+### 4.23 Obsidian으로 보내기 (v3.37)
+
+노트의 `내보내기` 메뉴 마지막 항목과 설정의 `Obsidian` 섹션이다. 문구는 `app/src/obsidian.ts`, 코어 문구는 `src/tractus/obsidian.py`에 둔다. 볼트에 쓰는 파일은 노트 하나에 Markdown 하나다(docs/design/obsidian-export.md).
+
+| 위치 | 문구 |
+| --- | --- |
+| 내보내기 메뉴 | `Obsidian` · `볼트로 보내기` |
+| 설정 `Obsidian` | `볼트` `노트를 볼트의 Tractus 폴더에 Markdown으로 보냅니다.` + `찾아보기…`, 고르지 않았으면 `고르지 않음` / `오디오도 함께 보내기` `볼트를 동기화하면 오디오도 올라갑니다 (1시간에 약 14MB).` |
+| 알림 | `Obsidian으로 보냈습니다 — {파일 이름}` / 같은 내용 `이미 보낸 내용과 같습니다 — {파일 이름}` + 단추 `Obsidian에서 열기` / 실패 `Obsidian으로 보내지 못했습니다: {이유}` |
+| 덮어쓰기 확인 | 제목 `Obsidian으로 보내기`, `볼트의 이 노트에 Obsidian에서 고친 내용이 있습니다. 덮어쓰면 고친 내용은 사라집니다.` 단추 `덮어쓰기` / `취소` |
+| 코어 오류 | `볼트 폴더를 찾지 못했습니다. 설정에서 다시 고르세요.` / `데이터 폴더 안에는 보낼 수 없습니다. 다른 볼트를 고르세요.` (code `obsidian_vault`) / `볼트에 쓰지 못했습니다 ({이유})` (code `obsidian_write`) |
+| 볼트 파일 | 절 제목 `완성된 노트`(없으면 `내 메모`), `요약 · {요약 유형 이름}`, 접힌 상자 `대화 내용`. 할 일은 `- [ ]`. 변환 전 노트는 `아직 텍스트로 변환하지 않았습니다.` |
+
+`보내기`를 쓴다. `동기화`·`연동`·`내보내기`(메뉴 이름이라 항목에는 쓰지 않는다)는 이 기능을 부르는 말로 쓰지 않는다: 한 번 누를 때 한 번 쓰는 동작이다.
+
 ## 5. 금지어 검사
 
 사용자에게 보이는 문구를 바꾼 뒤, 커밋하기 전에 저장소 루트에서 돌린다. **출력이 없으면 통과다.**
@@ -759,7 +774,7 @@ T='회의|전사|세그먼트|화자|청크|벡터|임베딩|색인|(?<!AI )모�
   rg -n --pcre2 "$T" app/src/{caps,models,checkupRows}.ts app/src/ModelsSettings.tsx | sed 's/모델//g'
   awk '/#\[cfg\(test\)\]/{exit} {print FILENAME":"FNR":"$0}' app/src-tauri/src/models.rs | sed 's/모델//g'
   rg -n --pcre2 '^(?!\s*#).*(raise [\w.]+\(|_fail\(|\bfail\(|emit\("error"|console\.print\(|add_heading|add_paragraph|writerow|_HEADER =|NO_EVIDENCE =)' \
-    src/tractus/{store,export,summarize,ask,cli,llm,audio,voices,notes,attach,deferred,organize,organize_cli,summaries,summary_templates,models_registry,models_install,models_cli,doctor,enhance}.py
+    src/tractus/{store,export,summarize,ask,cli,llm,audio,voices,notes,attach,deferred,organize,organize_cli,summaries,summary_templates,models_registry,models_install,models_cli,doctor,enhance,obsidian}.py
   rg -n '^(name|description):' src/tractus/templates | sed 's/회의록//g'  # 요약 유형 이름·설명 (회의록은 문서 이름이라 뺀다)
 } | rg -v '^[^:]+:\d+:\s*(//|/\*|\*|\{/\*)' | rg -v 'words-ok|code=|eprintln!' \
   | sed -E 's#[[:space:]]//[^"`]*$##' | rg --pcre2 "$T"

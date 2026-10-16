@@ -834,6 +834,16 @@ tractus transcribe --into <노트> [--track …] [--language …] [--term …] [
 
 **알려진 한계.** 완성된 노트는 읽기 전용이다(고치려면 내 메모를 고친 뒤 `다시 완성`). 녹음이 길면 대화 전체를 한 번에 보낸다(요약과 같다). 메모가 대화보다 단정적인 표현으로 바뀌는 경우가 있다(가상 회의에서 '모으면 좋겠다'를 '모으기로 했다'에 가깝게 씀). WKWebView에서 손으로 확인하지 못했다(미리보기·vitest·tsc만).
 
+### 2.18 Obsidian으로 보내기: `tractus obsidian <노트> --vault <폴더>` (v3.37)
+
+설계: [docs/design/obsidian-export.md](design/obsidian-export.md). 문구: WORDS.md §4.23.
+
+- **명령:** `tractus obsidian <노트> --vault <볼트> [--summary KEY] [--audio] [--force]` → stdout `{"status": "created|updated|unchanged|edited", "path": <절대 경로>, "audio": <첨부 경로>|null}`. `edited`면 아무것도 쓰지 않았다(볼트에서 고친 파일). 없는 요약 key는 종료 코드 2, 볼트가 없거나 `<볼트>/Tractus`가 데이터 폴더와 겹치면 종료 코드 2·code `obsidian_vault`, 쓰기 실패는 code `obsidian_write`.
+- **위치:** `<볼트>/Tractus/<Tractus 폴더 이름 경로>/<YYYY-MM-DD 제목>.md`. 파일 이름에 못 쓰는 글자(`/\:*?"<>|`, 제어 문자, 앞의 `.`)는 공백. 같은 이름의 남의 파일이 있으면 ` (2)`부터. 오디오(`--audio`)는 `<볼트>/Tractus/attachments/<meeting_id>.<확장자>`(크기가 같으면 다시 복사하지 않는다)이고 노트 위에 `![[…]]`로 붙인다.
+- **내용:** frontmatter(`tractus_id`·`title`·`created`·녹음이면 `duration`·확정된 이름만 `participants`·`tags`·`favorite`·`folder`) → `# 제목` → 완성된 노트(`summaries/enhanced.md`, 없으면 `내 메모`) → `요약 · {이름}`(`--summary`, 없거나 `enhanced`면 기본 요약, 그것도 없으면 처음 있는 요약) → 접힌 상자 `> [!note]- 대화 내용`. 요약 md는 frontmatter·제목 줄을 빼고 제목 단계를 하나 내린다. 메모 노트는 본문이 곧 노트다.
+- **기록:** `<볼트>/Tractus/.tractus.json` `{"notes": {<id>: {"path": <Tractus/ 기준>, "sha256"}}}`. 기록된 위치에 없으면 `Tractus/` 아래에서 frontmatter `tractus_id`로 찾는다. 기록이 없거나 sha256이 다르면 `edited`이고 `--force`로만 덮어쓴다. 위치가 바뀌면 새 위치에 쓰고, 고치지 않은 옛 파일만 지운다.
+- **앱:** 설정 `obsidian_vault`(비면 안 고름)·`obsidian_audio`(기본 꺼짐)는 `set_obsidian(vault, audio)`이 바로 저장하고 `save_settings`는 지금 값을 지킨다. 내보내기 메뉴의 `Obsidian`은 쓰던 메모를 저장한 뒤 `obsidian_send(id, summary, force)`(요약 탭에서 고른 요약), 볼트를 안 골랐으면 먼저 폴더를 고르게 하고, `edited`면 묻고 `force`로 다시 부른다. `obsidian_open(path)`는 `<볼트>/Tractus` 안의 `.md`만 `obsidian://open?path=…`로 연다.
+
 ## 3. Tauri 앱 (app/)
 
 - **스택:** Tauri 2 + React + TypeScript + Vite. 오디오는 자체 `media://` URI 스킴(`convertFileSrc(path, "media")`, MIME `audio/ogg`, HTTP Range 지원, `TRACTUS_HOME` 밖 경로 거부)으로 `<audio>`에 연결한다. Tauri 기본 asset protocol은 `.ogg`/`.opus`의 MIME과 Range 처리가 맞지 않아 쓰지 않는다(`app/README.md`).
