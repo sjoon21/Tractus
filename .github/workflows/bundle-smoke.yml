@@ -16,6 +16,8 @@ jobs:
     name: 미리 만든 앱 빌드·점검
     runs-on: macos-latest
     timeout-minutes: 60
+    env:
+      UV_PYTHON_PREFERENCE: only-managed
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

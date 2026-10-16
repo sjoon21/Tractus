@@ -40,6 +40,8 @@ meetings/
 # 모델 가중치·오디오 (저장소에 포함하지 않음)
 models/
 data/
+# 미리보기(/preview.html)의 가짜 데이터 (가상 노트). 바로 위 data/ 규칙에 걸려 빠져 있어 깨끗한 클론에서 pnpm build가 실패했다
+!app/src/preview/data/
 *.gguf
 *.safetensors
 *.wav

@@ -1,6 +1,13 @@
 """모든 시험 공통."""
 
+import os
+import time
+
 import pytest
+
+# 녹음 시각(+09:00)을 로컬 시각으로 바꿔 비교하는 시험이 있다. 한국 밖의 Mac·UTC인 CI 러너에서도 같게 시간대를 고정한다
+os.environ["TZ"] = "Asia/Seoul"
+time.tzset()
 
 from tractus import paths
 

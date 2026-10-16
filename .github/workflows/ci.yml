@@ -20,6 +20,8 @@ jobs:
     name: 코어 (pytest)
     runs-on: macos-latest
     timeout-minutes: 30
+    env:
+      UV_PYTHON_PREFERENCE: only-managed # uv가 받은 파이썬만 (Homebrew 파이썬의 sqlite3는 확장(sqlite-vec)을 못 불러온다)
     steps:
       - uses: actions/checkout@v4
       - name: ffmpeg (테스트 일부가 실제 FFmpeg를 쓴다)
