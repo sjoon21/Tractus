@@ -505,6 +505,11 @@ NOT_CONVERTED = "먼저 텍스트로 변환하세요."
 NOT_CONVERTED_NOTE = "아직 텍스트로 변환하지 않았습니다."
 
 
+def is_sample(t: dict) -> bool:
+    """예시 노트(첫 사용자 온보딩, sample_note.py): 가상 회의라 검색 색인·MCP 목록·할 일 목록에 넣지 않는다."""
+    return t.get("sample") is True
+
+
 def is_recorded(t: dict) -> bool:
     """녹음은 했지만 아직 텍스트로 변환하지 않은 노트 ("변환 전", docs/desktop.md §2.16). kind는 그대로 녹음 노트이고 transcript.json에 "state": "recorded"가 있다. 변환이 끝나면 키가 없어진다."""
     return t.get("state") == RECORDED

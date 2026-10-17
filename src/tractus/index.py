@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tractus.store import memo_segments, seg_text, speaker_name
+from tractus.store import is_sample, memo_segments, seg_text, speaker_name
 
 log = logging.getLogger("tractus.index")
 
@@ -367,6 +367,8 @@ class Index:
                     report.unchanged += 1
                     continue
                 transcript = json.loads(tpath.read_text(encoding="utf-8"))
+                if is_sample(transcript):  # 예시 노트(온보딩)는 검색·전체 AI 질문에 넣지 않는다 (sample_note.py). 색인에 있었으면 아래에서 지워진다
+                    continue
                 mid = _validate(transcript)
                 if mid in seen:
                     raise ValueError(f"meeting_id {mid}가 다른 폴더와 겹칩니다")

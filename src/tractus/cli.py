@@ -35,7 +35,7 @@ from tractus.asr import SR, Transcriber  # noqa: E402
 from tractus.diarize import FLUID, FLUID_MIN_CLIP_S, MAX_SPEAKERS, NEMOTRON, MODEL_DIR as DIARIZER_DIR  # noqa: E402
 from tractus.diarize import fluid_hint, load_diarizer, load_fluid, split_chunks  # noqa: E402
 from tractus.export import FORMATS as EXPORT_FORMATS, UnsupportedFormat, render_export, write_bytes_atomic  # noqa: E402
-from tractus import attach, deferred, enhance, notes, obsidian  # noqa: E402
+from tractus import attach, deferred, enhance, notes, obsidian, sample_note  # noqa: E402
 from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_suggestions, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
 from tractus.store import IncompleteError, load_glossary, meeting_dir_name, new_ulid, save_transcript, seg_text, speaker_name, write_transcript  # noqa: E402
 from tractus.store import CHUNKS_FILE, JOB_FILE, edit_transcript, forget_person, note_lock, read_transcript, render_files  # noqa: E402
@@ -1349,6 +1349,15 @@ def note_new(title: str = typer.Option(None, "--title", help="제목. stdin의 t
         _fail(str(e), exit_code=2)
     _sync_index_quietly(embed=False)
     print(json.dumps({"meeting_id": t["meeting_id"], "meeting_dir": str(d.resolve())}, ensure_ascii=False))
+
+
+@note_app.command("sample")
+def note_sample() -> None:
+    """예시 노트(첫 사용자 온보딩, 가상 회의)를 만든다. 이미 있으면 그것을 돌려준다. 모델·AI 키 없이 돈다.
+    stdout: {"meeting_id": "…", "meeting_dir": "<절대 경로>", "created": bool}. 검색 색인·MCP 목록에는 들어가지 않는다."""
+    d, created = sample_note.create(home_dir())
+    t = read_transcript(d)
+    print(json.dumps({"meeting_id": t["meeting_id"], "meeting_dir": str(d.resolve()), "created": created}, ensure_ascii=False))
 
 
 @note_app.command("save")

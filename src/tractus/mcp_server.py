@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from tractus import embed, organize
 from tractus.index import Index
-from tractus.store import find_meeting_dir, is_recorded, memo_segments, seg_text, speaker_name, stamp
+from tractus.store import find_meeting_dir, is_recorded, is_sample, memo_segments, seg_text, speaker_name, stamp
 from tractus.summarize import MeetingSummary, check_segment_ids, write_summary
 from tractus.summaries import DEFAULT_KEY, has_any_summary, list_summaries, read_markdown
 
@@ -238,6 +238,8 @@ def build_server(home: Path, embedder) -> MCPServer:
         for p in sorted(meetings_dir.glob("*/transcript.json")):
             try:  # 손상된 회의 하나 때문에 목록 전체가 실패하지 않게 건너뛴다
                 t = _load(p)
+                if is_sample(t):  # 예시 노트(온보딩, 가상 회의)는 에이전트에게 보이지 않는다
+                    continue
                 date = str(t.get("created_at") or "")[:10]
                 meta = organize.meta_of(t)
                 fid = meta["folder"] if meta["folder"] in names else None
@@ -300,6 +302,8 @@ def build_server(home: Path, embedder) -> MCPServer:
         for d in dirs:
             try:  # 손상된 summary.json 하나 때문에 전체가 실패하지 않게 건너뛴다
                 t = _load(d / "transcript.json")
+                if is_sample(t) and not meeting_id:  # 예시 노트의 가상 할 일을 에이전트에게 사실로 주지 않는다 (ID로 직접 물으면 준다)
+                    continue
                 date = str(t.get("created_at") or "")[:10]
                 if not in_range(date, date_from, date_to):
                     continue

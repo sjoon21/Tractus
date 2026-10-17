@@ -1,0 +1,59 @@
+{
+ "title": "예시: 주간 개발 회의",
+ "duration_sec": 300.0,
+ "speakers": {"S1": "이지은", "S2": "정하늘", "S3": "김민수"},
+ "segments": [
+  ["S1", 0.0, 24.5, "네 그럼 주간 개발 회의 시작하겠습니다. 오늘 안건은 세 가지예요. 결제 API latency 문제, 다음 릴리스 일정, 그리고 온보딩 문서입니다."],
+  ["S2", 25.0, 52.0, "결제 API 쪽은 지난주부터 p95 latency가 800 밀리초까지 올라갔어요. 원인은 DB connection pool이 꽉 차는 것 같습니다."],
+  ["S2", 53.0, 80.0, "pool size를 20에서 50으로 늘리고 slow query 로그를 먼저 보는 게 좋겠어요. 그건 김민수 님이 이번 주 수요일까지 확인해 주실 수 있나요?"],
+  ["S3", 81.0, 95.0, "네 제가 수요일까지 slow query 분석해서 공유드리겠습니다."],
+  ["S1", 96.0, 130.0, "다음은 릴리스 일정인데요. 원래 10월 15일이었는데 결제 이슈 때문에 일주일 미루는 게 어떨까요? QA 기간도 부족했고요."],
+  ["S2", 131.0, 160.0, "동의합니다. 그럼 릴리스는 10월 22일로 확정하죠. 마케팅 팀에는 제가 오늘 중으로 알리겠습니다."],
+  ["S1", 161.0, 200.0, "QA는 박지영 님이 regression test 범위를 다시 잡아 주시면 좋겠어요. 다음 주 월요일까지요."],
+  ["S1", 201.0, 240.0, "마지막으로 온보딩 문서는 지금 Notion이랑 Confluence에 흩어져 있어서 신규 입사자가 헷갈려 해요. 한 곳으로 모으면 좋겠습니다."],
+  ["S2", 241.0, 280.0, "어디로 모을지는 아직 의견이 갈리니까 다음 회의에서 다시 논의하죠. 각자 장단점만 정리해 오면 될 것 같아요."],
+  ["S1", 281.0, 300.0, "네 좋습니다. 오늘 회의는 여기까지 하겠습니다. 수고하셨습니다."]
+ ],
+ "memo": "결제 API 느림 - 원인?\n\n릴리스 날짜\n\n온보딩 문서 어디로",
+ "marks": [{"t": 70.0, "kind": "memo", "text": "pool 50"}, {"t": 140.0, "kind": "bookmark", "text": null}],
+ "summary": {
+  "title": "주간 개발 회의",
+  "summary": "결제 API의 p95 latency가 800ms까지 오른 원인으로 DB connection pool 포화를 짚고, pool size를 50으로 늘리고 slow query를 먼저 분석하기로 했다. 결제 이슈와 QA 기간 부족으로 릴리스를 10월 22일로 일주일 미뤘다. 흩어진 온보딩 문서를 한 곳으로 모으는 안은 다음 회의에서 다시 논의한다.",
+  "topics": [
+   {"title": "결제 API latency", "segment_ids": ["s0002", "s0003", "s0004"]},
+   {"title": "릴리스 일정", "segment_ids": ["s0005", "s0006", "s0007"]},
+   {"title": "온보딩 문서 정리", "segment_ids": ["s0008", "s0009"]}
+  ],
+  "decisions": [
+   {"text": "DB connection pool size를 20에서 50으로 늘린다", "segment_ids": ["s0003"]},
+   {"text": "릴리스를 10월 22일로 확정한다", "segment_ids": ["s0006"]}
+  ],
+  "action_items": [
+   {"task": "slow query 분석 공유", "owner": "김민수", "due": "수요일", "segment_ids": ["s0003", "s0004"]},
+   {"task": "마케팅 팀에 릴리스 일정 변경 알리기", "owner": "정하늘", "due": "오늘", "segment_ids": ["s0006"]},
+   {"task": "regression test 범위 다시 잡기", "owner": "박지영", "due": "다음 주 월요일", "segment_ids": ["s0007"]}
+  ]
+ },
+ "enhanced": {
+  "title": "주간 개발 회의",
+  "blocks": [
+   {"source": "m0001", "heading": "", "items": [
+    {"text": "지난주부터 p95 latency가 800ms까지 올랐다", "segment_ids": ["s0002"], "owner": null, "due": null},
+    {"text": "원인은 DB connection pool이 꽉 차는 것으로 보인다", "segment_ids": ["s0002"], "owner": null, "due": null}]},
+   {"source": "m0002", "heading": "", "items": [
+    {"text": "원래 10월 15일에서 일주일 미뤄 10월 22일로 확정했다", "segment_ids": ["s0005", "s0006"], "owner": null, "due": null},
+    {"text": "결제 이슈와 부족한 QA 기간이 이유다", "segment_ids": ["s0005"], "owner": null, "due": null}]},
+   {"source": "m0003", "heading": "", "items": [
+    {"text": "지금은 Notion과 Confluence에 흩어져 신규 입사자가 헷갈려 한다", "segment_ids": ["s0008"], "owner": null, "due": null},
+    {"text": "어디로 모을지는 다음 회의에서 다시 논의한다", "segment_ids": ["s0009"], "owner": null, "due": null}]},
+   {"source": "r0001", "heading": "", "items": [
+    {"text": "pool size를 20에서 50으로 늘리고 slow query 로그를 먼저 본다", "segment_ids": ["s0003"], "owner": null, "due": null}]},
+   {"source": "r0002", "heading": "", "items": [
+    {"text": "릴리스 일정 변경을 마케팅 팀에 오늘 알리기로 했다", "segment_ids": ["s0006"], "owner": null, "due": null}]}
+  ],
+  "todos": [
+   {"text": "slow query 분석 공유", "segment_ids": ["s0003", "s0004"], "owner": "김민수", "due": "수요일"},
+   {"text": "regression test 범위 다시 잡기", "segment_ids": ["s0007"], "owner": "박지영", "due": "다음 주 월요일"}
+  ]
+ }
+}
