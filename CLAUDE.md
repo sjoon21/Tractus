@@ -213,6 +213,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 uv run pytest                                       # 단위·CLI 테스트 (모델 불필요). PR마다 GitHub Actions CI(.github/workflows/ci.yml)가 같은 것을 돈다
 scripts/check_words.sh                              # WORDS.md §5 금지어 검사 (출력 없으면 통과)
 uv run python scripts/check_licenses.py             # copyleft(GPL·LGPL·AGPL) 의존성 검사: Python·npm·Rust
+scripts/demo/make_demo.sh                           # README 데모 GIF(docs/images/demo.gif) 다시 만들기 (pnpm dev 미리보기 + Chrome + ffmpeg, 가짜 데이터만)
 uv run pytest -m slow                               # 실제 모델 테스트
 uv run pytest -m llm                                # 실제 LLM API 스모크 (키 있는 공급자만)
 uv run pytest -m network                            # 작은 VAD(1.3MB)를 임시 폴더에 실제로 받는다
