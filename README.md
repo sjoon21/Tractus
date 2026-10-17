@@ -16,10 +16,9 @@
 
 <br>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/note-dark.png">
-  <img src="docs/images/note-light.png" alt="노트 화면: 화자별 대화 내용과 타임스탬프가 연동된 요약" width="100%">
-</picture>
+<img src="docs/images/demo.gif" alt="데모: 녹음 노트의 메모 탭에서 노트 완성을 누르면 내 메모에 대화 내용의 세부가 붙고, Claude Code에서 같은 회의를 물으면 노트 제목과 시각을 인용해 답한다" width="100%">
+
+<sub>녹음 노트 → <b>노트 완성</b>(내 메모 + 대화 내용) → Claude Code에서 <b>내 회의 물어보기</b> (가상 회의 데이터)</sub>
 
 </div>
 
@@ -28,6 +27,7 @@
 - 🔒 **100% 로컬 처리 제공** — 음성 녹음, 텍스트 변환(STT), 화자 분리, 벡터 검색이 Apple Silicon 온디바이스(MLX)에서 직접 실행되며, 오디오 데이터를 외부 서버로 전송하지 않습니다.
 - 📁 **로컬 파일 기반 저장** — 모든 노트는 `~/Tractus/meetings/` 내의 표준 파일(오디오·JSON·Markdown·자막)로 관리되어 사용자가 데이터를 온전히 소유하며, Obsidian 등 원하는 도구와 자유롭게 연동됩니다.
 - 🧾 **타임스탬프 연동 요약** — 회의 결정 사항 및 액션 아이템마다 원본 대화 타임스탬프가 링크되어, 클릭 한 번으로 해당 오디오 구간을 즉시 다시 들을 수 있습니다.
+- 🇰🇷 **한국어 회의에 강한 음성 인식** — 실제 회의 녹음으로 직접 재 보니 Qwen3-ASR-1.7B가 Whisper-large-v3-turbo보다 글자 오류가 36% 적었고(CER 9.49 vs 14.92), 1시간 녹음을 8.2분에 받아 적었습니다 (M3 · 16GB, [벤치마크](docs/benchmark.md)).
 - 🤖 **AI 에이전트 연동 (MCP 지원)** — Model Context Protocol(MCP) 서버를 기본 내장하여 Claude Code, Codex, Antigravity 등의 AI 에이전트가 로컬 노트를 직접 검색하고 인용할 수 있습니다.
 
 ## 주요 기능
@@ -44,6 +44,11 @@
 - **네이티브 UI/UX** — 라이트·다크 모드, macOS 네이티브 인터페이스, 인앱 자동 업데이트
 
 ## 스크린샷
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/note-dark.png">
+  <img src="docs/images/note-light.png" alt="노트 화면: 화자별 대화 내용과 타임스탬프가 연동된 요약" width="100%">
+</picture>
 
 <table>
   <tr>
@@ -130,6 +135,7 @@
 | [AI 서비스와 키](docs/ai-services.md) | AI 서비스 설정, 서비스별 기본 모델, 검색 임베딩 설정 |
 | [모델과 라이선스](docs/models.md) | 모델 다운로드, 모델 목록 및 라이선스, 기술 선정 근거 |
 | [CLI](docs/cli.md) | 터미널 CLI 도구(변환·요약·질문·검색·내보내기) 사용법 |
+| [음성 인식 벤치마크](docs/benchmark.md) | Mac에서 한국어 회의를 받아 적는 모델 비교 (Qwen3-ASR · Whisper · Nemotron) |
 | [에이전트 연동 (MCP)](docs/mcp.md) | Claude Code 플러그인, Codex·Antigravity 연동 설정 및 제공 도구(7개) 안내 |
 | [동작 방식](docs/how-it-works.md) | 시스템 구성 아키텍처, 로컬 처리 및 외부 전송 데이터 흐름 |
 | [아키텍처](ARCHITECTURE.md) | 설계 결정 사유, 변경 이력, 벤치마크 결과 |
