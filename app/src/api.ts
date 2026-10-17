@@ -35,6 +35,8 @@ export interface MeetingInfo {
   state?: "recorded" | null;
   /** 변환 전 노트가 보관 중인 원본 녹음(`tracks/`)의 바이트 수. 변환 전 노트에만 있다 (recorded.keptNotice) */
   tracks_bytes?: number;
+  /** 예시 노트 (온보딩, `tractus note sample`). 목록에 `예시` 표시 */
+  sample?: boolean;
 }
 
 export interface Summary {
@@ -288,6 +290,8 @@ export const api = {
   setListPrefs: (sort: SortKey, order: SortOrder) => invoke<void>("set_list_prefs", { sort, order }),
   /** `tractus export` 후 Finder에서 보여 준다. 저장한 절대 경로 */
   exportMeeting: (id: string, format: string, out: string, summary?: string) => invoke<string>("export_meeting", { id, format, out, summary: summary ?? null }),
+  /** 예시 노트를 만들고(이미 있으면 그것) ID를 돌려준다 */
+  noteSample: () => invoke<string>("note_sample"),
   setObsidian: (vault: string, audio: boolean) => invoke<void>("set_obsidian", { vault, audio }),
   /** 노트를 설정의 볼트로 보낸다. force: 볼트에서 고친 파일도 덮어쓴다 */
   obsidianSend: (id: string, summary: string | undefined, force: boolean) => invoke<ObsidianSent>("obsidian_send", { id, summary: summary ?? null, force }),

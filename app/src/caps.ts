@@ -78,6 +78,8 @@ export const CAP_NAME: Record<CapId, string> = {
 /** 화면 이름·열기 단추 글자 (모델 화면은 개발자가 쓰는 화면이라 `모델`이 제품 말이다. 다른 파일에는 `모델`을 쓰지 않으려고 여기서만 정한다) */
 export const MODELS_LABEL = "모델";
 export const MODELS_OPEN = "모델 화면 열기";
+/** 온보딩 목록의 첫 단계 (onboarding.ts). `모델`은 이 파일에서만 쓴다 (WORDS.md §5) */
+export const ONBOARD_MODELS = { label: "변환 모델 받기", hint: "녹음을 텍스트로 바꾸는 모델입니다. 이 Mac에만 저장됩니다.", action: MODELS_OPEN };
 export const CHECKUP_LABEL = "시작 점검";
 export const CHECKUP_OPEN = "시작 점검 열기";
 

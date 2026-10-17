@@ -19,6 +19,8 @@ import { recMode, statusLine, withRecMode } from "./lib";
 import { LlmKeySection } from "./LlmKeySettings";
 import { ObsidianSection } from "./ObsidianSettings";
 import { CalendarSection } from "./CalendarSettings";
+import { HELP_REPLAY, HELP_REPLAY_BUTTON, HELP_REPLAY_HINT, HELP_SECTION, HELP_TIPS, HELP_TIPS_HINT, resetOnboard } from "./onboarding";
+import { readTips, resetTips, tipsOff } from "./tips";
 import { TemplatesSection } from "./TemplatesSettings";
 import { TRAY_KEEP_HINT, TRAY_KEEP_LABEL, TRAY_SHOW_HINT, TRAY_SHOW_LABEL } from "./trayText";
 import { getVersion } from "@tauri-apps/api/app";
@@ -241,6 +243,8 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack }: { onSaved: ()
           </Section>
         </form>
 
+        <HelpSection />
+
         <UpdateSection relaunchBlocked={relaunchBlocked} />
       </PageBody>
 
@@ -258,6 +262,49 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack }: { onSaved: ()
         </div>
       )}
     </section>
+  );
+}
+
+/** 도움말: 처음 사용 안내(체크리스트·기능 안내)를 다시 보거나 기능 안내를 끈다. 이 Mac에만 기억한다 (onboarding.ts·tips.ts) */
+function HelpSection() {
+  const [tipsOn, setTipsOn] = useState(() => !readTips().off);
+  const [msg, setMsg] = useState<string | null>(null);
+  return (
+    <Section title={HELP_SECTION}>
+      <Row
+        label={HELP_REPLAY}
+        hint={msg ?? HELP_REPLAY_HINT}
+        control={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              resetOnboard();
+              resetTips();
+              setTipsOn(true);
+              setMsg("홈에서 시작하기 목록을 다시 볼 수 있습니다.");
+            }}
+          >
+            {HELP_REPLAY_BUTTON}
+          </Button>
+        }
+      />
+      <Row
+        label={HELP_TIPS}
+        hint={HELP_TIPS_HINT}
+        htmlFor="help-tips"
+        control={
+          <Switch
+            id="help-tips"
+            checked={tipsOn}
+            onChange={(e) => {
+              tipsOff(!e.target.checked);
+              setTipsOn(e.target.checked);
+            }}
+          />
+        }
+      />
+    </Section>
   );
 }
 

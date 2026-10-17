@@ -50,6 +50,7 @@ const CHAT = [
   { question: "채용은 몇 명인가요?", answer: "backend 개발자 두 명만 3분기에 채용합니다 [s0010]. ML 엔지니어 채용은 보류했습니다.", citations: [{ meeting_id: "01KWZKT9M0T5YFCND21XGZFT8G", segment_id: "s0010", start: 140.5 }], provider: "upstage", model: "solar-pro2", created_at: "2026-10-15T10:01:00+09:00" }, // words-ok: 미리보기 가짜 데이터 (화면에 ID를 그리지 않는다)
 ];
 
+let sampleId: string | null = null; // note_sample이 고른 노트 (미리보기에서는 3분기 예산 회의를 예시 노트로 쓴다)
 const info = ({ t, summary, dir }: (typeof notes)[number]): T => ({
   id: t.meeting_id,
   dir,
@@ -63,6 +64,7 @@ const info = ({ t, summary, dir }: (typeof notes)[number]): T => ({
   favorite: dir.includes("예산"),
   tags: dir.includes("API") ? ["성능", "백엔드"] : [],
   folder: null,
+  ...(t.meeting_id === sampleId ? { sample: true } : {}),
 });
 const detail = (id: string): T => {
   const n = notes.find((x) => x.t.meeting_id === id) ?? notes[0];
@@ -142,6 +144,7 @@ const handlers: Record<string, (a: T) => unknown> = {
   rec_start: fakeRecording,
   summary_start: fakeSummary,
   list_meetings: () => notes.map(info),
+  note_sample: () => (sampleId = notes.find((n) => n.t.title.includes("3분기"))?.t.meeting_id ?? notes[0].t.meeting_id),
   list_recordings: () => [],
   list_folders: () => [{ id: "f1", name: "고객사", parent: null, order: 0, created_at: "2026-10-01T09:00:00+09:00" }],
   load_meeting: (a) => detail(a.id),

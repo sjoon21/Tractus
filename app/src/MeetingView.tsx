@@ -57,6 +57,8 @@ import { SummariesPanel } from "./SummariesPanel";
 import type { SummaryDoc } from "./summaries";
 import { SpeakerChip, SpeakerMenu, SpeakersBar, spkStyle, type MenuTarget, type MergeAsk } from "./Speakers";
 import { sendToObsidian } from "./obsidian";
+import { CoachMark } from "./CoachMark";
+import { markOnboard } from "./onboarding";
 import { ExportMenu, FindBar, SegmentEditor, type FindState } from "./TranscriptTools";
 import { MemoEditor, TitleEditor, type MemoTarget } from "./MemoView";
 import { NoteOrganizer } from "./NoteOrganizer";
@@ -637,6 +639,10 @@ export function MeetingView({
     });
   };
 
+  useEffect(() => {
+    if (detail?.info.sample) markOnboard("sampleOpened"); // 온보딩: 예시 노트를 열었다
+  }, [detail?.info.sample]);
+
   const toObsidian = async () => {
     if (!(await flushMemos())) return; // 쓰던 글까지 보낸다
     void serial(() => sendToObsidian(id, selectedSummary?.key, notify)); // 요약 탭에서 고른 요약이 들어간다
@@ -787,6 +793,10 @@ export function MeetingView({
               </Button>
             </p>
           )}
+          {/* 온보딩 ③: 처음 마주칠 때 하나씩 (tips.ts, 한 번에 하나) */}
+          <CoachMark id="transcript" anchor=".seg-time" ready={!memoNote && !recorded && segments.length > 0} />
+          <CoachMark id="speakers" anchor="#speakers-title" ready={!memoNote && diarized} />
+          <CoachMark id="export" />
           {!memoNote && diarized && (
             <SpeakersBar
               stats={stats}

@@ -1139,6 +1139,17 @@ async fn note_save(state: State<'_, AppState>, id: String, body: String) -> Resu
     .await
 }
 
+/// 예시 노트(온보딩)를 만들고 그 ID를 돌려준다. 이미 있으면 그것 (`tractus note sample`, 모델·AI 키 없이 돈다)
+#[tauri::command]
+async fn note_sample(state: State<'_, AppState>) -> Result<String, String> {
+    let s = state.settings();
+    blocking(move || {
+        let v = stdout_json(&run_tractus(&s, &["note".into(), "sample".into()], None, "예시 노트를 만들지 못했습니다")?)?;
+        v["meeting_id"].as_str().filter(|id| is_meeting_id(id)).map(String::from).ok_or_else(|| "예시 노트를 만들지 못했습니다".into())
+    })
+    .await
+}
+
 /// 노트 제목을 바꾼다 (녹음·메모 모두). 폴더 이름은 그대로다. 코어가 돌려준 제목(없으면 보낸 제목)
 #[tauri::command]
 async fn note_title(state: State<'_, AppState>, id: String, title: String) -> Result<String, String> {
@@ -1263,6 +1274,7 @@ pub fn run() {
             tray::tray_show_if_hidden,
             tray::set_tray_prefs,
             deferred::set_after_record,
+            note_sample,
             obsidian::set_obsidian,
             obsidian::obsidian_send,
             obsidian::obsidian_open,

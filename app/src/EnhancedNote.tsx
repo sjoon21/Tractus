@@ -16,6 +16,8 @@ import { OpenSettings } from "./OpenSettings";
 import type { SummaryDoc, SummaryItem, SummarySection } from "./summaries";
 import { buttonVariants } from "@/components/ui/button";
 import { CHIP } from "@/components/panel/chip";
+import { CoachMark } from "./CoachMark";
+import { markOnboard } from "./onboarding";
 import { SparklesIcon } from "@/components/ui/sparkles-icon";
 import { cn } from "@/components/ui/utils";
 
@@ -89,6 +91,10 @@ export function EnhancedNote(p: {
   };
 
   const showing = memoTabShowing(!!doc, view, viewAt, p.pick);
+  const seeingDone = showing === "done" && !!doc;
+  useEffect(() => {
+    if (seeingDone) markOnboard("enhancedSeen"); // 온보딩: 완성된 노트를 봤다
+  }, [seeingDone]);
   const changed = p.editKinds.current.slice(madeSeq);
   return (
     <div className="flex flex-col gap-3">
@@ -114,6 +120,7 @@ export function EnhancedNote(p: {
           <button
             type="button"
             className={cn(buttonVariants({ variant: doc ? "outline" : "default", size: "sm" }), "group/ai")}
+            data-tip="enhance"
             disabled={running || !!p.disabled}
             title={p.disabled ?? ENHANCE_HINT}
             onClick={() => void start()}
@@ -124,6 +131,7 @@ export function EnhancedNote(p: {
         </div>
       </div>
 
+      <CoachMark id="enhance" />
       {running && (
         <p className="m-0 flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
           <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
