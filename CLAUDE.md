@@ -183,6 +183,13 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - API 키를 코드·로그·커밋·대화에 남기지 않는다. `.env.local`에만 둔다.
 - **앱의 API 키는 앱 설정 폴더의 서비스별 파일(0600)에만 둔다**(Upstage는 `llm_key`, 나머지는 `llm_key.<서비스>`. `$TRACTUS_HOME`·`settings.json`·webview·인수·로그에 두지 않는다). 서비스마다 주소·AI 모델은 `settings.json`의 `llm_profiles`에 두고(`llm_default`는 기본 서비스, 예전 `llm_provider` 등은 읽을 때 옮긴다), 요약·질문은 등록된 서비스 중에서 그때그때 고른다. **이번에 고른 서비스의** 키·주소·AI 모델만(서비스 `TRACTUS_LLM_PROVIDER`도 함께 싣는다: 셸·`.env`가 다섯 서비스 중 하나를 정해 두어도 앱의 선택이 이긴다. 앱 밖의 서비스 `gemma-local`은 환경이 정한다) 요약·질문·연결 테스트·모델 목록을 돌리는 `tractus` 프로세스(`Settings::tractus_llm(args, provider)`)에 그 서비스의 환경변수로 넘기고, 녹음 등에는 키도 주소도 넘기지 않는다. 앱은 `TRACTUS_EMBED`를 늘 정하고, 사용자가 스마트 검색을 Upstage로 고른 옵트인일 때만 `UPSTAGE_API_KEY` 하나(와 `UPSTAGE_BASE_URL`)를 문장·검색어를 임베딩하는 실행(색인·변환·가져오기·요약·질문)과 상주 검색 프로세스에만 싣는다(`Settings::embed_key_env`: 위 "MCP에 키를 넘기지 않는다"의 유일한 예외. 녹음 프로그램·화자·내보내기 등 `child_env`에는 없다). 키는 5~200자. 화면에는 요약·답변에 쓴 AI 서비스·모델 이름을 쓰지 않는다(WORDS §6 2026-10-15). 키를 로그·오류 문구·`error` 이벤트에 찍지 않는다(서버가 돌려준 문구에서도 가린다). 테스트는 가짜 키(`test-key-123`)와 로컬 가짜 서버(`tests/test_llm_providers.py`)만 쓴다(`app/src-tauri/src/llm_key.rs`, docs/desktop.md §2.14).
 
+## Claude Code 플러그인 (v3.40)
+
+- **`plugins/tractus/`가 플러그인이고 저장소 루트 `.claude-plugin/marketplace.json`이 마켓플레이스다.** 플러그인 폴더에는 앱 소스를 넣지 않는다(설치하면 그 폴더만 복사된다). MCP는 `bin/tractus-mcp`가 띄운다: stdout에 아무것도 찍지 않는다(MCP 통로), 경로를 찾는 순서를 바꾸면 `tests/test_plugin.py`와 docs/mcp.md를 함께 고친다. 키를 MCP에 넘기지 않는다(앱의 Upstage 옵트인 예외는 플러그인에 없다).
+- 릴리스할 때 `plugins/tractus/.claude-plugin/plugin.json`의 `version`을 앱 버전과 맞춘다(버전이 같으면 사용자에게 업데이트가 가지 않는다). 매니페스트를 바꾸면 `claude plugin validate . --strict`와 `claude plugin validate plugins/tractus --strict`를 돌린다.
+- 플러그인을 실제 세션으로 시험할 때는 가상 회의 홈(tests/fixtures/eval을 복사해 색인)만 쓴다: `.mcp.json`의 `TRACTUS_HOME`을 그 홈으로 바꾼 복사본을 `claude --plugin-dir`로 띄운다. 실제 노트·AI Hub 홈을 연결하지 않는다.
+- MCP `cite`는 사람이 읽는 `[노트 제목 시각]`이다. 에이전트가 정확한 자리를 다룰 때는 결과의 `meeting_id`·세그먼트 `id`를 쓴다.
+
 ## 메뉴 막대 아이콘 (v3.24)
 
 - **메뉴 막대(트레이)의 녹음 시작·종료·북마크는 Rust가 하지 않는다.** Rust(`tray.rs`)는 메뉴·제목·아이콘만 그리고 `tray-action` 이벤트를 화면에 보내며, 화면이 창의 단추와 같은 함수로 처리한다(쓰던 메모 저장·권한·기능 잠금이 한 곳에 있게). 경과 시간은 화면 타이머가 아니라 Rust 틱이 센다(숨은 창은 타이머가 늦다). 창 닫기는 `should_hide_on_close`, 종료는 언제나 `begin_quit`이다 (docs/desktop.md §3.1, WORDS.md §4.16).

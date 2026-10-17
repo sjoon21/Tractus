@@ -1,0 +1,39 @@
+#!/bin/bash
+# Claude Code 플러그인용 Tractus MCP 서버 실행기. stdout은 MCP가 쓰므로 여기서는 아무것도 찍지 않는다 (안내는 stderr).
+# tractus 찾기: $TRACTUS_BIN → 앱 설정의 직접 지정 경로 → 미리 만든 앱 → 알려진 설치 위치 → PATH
+# 데이터 폴더: $TRACTUS_HOME → 앱 설정의 home → ~/Tractus. 모델 폴더: $TRACTUS_MODELS_DIR → 앱 설정의 models_dir → 코어 기본값
+set -uo pipefail
+
+CONF="${TRACTUS_APP_CONFIG:-$HOME/Library/Application Support/dev.tractus.app/settings.json}"
+conf() { [ -f "$CONF" ] && /usr/bin/plutil -extract "$1" raw -o - "$CONF" 2>/dev/null; }
+# 플러그인 설정을 비워 두면 빈 값이 온다. 혹시 치환되지 않은 "${user_config.…}"가 그대로 오면 그것도 비운 것으로 본다
+for v in TRACTUS_BIN TRACTUS_HOME TRACTUS_MODELS_DIR; do
+  case "${!v:-}" in '${'*) unset "$v" ;; "") unset "$v" ;; esac
+done
+expand() { case "$1" in "~") printf '%s\n' "$HOME" ;; "~/"*) printf '%s\n' "$HOME/${1#\~/}" ;; *) printf '%s\n' "$1" ;; esac; }
+
+find_tractus() {
+  local c
+  for c in "${TRACTUS_BIN:-}" "$(conf tractus_bin)" \
+           "/Applications/Tractus.app/Contents/Resources/runtime/bin/tractus" \
+           "$HOME/Applications/Tractus.app/Contents/Resources/runtime/bin/tractus" \
+           "$HOME/.local/bin/tractus" "/opt/homebrew/bin/tractus" "$(command -v tractus 2>/dev/null)"; do
+    [ -n "$c" ] || continue
+    c="$(expand "$c")"
+    [ -x "$c" ] && [ ! -d "$c" ] && { printf '%s\n' "$c"; return 0; }
+  done
+  return 1
+}
+
+if ! TRACTUS="$(find_tractus)"; then
+  echo "tractus-mcp: Tractus를 찾지 못했습니다. https://github.com/sjoon21/Tractus/releases 에서 앱을 설치하거나 TRACTUS_BIN에 tractus 경로를 지정하세요." >&2
+  echo "tractus-mcp: Tractus not found. Install the app from https://github.com/sjoon21/Tractus/releases or set TRACTUS_BIN." >&2
+  exit 1
+fi
+
+home="${TRACTUS_HOME:-$(conf home)}"
+export TRACTUS_HOME="$(expand "${home:-~/Tractus}")"
+models="${TRACTUS_MODELS_DIR:-$(conf models_dir)}"
+[ -n "$models" ] && export TRACTUS_MODELS_DIR="$(expand "$models")"
+
+exec "$TRACTUS" mcp

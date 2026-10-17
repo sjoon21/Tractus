@@ -63,7 +63,7 @@ def test_search_syncs_index_and_returns_citations(home):
     assert r["vector_used"] and r["hits"]
     h = r["hits"][0]
     s = h["segments"][0]
-    assert s["cite"] == f"[{h['meeting_id']}#{s['id']} {s['time']}]"
+    assert s["cite"] == f"[{h['title']} {s['time']}]" and h["meeting_id"] not in s["cite"]  # 사람이 읽는 인용 (ID는 다른 칸)
     assert any("latency" in x["text"].lower() for x in h["segments"])
 
 
@@ -95,7 +95,7 @@ def test_get_summary_and_action_items(home):
     srv = build_server(home, None)
     assert "## 할 일" in text(call(srv, "get_summary", {"meeting_id": RELEASE}))
     items = structured(call(srv, "list_action_items", {"date_from": "2026-09-03", "date_to": "2026-09-03"}))["items"]
-    assert items and all(i["meeting_id"] == RELEASE and i["cite"].startswith(f"[{RELEASE}#") for i in items)
+    assert items and all(i["meeting_id"] == RELEASE and i["cite"].startswith("[") and RELEASE not in i["cite"] for i in items)
 
 
 def test_save_summary_validates_segment_ids_and_writes_files(home):

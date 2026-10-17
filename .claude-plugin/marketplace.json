@@ -1,0 +1,12 @@
+{
+  "name": "tractus",
+  "description": "Tractus: local-first meeting notes for Mac, as memory for Claude Code",
+  "owner": { "name": "sjoon21", "url": "https://github.com/sjoon21" },
+  "plugins": [
+    {
+      "name": "tractus",
+      "source": "./plugins/tractus",
+      "description": "Search your Tractus meetings, transcripts, decisions and action items from Claude Code (local MCP server)."
+    }
+  ]
+}

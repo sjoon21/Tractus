@@ -27,7 +27,7 @@ from tractus.summaries import DEFAULT_KEY, has_any_summary, list_summaries, read
 log = logging.getLogger("tractus.mcp")
 
 INSTRUCTIONS = """Tractus: 사용자의 로컬 회의 기록(음성 전사·요약)을 조회한다. 데이터는 사용자 기기에 있다.
-- 과거 회의에 관한 질문은 먼저 search_meetings로 근거를 찾고, 답에는 실제로 근거가 된 세그먼트의 cite 값([meeting_id#s0012 00:05:31])을 그대로 붙인다. 검색 결과 하나에 세그먼트가 여러 개 들어 있으니 내용이 있는 세그먼트를 골라 인용한다.
+- 과거 회의에 관한 질문은 먼저 search_meetings로 근거를 찾고, 답에는 실제로 근거가 된 세그먼트의 cite 값([노트 제목 00:05:31])을 그대로 붙인다. 사람이 읽는 인용이다: meeting_id·세그먼트 ID(s0012)는 답에 쓰지 말고, 다시 찾거나 save_summary에 넣을 때만 결과의 meeting_id·id 칸을 쓴다. 검색 결과 하나에 세그먼트가 여러 개 들어 있으니 내용이 있는 세그먼트를 골라 인용한다.
 - "7월 회의", "지난주"처럼 시점이 있으면 date_from/date_to(YYYY-MM-DD)를 채운다. 어떤 회의가 있는지는 list_meetings로 본다.
 - 결정 사항·할 일은 get_summary, list_action_items로 본다. 전사 원문은 get_transcript로 페이지 단위(next_offset)로 읽는다.
 - kind가 memo인 노트는 사용자가 직접 쓴 메모다. 오디오·시각이 없고 세그먼트는 본문의 한 줄이다. 시각 자리에는 'n번째 줄'이 붙는다.
@@ -52,8 +52,11 @@ def _who(t: dict, s: dict) -> str:
     return f" {name}" if name else ""
 
 
-def _cite(meeting_id: str, segment_ids: list[str], where: str) -> str:
-    return f"[{meeting_id}#{segment_ids[0] if segment_ids else '-'} {where}]"
+def _cite(title: str, where: str) -> str:
+    """사람이 읽는 인용 `[노트 제목 00:05:31]` (메모는 `n번째 줄`). 제목의 대괄호는 소괄호로 바꿔 인용이 깨지지 않게 한다.
+    정확한 자리(meeting_id·세그먼트 ID)는 결과의 다른 칸에 있다."""
+    name = " ".join(str(title or "제목 없음").split()).replace("[", "(").replace("]", ")")
+    return f"[{name} {where}]"
 
 
 class HitSegment(BaseModel):
@@ -220,7 +223,7 @@ def build_server(home: Path, embedder) -> MCPServer:
             hits=[
                 SearchHit(
                     meeting_id=h.meeting_id, title=h.title, date=h.date, matched=h.matched, vector_distance=h.distance,
-                    segments=[HitSegment(id=s["id"], source=s.get("source") or "transcript", line=s.get("line"), time=stamp(s), text=seg_text(s), speaker=s.get("speaker"), cite=_cite(h.meeting_id, [s["id"]], stamp(s))) for s in h.segments],
+                    segments=[HitSegment(id=s["id"], source=s.get("source") or "transcript", line=s.get("line"), time=stamp(s), text=seg_text(s), speaker=s.get("speaker"), cite=_cite(h.title, stamp(s))) for s in h.segments],
                 )
                 for h in res.hits
             ],
@@ -315,7 +318,7 @@ def build_server(home: Path, embedder) -> MCPServer:
                     found = [seg[i] for i in a["segment_ids"] if i in seg]
                     first = min([x for x in found if x.get("source") != "memo"] or found, key=lambda s: s["start"], default={"start": 0.0})  # 전사 근거가 있으면 그 시각, 메모 줄뿐이면 '메모 n번째 줄'
                     items.append(ActionItemOut(meeting_id=t["meeting_id"], title=str(t.get("title") or ""), date=date, task=a["task"], owner=a.get("owner"),
-                                               due=a.get("due"), segment_ids=a["segment_ids"], cite=_cite(t["meeting_id"], a["segment_ids"], stamp(first))))
+                                               due=a.get("due"), segment_ids=a["segment_ids"], cite=_cite(str(t.get("title") or ""), stamp(first))))
             except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
                 log.warning("list_action_items: %s 건너뜀: %s", d.name, e)
         return ActionItems(items=items, meetings_without_summary=missing)
