@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "tractus": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/tractus-mcp",
+      "args": [],
+      "env": {
+        "TRACTUS_BIN": "${user_config.tractus_bin}",
+        "TRACTUS_HOME": "${user_config.tractus_home}"
+      }
+    }
+  }
+}

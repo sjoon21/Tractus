@@ -410,7 +410,7 @@ def test_mcp_tools_tolerate_memo_notes(home):
     assert lst["meetings"][0]["kind"] == "memo" and lst["meetings"][0]["duration_sec"] == 0
     assert "[s0001 1번째 줄] 예산은 동결합니다" in tr
     seg = sr["hits"][0]["segments"][0]
-    assert seg["time"] == "1번째 줄" and seg["cite"].endswith("#s0001 1번째 줄]")
+    assert seg["time"] == "1번째 줄" and seg["cite"].endswith(" 1번째 줄]") and "#" not in seg["cite"]
 
 
 def test_audio_only_commands_refuse_memo(home):

@@ -301,7 +301,7 @@ def test_mcp_search_and_get_transcript_label_memo_lines(rec, home):
     sr, tr, tr2, lst = _mcp(home, [("search_meetings", {"query": "오로라"}), ("get_transcript", {"meeting_id": MID}),
                                    ("get_transcript", {"meeting_id": MID, "max_segments": 2}), ("list_meetings", {})])
     seg = sr.structured_content["hits"][0]["segments"][0]
-    assert (seg["id"], seg["source"], seg["time"], seg["line"]) == ("m0001", "memo", "메모 1번째 줄", 1) and seg["cite"].endswith("#m0001 메모 1번째 줄]")
+    assert (seg["id"], seg["source"], seg["time"], seg["line"]) == ("m0001", "memo", "메모 1번째 줄", 1) and seg["cite"].endswith(" 메모 1번째 줄]") and "#" not in seg["cite"]
     lines = tr.content[0].text.splitlines()
     assert lines[-3:] == ["memo (사용자가 직접 적은 메모, 음성 인식 아님, 2줄):", "[m0001 메모 1번째 줄] 오로라 관측 여행", "[m0002 메모 3번째 줄] 둘째 메모"]
     assert lines.index("(끝)") < next(i for i, x in enumerate(lines) if x.startswith("memo ("))  # 전사 끝 뒤에 memo 구간
@@ -317,7 +317,7 @@ def test_mcp_save_summary_accepts_memo_ids_and_action_items_cite_memo_lines(rec,
     ok, refused, items = _mcp(home, [("save_summary", {"meeting_id": MID, "summary": s, "author": "t"}), ("save_summary", {"meeting_id": MID, "summary": bad, "author": "t"}),
                                      ("list_action_items", {"meeting_id": MID})])
     assert not ok.is_error and refused.is_error and "m0099" in refused.content[0].text
-    assert items.structured_content["items"][0]["cite"].endswith("#m0002 메모 3번째 줄]")
+    assert items.structured_content["items"][0]["cite"].endswith(" 메모 3번째 줄]")
     md = (rec / "summary.md").read_text(encoding="utf-8")
     assert "- 동결 [메모 1번째 줄]\n" in md and "- [ ] 견적 — 김철수 [메모 3번째 줄]\n" in md and "### 예산 [00:00:03–00:01:05, 메모 1번째 줄]\n" in md
 

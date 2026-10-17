@@ -1,0 +1,25 @@
+{
+  "name": "tractus",
+  "displayName": "Tractus",
+  "version": "0.3.0",
+  "description": "Your meetings as local memory for Claude Code: search notes, transcripts, decisions and action items recorded on this Mac with Tractus. Nothing leaves your Mac except what Claude reads.",
+  "author": { "name": "sjoon21", "url": "https://github.com/sjoon21" },
+  "homepage": "https://github.com/sjoon21/Tractus",
+  "repository": "https://github.com/sjoon21/Tractus",
+  "license": "Apache-2.0",
+  "keywords": ["meetings", "notes", "transcription", "local-first", "mcp", "korean", "macos"],
+  "userConfig": {
+    "tractus_bin": {
+      "type": "file",
+      "title": "tractus executable (optional)",
+      "description": "Leave empty to find it automatically (the Tractus app in /Applications, the app's settings, or PATH).",
+      "default": ""
+    },
+    "tractus_home": {
+      "type": "directory",
+      "title": "Tractus data folder (optional)",
+      "description": "Leave empty to use the folder set in the Tractus app, or ~/Tractus.",
+      "default": ""
+    }
+  }
+}

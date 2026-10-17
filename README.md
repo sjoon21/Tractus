@@ -96,6 +96,21 @@
 
 **요구 사양:** Apple Silicon(M1 이상), macOS 14.4 이상, 권장 메모리 16GB (8GB 환경은 경량 구성 권장)
 
+### Claude Code에서 내 회의 물어보기
+
+앱을 설치했다면 Claude Code에 플러그인 하나만 추가하면 됩니다. 경로·환경변수를 따로 설정할 필요가 없습니다.
+
+```
+/plugin install tractus --marketplace sjoon21/Tractus
+```
+
+```text
+> 지난주 회의에서 정한 릴리스 날짜가 언제였지?
+릴리스는 10월 22일로 확정했습니다. 결제 이슈와 QA 기간 부족으로 일주일 미뤘습니다. (주간 개발 회의, 00:02:11)
+```
+
+검색·요약·할 일 도구(MCP)와 회의 기억 스킬, `/tractus:recap 지난주`(기간 회고)가 들어 있습니다. 노트는 이 Mac에 있고, Claude가 읽는 내용만 Claude로 전달됩니다. 자세한 내용은 [에이전트 연동](docs/mcp.md)을 참고하세요.
+
 ## 데이터 처리 및 프라이버시 정책
 
 | 데이터 구분 | 처리 및 저장 위치 |
@@ -115,7 +130,7 @@
 | [AI 서비스와 키](docs/ai-services.md) | AI 서비스 설정, 서비스별 기본 모델, 검색 임베딩 설정 |
 | [모델과 라이선스](docs/models.md) | 모델 다운로드, 모델 목록 및 라이선스, 기술 선정 근거 |
 | [CLI](docs/cli.md) | 터미널 CLI 도구(변환·요약·질문·검색·내보내기) 사용법 |
-| [에이전트 연동 (MCP)](docs/mcp.md) | Claude Code·Codex·Antigravity 연동 설정 및 제공 도구(7개) 안내 |
+| [에이전트 연동 (MCP)](docs/mcp.md) | Claude Code 플러그인, Codex·Antigravity 연동 설정 및 제공 도구(7개) 안내 |
 | [동작 방식](docs/how-it-works.md) | 시스템 구성 아키텍처, 로컬 처리 및 외부 전송 데이터 흐름 |
 | [아키텍처](ARCHITECTURE.md) | 설계 결정 사유, 변경 이력, 벤치마크 결과 |
 | [앱 계약](docs/desktop.md) · [디자인 지침](app/DESIGN.md) | 데스크톱 앱과 코어 간 인터페이스 계약, 화면 UI/UX 규칙 |
