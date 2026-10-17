@@ -95,6 +95,9 @@ struct Transcript {
     /// "recorded": 변환 전 노트 (녹음만 있고 아직 텍스트로 변환하지 않았다, docs/desktop.md §2.16). 없거나 다른 값이면 평범한 노트
     #[serde(default, deserialize_with = "lenient")]
     state: Option<String>,
+    /// 예시 노트 (온보딩, `tractus note sample`). 목록에 `예시` 표시
+    #[serde(default, deserialize_with = "lenient")]
+    sample: Option<bool>,
     /// 녹음 노트에 사용자가 적은 메모 `{body, lines, seq}`. 값이 어떤 모양이어도 읽는다 (`parse_note_memo`가 이상하면 없는 것으로 본다)
     #[serde(default)]
     memo: Option<serde_json::Value>,
@@ -232,6 +235,9 @@ pub struct MeetingInfo {
     /// 변환 전 노트가 보관 중인 원본 녹음(`tracks/`)의 바이트 수. 없으면 0. 변환 전 노트에만 싣는다 (D5, 변환하면 지워진다)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tracks_bytes: Option<u64>,
+    /// 예시 노트(온보딩)일 때만 싣는다
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub sample: bool,
 }
 
 #[derive(Serialize, Debug)]
@@ -282,6 +288,7 @@ fn info(dir: &Path, t: &Transcript) -> MeetingInfo {
         updated_at: t.updated_at.clone().filter(|u| !u.is_empty()).unwrap_or_else(|| t.created_at.clone()),
         state: recorded_state(t),
         tracks_bytes: recorded_state(t).map(|_| dir_bytes(&dir.join("tracks"))),
+        sample: t.sample == Some(true),
     }
 }
 
@@ -511,6 +518,21 @@ mod tests {
         assert!(d.audio_path.unwrap().ends_with("audio.ogg"));
         assert!(load(&home, "../x").is_err());
         assert!(load(&home, "01NOPE").is_err());
+    }
+
+    #[test]
+    fn sample_note_is_marked_only_when_true() {
+        let home = temp_home("sample");
+        for (id, extra) in [("01SAMPLE", r#","sample":true"#), ("01PLAIN", ""), ("01ODD", r#","sample":"yes""#)] {
+            let dir = home.join(format!("meetings/2026-10-02_x_{id}"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("transcript.json"), format!(r#"{{"meeting_id":"{id}","title":"t","created_at":"2026-10-02T14:00:00+09:00","segments":[]{extra}}}"#)).unwrap();
+        }
+        let notes = list(&home);
+        let by = |id: &str| notes.iter().find(|m| m.id == id).unwrap();
+        assert!(by("01SAMPLE").sample && !by("01PLAIN").sample && !by("01ODD").sample); // 모양이 다르면 예시가 아니다
+        let v = serde_json::to_value(by("01PLAIN")).unwrap();
+        assert!(v.get("sample").is_none() && serde_json::to_value(by("01SAMPLE")).unwrap()["sample"] == true);
     }
 
     #[test]

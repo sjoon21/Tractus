@@ -861,6 +861,14 @@ tractus transcribe --into <노트> [--track …] [--language …] [--term …] [
 - **hotwords:** 참석자 이름을 그 노트의 변환에만 더한다(자주 쓰는 단어 다음, `--term`과 같다). `transcribe --into`는 노트 폴더의 `event.json`을 읽는다. `glossary.md`에는 쓰지 않는다.
 - **읽는 곳:** Obsidian frontmatter `attendees`, 내보내기 ZIP, 앱의 노트 상세 `attendees`(참석자 이름 고르기).
 
+### 2.20 예시 노트: `tractus note sample` (v3.39)
+
+첫 사용자 온보딩용 가상 회의 하나(`src/tractus/sample_note.json`, 내용은 tests/fixtures/sample_meeting.json의 가상 회의)를 만든다. 모델·AI 키 없이 돈다.
+
+- stdout `{"meeting_id", "meeting_dir", "created"}`. 이미 있으면(`transcript.json`의 `"sample": true`) 그것을 돌려주고 `created: false`(하나만). 지우면(앱은 휴지통) 다시 만들 수 있다.
+- 들어 있는 것: 대화 10줄과 확정한 참석자 이름 3명, 메모 탭 3줄(`memo`), 녹음 중 메모·북마크(`memos.json`), 회의록(`summary.json`), 완성된 노트(`summaries/enhanced.json`, `enhance.check`를 통과한다). 요약·완성된 노트의 provider·model은 `예시`다. 오디오는 없다(`audio.file`은 있지만 파일이 없어 재생 칸이 그렇게 말한다).
+- **`"sample": true`인 노트는 검색 색인(`Index.sync`)과 MCP `list_meetings`에 넣지 않는다**: 전체 AI 질문·검색·에이전트가 가상 회의를 사실로 쓰지 않게. 노트 안의 AI 질문·요약·내보내기는 다른 노트와 같다.
+
 ## 3. Tauri 앱 (app/)
 
 - **스택:** Tauri 2 + React + TypeScript + Vite. 오디오는 자체 `media://` URI 스킴(`convertFileSrc(path, "media")`, MIME `audio/ogg`, HTTP Range 지원, `TRACTUS_HOME` 밖 경로 거부)으로 `<audio>`에 연결한다. Tauri 기본 asset protocol은 `.ogg`/`.opus`의 MIME과 Range 처리가 맞지 않아 쓰지 않는다(`app/README.md`).
@@ -990,6 +998,16 @@ macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음�
 - 명령(`calendar.rs`): `calendar_status`(`list` + 설정), `calendar_connect`(`request`, 허락되면 켠다), `calendar_set(enabled, hidden)`, `calendar_next`(꺼져 있으면 빈 목록, `next --ahead 15 --exclude …`), `calendar_privacy`(시스템 설정의 캘린더 화면).
 - 홈은 1분마다·창이 다시 보일 때 `calendar_next`를 읽어 첫 일정을 카드로 보인다(실패하면 카드가 없다). `이 일정으로 녹음`은 `rec_start(flags, target, event)`이고 Rust가 다시 검사해 녹음 폴더에 `event.json`을 쓴다(시작에 실패하면 지운다).
 - 참석자 이름 고르기: 이름 바꾸기 폼에 `일정 참석자` 버튼(다른 참석자에게 이미 붙인 이름은 뺀다). 누르면 입력한 것과 같은 `rename`이다.
+
+### 3.7 첫 사용자 온보딩 (v3.39)
+
+세 겹이다. 문구는 WORDS.md §4.25, 상태는 이 Mac의 브라우저 저장소(`tractus.onboarding`·`tractus.tips`, 막혀 있으면 이번 실행만 기억)다.
+
+1. **홈 `Tractus 시작하기` 목록** (`onboarding.ts`·`OnboardingCard.tsx`): 변환 모델 받기(caps `convert`) → 예시 노트 둘러보기(예시 노트를 열면 표시) → 첫 녹음(예시가 아닌 녹음 노트가 있으면) → 완성된 노트 보기(완성된 노트 화면을 보면 표시). 다 하거나 `닫기`를 누르면 사라진다.
+2. **예시 노트**: `note_sample` 명령(`tractus note sample`) → 목록을 다시 읽고 연다. 노트 목록에 `예시` 표시(`MeetingInfo.sample`, 예시일 때만 싣는다).
+3. **기능 안내** (`tips.ts`·`CoachMark.tsx`): 화면의 `data-tip="<ID>"`(또는 선택자) 요소 옆에 한 번씩 뜬다. **한 번에 하나**이고 보이는 자리만 차례를 잡는다(숨은 탭 안의 단추가 다른 안내를 막지 않게). 초점을 빼앗지 않고 Esc로 닫힌다. 홈의 안내(AI 어시스턴트·일정 카드)는 시작하기 목록이 사라진 뒤에 뜬다.
+
+설정 `도움말`: `다시 보기`(목록·안내를 처음부터), `기능 안내` 스위치.
 
 ## 4. B안 판정 기준 (D안으로 갈지 정할 때)
 

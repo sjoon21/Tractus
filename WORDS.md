@@ -775,6 +775,19 @@ LLM 프롬프트(요약·AI 질문)도 이름 없는 참석자를 `참석자 N`�
 
 `일정`·`캘린더`를 쓴다. 일정의 참석자는 대화 내용의 `참석자`와 같은 말이지만 목소리로 찾은 사람과 다를 수 있어 고르기 묶음은 `일정 참석자`라고 부른다. `회의`는 쓰지 않는다(일정이 회의가 아닐 수 있다).
 
+### 4.25 첫 사용자 온보딩 (v3.39)
+
+홈의 `Tractus 시작하기` 목록, 예시 노트, 기능을 처음 마주칠 때 한 번 뜨는 안내다. 문구는 `app/src/onboarding.ts`(목록·도움말)와 `app/src/tips.ts`(안내)에 모아 둔다. 나중에 영어 화면을 만들 때 이 두 파일이 번역 대상이다. 코어 문구는 `src/tractus/sample_note.py`·`sample_note.json`(예시 노트 내용)이다.
+
+| 위치 | 문구 |
+| --- | --- |
+| 홈 목록 | 제목 `Tractus 시작하기` + `{n}/4` + `닫기`. 단계: `변환 모델 받기`(`모델 화면 열기`) / `예시 노트 둘러보기`(`예시 노트 열기`) / `첫 녹음`(`녹음 시작`) / `완성된 노트 보기`(`예시 노트에서 보기`). 단계마다 한 줄 설명 (onboarding.ts. `모델`이 든 첫 단계는 caps.ts `ONBOARD_MODELS`) |
+| 예시 노트 | 제목 `예시: 주간 개발 회의`, 노트 목록 표시 `예시`. 열지 못하면 `예시 노트를 열지 못했습니다: {이유}` |
+| 기능 안내 | `ask`·`calendar`·`transcript`·`speakers`·`export`·`enhance` 여섯 문장 (tips.ts). 단추 `알겠습니다` / `안내 끄기`, 상자 `aria-label` `안내` |
+| 설정 `도움말` | `처음 사용 안내` `시작하기 목록과 기능 안내를 처음부터 다시 보여 줍니다.` + `다시 보기`(누르면 `홈에서 시작하기 목록을 다시 볼 수 있습니다.`) / `기능 안내` `기능을 처음 쓸 때 옆에 짧은 안내를 띄웁니다.` + 스위치 |
+
+`안내`·`시작하기`·`예시`를 쓴다. `튜토리얼`·`온보딩`·`투어`·`코치 마크`는 화면에 쓰지 않는다(코드·문서 이름으로만). 안내 문장은 한 문장에 한 기능만, 단추 이름을 그대로 부른다.
+
 ## 5. 금지어 검사
 
 사용자에게 보이는 문구를 바꾼 뒤, 커밋하기 전에 저장소 루트에서 돌린다. **출력이 없으면 통과다.**
@@ -788,7 +801,7 @@ T='회의|전사|세그먼트|화자|청크|벡터|임베딩|색인|(?<!AI )모�
   rg -n --pcre2 "$T" app/src/{caps,models,checkupRows}.ts app/src/ModelsSettings.tsx | sed 's/모델//g'
   awk '/#\[cfg\(test\)\]/{exit} {print FILENAME":"FNR":"$0}' app/src-tauri/src/models.rs | sed 's/모델//g'
   rg -n --pcre2 '^(?!\s*#).*(raise [\w.]+\(|_fail\(|\bfail\(|emit\("error"|console\.print\(|add_heading|add_paragraph|writerow|_HEADER =|NO_EVIDENCE =)' \
-    src/tractus/{store,export,summarize,ask,cli,llm,audio,voices,notes,attach,deferred,organize,organize_cli,summaries,summary_templates,models_registry,models_install,models_cli,doctor,enhance,obsidian,calendar_event}.py
+    src/tractus/{store,export,summarize,ask,cli,llm,audio,voices,notes,attach,deferred,organize,organize_cli,summaries,summary_templates,models_registry,models_install,models_cli,doctor,enhance,obsidian,calendar_event,sample_note}.py
   rg -n '^(name|description):' src/tractus/templates | sed 's/회의록//g'  # 요약 유형 이름·설명 (회의록은 문서 이름이라 뺀다)
 } | rg -v '^[^:]+:\d+:\s*(//|/\*|\*|\{/\*)' | rg -v 'words-ok|code=|eprintln!' \
   | sed -E 's#[[:space:]]//[^"`]*$##' | rg --pcre2 "$T"

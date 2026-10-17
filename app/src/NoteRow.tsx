@@ -10,6 +10,7 @@ import { ItemMenu, Popover } from "./Popover";
 import { useOrganize } from "./useOrganize";
 import { Ellipsis, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { SAMPLE_BADGE } from "./onboarding";
 import { NOTE_LINK, ROW_MORE } from "@/components/sidebar";
 
 const TAGS_SHOWN = 2;
@@ -49,7 +50,7 @@ export const NoteRow = memo(function NoteRow({
         </span>
         <span className="flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground tabular-nums">
           {noteTime(m)}
-          {isMemo(m) ? <Badge>메모</Badge> : isRecorded(m) ? <Badge variant="memo" title={keptTitle(m.tracks_bytes)}>{slot === "running" ? ROW_RUNNING : slot === "queued" ? ROW_QUEUED : RECORDED_BADGE}</Badge> : !m.has_summary && <Badge>요약 없음</Badge>}
+          {m.sample ? <Badge>{SAMPLE_BADGE}</Badge> : isMemo(m) ? <Badge>메모</Badge> : isRecorded(m) ? <Badge variant="memo" title={keptTitle(m.tracks_bytes)}>{slot === "running" ? ROW_RUNNING : slot === "queued" ? ROW_QUEUED : RECORDED_BADGE}</Badge> : !m.has_summary && <Badge>요약 없음</Badge>}
           {tags.slice(0, TAGS_SHOWN).map((t) => (
             <span key={t} className="max-w-[6.5em] truncate before:text-subtle-foreground before:content-['#']">
               {t}

@@ -6,6 +6,9 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { attachAlignJobs } from "./alignJobs";
 import { api, errDetail, errFull, errText, useJob, useRecorder, type CalendarEvent, type MeetingInfo, type PendingRecording } from "./api";
 import { attendeeLine, CARD_LABEL, CARD_RECORD, eventWhen, useNextEvent } from "./calendar";
+import { CoachMark } from "./CoachMark";
+import { OnboardingCard } from "./OnboardingCard";
+import { onboardSteps, showOnboard, useOnboard, type StepId } from "./onboarding";
 import { AskPanel } from "./AskPanel";
 import { CHECKUP_LABEL, DROP_UNAVAILABLE, MODELS_LABEL, OK, recordNotice, UNCONVERTED_SAVED, type Decision } from "./caps";
 import { Checkup } from "./Checkup";
@@ -660,6 +663,22 @@ export function App() {
   }, [attach.phase, transcribing, imp.job.running, rec.phase]);
 
   // `새 노트` 메뉴 (⌘N은 메뉴 없이 바로 글쓰기)
+  // 온보딩의 예시 노트: 코어가 만들거나(이미 있으면 그것) 목록을 다시 읽고 연다
+  const sampleBusy = useRef(false); // 두 번 빨리 눌러도 한 번만 (코어도 잠금으로 하나만 만든다)
+  const openSample = async () => {
+    if (sampleBusy.current) return;
+    sampleBusy.current = true;
+    try {
+      const id = await api.noteSample();
+      await refresh();
+      openMeeting(id);
+    } catch (e) {
+      notify({ text: `예시 노트를 열지 못했습니다: ${errText(e)}`, error: true });
+    } finally {
+      sampleBusy.current = false;
+    }
+  };
+
   const onNewNote = (a: NewNoteAction) => {
     if (a === "write") void newMemo();
     else if (a === "record") onRecordButton();
@@ -831,6 +850,7 @@ export function App() {
             aria-keyshortcuts="Meta+J"
             aria-label="AI 어시스턴트"
             title="AI 어시스턴트 (⌘J)"
+            data-tip="ask"
             onClick={() => setAskOpen((o) => !o)}
           >
             {/* 가리키면 옅은 보라→하늘색 바탕이 번진다 */}
@@ -954,7 +974,7 @@ export function App() {
       </aside>
 
       <main className="main relative h-screen overflow-hidden bg-background">
-        {view.kind === "home" && <Welcome notes={meetings} onOpen={openMeeting} onAction={onNewNote} onRecordEvent={onRecordButton} recordGate={recording || recordBlocked ? OK : recordGate} convertGate={convertGate} recording={recording} />}
+        {view.kind === "home" && <Welcome notes={meetings} onOpen={openMeeting} onAction={onNewNote} onRecordEvent={onRecordButton} onSample={() => void openSample()} recordGate={recording || recordBlocked ? OK : recordGate} convertGate={convertGate} recording={recording} />}
         {view.kind === "meeting" && (
           <MeetingView
             key={noteEpoch.id === view.id ? `${view.id}.${noteEpoch.n}` : view.id}
@@ -1082,9 +1102,14 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
 
 const RECENT_MAX = 6;
 
-function Welcome({ notes, onOpen, onAction, onRecordEvent, recordGate, convertGate, recording }: { notes: MeetingInfo[]; onOpen: (id: string) => void; onAction: (a: NewNoteAction) => void; onRecordEvent: (ev: CalendarEvent) => void; recordGate: Decision; convertGate: Decision; recording: boolean }) {
-  const { openCheckup, openModels } = useCapabilities();
+function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, recordGate, convertGate, recording }: { notes: MeetingInfo[]; onOpen: (id: string) => void; onAction: (a: NewNoteAction) => void; onRecordEvent: (ev: CalendarEvent) => void; onSample: () => void; recordGate: Decision; convertGate: Decision; recording: boolean }) {
+  const caps = useCapabilities();
+  const { openCheckup, openModels } = caps;
   const next = useNextEvent();
+  const onboard = useOnboard();
+  const steps = onboardSteps(onboard, notes, caps.can("convert").ok);
+  const checklist = showOnboard(onboard, steps);
+  const onStep = (id: StepId) => (id === "models" ? openModels() : id === "record" ? onAction("record") : onSample());
   const recent = useMemo(() => [...notes].sort((a, b) => (b.updated_at ?? b.created_at).localeCompare(a.updated_at ?? a.created_at)).slice(0, RECENT_MAX), [notes]);
   const keys: [string[], string][] = [
     [["⌘N"], "글쓰기 (새 메모)"],
@@ -1107,6 +1132,10 @@ function Welcome({ notes, onOpen, onAction, onRecordEvent, recordGate, convertGa
         {notes.length === 0 && <p className="m-0 text-[15px] font-medium">녹음하거나 메모를 써서 노트를 만드세요. 녹음은 이 Mac에서 텍스트로 변환되고, 파일로 남습니다.</p>}
 
         {next && <NextEventCard ev={next} gate={recordGate} recording={recording} onRecord={() => onRecordEvent(next)} />}
+        {checklist && <OnboardingCard steps={steps} onStep={onStep} />}
+        {/* 홈의 안내는 시작하기 목록을 마치거나 닫은 뒤에 (목록을 가리지 않게) */}
+        <CoachMark id="ask" side="right" ready={!checklist && notes.some((n) => !n.sample)} />
+        {next && <CoachMark id="calendar" ready={!checklist} />}
 
         <div className="grid grid-cols-3 gap-3">
           <GatedButton gate={recordGate} className={action} disabled={recording} onClick={() => onAction("record")}>
@@ -1195,7 +1224,7 @@ function NextEventCard({ ev, gate, recording, onRecord }: { ev: CalendarEvent; g
   }, []);
   const people = attendeeLine(ev.attendees);
   return (
-    <section aria-label={CARD_LABEL} className="flex items-center gap-4 rounded-lg border border-border bg-card/90 p-4 shadow-xs backdrop-blur-sm">
+    <section aria-label={CARD_LABEL} data-tip="calendar" className="flex items-center gap-4 rounded-lg border border-border bg-card/90 p-4 shadow-xs backdrop-blur-sm">
       <span className="grid size-9 shrink-0 place-items-center rounded-full bg-rec-wash text-rec">
         <CalendarClock className="size-5" aria-hidden />
       </span>

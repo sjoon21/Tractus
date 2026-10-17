@@ -166,7 +166,7 @@ export function ExportMenu({ onPick, onPrint, onObsidian, formats = EXPORT_FORMA
   };
   return (
     <>
-      <button ref={button} className={buttonVariants({ variant: "ghost", size: "sm" })} popoverTarget="export-menu" aria-haspopup="menu">
+      <button ref={button} className={buttonVariants({ variant: "ghost", size: "sm" })} popoverTarget="export-menu" aria-haspopup="menu" data-tip="export">
         <Share aria-hidden />
         내보내기
       </button>
