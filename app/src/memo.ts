@@ -1,11 +1,12 @@
 // 메모 노트(녹음 없이 직접 쓴 글)와 노트 제목 수정의 순수 로직. 화면은 MemoView.tsx·MeetingView.tsx. 전부 memo.test.ts에서 검사한다.
+import { t } from "./i18n";
 import { EXPORT_FORMATS, fmtTime, isMemoLineId, oneLine, parseHms, segText, type NoteMemo, type Segment } from "./lib";
 
 // ── 제목 ──
 
 export const TITLE_MAX = 120;
-export const TITLE_EMPTY = "제목을 입력하세요.";
-export const TITLE_TOO_LONG = `제목은 ${TITLE_MAX}자까지 쓸 수 있습니다.`;
+export const TITLE_EMPTY = t("제목을 입력하세요.");
+export const TITLE_TOO_LONG = t("제목은 {n}자까지 쓸 수 있습니다.", { n: TITLE_MAX });
 
 export type TitleCheck = { ok: true; title: string } | { ok: false; error: string };
 
@@ -35,7 +36,7 @@ export function noteTime(m: { kind?: string | null; duration_sec: number; create
 export function exportFormatsFor(memo: boolean, recorded = false): typeof EXPORT_FORMATS {
   if (recorded) return EXPORT_FORMATS.filter((f) => f.format !== "srt" && f.format !== "vtt");
   if (!memo) return EXPORT_FORMATS;
-  const note: Record<string, string> = { txt: "메모 본문", md: "메모 + 요약", bundle: "메모 내용 + 요약" };
+  const note: Record<string, string> = { txt: t("메모 본문"), md: t("메모 + 요약"), bundle: t("메모 내용 + 요약") };
   return EXPORT_FORMATS.filter((f) => f.format !== "srt" && f.format !== "vtt").map((f) => ({ ...f, note: note[f.format] ?? f.note }));
 }
 
@@ -97,7 +98,7 @@ export type EditKind = "text" | "memo";
 export function staleSentence(kinds: EditKind[]): string {
   const text = kinds.includes("text");
   const memo = kinds.includes("memo");
-  return `${text && memo ? "대화 내용과 메모를" : memo ? "메모를" : "대화 내용을"} 수정했습니다`;
+  return text && memo ? t("대화 내용과 메모를 수정했습니다") : memo ? t("메모를 수정했습니다") : t("대화 내용을 수정했습니다");
 }
 
 /** 검색 결과의 한 줄 (코어 search_meetings 세그먼트). 녹음 노트의 메모 줄은 id가 `m0003`이고 source가 "memo" */
@@ -125,8 +126,8 @@ export function hitView(s: HitSegment, memoNote: boolean): HitView {
   const tagged = s.source === "memo" || isMemoLineId(s.id);
   const memo = memoNote || tagged;
   if (!memo) return { memo, tagged, label: fmtTime(parseHms(s.time)), seek: { segId: s.id, t: parseHms(s.time) } };
-  const line = s.line ?? /^(?:메모 )?(\d+)번째 줄$/.exec(s.time)?.[1];
-  return { memo, tagged, label: line ? `${line}번째 줄` : "메모", seek: { segId: s.id, t: 0 } };
+  const line = s.line ?? /^(?:메모 )?(\d+)번째 줄$/.exec(s.time)?.[1]; // i18n-ok: 코어가 내는 위치 표기
+  return { memo, tagged, label: line ? t("{n}번째 줄", { n: line }) : t("메모"), seek: { segId: s.id, t: 0 } };
 }
 
 // ── 자동 저장 ──
@@ -269,5 +270,5 @@ export function dropMemo(id: string): void {
 }
 
 /** 저장 실패 알림에 쓰는 문장 */
-export const SAVE_FAILED = "저장하지 못했습니다";
-export const SAVE_STATUS: Record<SaveStatus, string> = { saved: "저장됨", dirty: "", saving: "저장 중…", failed: SAVE_FAILED };
+export const SAVE_FAILED = t("저장하지 못했습니다");
+export const SAVE_STATUS: Record<SaveStatus, string> = { saved: t("저장됨"), dirty: "", saving: t("저장 중…"), failed: SAVE_FAILED };

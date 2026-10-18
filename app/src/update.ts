@@ -1,23 +1,24 @@
 // 설정 › 업데이트 (v3.34, WORDS.md §4.21): 상태·문구의 순수 로직. 플러그인 호출(check·downloadAndInstall·relaunch)은 SettingsView·App이 하고 여기는 부르지 않는다.
 // 자동 설치는 없다: 앱 시작 약 10초 뒤와 `업데이트 확인` 단추에서만 확인하고, `업데이트 설치`를 누른 뒤에만 받아 설치한다. 설정 파일에 남기는 값은 없다.
 import type { Update } from "@tauri-apps/plugin-updater";
+import { t } from "./i18n";
 
 /** 시작 확인까지 기다리는 시간. 첫 화면·점검이 먼저 그려지게 */
 export const START_DELAY_MS = 10_000;
 
-export const CHECK_LABEL = "업데이트 확인";
-export const INSTALL_LABEL = "업데이트 설치";
-export const RELAUNCH_LABEL = "다시 열기";
-export const OPEN_SETTINGS_LABEL = "설정 열기";
+export const CHECK_LABEL = t("업데이트 확인");
+export const INSTALL_LABEL = t("업데이트 설치");
+export const RELAUNCH_LABEL = t("다시 열기");
+export const OPEN_SETTINGS_LABEL = t("설정 열기");
 /** 녹음·변환 중에는 `다시 열기`를 잠근다: relaunch는 종료 확인(begin_quit·onCloseRequested)을 거치지 않고 바로 끝나 변환이 끊긴다 */
-export const RELAUNCH_WAIT = "녹음·변환이 끝난 뒤 누르세요.";
+export const RELAUNCH_WAIT = t("녹음·변환이 끝난 뒤 누르세요.");
 /** 저장소에서 install.sh로 만든 앱·개발 실행에서는 확인하지 않는다 */
-export const REPO_NOTE = "저장소에서 만든 앱은 scripts/update.sh로 업데이트합니다.";
-export const UPDATE_HINT = "‘업데이트 설치’를 누를 때만 받습니다(약 240 MB).";
+export const REPO_NOTE = t("저장소에서 만든 앱은 scripts/update.sh로 업데이트합니다.");
+export const UPDATE_HINT = t("‘업데이트 설치’를 누를 때만 받습니다(약 240 MB).");
 
-export const versionLine = (v: string | null): string => (v ? `지금 버전 ${v}` : "지금 버전을 읽는 중…");
+export const versionLine = (v: string | null): string => (v ? t("지금 버전 {version}", { version: v }) : t("지금 버전을 읽는 중…"));
 /** 시작 때 확인에서 새 버전이 있을 때의 알림 (같은 실행에서 한 번만) */
-export const newVersionToast = (version: string): string => `새 버전이 있습니다: ${version}`;
+export const newVersionToast = (version: string): string => t("새 버전이 있습니다: {version}", { version });
 
 export type UpdateState =
   | { phase: "idle" }
@@ -93,26 +94,26 @@ export function updateText(s: UpdateState): string | null {
     case "idle":
       return null;
     case "checking":
-      return "확인 중…";
+      return t("확인 중…");
     case "latest":
-      return "최신입니다.";
+      return t("최신입니다.");
     case "found":
-      return `새 버전 ${s.version}`;
+      return t("새 버전 {version}", { version: s.version });
     case "downloading": {
       const pct = progressPct(s.done, s.total);
-      return pct === null ? "받는 중…" : `받는 중 ${pct}%`;
+      return pct === null ? t("받는 중…") : t("받는 중 {pct}%", { pct });
     }
     case "installed":
-      return "설치가 끝났습니다. 다시 열면 새 버전으로 시작합니다.";
+      return t("설치가 끝났습니다. 다시 열면 새 버전으로 시작합니다.");
     case "error":
       return s.text;
   }
 }
 
-const CONNECTION_TEXT = "업데이트 서버에 연결하지 못했습니다. 인터넷 연결을 확인하세요.";
-const SIGNATURE_TEXT = "받은 파일의 서명이 맞지 않아 설치하지 않았습니다. 다시 받아 보세요.";
-const CHECK_FAILED = "업데이트를 확인하지 못했습니다.";
-const INSTALL_FAILED = "업데이트를 설치하지 못했습니다.";
+const CONNECTION_TEXT = t("업데이트 서버에 연결하지 못했습니다. 인터넷 연결을 확인하세요.");
+const SIGNATURE_TEXT = t("받은 파일의 서명이 맞지 않아 설치하지 않았습니다. 다시 받아 보세요.");
+const CHECK_FAILED = t("업데이트를 확인하지 못했습니다.");
+const INSTALL_FAILED = t("업데이트를 설치하지 못했습니다.");
 
 /** 플러그인 오류 → 첫 줄 문장 + 원래 문구(자세히). 어느 단계에서 났는지로 기본 문장을 고른다 (WORDS.md §4.7 규칙) */
 export function updateErrorView(error: unknown, phase: UpdateState["phase"]): { text: string; detail: string | null } {

@@ -13,6 +13,7 @@ import { api, errDetail, errText } from "./api";
 import { trackOf } from "./caps";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorDetail } from "./ErrorDetail";
+import { t } from "./i18n";
 import { warningText } from "./lib";
 import { KEY_CHANGED } from "./llmKey";
 import {
@@ -58,9 +59,9 @@ import { cancelDownload, startDownload, useDownload } from "./modelsJob";
 import { patchSettings, pickPath } from "./pathFix";
 import { useCapabilities } from "./useCapabilities";
 
-const LIST_FAILED = "모델 목록을 읽지 못했습니다";
+const LIST_FAILED = t("모델 목록을 읽지 못했습니다");
 const EXTERNAL_POLL_MS = 4000;
-const EXTERNAL_NOTICE = "다른 곳(터미널 등)에서 모델을 받는 중입니다. 끝나면 이 화면이 새로 고쳐집니다.";
+const EXTERNAL_NOTICE = t("다른 곳(터미널 등)에서 모델을 받는 중입니다. 끝나면 이 화면이 새로 고쳐집니다.");
 
 /** 모델 목록을 읽는다. 받기가 끝나면 다시 읽는다 */
 export function useModelsList() {
@@ -88,8 +89,8 @@ export function useModelsList() {
   const external = !!list?.download_active && !dl.running;
   useEffect(() => {
     if (!external) return;
-    const t = setTimeout(() => void load(), EXTERNAL_POLL_MS);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => void load(), EXTERNAL_POLL_MS);
+    return () => clearTimeout(timer);
   }, [external, list, load]);
   return { list, error, load, dl, external };
 }
@@ -111,7 +112,7 @@ export function PresetButtons({ list, dl }: { list: ModelsList; dl: DownloadStat
   const track = report?.doctor?.recommended_track;
   const free = list.disk_free_bytes;
   return (
-    <div className="grid gap-2 sm:grid-cols-3" role="group" aria-label="모델 구성">
+    <div className="grid gap-2 sm:grid-cols-3" role="group" aria-label={t("모델 구성")}>
       {PRESETS.map((p) => {
         const plan = planOf(toInstall(presetIds(p.id as Preset, list.models, track), list.models), list.models);
         const short = diskShort(plan, free);
@@ -121,7 +122,7 @@ export function PresetButtons({ list, dl }: { list: ModelsList; dl: DownloadStat
           <div key={p.id} className="flex flex-col items-start gap-2 rounded-lg border border-border bg-card p-3">
             <Button variant={main ? "default" : "outline"} size="sm" disabled={busy || done || !!short} onClick={() => void startPreset(plan, list.models)}>
               {p.label}
-              <span className={cn("text-[11px] font-normal tabular-nums", main ? "opacity-70" : "text-muted-foreground")}>{done ? "설치됨" : `약 ${fmtBytes(planSize(plan))}`}</span>
+              <span className={cn("text-[11px] font-normal tabular-nums", main ? "opacity-70" : "text-muted-foreground")}>{done ? t("설치됨") : t("약 {size}", { size: fmtBytes(planSize(plan)) })}</span>
             </Button>
             <p className={cn("m-0 text-xs leading-relaxed", short ? WARN_TEXT : "text-muted-foreground")}>{short ?? p.note}</p>
           </div>
@@ -146,13 +147,13 @@ export function DownloadPanel({ dl }: { dl: DownloadState }) {
               <span className="min-w-0 truncate">{progressLine(dl)}</span>
               {frac !== null && <span className="text-muted-foreground">{Math.round(frac * 100)}%</span>}
             </p>
-            <div role="progressbar" aria-label="모델 받기 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={frac === null ? undefined : Math.round(frac * 100)}>
+            <div role="progressbar" aria-label={t("모델 받기 진행률")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={frac === null ? undefined : Math.round(frac * 100)}>
               <Progress value={frac} />
             </div>
             {dl.file && <p className="m-0 truncate text-muted-foreground tabular-nums">{dl.file}</p>}
           </div>
           <Button variant="outline" size="sm" disabled={dl.cancelling} onClick={cancelDownload}>
-            멈추기
+            {t("멈추기")}
           </Button>
         </div>
       )}
@@ -188,7 +189,7 @@ function ModelSubtitle({ m }: { m: ModelRow }) {
 function ModelDetails({ m, rows }: { m: ModelRow; rows: DetailRow[] }) {
   return (
     <details className="mt-2">
-      <summary aria-label={`${m.name} ${MODEL_DETAIL_LABEL}`} className="w-fit cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+      <summary aria-label={t("{name} 자세히", { name: m.name })} className="w-fit cursor-pointer text-xs text-muted-foreground hover:text-foreground">
         {MODEL_DETAIL_LABEL}
       </summary>
       <dl className="m-0 mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-md bg-secondary px-3 py-2 text-xs">
@@ -210,7 +211,7 @@ const STATE_TONE: Record<ModelRow["state"], string> = { installed: OK_BADGE, mis
 
 /** 스마트 검색에 쓰는 이 Mac의 모델 ID (코어 models_registry) */
 const EMBEDDING_ID = "embedding";
-const NOT_IN_USE = "사용하지 않음";
+const NOT_IN_USE = t("사용하지 않음");
 
 /** 스마트 검색을 Upstage로 쓰는 중인가 (그러면 이 Mac의 검색 모델은 쓰지 않는다). 설정에서 바꾸면 다시 읽는다 */
 function useViaUpstage(): boolean {
@@ -264,7 +265,7 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
     setRemoving(true);
     try {
       await api.modelsRemove(m.id);
-      setMsg({ text: `‘${m.name}’을(를) 삭제했습니다.`, detail: null });
+      setMsg({ text: t("‘{name}’을(를) 삭제했습니다.", { name: m.name }), detail: null });
       await changed();
     } catch (e) {
       setMsg({ text: errText(e), detail: errDetail(e), error: true });
@@ -311,14 +312,14 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
   const dialog = asking && removeDialog(asking);
   return (
     <section className="h-full overflow-y-auto" aria-labelledby="models-title">
-      <PageHeader title="모델" onBack={onBack} />
+      <PageHeader title={t("모델")} onBack={onBack} />
       <PageBody wide>
         <div className="flex flex-col gap-1 px-1">
           <h2 id="models-title" className="m-0 text-[13px] font-semibold">
-            모델과 기능
+            {t("모델과 기능")}
           </h2>
           <p className="m-0 max-w-[640px] text-xs leading-relaxed text-muted-foreground">
-            음성 인식과 참석자 구분 같은 기능은 이 Mac에 받아 두는 모델 파일로 돕니다. 필수 모델만 있어도 녹음하고 텍스트로 바꾸고 요약할 수 있습니다. 나머지는 필요한 기능만 설치하세요. 없는 모델이 필요한 단추는 이유를 알려 주고 이 화면으로 안내합니다.
+            {t("음성 인식과 참석자 구분 같은 기능은 이 Mac에 받아 두는 모델 파일로 돕니다. 필수 모델만 있어도 녹음하고 텍스트로 바꾸고 요약할 수 있습니다. 나머지는 필요한 기능만 설치하세요. 없는 모델이 필요한 단추는 이유를 알려 주고 이 화면으로 안내합니다.")}
           </p>
         </div>
 
@@ -329,14 +330,14 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
           </div>
         )}
 
-        <Section title="모델 폴더">
+        <Section title={t("모델 폴더")}>
           <Row
-            label={list ? <code className="block truncate font-mono text-xs" title={list.models_dir}>{list.models_dir}</code> : !error && <span className="text-muted-foreground">불러오는 중…</span>}
+            label={list ? <code className="block truncate font-mono text-xs" title={list.models_dir}>{list.models_dir}</code> : !error && <span className="text-muted-foreground">{t("불러오는 중…")}</span>}
             hint={
               list && (
                 <span className="tabular-nums">
-                  디스크 여유 {fmtBytes(list.disk_free_bytes)}
-                  {sum && ` · 설치됨 ${sum.installed}/${sum.total}개 (${fmtBytes(sum.bytes)})`}
+                  {t("디스크 여유 {size}", { size: fmtBytes(list.disk_free_bytes) })}
+                  {sum && " · " + t("설치됨 {installed}/{total}개 ({size})", { installed: sum.installed, total: sum.total, size: fmtBytes(sum.bytes) })}
                 </span>
               )
             }
@@ -350,7 +351,7 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
                   )}
                   <Button variant="outline" size="sm" disabled={busy || folderBusy} onClick={() => void chooseFolder()}>
                     <FolderOpen aria-hidden />
-                    위치 바꾸기…
+                    {t("위치 바꾸기…")}
                   </Button>
                 </>
               )
@@ -371,8 +372,8 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
         )}
 
         {list && (
-          <section className="flex flex-col gap-2" aria-label="모델 구성">
-            <h2 className="m-0 px-1 text-[13px] font-semibold">모델 구성</h2>
+          <section className="flex flex-col gap-2" aria-label={t("모델 구성")}>
+            <h2 className="m-0 px-1 text-[13px] font-semibold">{t("모델 구성")}</h2>
             <PresetButtons list={list} dl={dl} />
             <DownloadPanel dl={dl} />
           </section>
@@ -385,7 +386,7 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
         )}
 
         {list && (
-          <Section title="모델 목록">
+          <Section title={t("모델 목록")}>
             {list.models.map((m) => {
               const detailRows = modelDetailRows(m);
               const unusedHere = m.id === EMBEDDING_ID && viaUpstage;
@@ -401,8 +402,8 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
                       </div>
                       <ModelSubtitle m={m} />
                       <p className="m-0 mt-1 text-xs leading-relaxed text-muted-foreground">{m.purpose}</p>
-                      {needsHelperNote(m, helperFound) && <p className={cn("m-0 mt-1 text-xs leading-relaxed", WARN_TEXT)}>먼저 recorder/diar 폴더에서 swift build -c release로 tractus-diar를 만들어야 합니다.</p>}
-                      <ul className="m-0 mt-2 flex list-none flex-wrap gap-1 p-0" aria-label={`${m.name}이(가) 필요한 기능`}>
+                      {needsHelperNote(m, helperFound) && <p className={cn("m-0 mt-1 text-xs leading-relaxed", WARN_TEXT)}>{t("먼저 recorder/diar 폴더에서 swift build -c release로 tractus-diar를 만들어야 합니다.")}</p>}
+                      <ul className="m-0 mt-2 flex list-none flex-wrap gap-1 p-0" aria-label={t("{name}이(가) 필요한 기능", { name: m.name })}>
                         {m.needed_by.length === 0 && <li className="text-xs text-subtle-foreground">—</li>}
                         {m.needed_by.map((c) => (
                           <li key={c}>
@@ -414,7 +415,7 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
                     <div className="flex shrink-0 flex-col items-end gap-2">
                       <div className="flex items-center gap-2">
                         <span className="text-xs tabular-nums text-muted-foreground">
-                          {m.state === "partial" && m.installed_bytes > 0 ? `${fmtBytes(m.installed_bytes)} 받음 / ` : ""}
+                          {m.state === "partial" && m.installed_bytes > 0 ? t("{size} 받음", { size: fmtBytes(m.installed_bytes) }) + " / " : ""}
                           {fmtBytes(m.size_bytes)}
                         </span>
                         {unusedHere ? (
@@ -428,8 +429,8 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
                       {(m.state !== "installed" && !unusedHere) || m.state !== "missing" ? (
                         <div className="flex items-center gap-1">
                           {m.state !== "missing" && (
-                            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={busy || removing} onClick={() => setAsking(m)} aria-label={`${m.name} 삭제`}>
-                              삭제
+                            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={busy || removing} onClick={() => setAsking(m)} aria-label={t("{name} 삭제", { name: m.name })}>
+                              {t("삭제")}
                             </Button>
                           )}
                           {m.state !== "installed" && !unusedHere && (

@@ -1,11 +1,13 @@
 // 사이드바 `새 노트` 메뉴의 항목과 키보드 (NewNoteMenu.tsx). 순수 로직은 menu.test.ts에서 검사한다.
 
+import { t } from "./i18n";
+
 export type NewNoteAction = "write" | "record" | "import";
 
 export const NEW_NOTE_ITEMS: { action: NewNoteAction; label: string; hint?: string }[] = [
-  { action: "write", label: "글쓰기", hint: "⌘N" },
-  { action: "record", label: "녹음 시작" },
-  { action: "import", label: "파일 가져오기" },
+  { action: "write", label: t("글쓰기"), hint: "⌘N" },
+  { action: "record", label: t("녹음 시작") },
+  { action: "import", label: t("파일 가져오기") },
 ];
 
 export type MenuMove = { type: "focus"; index: number } | { type: "close" } | null;

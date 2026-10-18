@@ -5,6 +5,7 @@ import { SquarePen } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { MENU, MENU_ITEM } from "@/components/menu";
+import { t } from "./i18n";
 import { menuKey, NEW_NOTE_ITEMS, openKey, type NewNoteAction } from "./menu";
 
 export function NewNoteMenu({ onPick, disabled }: { onPick: (a: NewNoteAction) => void; disabled: Partial<Record<NewNoteAction, string>> }) {
@@ -34,12 +35,12 @@ export function NewNoteMenu({ onPick, disabled }: { onPick: (a: NewNoteAction) =
         ref={button}
         type="button"
         className={buttonVariants({ variant: "outline", size: "icon" }) + " bg-background"}
-        aria-label="새 노트"
+        aria-label={t("새 노트")}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? "new-note-menu" : undefined}
         aria-keyshortcuts="Meta+N"
-        title="새 노트: 글쓰기, 녹음, 파일 가져오기 (⌘N은 바로 글쓰기)"
+        title={t("새 노트: 글쓰기, 녹음, 파일 가져오기 (⌘N은 바로 글쓰기)")}
         onClick={() => {
           focusAt.current = 0;
           setOpen((o) => !o);
@@ -59,7 +60,7 @@ export function NewNoteMenu({ onPick, disabled }: { onPick: (a: NewNoteAction) =
           id="new-note-menu"
           className={`${MENU} absolute top-full right-0 z-30 mt-1 w-56`}
           role="menu"
-          aria-label="새 노트 만들기"
+          aria-label={t("새 노트 만들기")}
           onKeyDown={(e) => {
             const move = menuKey(e.code, NEW_NOTE_ITEMS.length, items.current.findIndex((el) => el === document.activeElement));
             if (!move) return;

@@ -3,29 +3,30 @@
 // Webview::print(WKWebView printOperation)로 바꿔 놓으므로 인쇄 대화상자의 'PDF로 저장'을 그대로 쓴다.
 import { createPortal } from "react-dom";
 import type { PrintDoc } from "./print";
+import { getLang, t } from "./i18n";
 import { DEFAULT_NAME } from "./summaries";
 
 export function PrintSheet({ doc }: { doc: PrintDoc }) {
   const s = doc.summary;
   const g = doc.generic;
   return createPortal(
-    <article className="print-sheet" lang="ko">
+    <article className="print-sheet" lang={getLang()}>
       <header className="print-head">
         <h1>{doc.title}</h1>
-        <p className="print-meta">{[doc.date, !doc.memo && `길이 ${doc.duration}`, doc.speakers.length > 0 && `참석자 ${doc.speakers.length}명 (${doc.speakers.join(", ")})`].filter(Boolean).join(" · ")}</p>
+        <p className="print-meta">{[doc.date, !doc.memo && t("길이 {duration}", { duration: doc.duration }), doc.speakers.length > 0 && t("참석자 {n}명 ({names})", { n: doc.speakers.length, names: doc.speakers.join(", ") })].filter(Boolean).join(" · ")}</p>
       </header>
       {s && (
         <section className="print-summary">
-          <h2>요약</h2>
+          <h2>{t("요약")}</h2>
           <p>{s.lead}</p>
-          <PrintList title="결정 사항" items={s.decisions} />
-          <PrintList title="할 일" items={s.actions} />
-          <PrintList title="주제" items={s.topics} />
+          <PrintList title={t("결정 사항")} items={s.decisions} />
+          <PrintList title={t("할 일")} items={s.actions} />
+          <PrintList title={t("주제")} items={s.topics} />
         </section>
       )}
       {g && (
         <section className="print-summary">
-          <h2>{g.name === DEFAULT_NAME ? "요약" : `요약 · ${g.name}`}</h2>
+          <h2>{g.name === DEFAULT_NAME ? t("요약") : t("요약 · {name}", { name: g.name })}</h2>
           {g.lead.trim() && <p>{g.lead}</p>}
           {g.sections.map((sec, i) => (
             <PrintList key={i} title={sec.title} items={sec.items} />
@@ -33,7 +34,7 @@ export function PrintSheet({ doc }: { doc: PrintDoc }) {
         </section>
       )}
       <section>
-        <h2>{doc.memo ? "메모" : "대화 내용"}</h2>
+        <h2>{doc.memo ? t("메모") : t("대화 내용")}</h2>
         <ol className={`print-rows ${doc.memo ? "is-memo" : ""}`}>
           {doc.rows.map((r) => (
             <li key={r.id} className={r.speaker ? "is-turn" : undefined}>
@@ -48,7 +49,7 @@ export function PrintSheet({ doc }: { doc: PrintDoc }) {
       </section>
       {doc.memoLines.length > 0 && (
         <section>
-          <h2>메모</h2>
+          <h2>{t("메모")}</h2>
           <ol className="print-rows is-memo">
             {doc.memoLines.map((l) => (
               <li key={l.id}>

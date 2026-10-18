@@ -8,6 +8,7 @@ import { DIALOG, DIALOG_FOOTER, DIALOG_TEXT, DIALOG_TITLE } from "@/components/u
 import { cn } from "@/components/ui/utils";
 import { api, errText } from "./api";
 import type { Fix } from "./caps";
+import { t } from "./i18n";
 import { checkupHeadline, checkupSections, STATUS_LABEL, type CheckupRow } from "./checkupRows";
 import { DownloadPanel, PresetButtons, useModelsList } from "./ModelsSettings";
 import { isPathFix } from "./paths";
@@ -89,11 +90,11 @@ export function Checkup({ onClose }: { onClose: () => void }) {
     >
       <header className="flex flex-col gap-1 border-b border-border px-5 pt-5 pb-4">
         <h2 id="checkup-title" ref={title} tabIndex={-1} className={cn(DIALOG_TITLE, "outline-none")}>
-          시작 점검
+          {t("시작 점검")}
         </h2>
         <p className={cn(DIALOG_TEXT, "text-foreground")} aria-live="polite">
-          {caps.loading || checking ? "확인하는 중…" : checkupHeadline(sections)}
-          <span className="mt-0.5 block text-xs text-muted-foreground">점검 결과와 상관없이 앱은 계속 쓸 수 있습니다. 설정이나 홈 화면에서 언제든 다시 열 수 있습니다.</span>
+          {caps.loading || checking ? t("확인하는 중…") : checkupHeadline(sections)}
+          <span className="mt-0.5 block text-xs text-muted-foreground">{t("점검 결과와 상관없이 앱은 계속 쓸 수 있습니다. 설정이나 홈 화면에서 언제든 다시 열 수 있습니다.")}</span>
         </p>
       </header>
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 py-4">
@@ -122,9 +123,9 @@ export function Checkup({ onClose }: { onClose: () => void }) {
                         <p className="m-0 mt-1.5 flex flex-wrap items-center gap-1.5">
                           <code className="min-w-0 rounded-md bg-secondary px-2 py-1 font-mono text-[11px] break-all">{r.copy}</code>
                           <Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => void copy(r)}>
-                            복사
+                            {t("복사")}
                           </Button>
-                          {copied?.id === r.id && <span className="text-xs text-muted-foreground">{copied.ok ? "복사했습니다" : "복사하지 못했습니다. 직접 선택해 복사하세요"}</span>}
+                          {copied?.id === r.id && <span className="text-xs text-muted-foreground">{copied.ok ? t("복사했습니다") : t("복사하지 못했습니다. 직접 선택해 복사하세요")}</span>}
                         </p>
                       )}
                     </div>
@@ -144,9 +145,9 @@ export function Checkup({ onClose }: { onClose: () => void }) {
       </div>
       <div className={DIALOG_FOOTER}>
         <Button variant="outline" disabled={checking} onClick={() => void recheck()}>
-          다시 확인
+          {t("다시 확인")}
         </Button>
-        <Button onClick={onClose}>점검 마치기</Button>
+        <Button onClick={onClose}>{t("점검 마치기")}</Button>
       </div>
     </dialog>
   );

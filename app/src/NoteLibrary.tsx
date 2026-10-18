@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { MeetingInfo } from "./api";
 import { FolderTree } from "./FolderTree";
+import { t } from "./i18n";
 import { dayParts } from "./lib";
 import { NoteRow } from "./NoteRow";
 import { DEFAULT_FOLD, filterNotes, folderPath, groupForList, isFiltered, parseFold, SORTS, sortNotes, type ListGroup, type SidebarFold, type SortKey } from "./organize";
@@ -72,7 +73,7 @@ export function NoteLibrary({
   const shown = useMemo(() => filterNotes(sorted, org.filter, org.folders), [sorted, org.filter, org.folders]);
   const groups = useMemo(() => groupForList(shown, org.sort), [shown, org.sort]);
   const filtered = isFiltered(org.filter);
-  const folderLabel = org.filter.folder === "none" ? "폴더 없음" : org.filter.folder ? folderPath(org.folders, org.filter.folder) : "";
+  const folderLabel = org.filter.folder === "none" ? t("폴더 없음") : org.filter.folder ? folderPath(org.folders, org.filter.folder) : "";
 
   const rows = (items: readonly MeetingInfo[]) => items.map((m) => <NoteRow key={m.id} m={m} active={m.id === activeId} onOpen={onOpen} slot={convertSlots?.get(m.id) ?? null} onConvert={onConvert} />);
   const renderGroup = (g: ListGroup<MeetingInfo>, i: number, all: ListGroup<MeetingInfo>[]) => {
@@ -88,7 +89,7 @@ export function NoteLibrary({
       <section key={g.day}>
         {newMonth && <h3 className={cn(SIDE_HEAD, "m-0 mt-2")}>{p.month}</h3>}
         <div className="grid grid-cols-[30px_minmax(0,1fr)]">
-          <div className="flex flex-col items-center pt-2 leading-none" aria-label={`${p.day}일 ${p.weekday}요일`}>
+          <div className="flex flex-col items-center pt-2 leading-none" aria-label={t("{day}일 {weekday}요일", { day: p.day, weekday: p.weekday })}>
             <span className="text-[13px] font-semibold tabular-nums">{p.day}</span>
             <small className="mt-1 text-[10px] text-subtle-foreground">{p.weekday}</small>
           </div>
@@ -105,8 +106,8 @@ export function NoteLibrary({
         <Input
           type="search"
           className="h-7 bg-background/70 text-xs"
-          placeholder="목록에서 제목 찾기"
-          aria-label="목록에서 제목으로 거르기"
+          placeholder={t("목록에서 제목 찾기")}
+          aria-label={t("목록에서 제목으로 거르기")}
           value={org.filter.query}
           onChange={(e) => org.setQuery(e.target.value)}
           onKeyDown={(e) => {
@@ -120,9 +121,9 @@ export function NoteLibrary({
 
       {favorites.length > 0 && (
         <section className="mt-2">
-          <SectionHead id="side-favorites" title="즐겨찾기" count={favorites.length} open={fold.favorites} onToggle={() => toggle("favorites")} />
+          <SectionHead id="side-favorites" title={t("즐겨찾기")} count={favorites.length} open={fold.favorites} onToggle={() => toggle("favorites")} />
           {fold.favorites && (
-            <ul id="side-favorites" aria-label="즐겨찾기 노트">
+            <ul id="side-favorites" aria-label={t("즐겨찾기 노트")}>
               {rows(favorites)}
             </ul>
           )}
@@ -130,7 +131,7 @@ export function NoteLibrary({
       )}
 
       <section className="mt-2">
-        <SectionHead id="side-folders" title="폴더" count={org.folders.length || undefined} open={fold.folders} onToggle={() => toggle("folders")} />
+        <SectionHead id="side-folders" title={t("폴더")} count={org.folders.length || undefined} open={fold.folders} onToggle={() => toggle("folders")} />
         {fold.folders && (
           <div id="side-folders">
             <FolderTree expanded={expanded} onToggle={toggleFolder} onExpand={expandFolder} notes={notes} />
@@ -140,16 +141,16 @@ export function NoteLibrary({
 
       {org.tags.length > 0 && (
         <section className="mt-2">
-          <SectionHead id="side-tags" title="태그" count={org.tags.length} open={fold.tags} onToggle={() => toggle("tags")} />
+          <SectionHead id="side-tags" title={t("태그")} count={org.tags.length} open={fold.tags} onToggle={() => toggle("tags")} />
           {fold.tags && (
-            <ul id="side-tags" className="flex flex-wrap gap-1 px-2 py-1" aria-label="태그 (여럿을 고르면 모두 붙은 노트)">
-              {org.tags.map((t) => {
-                const on = org.filter.tags.some((x) => x.toLowerCase() === t.tag.toLowerCase());
+            <ul id="side-tags" className="flex flex-wrap gap-1 px-2 py-1" aria-label={t("태그 (여럿을 고르면 모두 붙은 노트)")}>
+              {org.tags.map((tc) => {
+                const on = org.filter.tags.some((x) => x.toLowerCase() === tc.tag.toLowerCase());
                 return (
-                  <li key={t.tag}>
-                    <button type="button" className={cn(CHIP, "aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background")} aria-pressed={on} aria-label={`태그 ${t.tag}, 노트 ${t.count}개`} onClick={() => org.toggleTag(t.tag)}>
-                      <span>{t.tag}</span>
-                      <span className="opacity-60 tabular-nums">{t.count}</span>
+                  <li key={tc.tag}>
+                    <button type="button" className={cn(CHIP, "aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background")} aria-pressed={on} aria-label={t("태그 {tag}, 노트 {n}개", { tag: tc.tag, n: tc.count })} onClick={() => org.toggleTag(tc.tag)}>
+                      <span>{tc.tag}</span>
+                      <span className="opacity-60 tabular-nums">{tc.count}</span>
                     </button>
                   </li>
                 );
@@ -162,11 +163,11 @@ export function NoteLibrary({
       <section className="mt-2">
         <div className={cn(SIDE_HEAD, "pr-0")}>
           <h2 className="m-0 flex items-center gap-1.5 text-[11px] font-semibold">
-            <span>전체 노트</span>
+            <span>{t("전체 노트")}</span>
             <span className="font-normal tabular-nums">{filtered ? `${shown.length} / ${notes.length}` : notes.length}</span>
           </h2>
           <div className="ml-auto flex items-center">
-            <select className="h-6 max-w-[7.5rem] appearance-none rounded-md bg-transparent px-1.5 text-right text-[11px] font-medium text-subtle-foreground outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40" aria-label="노트 순서" value={org.sort} onChange={(e) => org.setSort(e.target.value as SortKey)}>
+            <select className="h-6 max-w-[7.5rem] appearance-none rounded-md bg-transparent px-1.5 text-right text-[11px] font-medium text-subtle-foreground outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={t("노트 순서")} value={org.sort} onChange={(e) => org.setSort(e.target.value as SortKey)}>
               {SORTS.map((s) => (
                 <option key={s.key} value={s.key}>
                   {s.label}
@@ -176,8 +177,8 @@ export function NoteLibrary({
             <button
               type="button"
               className="grid size-6 place-items-center rounded-md text-subtle-foreground outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 [&_svg]:size-3"
-              aria-label={org.order === "asc" ? "오름차순 (누르면 내림차순)" : "내림차순 (누르면 오름차순)"}
-              title={org.order === "asc" ? "오름차순 — 누르면 내림차순" : "내림차순 — 누르면 오름차순"}
+              aria-label={org.order === "asc" ? t("오름차순 (누르면 내림차순)") : t("내림차순 (누르면 오름차순)")}
+              title={org.order === "asc" ? t("오름차순 — 누르면 내림차순") : t("내림차순 — 누르면 오름차순")}
               onClick={org.toggleOrder}
             >
               {org.order === "asc" ? <ArrowUp aria-hidden /> : <ArrowDown aria-hidden />}
@@ -187,21 +188,21 @@ export function NoteLibrary({
         {filtered && (
           <div className="flex flex-wrap items-center gap-1 px-2 pb-1">
             {org.filter.folder && (
-              <button type="button" className={CHIP} aria-label={`폴더 걸러내기 해제: ${folderLabel}`} onClick={() => org.selectFolder(null)}>
-                폴더: {folderLabel} <X aria-hidden />
+              <button type="button" className={CHIP} aria-label={t("폴더 걸러내기 해제: {folder}", { folder: folderLabel })} onClick={() => org.selectFolder(null)}>
+                {t("폴더: {folder}", { folder: folderLabel })} <X aria-hidden />
               </button>
             )}
-            {org.filter.tags.map((t) => (
-              <button key={t} type="button" className={CHIP} aria-label={`태그 걸러내기 해제: ${t}`} onClick={() => org.toggleTag(t)}>
-                태그: {t} <X aria-hidden />
+            {org.filter.tags.map((tag) => (
+              <button key={tag} type="button" className={CHIP} aria-label={t("태그 걸러내기 해제: {tag}", { tag })} onClick={() => org.toggleTag(tag)}>
+                {t("태그: {tag}", { tag })} <X aria-hidden />
               </button>
             ))}
             <button type="button" className="px-1 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" onClick={org.clearFilters}>
-              모두 해제
+              {t("모두 해제")}
             </button>
           </div>
         )}
-        {filtered && shown.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">조건에 맞는 노트가 없습니다.</p>}
+        {filtered && shown.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">{t("조건에 맞는 노트가 없습니다.")}</p>}
         {groups.map(renderGroup)}
       </section>
     </>

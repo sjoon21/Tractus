@@ -49,6 +49,7 @@ import { citeLabel } from "./ask";
 import { AskPanel } from "./AskPanel";
 import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
+import { locale, t } from "./i18n";
 import { indexer } from "./indexer";
 import { printDoc } from "./print";
 import { EDIT_BLOCKED, type DeleteTarget } from "./remove";
@@ -135,7 +136,7 @@ export function MeetingView({
   const [memoPick, setMemoPick] = useState<MemoTarget | null>(null); // 요약 칩으로 고른 줄
   const audio = useRef<HTMLAudioElement>(null);
   const list = useRef<HTMLOListElement>(null);
-  const [t, setT] = useState(0);
+  const [pos, setT] = useState(0);
   const [duration, setDuration] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [follow, setFollow] = useState(true);
@@ -283,9 +284,9 @@ export function MeetingView({
           () => api.editSpeakers(id, { op: "rename", label, name }),
         );
         if ("meeting" in r) commit(r.meeting);
-        if ("samples" in r) notify({ text: `‘${name}’ 님의 목소리를 등록했습니다 (표본 ${r.samples}개). 다음 녹음부터 자동으로 알아봅니다` });
-        else if ("renameError" in r) setEditError(`이름을 바꾸지 못했습니다: ${errText(r.renameError)} (목소리: ${errText(r.voiceError)})`);
-        else setEditError(`이름은 ‘${name}’(으)로 바꿨지만 목소리는 등록하지 못했습니다: ${errText(r.voiceError)}`);
+        if ("samples" in r) notify({ text: t("‘{name}’ 님의 목소리를 등록했습니다 (표본 {n}개). 다음 녹음부터 자동으로 알아봅니다", { name, n: r.samples }) });
+        else if ("renameError" in r) setEditError(t("이름을 바꾸지 못했습니다: {error} (목소리: {voiceError})", { error: errText(r.renameError), voiceError: errText(r.voiceError) }));
+        else setEditError(t("이름은 ‘{name}’(으)로 바꿨지만 목소리는 등록하지 못했습니다: {error}", { name, error: errText(r.voiceError) }));
       });
     },
     [id, serial, commit, editSpeakers, notify],
@@ -309,8 +310,11 @@ export function MeetingView({
         }
       } catch (e) {
         // 아무것도 쓰이지 않았다(코어 계약). 화면은 원래 문장으로 돌아가므로 고친 문장을 메시지에 남긴다
-        const what = edits.length === 1 ? `“${oneLine(edits[0].text)}”` : `대화 ${edits.length}개`;
-        setEditError(`저장하지 못했습니다 (${what}): ${errText(e)}`);
+        setEditError(
+          edits.length === 1
+            ? t("저장하지 못했습니다 (“{text}”): {error}", { text: oneLine(edits[0].text), error: errText(e) })
+            : t("저장하지 못했습니다 (대화 {n}개): {error}", { n: edits.length, error: errText(e) }),
+        );
         if (isUndo) undoStack.current.push(edits);
       } finally {
         setPending((p) => p.filter((x) => x !== edits));
@@ -346,7 +350,7 @@ export function MeetingView({
       setEditingId(null);
       if (raw === null) return;
       const text = oneLine(raw);
-      if (!text) return setEditError("빈 내용은 저장할 수 없습니다. 원래 내용을 그대로 둡니다");
+      if (!text) return setEditError(t("빈 내용은 저장할 수 없습니다. 원래 내용을 그대로 둡니다"));
       if (text !== oneLine(segText(seg))) saveText([{ id: seg.id, text }]);
     },
     [saveText],
@@ -354,7 +358,7 @@ export function MeetingView({
 
   const openChip = useCallback((seg: Segment, anchor: HTMLElement) => setMenu({ kind: "seg", seg, anchor }), []);
   const starts = useMemo(() => new Map(segments.map((s) => [s.id, s.start])), [detail]);
-  const active = segmentIndexAt(segments, t);
+  const active = segmentIndexAt(segments, pos);
 
   // 모든 이동은 여기를 거친다 (클릭, 단축키, 무음 건너뛰기, 검색 결과)
   const seekTo = useCallback((sec: number, play = true) => {
@@ -389,7 +393,7 @@ export function MeetingView({
 
   // 목소리 강조 (6.4). 켤 때 Web Audio 체인을 만든다(사용자 클릭 안에서). 못 만들면 토글을 막고 이유를 보인다
   const [voice, setVoice] = useState(false);
-  const [voiceError, setVoiceError] = useState<string | null>(voiceBoostSupported() ? null : "이 환경에서는 ‘목소리 선명하게’를 쓸 수 없습니다");
+  const [voiceError, setVoiceError] = useState<string | null>(voiceBoostSupported() ? null : t("이 환경에서는 ‘목소리 선명하게’를 쓸 수 없습니다"));
   const toggleVoice = () => {
     const a = audio.current;
     if (!a || voiceError) return;
@@ -397,7 +401,7 @@ export function MeetingView({
       setVoiceBoost(a, !voice);
       setVoice(!voice);
     } catch (e) {
-      setVoiceError(`‘목소리 선명하게’를 켜지 못했습니다: ${errText(e)}`);
+      setVoiceError(t("‘목소리 선명하게’를 켜지 못했습니다: {error}", { error: errText(e) }));
     }
   };
   useEffect(() => {
@@ -412,7 +416,7 @@ export function MeetingView({
     if (!printNonce) return;
     const id = requestAnimationFrame(() =>
       // Tauri는 macOS에서 window.print()를 webview print 명령(Promise)으로 바꿔 둔다
-      Promise.resolve(window.print() as unknown).catch((e) => notify({ text: `인쇄 창을 열지 못했습니다: ${errText(e)}`, error: true })),
+      Promise.resolve(window.print() as unknown).catch((e) => notify({ text: t("인쇄 창을 열지 못했습니다: {error}", { error: errText(e) }), error: true })),
     );
     return () => cancelAnimationFrame(id);
   }, [printNonce, notify]);
@@ -475,13 +479,13 @@ export function MeetingView({
   const replace = (all: boolean) => {
     if (!find || !curMatch) return;
     const edits = replaceEdits(visible, find.q, find.r, all ? undefined : curMatch);
-    if (!edits.length) return setEditError("바꿔도 내용이 같거나 비게 되어 바꾸지 않았습니다");
+    if (!edits.length) return setEditError(t("바꿔도 내용이 같거나 비게 되어 바꾸지 않았습니다"));
     saveText(edits);
     const term = find.r.trim();
     if (find.glossary && term) {
       api.glossaryAdd([term]).then(
-        (n) => notify({ text: n ? `자주 쓰는 단어에 추가했습니다 — ${term} (다음 녹음부터 더 정확하게 인식합니다)` : `이미 자주 쓰는 단어에 있습니다 — ${term}` }),
-        (e) => notify({ text: `자주 쓰는 단어에 추가하지 못했습니다: ${errText(e)}`, error: true }),
+        (n) => notify({ text: n ? t("자주 쓰는 단어에 추가했습니다 — {term} (다음 녹음부터 더 정확하게 인식합니다)", { term }) : t("이미 자주 쓰는 단어에 있습니다 — {term}", { term }) }),
+        (e) => notify({ text: t("자주 쓰는 단어에 추가하지 못했습니다: {error}", { error: errText(e) }), error: true }),
       );
     }
   };
@@ -520,7 +524,7 @@ export function MeetingView({
   // 찾기 강조가 위에 보이게 우선순위를 낮추고, 등록은 한 번만 한다(같은 우선순위면 나중에 등록한 것이 위)
   const karaoke = useRef<Highlight | null>(null);
   const usable = useMemo(() => new Map(segments.map((s) => [s.id, usableWords(s)])), [detail]);
-  const pausedT = playing ? -1 : t;
+  const pausedT = playing ? -1 : pos;
   useEffect(() => {
     if (!("highlights" in CSS)) return;
     const h = (karaoke.current ??= Object.assign(new Highlight(), { priority: -1 }));
@@ -528,7 +532,7 @@ export function MeetingView({
     let last: string | null = null;
     let raf = 0;
     const paint = () => {
-      const now = audio.current?.currentTime ?? t;
+      const now = audio.current?.currentTime ?? pos;
       const seg = segments[segmentIndexAt(segments, now)];
       // 발화가 끝난 뒤의 공백과 고치는 중인 세그먼트는 칠하지 않는다. 끝 시각에 겹친 단어(길이 0)는 wordClock의 끝까지 칠한다
       const cand = seg && seg.id !== editingId ? usable.get(seg.id) : null;
@@ -623,7 +627,7 @@ export function MeetingView({
     try {
       out = await save({ defaultPath: exportFilename(detail.info.created_at, detail.info.title, f.ext), filters: [{ name: f.label, extensions: [f.ext] }] });
     } catch (e) {
-      return notify({ text: `저장 위치를 고르지 못했습니다: ${errText(e)}`, error: true });
+      return notify({ text: t("저장 위치를 고르지 못했습니다: {error}", { error: errText(e) }), error: true });
     }
     if (!out) return;
     const target = out;
@@ -632,9 +636,9 @@ export function MeetingView({
     void serial(async () => {
       try {
         const path = await api.exportMeeting(id, f.format, target, selectedSummary?.key); // md·docx에는 요약 탭에서 고른 요약이 들어간다
-        notify({ text: `내보냈습니다 — ${baseName(path)}` });
+        notify({ text: t("내보냈습니다 — {file}", { file: baseName(path) }) });
       } catch (e) {
-        notify({ text: `내보내지 못했습니다: ${errText(e)}`, error: true });
+        notify({ text: t("내보내지 못했습니다: {error}", { error: errText(e) }), error: true });
       }
     });
   };
@@ -655,7 +659,7 @@ export function MeetingView({
         <ErrorDetail detail={error.detail} />
       </div>
     );
-  if (!detail) return <p className="page-loading m-0 grid h-full place-items-center text-[13px] text-muted-foreground">불러오는 중…</p>;
+  if (!detail) return <p className="page-loading m-0 grid h-full place-items-center text-[13px] text-muted-foreground">{t("불러오는 중…")}</p>;
 
   const { info } = detail;
   const recorded = isRecorded(info);
@@ -679,15 +683,16 @@ export function MeetingView({
     ? [memoPick, seek?.segId ? { segId: seek.segId, nonce: seek.nonce } : null].reduce<MemoTarget | null>((a, b) => (!b || (a && a.nonce >= b.nonce) ? a : b), null)
     : memoPick;
   const noteBody = detail.note_memo?.body ?? "";
+  const bodyChars = (detail.body ?? "").length;
 
   return (
     <div className={cn("meeting grid h-full max-[1180px]:block max-[1180px]:overflow-y-auto", railCollapsed ? "is-rail-collapsed grid-cols-[minmax(0,1fr)_52px]" : "grid-cols-[minmax(0,1fr)_var(--rail)]")}>
       <article className="transcript-col relative flex min-h-0 flex-col overflow-y-auto max-[1180px]:overflow-visible" onWheel={() => playing && setFollow(false)} onScroll={() => menu && setMenu(null)}>
         <div data-tauri-drag-region className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-2 bg-background/90 pr-3 pl-6 backdrop-blur-md">
           <p className="m-0 flex min-w-0 items-center gap-2 truncate text-xs text-muted-foreground tabular-nums" data-tauri-drag-region>
-            {created?.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" })}
+            {created?.toLocaleDateString(locale(), { year: "numeric", month: "long", day: "numeric", weekday: "short" })}
             {created && " · "}
-            {created?.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+            {created?.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })}
             {recorded && <Badge variant="memo">{RECORDED_BADGE}</Badge>}
           </p>
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
@@ -697,12 +702,12 @@ export function MeetingView({
                 className={buttonVariants({ variant: "ghost", size: "sm" })}
                 disabled={align.job.running}
                 onClick={align.startAlign}
-                title="음성과 대화 내용을 단어 단위로 맞춥니다. 재생 중인 단어가 강조되고, 단어를 누르면 그 단어부터 재생합니다"
+                title={t("음성과 대화 내용을 단어 단위로 맞춥니다. 재생 중인 단어가 강조되고, 단어를 누르면 그 단어부터 재생합니다")}
               >
                 <AudioLines aria-hidden />
                 {align.job.running
-                  ? `${STAGE_LABEL[align.job.stage ?? ""] ?? "시작하는 중…"}${align.job.total ? ` ${Math.round((align.job.done / align.job.total) * 100)}%` : ""}`
-                  : "단어 싱크 맞추기"}
+                  ? (STAGE_LABEL[align.job.stage ?? ""] ?? t("시작하는 중…")) + (align.job.total ? ` ${Math.round((align.job.done / align.job.total) * 100)}%` : "")
+                  : t("단어 싱크 맞추기")}
               </GatedButton>
             )}
             {memoNote && attach && (
@@ -718,7 +723,7 @@ export function MeetingView({
               </>
             )}
             {!memoNote && !recorded && (
-              <Button variant="ghost" size="icon-sm" aria-label="찾아 바꾸기" title="찾아 바꾸기 (⌘F)" onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
+              <Button variant="ghost" size="icon-sm" aria-label={t("찾아 바꾸기")} title={t("찾아 바꾸기 (⌘F)")} onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
                 <TextSearch aria-hidden />
               </Button>
             )}
@@ -735,9 +740,9 @@ export function MeetingView({
               variant="ghost"
               size="icon-sm"
               className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-              aria-label="삭제"
+              aria-label={t("삭제")}
               disabled={align.job.running || summaryRunning || enhanceRunning || !!attach?.lock || !!convertBlock}
-              title={convertBlock ?? (align.job.running || summaryRunning || enhanceRunning || attach?.lock ? "작업이 끝난 뒤에 삭제할 수 있습니다" : "노트를 휴지통으로 옮깁니다")}
+              title={convertBlock ?? (align.job.running || summaryRunning || enhanceRunning || attach?.lock ? t("작업이 끝난 뒤에 삭제할 수 있습니다") : t("노트를 휴지통으로 옮깁니다"))}
               onClick={() => onDelete({ kind: "note", id, title: info.title, dir: info.dir, memo: memoNote, withMemo: !memoNote && memoLines.size > 0 })}
             >
               <Trash2 aria-hidden />
@@ -763,13 +768,14 @@ export function MeetingView({
           <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
             {memoNote ? (
               <p className="meeting-stats m-0 text-xs text-muted-foreground tabular-nums">
-                메모 · 줄 {info.segments}개 · {(detail.body ?? "").length.toLocaleString("ko-KR")}자
+                {t("메모")} · {t("줄 {n}개", { n: info.segments })} · {t("{n}자", { n: bodyChars === 1 ? 1 : bodyChars.toLocaleString(locale()) })}
               </p>
             ) : recorded ? (
               <p className="meeting-stats m-0 text-xs text-muted-foreground tabular-nums">{recordedStats(info.duration_sec, detail.memos.length)}</p>
             ) : (
-              <p className="meeting-stats m-0 text-xs text-muted-foreground tabular-nums" title="대화를 두 번 누르거나 Enter를 눌러 내용을 수정합니다">
-                {fmtTime(info.duration_sec)} · 대화 {info.segments}개{detail.memos.length > 0 && ` · 녹음 중 메모 ${detail.memos.length}개`}
+              <p className="meeting-stats m-0 text-xs text-muted-foreground tabular-nums" title={t("대화를 두 번 누르거나 Enter를 눌러 내용을 수정합니다")}>
+                {fmtTime(info.duration_sec)} · {t("대화 {n}개", { n: info.segments })}
+                {detail.memos.length > 0 && " · " + t("녹음 중 메모 {n}개", { n: detail.memos.length })}
               </p>
             )}
             <NoteOrganizer id={id} />
@@ -831,8 +837,8 @@ export function MeetingView({
         {!memoNote && recorded && convert && <ConvertPanel id={id} job={convertJob} controls={convert} kept={keptNotice(info.tracks_bytes, info.created_at, Date.now())} />}
         {!memoNote && !recorded && segments.length === 0 && (
           <div className="transcript-empty mx-auto my-16 max-w-sm text-center" role="status">
-            <p className="m-0 text-[13px] font-semibold">인식된 대화가 없습니다</p>
-            <p className="mt-1.5 mb-0 text-xs leading-relaxed text-muted-foreground">이 녹음에서 말소리를 찾지 못했습니다. 아래 플레이어로 녹음된 소리를 확인해 보세요. 마이크가 멀었거나 녹음이 너무 짧았을 수 있습니다.</p>
+            <p className="m-0 text-[13px] font-semibold">{t("인식된 대화가 없습니다")}</p>
+            <p className="mt-1.5 mb-0 text-xs leading-relaxed text-muted-foreground">{t("이 녹음에서 말소리를 찾지 못했습니다. 아래 플레이어로 녹음된 소리를 확인해 보세요. 마이크가 멀었거나 녹음이 너무 짧았을 수 있습니다.")}</p>
           </div>
         )}
         {!memoNote && <ol className={`transcript ${diarized ? "has-speakers" : ""}`} ref={list}>
@@ -861,7 +867,7 @@ export function MeetingView({
         </ol>}
         </div>
 
-        {!memoNote && <div className="player sticky bottom-0 z-10 mt-auto flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-background/90 px-6 py-2.5 backdrop-blur-md" role="group" aria-label="오디오 플레이어">
+        {!memoNote && <div className="player sticky bottom-0 z-10 mt-auto flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-background/90 px-6 py-2.5 backdrop-blur-md" role="group" aria-label={t("오디오 플레이어")}>
           {detail.audio_path ? (
             <audio
               ref={audio}
@@ -882,19 +888,19 @@ export function MeetingView({
                 resumeVoiceBoost(e.currentTarget);
               }}
               onPause={() => setPlaying(false)}
-              onError={() => setAudioError("오디오를 재생할 수 없습니다")}
+              onError={() => setAudioError(t("오디오를 재생할 수 없습니다"))}
             />
           ) : null}
           <button
             className="play-button grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground shadow-xs outline-none transition-transform hover:scale-105 focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:opacity-40 disabled:hover:scale-100 [&_svg]:size-3.5 [&_svg]:fill-current"
             onClick={() => (audio.current?.paused ? void audio.current.play().catch(() => {}) : audio.current?.pause())}
             disabled={!detail.audio_path || !!audioError}
-            aria-label={playing ? "일시정지" : "재생"}
+            aria-label={playing ? t("일시정지") : t("재생")}
           >
             {playing ? <Pause aria-hidden /> : <Play aria-hidden className="translate-x-px" />}
           </button>
           <time className="shrink-0 text-xs font-medium tabular-nums">
-            {fmtTime(t)} <span className="font-normal text-subtle-foreground">/ {fmtTime(duration)}</span>
+            {fmtTime(pos)} <span className="font-normal text-subtle-foreground">/ {fmtTime(duration)}</span>
           </time>
           <div className="scrub" hidden={!detail.audio_path}>
             <input
@@ -902,10 +908,10 @@ export function MeetingView({
               min={0}
               max={duration || 1}
               step={0.1}
-              value={Math.min(t, duration || 1)}
+              value={Math.min(pos, duration || 1)}
               onChange={(e) => seekTo(Number(e.target.value), playing)}
-              aria-label="재생 위치"
-              style={{ "--p": `${duration ? (t / duration) * 100 : 0}%` } as React.CSSProperties}
+              aria-label={t("재생 위치")}
+              style={{ "--p": `${duration ? (pos / duration) * 100 : 0}%` } as React.CSSProperties}
             />
             {detail.memos.map((m, i) => (
               <span key={i} className={`scrub-mark is-${m.kind}`} style={{ left: `${duration ? (m.t / duration) * 100 : 0}%` }} aria-hidden />
@@ -917,11 +923,11 @@ export function MeetingView({
                 className={TOGGLE}
                 aria-pressed={skip}
                 onClick={() => setSkip((v) => !v)}
-                title={filter ? "이 참석자의 말만 듣습니다 (다른 참석자의 말과 1초 넘는 침묵을 건너뜀)" : "침묵 구간 건너뛰기: 말 사이 1초 넘는 침묵을 건너뜁니다. 참석자를 고르면 그 참석자만 듣습니다"}
-                aria-label={filter ? "이 참석자만 듣기" : "침묵 구간 건너뛰기"}
+                title={filter ? t("이 참석자의 말만 듣습니다 (다른 참석자의 말과 1초 넘는 침묵을 건너뜀)") : t("침묵 구간 건너뛰기: 말 사이 1초 넘는 침묵을 건너뜁니다. 참석자를 고르면 그 참석자만 듣습니다")}
+                aria-label={filter ? t("이 참석자만 듣기") : t("침묵 구간 건너뛰기")}
               >
                 <FastForward aria-hidden />
-                {filter ? "이 참석자만 듣기" : "침묵 건너뛰기"}
+                {filter ? t("이 참석자만 듣기") : t("침묵 건너뛰기")}
                 {skip && saved >= 1 && <span className="font-normal tabular-nums opacity-70">−{fmtTime(saved)}</span>}
               </button>
               <button
@@ -929,12 +935,12 @@ export function MeetingView({
                 aria-pressed={voice}
                 aria-disabled={!!voiceError}
                 onClick={toggleVoice}
-                title={voiceError ?? "말소리를 또렷하게 하고 낮은 웅웅거림을 줄입니다. 큰 소리와 작은 소리의 차이도 줄입니다"}
+                title={voiceError ?? t("말소리를 또렷하게 하고 낮은 웅웅거림을 줄입니다. 큰 소리와 작은 소리의 차이도 줄입니다")}
               >
                 <AudioLines aria-hidden />
-                목소리 선명하게
+                {t("목소리 선명하게")}
               </button>
-              <select className={cn(selectClass, "h-7 w-[4.25rem] border-transparent bg-transparent pr-6 pl-2 text-xs font-medium tabular-nums shadow-none hover:bg-accent")} value={rate} onChange={(e) => setRate(Number(e.target.value))} aria-label="재생 속도 (Shift+, 느리게 · Shift+. 빠르게)" title="재생 속도 (Shift+, / Shift+.)">
+              <select className={cn(selectClass, "h-7 w-[4.25rem] border-transparent bg-transparent pr-6 pl-2 text-xs font-medium tabular-nums shadow-none hover:bg-accent")} value={rate} onChange={(e) => setRate(Number(e.target.value))} aria-label={t("재생 속도 (Shift+, 느리게 · Shift+. 빠르게)")} title={t("재생 속도 (Shift+, / Shift+.)")}>
                 {RATES.map((r) => (
                   <option key={r} value={r}>
                     {r}×
@@ -946,12 +952,12 @@ export function MeetingView({
           {!follow && playing && (
             <Button variant="outline" size="sm" className="h-7" onClick={() => setFollow(true)}>
               <LocateFixed aria-hidden />
-              현재 위치로
+              {t("현재 위치로")}
             </Button>
           )}
-          {(audioError || !detail.audio_path) && <span className="text-xs text-subtle-foreground">{audioError ?? "오디오 파일이 없습니다"}</span>}
+          {(audioError || !detail.audio_path) && <span className="text-xs text-subtle-foreground">{audioError ?? t("오디오 파일이 없습니다")}</span>}
           <span className={cn("text-xs empty:hidden", editError ? "text-destructive" : "text-muted-foreground")} role="status">
-            {editing ? "저장하는 중…" : editError}
+            {editing ? t("저장하는 중…") : editError}
           </span>
         </div>}
         {!memoNote && menu && (
@@ -976,7 +982,7 @@ export function MeetingView({
           className="sticky top-0 z-10 flex h-[52px] shrink-0 items-center gap-1 bg-background/90 pr-12 pl-4 backdrop-blur-md"
           data-tauri-drag-region
           role="tablist"
-          aria-label="오른쪽 패널"
+          aria-label={t("오른쪽 패널")}
           onKeyDown={(e) => {
             if (e.metaKey || e.ctrlKey || e.altKey) return; // Shift+←→도 탭을 옮긴다: 막지 않으면 재생 단축키가 큰 폭으로 되감는다
             const next = railKey(tabs, tabNow, e.code);
@@ -1044,7 +1050,7 @@ export function MeetingView({
             <EnhancedNote
               id={id}
               rev={summaryRev}
-              disabled={recorded ? CONVERT_FIRST : segments.length === 0 ? "인식된 대화가 없습니다" : editing || memoBusy ? "저장이 끝난 뒤에 완성할 수 있습니다" : null}
+              disabled={recorded ? CONVERT_FIRST : segments.length === 0 ? t("인식된 대화가 없습니다") : editing || memoBusy ? t("저장이 끝난 뒤에 완성할 수 있습니다") : null}
               prepare={flushMemos}
               editSeq={editSeq}
               editSeqRef={editSeqRef}
@@ -1060,7 +1066,7 @@ export function MeetingView({
               pick={memoTarget}
               mine={
                 <>
-                  <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">내가 적는 메모입니다. 요약과 AI 질문에 대화 내용과 함께 쓰입니다.</p>
+                  <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">{t("내가 적는 메모입니다. 요약과 AI 질문에 대화 내용과 함께 쓰입니다.")}</p>
                   <MemoEditor variant="rail" id={id} initial={noteBody} savedBody={noteBody} segments={memoSegs} target={memoTarget} notify={notify} onSaved={onMemoSaved} onState={setMemoSave} />
                 </>
               }
@@ -1154,14 +1160,14 @@ const SegmentRow = memo(function SegmentRow({
           }}
           aria-current={isActive}
           aria-keyshortcuts="Enter"
-          aria-description="Enter로 대화 내용 수정"
+          aria-description={t("Enter로 대화 내용 수정")}
         >
           <time className="seg-time tnum">{fmtTime(seg.start)}</time>
           <span className="seg-body">
             <span className="seg-text">{segText(seg)}</span>
             {edited && (
-              <span className="seg-edited" title={`수정 전: ${seg.text}`}>
-                수정됨
+              <span className="seg-edited" title={t("수정 전: {text}", { text: seg.text })}>
+                {t("수정됨")}
               </span>
             )}
           </span>
@@ -1185,7 +1191,7 @@ function MemoRow({ memo: m, onSeek }: { memo: Memo; onSeek: (t: number) => void 
       <button className="seg-button" onClick={() => onSeek(m.t)}>
         <time className="seg-time tnum">{fmtTime(m.t)}</time>
         <span className="memo-body">
-          <span className="memo-kind">{isBookmark ? "북마크" : "메모"}</span>
+          <span className="memo-kind">{isBookmark ? t("북마크") : t("메모")}</span>
           {m.text}
         </span>
       </button>
@@ -1202,17 +1208,17 @@ type MemoChips = { lines: Map<string, number>; onPick: (segId: string) => void; 
 function TimeChip({ ids, starts, onSeek, memo }: { ids: string[]; starts: Map<string, number>; onSeek: (t: number) => void; memo?: MemoChips | null }) {
   // 메모 줄 중 가장 앞의 줄 하나
   const line = memo && ids.filter((i) => memo.lines.has(i)).sort((a, b) => (memo.lines.get(a) ?? 0) - (memo.lines.get(b) ?? 0))[0];
-  const t = evidenceStart(ids, starts); // 메모 노트는 시각이 없어(starts가 비어 있다) null
-  if (t === null && !line) return null;
+  const at = evidenceStart(ids, starts); // 메모 노트는 시각이 없어(starts가 비어 있다) null
+  if (at === null && !line) return null;
   return (
     <>
-      {t !== null && (
-        <button className={CHIP} onClick={() => onSeek(t)} title={`근거 대화로 이동 (${fmtTime(t)})`}>
-          {fmtTime(t)}
+      {at !== null && (
+        <button className={CHIP} onClick={() => onSeek(at)} title={t("근거 대화로 이동 ({time})", { time: fmtTime(at) })}>
+          {fmtTime(at)}
         </button>
       )}
       {memo && line && (
-        <button className={CHIP} onClick={() => memo.onPick(line)} title="메모의 줄로 이동">
+        <button className={CHIP} onClick={() => memo.onPick(line)} title={t("메모의 줄로 이동")}>
           {citeLabel(0, { memo: true, line: memo.lines.get(line), tagged: memo.tagged })}
         </button>
       )}

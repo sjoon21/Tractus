@@ -2,6 +2,7 @@
 // 말 없이 죽은 단추를 만들지 않는다: 이 앱에서 모델·도구에 달린 단추는 모두 이 컴포넌트(또는 GateHint)를 쓴다.
 import { useState, type ButtonHTMLAttributes } from "react";
 import type { Decision } from "./caps";
+import { t } from "./i18n";
 import { useCapabilities } from "./useCapabilities";
 import { Popover } from "./Popover";
 import { Button } from "@/components/ui/button";
@@ -55,7 +56,7 @@ export function GatedButton({ gate, onClick, className = "", disabled, children,
         {children}
       </button>
       {open && anchor && (
-        <Popover anchor={anchor} label="지금 쓸 수 없는 이유" role="dialog" onClose={() => setOpen(false)}>
+        <Popover anchor={anchor} label={t("지금 쓸 수 없는 이유")} role="dialog" onClose={() => setOpen(false)}>
           {(close) => (
             <div className="grid max-w-[280px] gap-2.5 p-2">
               <p className="m-0 text-[13px] leading-relaxed text-muted-foreground">{gate.reason}</p>

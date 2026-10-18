@@ -1,5 +1,6 @@
 // 전사 편집 도구 (docs/roadmap.md §2, Phase 5): 문장 편집기, 찾기·바꾸기 막대, 내보내기 메뉴.
 import { useLayoutEffect, useRef } from "react";
+import { t } from "./i18n";
 import { EXPORT_FORMATS, isImeKey } from "./lib";
 import { OBSIDIAN_ITEM } from "./obsidian";
 import { ObsidianLogo } from "@/components/ui/obsidian-logo";
@@ -40,7 +41,7 @@ export function SegmentEditor({ initial, onDone }: { initial: string; onDone: (r
       className="seg-text seg-editor"
       contentEditable="plaintext-only"
       role="textbox"
-      aria-label="대화 내용 수정 (Enter 저장, Esc 취소)"
+      aria-label={t("대화 내용 수정 (Enter 저장, Esc 취소)")}
       spellCheck={false}
       onCompositionStart={() => (composing.current = true)}
       onCompositionEnd={() => (composing.current = false)}
@@ -106,28 +107,28 @@ export function FindBar({
   const canReplace = count > 0;
 
   return (
-    <div className="find-bar sticky top-[52px] z-20 mx-auto grid w-full max-w-[860px] gap-2 border-b border-border bg-background/95 px-6 pt-1 pb-3 backdrop-blur-md" role="search" aria-label="대화 내용에서 찾기">
+    <div className="find-bar sticky top-[52px] z-20 mx-auto grid w-full max-w-[860px] gap-2 border-b border-border bg-background/95 px-6 pt-1 pb-3 backdrop-blur-md" role="search" aria-label={t("대화 내용에서 찾기")}>
       <div className="flex items-center gap-1.5">
         <input
           ref={inputRef}
           autoFocus
           className={cn(inputClass, "h-7 flex-1")}
           value={state.q}
-          placeholder="찾기"
-          aria-label="찾을 말"
+          placeholder={t("찾기")}
+          aria-label={t("찾을 말")}
           onChange={(e) => onChange({ ...state, q: e.target.value })}
           {...keys((shift) => onStep(shift ? -1 : 1))}
         />
         <span className="min-w-[4.5em] text-right text-xs text-muted-foreground tabular-nums" aria-live="polite">
-          {state.q ? (count ? `${current + 1} / ${count}` : "없음") : ""}
+          {state.q ? (count ? `${current + 1} / ${count}` : t("없음")) : ""}
         </span>
-        <Button variant="ghost" size="icon-sm" onClick={() => onStep(-1)} disabled={!count} aria-label="이전 (Shift+Enter)">
+        <Button variant="ghost" size="icon-sm" onClick={() => onStep(-1)} disabled={!count} aria-label={t("이전 (Shift+Enter)")}>
           <ChevronUp aria-hidden />
         </Button>
-        <Button variant="ghost" size="icon-sm" onClick={() => onStep(1)} disabled={!count} aria-label="다음 (Enter)">
+        <Button variant="ghost" size="icon-sm" onClick={() => onStep(1)} disabled={!count} aria-label={t("다음 (Enter)")}>
           <ChevronDown aria-hidden />
         </Button>
-        <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="찾기 닫기 (Esc)">
+        <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label={t("찾기 닫기 (Esc)")}>
           <X aria-hidden />
         </Button>
       </div>
@@ -135,21 +136,21 @@ export function FindBar({
         <input
           className={cn(inputClass, "h-7 flex-1")}
           value={state.r}
-          placeholder="바꿀 말"
-          aria-label="바꿀 말"
+          placeholder={t("바꿀 말")}
+          aria-label={t("바꿀 말")}
           onChange={(e) => onChange({ ...state, r: e.target.value })}
           {...keys(() => canReplace && onReplace())}
         />
         <Button variant="outline" size="sm" onClick={onReplace} disabled={!canReplace}>
-          바꾸기
+          {t("바꾸기")}
         </Button>
         <Button variant="outline" size="sm" onClick={onReplaceAll} disabled={!canReplace}>
-          모두 바꾸기{count > 0 && <span className="tabular-nums"> {count}</span>}
+          {t("모두 바꾸기")}{count > 0 && <span className="tabular-nums"> {count}</span>}
         </Button>
       </div>
       <label className="flex items-center gap-2 text-xs text-muted-foreground">
         <input type="checkbox" className={checkClass} checked={state.glossary} onChange={(e) => onChange({ ...state, glossary: e.target.checked })} />
-        <span className="text-foreground">바꾼 말을 자주 쓰는 단어에 추가</span> <span>다음 녹음부터 이 단어를 더 정확하게 인식합니다</span>
+        <span className="text-foreground">{t("바꾼 말을 자주 쓰는 단어에 추가")}</span> <span>{t("다음 녹음부터 이 단어를 더 정확하게 인식합니다")}</span>
       </label>
     </div>
   );
@@ -168,7 +169,7 @@ export function ExportMenu({ onPick, onPrint, onObsidian, formats = EXPORT_FORMA
     <>
       <button ref={button} className={buttonVariants({ variant: "ghost", size: "sm" })} popoverTarget="export-menu" aria-haspopup="menu" data-tip="export">
         <Share aria-hidden />
-        내보내기
+        {t("내보내기")}
       </button>
       <div
         ref={menu}
@@ -176,7 +177,7 @@ export function ExportMenu({ onPick, onPrint, onObsidian, formats = EXPORT_FORMA
         popover="auto"
         className="spk-menu export-menu"
         role="menu"
-        aria-label="내보내기 형식"
+        aria-label={t("내보내기 형식")}
         onBeforeToggle={(e) => {
           const a = button.current?.getBoundingClientRect();
           const el = menu.current;
@@ -200,7 +201,7 @@ export function ExportMenu({ onPick, onPrint, onObsidian, formats = EXPORT_FORMA
         ))}
         <button role="menuitem" onClick={() => pick(onPrint)}>
           <span>PDF</span>
-          <small className="tnum">.pdf · 인쇄 → PDF로 저장</small>
+          <small className="tnum">.pdf · {t("인쇄 → PDF로 저장")}</small>
         </button>
         <button role="menuitem" onClick={() => pick(onObsidian)}>
           <span className="flex items-center gap-1.5">

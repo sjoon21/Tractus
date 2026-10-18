@@ -22,6 +22,7 @@ import { addBlocked, ADDED, ADD_BADGE, attachReduce, DROP_CONFIRM, DROP_LABEL, f
 import { ConfirmDialog } from "./ConfirmDialog";
 import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
+import { locale, t } from "./i18n";
 import { bindIndexer, indexer } from "./indexer";
 import { baseName, errorView, isImeKey, isRecLive, IDLE_JOB, JOB_ERROR, fmtTime, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, STAGE_FALLBACK, STAGE_LABEL, warningText, type RecMode } from "./lib";
 import { MeetingView } from "./MeetingView";
@@ -319,7 +320,7 @@ export function App() {
   }, []);
   const chooseMode = (m: RecMode) => {
     setMode(m);
-    api.setRecMode(m).catch((e) => setListError({ text: `녹음 방식을 저장하지 못했습니다: ${errText(e)}`, detail: errDetail(e) }));
+    api.setRecMode(m).catch((e) => setListError({ text: t("녹음 방식을 저장하지 못했습니다: {error}", { error: errText(e) }), detail: errDetail(e) }));
   };
 
   // 파일 가져오기 (Phase 5.5): 끌어 놓거나 고른 파일을 큐에 넣고 한 번에 하나씩 전사한다
@@ -329,7 +330,7 @@ export function App() {
   const importTarget = useRef<AttachTarget | null>(null); // 이 노트에 추가하려고 고른 파일이면 그 노트 (파일에서 추가)
   const imp = useJob((meetingId, warnings) => {
     void refresh();
-    const name = importing ? baseName(importing) : "파일";
+    const name = importing ? baseName(importing) : t("파일");
     // 화면은 바꾸지 않는다: 고치던 문장·찾기가 사라진다. 열기는 사용자가 고른다
     const dup = warnings.some((w) => w.code === "duplicate");
     const into = importTarget.current;
@@ -337,7 +338,7 @@ export function App() {
       setNoteEpoch((e) => ({ id: meetingId, n: e.n + 1, stale: true })); // 열려 있는 노트는 녹음 노트로 다시 읽는다
       return notify({ text: ADDED(into.title, name) });
     }
-    notify({ text: dup ? `이미 텍스트로 변환한 파일입니다 — ${name}` : `텍스트 변환을 마쳤습니다 — ${name}`, action: { label: "열기", run: () => openMeeting(meetingId) } });
+    notify({ text: dup ? t("이미 텍스트로 변환한 파일입니다 — {name}", { name }) : t("텍스트 변환을 마쳤습니다 — {name}", { name }), action: { label: t("열기"), run: () => openMeeting(meetingId) } });
   });
   useEffect(() => {
     if (!waitDir || imp.job.running || convertRunning || recording) return; // 새 녹음이 도는 동안에는 변환 엔진을 올리지 않는다
@@ -381,7 +382,7 @@ export function App() {
         const title = meetingsRef.current.find((m) => m.id === noteId)?.title ?? "";
         if (ok) {
           const open = viewRef.current.kind === "meeting" && viewRef.current.id === noteId;
-          notify({ text: CONVERTED(title), action: open ? undefined : { label: "열기", run: () => openMeeting(noteId) } });
+          notify({ text: CONVERTED(title), action: open ? undefined : { label: t("열기"), run: () => openMeeting(noteId) } });
           state.warnings.forEach((w) => notify({ text: warningText(w) }));
         } else {
           const e = errorView(state.error, state.errorCode, JOB_ERROR.convert);
@@ -396,7 +397,7 @@ export function App() {
     (paths: string[]) => {
       if (!capsRef.current.can("convert").ok) return notifyBlocked(capsRef.current.can("convert")); // 끌어 놓은 파일: 실패하지 않고 이유를 알린다
       const bad = paths.filter((p) => !isImportable(p));
-      if (bad.length) notify({ text: `가져올 수 없는 형식입니다: ${bad.map(baseName).join(", ")}`, error: true });
+      if (bad.length) notify({ text: t("가져올 수 없는 형식입니다: {files}", { files: bad.map(baseName).join(", ") }), error: true });
       setQueue((q) => [...q, ...paths.filter((p) => isImportable(p) && !q.includes(p))]);
     },
     [notify, notifyBlocked],
@@ -420,10 +421,10 @@ export function App() {
   const pickFiles = async () => {
     if (!convertGate.ok) return notifyBlocked(convertGate);
     try {
-      const picked = await open({ multiple: true, directory: false, filters: [{ name: "오디오·동영상", extensions: IMPORT_EXTS }] });
+      const picked = await open({ multiple: true, directory: false, filters: [{ name: t("오디오·동영상"), extensions: IMPORT_EXTS }] });
       if (picked) enqueue(picked);
     } catch (e) {
-      notify({ text: `파일을 고르지 못했습니다: ${errText(e)}`, error: true });
+      notify({ text: t("파일을 고르지 못했습니다: {error}", { error: errText(e) }), error: true });
     }
   };
   // 창에 파일을 끌어 오면 덮개를 보인다. 앱 안에서 끄는 것(화자 합치기)은 경로가 없어서 무시된다
@@ -450,7 +451,7 @@ export function App() {
   // 창을 닫으면 앱이 끝난다(메뉴 막대에 남기기가 꺼져 있을 때): 전사 중이거나 대기 중인 파일이 있으면 묻는다.
   // ponytail: ⌘Q는 묻지 않는다(쓰던 메모만 저장하고 끝낸다: quit-requested). 남은 전사 프로세스는 stdout이 닫혀 다음 진행 이벤트에서 끝난다
   const busyRef = useRef("");
-  busyRef.current = !(transcribing || imp.job.running || queue.length) ? "" : queue.length ? `진행 중인 변환과 대기 중인 파일 ${queue.length}개가 취소됩니다.` : "진행 중인 변환이 취소됩니다.";
+  busyRef.current = !(transcribing || imp.job.running || queue.length) ? "" : queue.length ? t("진행 중인 변환과 대기 중인 파일 {n}개가 취소됩니다.", { n: queue.length }) : t("진행 중인 변환이 취소됩니다.");
   useEffect(() => {
     const un = getCurrentWindow().onCloseRequested(async (e) => {
       // 메뉴 막대에 남기는 설정이면 Rust가 창을 숨기기만 한다: 앱이 계속 돌아 녹음·변환이 이어지므로 묻지 않는다. 쓰던 메모는 저장해 둔다
@@ -459,8 +460,8 @@ export function App() {
         return e.preventDefault();
       }
       // 저장하지 못한 메모가 있으면 묻는다 (⌘Q는 묻지 않고 저장만 마친다: quit-requested)
-      if (!(await flushMemos()) && !(await ask("저장하지 못한 메모가 있습니다. 그래도 닫을까요?", { title: "Tractus 닫기", kind: "warning", okLabel: "저장하지 않고 닫기", cancelLabel: "계속 쓰기" }))) return e.preventDefault();
-      if (busyRef.current && !(await ask(`${busyRef.current} 그래도 닫을까요?`, { title: "Tractus 닫기", kind: "warning", okLabel: "닫기", cancelLabel: "계속 변환" }))) e.preventDefault();
+      if (!(await flushMemos()) && !(await ask(t("저장하지 못한 메모가 있습니다. 그래도 닫을까요?"), { title: t("Tractus 닫기"), kind: "warning", okLabel: t("저장하지 않고 닫기"), cancelLabel: t("계속 쓰기") }))) return e.preventDefault();
+      if (busyRef.current && !(await ask(t("{reason} 그래도 닫을까요?", { reason: busyRef.current }), { title: t("Tractus 닫기"), kind: "warning", okLabel: t("닫기"), cancelLabel: t("계속 변환") }))) e.preventDefault();
     });
     return () => void un.then((f) => f());
   }, []);
@@ -475,7 +476,7 @@ export function App() {
   useEffect(
     () =>
       attachAlignJobs(({ ok, state }) => {
-        if (ok) notify({ text: "단어 싱크를 맞췄습니다. 단어를 누르면 그 단어부터 재생합니다" });
+        if (ok) notify({ text: t("단어 싱크를 맞췄습니다. 단어를 누르면 그 단어부터 재생합니다") });
         else if (state.error) notify({ ...errorView(state.error, state.errorCode, JOB_ERROR.align), error: true });
       }),
     [notify],
@@ -487,7 +488,7 @@ export function App() {
     () =>
       bindIndexer({
         isBusy: () => idleBlockers.current,
-        onError: (e) => notify({ text: "스마트 검색 정보를 갱신하지 못했습니다", detail: errDetail(e) ?? errFull(e), error: true }), // 코어·Rust가 한 줄만 주면 그 줄이 원인이다
+        onError: (e) => notify({ text: t("스마트 검색 정보를 갱신하지 못했습니다"), detail: errDetail(e) ?? errFull(e), error: true }), // 코어·Rust가 한 줄만 주면 그 줄이 원인이다
       }),
     [notify],
   );
@@ -631,25 +632,25 @@ export function App() {
     },
     [recording, transcribing, recordGate, notifyBlocked, mode, resetRec, startRec, go],
   );
-  const attachFile = async (t: AttachTarget, path?: string) => {
+  const attachFile = async (target: AttachTarget, path?: string) => {
     if (!convertGate.ok) return notifyBlocked(convertGate);
     if (recording || transcribing || imp.job.running || queue.length > 0 || attachRef.current.phase !== "idle") return notify({ text: IMPORT_BUSY, error: true });
     let file = path;
     if (!file) {
       try {
-        const picked = await open({ multiple: false, directory: false, filters: [{ name: "오디오·동영상", extensions: IMPORT_EXTS }] });
+        const picked = await open({ multiple: false, directory: false, filters: [{ name: t("오디오·동영상"), extensions: IMPORT_EXTS }] });
         file = picked ?? undefined;
       } catch (e) {
-        return notify({ text: `파일을 고르지 못했습니다: ${errText(e)}`, error: true });
+        return notify({ text: t("파일을 고르지 못했습니다: {error}", { error: errText(e) }), error: true });
       }
     }
     if (!file) return;
-    if (!isImportable(file)) return notify({ text: `가져올 수 없는 형식입니다: ${baseName(file)}`, error: true });
+    if (!isImportable(file)) return notify({ text: t("가져올 수 없는 형식입니다: {files}", { files: baseName(file) }), error: true });
     if (!(await flushMemos())) return;
-    importTarget.current = t;
-    dispatchAttach({ type: "convert", target: t });
+    importTarget.current = target;
+    dispatchAttach({ type: "convert", target });
     setImporting(file);
-    void imp.startJob("import", file, t.id);
+    void imp.startJob("import", file, target.id);
   };
   attachFileRef.current = attachFile;
   // 낡음 안내는 노트 화면이 처음 뜰 때 한 번만 쓴다 (요약을 다시 만든 뒤 노트를 다시 열었을 때 또 보이지 않게)
@@ -673,7 +674,7 @@ export function App() {
       openMeeting(id);
       void refresh();
     } catch (e) {
-      notify({ text: `예시 노트를 열지 못했습니다: ${errText(e)}`, error: true });
+      notify({ text: t("예시 노트를 열지 못했습니다: {error}", { error: errText(e) }), error: true });
     } finally {
       sampleBusy.current = false;
     }
@@ -721,7 +722,7 @@ export function App() {
     setAfterAsk(null);
     const run = effectiveChoice(choice, capsRef.current.can("convert").ok); // 창이 뜬 사이 변환할 수 없게 됐다면 노트로 저장한다
     const keep = rememberedChoice(run, remember);
-    if (keep) void api.setAfterRecord(keep).catch((e) => notify({ text: `설정을 저장하지 못했습니다: ${errText(e)}`, detail: errDetail(e), error: true }));
+    if (keep) void api.setAfterRecord(keep).catch((e) => notify({ text: t("설정을 저장하지 못했습니다: {error}", { error: errText(e) }), detail: errDetail(e), error: true }));
     if (run === "convert") startTranscribe(a.dir, null);
     else finishRecording(a.dir);
   };
@@ -762,11 +763,11 @@ export function App() {
           </GatedButton>
         )}
         {panels.state.left && (
-          <nav className="mt-3 flex flex-col items-center gap-1" aria-label="이동">
-            <Button variant="sidebar" size="icon" className="justify-center" aria-label="홈" title="홈" aria-current={view.kind === "home"} onClick={() => void go({ kind: "home" })}>
+          <nav className="mt-3 flex flex-col items-center gap-1" aria-label={t("이동")}>
+            <Button variant="sidebar" size="icon" className="justify-center" aria-label={t("홈")} title={t("홈")} aria-current={view.kind === "home"} onClick={() => void go({ kind: "home" })}>
               <House aria-hidden />
             </Button>
-            <Button variant="sidebar" size="icon" className="justify-center" aria-label="설정" title="설정" aria-current={view.kind === "settings"} onClick={() => void go({ kind: "settings" })}>
+            <Button variant="sidebar" size="icon" className="justify-center" aria-label={t("설정")} title={t("설정")} aria-current={view.kind === "settings"} onClick={() => void go({ kind: "settings" })}>
               <Settings aria-hidden />
             </Button>
           </nav>
@@ -779,7 +780,7 @@ export function App() {
         <div id="sidebar-body" className="flex min-h-0 flex-1 flex-col" hidden={panels.state.left}>
         <header className="sr-only">
           <span>Tractus</span>
-          <span>노트와 녹음</span>
+          <span>{t("노트와 녹음")}</span>
         </header>
 
         <div className="flex flex-col gap-1.5 px-3">
@@ -796,7 +797,7 @@ export function App() {
             </GatedButton>
             <NewNoteMenu
               onPick={onNewNote}
-              disabled={{ write: creating ? "만드는 중…" : undefined, record: recording ? "이미 녹음 중입니다" : asking ? ASK_BLOCKS_RECORD : recordBlocked ? "변환이 끝난 뒤에 녹음할 수 있습니다" : undefined }}
+              disabled={{ write: creating ? t("만드는 중…") : undefined, record: recording ? t("이미 녹음 중입니다") : asking ? ASK_BLOCKS_RECORD : recordBlocked ? t("변환이 끝난 뒤에 녹음할 수 있습니다") : undefined }}
             />
           </div>
 
@@ -806,7 +807,7 @@ export function App() {
             </p>
           )}
 
-          <div className="grid grid-cols-2 gap-0.5 rounded-md bg-sidebar-accent p-0.5" role="radiogroup" aria-label="녹음 방식">
+          <div className="grid grid-cols-2 gap-0.5 rounded-md bg-sidebar-accent p-0.5" role="radiogroup" aria-label={t("녹음 방식")}>
             {REC_MODES.map((m) => (
               <button
                 key={m.mode}
@@ -835,12 +836,12 @@ export function App() {
             }}
           >
             <Search className="pointer-events-none absolute top-1/2 left-3.5 size-3.5 -translate-y-1/2 text-subtle-foreground" aria-hidden />
-            <Input ref={searchRef} type="search" placeholder="노트 검색" aria-label="노트 검색" className="h-7 bg-background/70 pr-10 pl-7" />
+            <Input ref={searchRef} type="search" placeholder={t("노트 검색")} aria-label={t("노트 검색")} className="h-7 bg-background/70 pr-10 pl-7" />
             <Kbd className="absolute top-1/2 right-2.5 -translate-y-1/2">⌘K</Kbd>
           </form>
           <button className={SIDE_ITEM} aria-current={view.kind === "home"} onClick={() => void go({ kind: "home" })}>
             <House aria-hidden />
-            홈
+            {t("홈")}
           </button>
           <button
             ref={askButton}
@@ -848,20 +849,20 @@ export function App() {
             aria-expanded={askOpen}
             aria-controls="ask-drawer"
             aria-keyshortcuts="Meta+J"
-            aria-label="AI 어시스턴트"
-            title="AI 어시스턴트 (⌘J)"
+            aria-label={t("AI 어시스턴트")}
+            title={t("AI 어시스턴트 (⌘J)")}
             data-tip="ask"
             onClick={() => setAskOpen((o) => !o)}
           >
             {/* 가리키면 옅은 보라→하늘색 바탕이 번진다 */}
             <span className="pointer-events-none absolute inset-0 -z-10 rounded-md bg-gradient-to-r from-violet-500/14 via-sky-500/10 to-transparent opacity-0 transition-opacity duration-300 group-hover/ai:opacity-100" aria-hidden />
             <SparklesIcon className="text-muted-foreground" />
-            <span className="group-hover/ai:bg-[linear-gradient(90deg,var(--sidebar-foreground)_0%,var(--sidebar-foreground)_35%,#8b5cf6_45%,#0ea5e9_55%,var(--sidebar-foreground)_65%,var(--sidebar-foreground)_100%)] bg-[length:200%_100%] bg-clip-text group-hover/ai:animate-shine group-hover/ai:text-transparent">AI 어시스턴트</span>
+            <span className="group-hover/ai:bg-[linear-gradient(90deg,var(--sidebar-foreground)_0%,var(--sidebar-foreground)_35%,#8b5cf6_45%,#0ea5e9_55%,var(--sidebar-foreground)_65%,var(--sidebar-foreground)_100%)] bg-[length:200%_100%] bg-clip-text group-hover/ai:animate-shine group-hover/ai:text-transparent">{t("AI 어시스턴트")}</span>
             <Kbd className="ml-auto">⌘J</Kbd>
           </button>
-          <GatedButton gate={convertGate} className={SIDE_ITEM} onClick={pickFiles} title={`${IMPORT_EXTS.join(" ")} — 창에 끌어 놓아도 됩니다`}>
+          <GatedButton gate={convertGate} className={SIDE_ITEM} onClick={pickFiles} title={t("{exts} — 창에 끌어 놓아도 됩니다", { exts: IMPORT_EXTS.join(" ") })}>
             <Upload aria-hidden />
-            파일 가져오기
+            {t("파일 가져오기")}
           </GatedButton>
           {bulkIds.length >= BULK_MIN && !converting && (
             <GatedButton gate={convertGate} className={SIDE_ITEM} disabled={transcribing || recording} onClick={convertAll} title={CONVERT_ALL_TITLE}>
@@ -872,11 +873,11 @@ export function App() {
         </div>
 
         {(imp.job.running || queue.length > 0) && (
-          <section className={JOB_CARD} aria-live="polite" aria-label="가져오기 진행">
-            <p className="truncate font-medium text-foreground">{importing ? baseName(importing) : "대기 중"}</p>
+          <section className={JOB_CARD} aria-live="polite" aria-label={t("가져오기 진행")}>
+            <p className="truncate font-medium text-foreground">{importing ? baseName(importing) : t("대기 중")}</p>
             <p className="flex justify-between gap-2 tabular-nums">
               <span>{STAGE_LABEL[imp.job.stage ?? ""] ?? STAGE_FALLBACK}</span>
-              <span>{[importPct !== null && `${Math.round(importPct * 100)}%`, queue.length > 0 && `대기 ${queue.length}개`].filter(Boolean).join(" · ")}</span>
+              <span>{[importPct !== null && `${Math.round(importPct * 100)}%`, queue.length > 0 && t("대기 {n}개", { n: queue.length })].filter(Boolean).join(" · ")}</span>
             </p>
             <Progress value={importPct} />
             {imp.job.warnings
@@ -889,7 +890,7 @@ export function App() {
           </section>
         )}
         {converting && (
-          <section className={JOB_CARD} aria-live="polite" aria-label="변환 전 노트 변환 진행">
+          <section className={JOB_CARD} aria-live="polite" aria-label={t("변환 전 노트 변환 진행")}>
             <p className="truncate font-medium text-foreground">{convProgress ? CONVERT_ALL_LINE(convProgress.n, convProgress.total, convTitle) : noteLabel(convTitle)}</p>
             <p className="flex justify-between gap-2 tabular-nums">
               <span>{convertRunning ? (STAGE_LABEL[convJob.stage ?? ""] ?? STAGE_FALLBACK) : waitReason}</span>
@@ -899,7 +900,7 @@ export function App() {
           </section>
         )}
 
-        <nav className="meeting-nav mt-2 min-h-0 flex-1 overflow-y-auto border-t border-sidebar-border px-2 pt-2 pb-6" aria-label="노트 목록">
+        <nav className="meeting-nav mt-2 min-h-0 flex-1 overflow-y-auto border-t border-sidebar-border px-2 pt-2 pb-6" aria-label={t("노트 목록")}>
           {listError && (
             <div className="m-2 text-xs text-destructive">
               <p>{listError.text}</p>
@@ -908,7 +909,7 @@ export function App() {
           )}
           {leftover.length > 0 && (
             <section className="mb-2">
-              <h2 className={SIDE_HEAD}>변환 대기 중인 녹음</h2>
+              <h2 className={SIDE_HEAD}>{t("변환 대기 중인 녹음")}</h2>
               <ul>
                 {leftover.map((p) => {
                   // 글만 있는 노트에 추가하려던 녹음이면 그 노트(아직 글만 있을 때)에 이어서 추가한다. 노트가 없어졌으면 새 노트로 변환한다
@@ -927,8 +928,8 @@ export function App() {
                     >
                       <span className="block truncate text-[13px] font-medium tabular-nums">{label}</span>
                       <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
-                        {p.duration === null ? "끊긴 녹음" : fmtTime(p.duration)}
-                        <Badge variant="rec">{into ? ADD_BADGE : "변환하기"}</Badge>
+                        {p.duration === null ? t("끊긴 녹음") : fmtTime(p.duration)}
+                        <Badge variant="rec">{into ? ADD_BADGE : t("변환하기")}</Badge>
                       </span>
                     </GatedButton>
                     <span className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
@@ -942,11 +943,11 @@ export function App() {
                         size="sm"
                         className="h-6 px-2 hover:border-destructive hover:text-destructive"
                         disabled={transcribing}
-                        aria-label={`${label} 삭제`}
-                        title="삭제 (휴지통으로 이동)"
+                        aria-label={t("{label} 삭제", { label })}
+                        title={t("삭제 (휴지통으로 이동)")}
                         onClick={() => askDelete({ kind: "recording", dir: p.dir, startedAt: p.started_at })}
                       >
-                        삭제
+                        {t("삭제")}
                       </Button>
                     </span>
                   </li>
@@ -955,20 +956,20 @@ export function App() {
               </ul>
             </section>
           )}
-          {!listError && meetings.length === 0 && leftover.length === 0 && <p className="m-2 text-xs text-muted-foreground">아직 노트가 없습니다. 새 노트로 녹음을 시작하거나 글을 쓰거나, 설정에서 데이터 위치를 확인하세요.</p>}
+          {!listError && meetings.length === 0 && leftover.length === 0 && <p className="m-2 text-xs text-muted-foreground">{t("아직 노트가 없습니다. 새 노트로 녹음을 시작하거나 글을 쓰거나, 설정에서 데이터 위치를 확인하세요.")}</p>}
           <NoteLibrary notes={meetings} activeId={activeId} onOpen={openMeeting} convertSlots={convertSlots} onConvert={convertNote} />
         </nav>
 
         <footer className="flex items-center gap-0.5 border-t border-sidebar-border px-2 py-1.5">
           <Button variant="sidebar" size="sm" className="gap-1.5 text-muted-foreground aria-[current=true]:text-foreground" onClick={() => void go({ kind: "settings" })} aria-current={view.kind === "settings"}>
             <Settings aria-hidden />
-            설정
+            {t("설정")}
           </Button>
           <Button variant="sidebar" size="sm" className="gap-1.5 text-muted-foreground aria-[current=true]:text-foreground" onClick={() => void go({ kind: "models" })} aria-current={view.kind === "models"}>
             <Box aria-hidden />
             {MODELS_LABEL}
           </Button>
-          <span className="ml-auto pr-2 text-[11px] text-subtle-foreground tabular-nums">노트 {meetings.length}개</span>
+          <span className="ml-auto pr-2 text-[11px] text-subtle-foreground tabular-nums">{t("노트 {n}개", { n: meetings.length })}</span>
         </footer>
         </div>
       </aside>
@@ -1011,9 +1012,9 @@ export function App() {
         <header data-tauri-drag-region className="sticky top-0 z-10 -mx-5 flex h-[52px] shrink-0 items-center justify-between gap-2 bg-background/90 px-5 backdrop-blur-md">
           <h2 id="ask-drawer-title" className="m-0 flex items-center gap-2 text-[13px] font-semibold">
             <Sparkles className="size-4 text-muted-foreground" aria-hidden />
-            AI 어시스턴트
+            {t("AI 어시스턴트")}
           </h2>
-          <Button variant="ghost" size="icon-sm" aria-label="닫기 (Esc)" onClick={closeAsk}>
+          <Button variant="ghost" size="icon-sm" aria-label={t("닫기 (Esc)")} onClick={closeAsk}>
             <X aria-hidden />
           </Button>
         </header>
@@ -1051,7 +1052,7 @@ export function App() {
       {dropping && (
         <div className="pointer-events-none fixed inset-3 z-50 grid place-content-center gap-2 rounded-2xl border-2 border-dashed border-ring bg-background/85 text-center backdrop-blur-sm animate-in fade-in-0 zoom-in-[0.98]" aria-hidden>
           <Upload className="mx-auto size-8 text-ring" />
-          <p className="m-0 text-xl font-semibold">{!convertGate.ok ? DROP_UNAVAILABLE : dropNote.current && dropCount === 1 ? DROP_LABEL(dropNote.current.title) : "파일을 놓으면 텍스트로 변환합니다"}</p>
+          <p className="m-0 text-xl font-semibold">{!convertGate.ok ? DROP_UNAVAILABLE : dropNote.current && dropCount === 1 ? DROP_LABEL(dropNote.current.title) : t("파일을 놓으면 텍스트로 변환합니다")}</p>
           <small className="text-xs text-muted-foreground">{IMPORT_EXTS.join(" · ")}</small>
         </div>
       )}
@@ -1093,7 +1094,7 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
           {toast.action.label}
         </Button>
       )}
-      <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label="알림 닫기" onClick={onClose}>
+      <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label={t("알림 닫기")} onClick={onClose}>
         <X aria-hidden />
       </Button>
     </div>
@@ -1112,15 +1113,15 @@ function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, recordGate,
   const onStep = (id: StepId) => (id === "models" ? openModels() : id === "record" ? onAction("record") : onSample());
   const recent = useMemo(() => [...notes].sort((a, b) => (b.updated_at ?? b.created_at).localeCompare(a.updated_at ?? a.created_at)).slice(0, RECENT_MAX), [notes]);
   const keys: [string[], string][] = [
-    [["⌘N"], "글쓰기 (새 메모)"],
-    [["⌘K"], "검색"],
-    [["Space"], "재생 / 일시정지"],
-    [["B"], "녹음 중 북마크"],
-    [["←", "→"], "5초 이동 (Shift 10초)"],
-    [["⌘F"], "찾아 바꾸기"],
-    [["⌘J"], "AI 어시스턴트"],
-    [["⌘B"], "노트 목록 접기·펼치기"],
-    [["⌥⌘B"], "오른쪽 패널 접기·펼치기"],
+    [["⌘N"], t("글쓰기 (새 메모)")],
+    [["⌘K"], t("검색")],
+    [["Space"], t("재생 / 일시정지")],
+    [["B"], t("녹음 중 북마크")],
+    [["←", "→"], t("5초 이동 (Shift 10초)")],
+    [["⌘F"], t("찾아 바꾸기")],
+    [["⌘J"], t("AI 어시스턴트")],
+    [["⌘B"], t("노트 목록 접기·펼치기")],
+    [["⌥⌘B"], t("오른쪽 패널 접기·펼치기")],
   ];
   const action = "flex flex-col items-start gap-3 rounded-lg border border-border bg-card p-4 text-left outline-none transition-colors hover:border-border-strong hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring/40 gated:opacity-50 [&_svg]:size-5";
   return (
@@ -1128,8 +1129,8 @@ function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, recordGate,
       <FlickeringGrid className="absolute inset-x-0 top-0 -z-10 h-[360px] [mask-image:radial-gradient(ellipse_70%_100%_at_50%_0%,black_20%,transparent_75%)]" />
       <div data-tauri-drag-region className="h-[52px] shrink-0" />
       <div className="mx-auto flex w-full max-w-[760px] flex-col gap-10 px-8 pt-10 pb-16">
-        <h1 className="sr-only">홈</h1>
-        {notes.length === 0 && <p className="m-0 text-[15px] font-medium">녹음하거나 메모를 써서 노트를 만드세요. 녹음은 이 Mac에서 텍스트로 변환되고, 파일로 남습니다.</p>}
+        <h1 className="sr-only">{t("홈")}</h1>
+        {notes.length === 0 && <p className="m-0 text-[15px] font-medium">{t("녹음하거나 메모를 써서 노트를 만드세요. 녹음은 이 Mac에서 텍스트로 변환되고, 파일로 남습니다.")}</p>}
 
         {next && <NextEventCard ev={next} gate={recordGate} recording={recording} onRecord={() => onRecordEvent(next)} />}
         {checklist && <OnboardingCard steps={steps} onStep={onStep} />}
@@ -1142,37 +1143,37 @@ function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, recordGate,
             <span className="grid size-9 place-items-center rounded-full bg-rec-wash text-rec">
               <Mic aria-hidden />
             </span>
-            <span className="text-[13px] font-medium">녹음 시작</span>
+            <span className="text-[13px] font-medium">{t("녹음 시작")}</span>
           </GatedButton>
           <button type="button" className={action} onClick={() => onAction("write")}>
             <span className="grid size-9 place-items-center rounded-full bg-memo-wash text-memo">
               <SquarePen aria-hidden />
             </span>
             <span className="flex w-full items-center justify-between text-[13px] font-medium">
-              글쓰기 <Kbd>⌘N</Kbd>
+              {t("글쓰기")} <Kbd>⌘N</Kbd>
             </span>
           </button>
           <GatedButton gate={convertGate} className={action} onClick={() => onAction("import")}>
             <span className="grid size-9 place-items-center rounded-full bg-secondary text-muted-foreground">
               <Upload aria-hidden />
             </span>
-            <span className="text-[13px] font-medium">파일 가져오기</span>
+            <span className="text-[13px] font-medium">{t("파일 가져오기")}</span>
           </GatedButton>
         </div>
 
         {recent.length > 0 && (
           <section aria-labelledby="recent-title" className="flex flex-col gap-2">
             <h2 id="recent-title" className="m-0 px-1 text-[13px] font-semibold">
-              최근 노트
+              {t("최근 노트")}
             </h2>
             <ul className="m-0 list-none divide-y divide-border overflow-hidden rounded-lg border border-border bg-card p-0">
               {recent.map((m) => (
                 <li key={m.id}>
                   <button type="button" className="flex w-full items-center gap-3 px-4 py-2.5 text-left outline-none hover:bg-accent/60 focus-visible:bg-accent" onClick={() => onOpen(m.id)}>
                     {isMemo(m) ? <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden /> : <AudioLines className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{m.title || "제목 없음"}</span>
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{m.title || t("제목 없음")}</span>
                     <span className="shrink-0 text-xs text-subtle-foreground tabular-nums">
-                      {new Date(m.updated_at ?? m.created_at).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })} · {noteTime(m)}
+                      {new Date(m.updated_at ?? m.created_at).toLocaleDateString(locale(), { month: "short", day: "numeric" })} · {noteTime(m)}
                     </span>
                   </button>
                 </li>
@@ -1183,7 +1184,7 @@ function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, recordGate,
 
         <details className="group rounded-lg border border-border bg-card">
           <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-2.5 text-[13px] font-semibold select-none">
-            단축키
+            {t("단축키")}
             <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" aria-hidden />
           </summary>
           <dl className="m-0 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-border px-4 py-3 text-[13px]">

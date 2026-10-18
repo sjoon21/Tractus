@@ -3,6 +3,7 @@
 import { memo, useState } from "react";
 import type { MeetingInfo } from "./api";
 import { FolderPicker } from "./FolderPicker";
+import { t } from "./i18n";
 import { isMemo, noteTime } from "./memo";
 import { CONVERT_ROW, isRecorded, keptTitle, RECORDED_BADGE, ROW_QUEUED, ROW_RUNNING } from "./recorded";
 import { startNoteDrag } from "./noteDrag";
@@ -31,7 +32,7 @@ export const NoteRow = memo(function NoteRow({
   onConvert?: (id: string) => void;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const title = m.title || "제목 없음";
+  const title = m.title || t("제목 없음");
   const tags = m.tags ?? [];
   return (
     <li
@@ -43,17 +44,17 @@ export const NoteRow = memo(function NoteRow({
           {m.favorite && (
             <>
               <Star className="size-3 shrink-0 fill-memo text-memo" aria-hidden />
-              <span className="sr-only">즐겨찾기 </span>
+              <span className="sr-only">{t("즐겨찾기")} </span>
             </>
           )}
           <span className="truncate">{title}</span>
         </span>
         <span className="flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground tabular-nums">
           {noteTime(m)}
-          {m.sample ? <Badge>{SAMPLE_BADGE}</Badge> : isMemo(m) ? <Badge>메모</Badge> : isRecorded(m) ? <Badge variant="memo" title={keptTitle(m.tracks_bytes)}>{slot === "running" ? ROW_RUNNING : slot === "queued" ? ROW_QUEUED : RECORDED_BADGE}</Badge> : !m.has_summary && <Badge>요약 없음</Badge>}
-          {tags.slice(0, TAGS_SHOWN).map((t) => (
-            <span key={t} className="max-w-[6.5em] truncate before:text-subtle-foreground before:content-['#']">
-              {t}
+          {m.sample ? <Badge>{SAMPLE_BADGE}</Badge> : isMemo(m) ? <Badge>{t("메모")}</Badge> : isRecorded(m) ? <Badge variant="memo" title={keptTitle(m.tracks_bytes)}>{slot === "running" ? ROW_RUNNING : slot === "queued" ? ROW_QUEUED : RECORDED_BADGE}</Badge> : !m.has_summary && <Badge>{t("요약 없음")}</Badge>}
+          {tags.slice(0, TAGS_SHOWN).map((tag) => (
+            <span key={tag} className="max-w-[6.5em] truncate before:text-subtle-foreground before:content-['#']">
+              {tag}
             </span>
           ))}
           {tags.length > TAGS_SHOWN && <span>+{tags.length - TAGS_SHOWN}</span>}
@@ -62,10 +63,10 @@ export const NoteRow = memo(function NoteRow({
       <button
         type="button"
         className={ROW_MORE}
-        aria-label={`${title} 노트 메뉴`}
+        aria-label={t("{title} 노트 메뉴", { title })}
         aria-haspopup="menu"
         aria-expanded={!!anchor}
-        title="즐겨찾기·폴더·태그"
+        title={t("즐겨찾기·폴더·태그")}
         onClick={(e) => setAnchor((a) => (a ? null : e.currentTarget))}
       >
         <Ellipsis aria-hidden />
@@ -81,17 +82,17 @@ function RowMenu({ anchor, m, onClose, onOpen, convert }: { anchor: HTMLElement;
   if (picking) return <FolderPicker anchor={anchor} current={m.folder ?? null} onClose={onClose} onPick={(f) => void org.moveNote(m.id, f)} />;
   const fav = m.favorite === true;
   return (
-    <Popover anchor={anchor} label="노트 메뉴" onClose={onClose}>
+    <Popover anchor={anchor} label={t("노트 메뉴")} onClose={onClose}>
       {(close) => (
         <ItemMenu
           close={close}
           entries={[
             ...(convert ? [{ id: "convert", label: CONVERT_ROW, onSelect: () => convert(m.id) }] : []),
-            { id: "favorite", label: fav ? "즐겨찾기에서 빼기" : "즐겨찾기에 추가", onSelect: () => void org.setFavorite(m.id, !fav) },
-            { id: "folder", label: "폴더로 이동…", stay: true, onSelect: () => setPicking(true) },
+            { id: "favorite", label: fav ? t("즐겨찾기에서 빼기") : t("즐겨찾기에 추가"), onSelect: () => void org.setFavorite(m.id, !fav) },
+            { id: "folder", label: t("폴더로 이동…"), stay: true, onSelect: () => setPicking(true) },
             {
               id: "tags",
-              label: "태그 편집…",
+              label: t("태그 편집…"),
               onSelect: () => {
                 onOpen(m.id); // 노트를 열고 태그 입력창에 초점을 둔다
                 org.requestTagFocus(m.id);

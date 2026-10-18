@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { Notify } from "./App";
 import { api, errDetail, errText, type MeetingInfo } from "./api";
 import { editQueue } from "./editQueue";
+import { t } from "./i18n";
 import {
   applyMeta,
   buildFolderTree,
@@ -94,7 +95,7 @@ export function useOrganizeState({ meetings, setMeetings, folders, setFolders, r
   const savePrefs = useCallback(
     (next: { sort: SortKey; order: SortOrder }) => {
       setPrefs(next);
-      api.setListPrefs(next.sort, next.order).catch((e) => notify({ text: `목록 순서를 저장하지 못했습니다: ${errText(e)}`, detail: errDetail(e), error: true }));
+      api.setListPrefs(next.sort, next.order).catch((e) => notify({ text: t("목록 순서를 저장하지 못했습니다: {error}", { error: errText(e) }), detail: errDetail(e), error: true }));
     },
     [notify],
   );
@@ -152,8 +153,8 @@ export function useOrganizeState({ meetings, setMeetings, folders, setFolders, r
     async (id: string, folder: string | null) => {
       const ok = await patchNote(id, { folder });
       if (ok) {
-        const title = meetingsRef.current.find((m) => m.id === id)?.title || "제목 없음";
-        notify({ text: folder ? `‘${title}’ 노트를 ‘${folderPath(foldersRef.current, folder)}’ 폴더로 옮겼습니다` : `‘${title}’ 노트를 폴더에서 뺐습니다` });
+        const title = meetingsRef.current.find((m) => m.id === id)?.title || t("제목 없음");
+        notify({ text: folder ? t("‘{title}’ 노트를 ‘{folder}’ 폴더로 옮겼습니다", { title, folder: folderPath(foldersRef.current, folder) }) : t("‘{title}’ 노트를 폴더에서 뺐습니다", { title }) });
       }
       return ok;
     },

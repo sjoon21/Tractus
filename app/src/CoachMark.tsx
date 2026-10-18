@@ -1,5 +1,6 @@
 // 온보딩 ③: `data-tip="<ID>"`(또는 anchor 선택자) 요소 옆에 한 번 뜨는 안내 (tips.ts). 초점을 빼앗지 않고 Esc로 닫힌다
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { t } from "./i18n";
 import { seeTip, TIP_OFF, TIP_OK, TIPS, tipsOff, useTip, useWanted, type TipId } from "./tips";
 
 type Side = "bottom" | "top" | "right" | "left";
@@ -82,7 +83,7 @@ export function CoachMark({ id, ready = true, side = "bottom", anchor }: { id: T
       ref={box}
       role="dialog"
       aria-modal="false"
-      aria-label="안내"
+      aria-label={t("안내")}
       className="fixed z-[60] w-[260px] rounded-lg bg-foreground px-3.5 py-3 text-background shadow-lg"
       style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, visibility: pos ? "visible" : "hidden" }}
     >

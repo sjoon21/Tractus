@@ -1,5 +1,6 @@
 // PDF 인쇄용 문서 (docs/roadmap.md §3 6.5). 화면 데이터를 인쇄 레이아웃에 맞게 다듬는다 (print.test.ts).
 // 레이아웃은 PrintSheet.tsx + styles.css @media print, 인쇄는 macOS 인쇄 대화상자의 'PDF로 저장'.
+import { t } from "./i18n";
 import { isMemo, memoLineNumbers } from "./memo";
 import { printSummary, type PrintSummary, type SummaryDoc } from "./summaries";
 import { dayParts, evidenceLabel, fmtTime, segText, speakerName, speakerStats, type NoteMemo, type Segment, type Speakers, type SummaryLike } from "./lib";
@@ -46,8 +47,8 @@ export function printDoc(d: {
   const s = selected === undefined ? d.summary : (selected?.legacy ?? null);
   const generic = selected && !selected.legacy ? printSummary(selected, at) : null;
   return {
-    title: d.info.title || "제목 없음",
-    date: p.weekday ? `${p.month} ${p.day}일 (${p.weekday})${hm ? ` ${hm}` : ""}` : "",
+    title: d.info.title || t("제목 없음"),
+    date: p.weekday ? t("{month} {day}일 ({weekday})", p) + (hm ? ` ${hm}` : "") : "",
     duration: memo ? "" : fmtTime(d.info.duration_sec),
     speakers,
     memo,
@@ -60,7 +61,7 @@ export function printDoc(d: {
     generic,
     rows: d.segments.map((seg, i) => {
       const turn = diarized && (i === 0 || (d.segments[i - 1].speaker ?? null) !== (seg.speaker ?? null));
-      return { id: seg.id, time: memo ? "" : fmtTime(seg.start), speaker: turn ? (speakerName(seg.speaker, d.speakers) ?? "알 수 없음") : null, text: segText(seg) };
+      return { id: seg.id, time: memo ? "" : fmtTime(seg.start), speaker: turn ? (speakerName(seg.speaker, d.speakers) ?? t("알 수 없음")) : null, text: segText(seg) };
     }),
     memoLines: memo ? [] : (d.note_memo?.lines ?? []).map((l) => ({ id: l.id, text: l.text })),
   };

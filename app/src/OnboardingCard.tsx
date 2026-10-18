@@ -2,6 +2,7 @@
 import { Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
+import { t } from "./i18n";
 import { markOnboard, ONBOARD_CLOSE, ONBOARD_TITLE, type Step, type StepId } from "./onboarding";
 
 export function OnboardingCard({ steps, onStep }: { steps: Step[]; onStep: (id: StepId) => void }) {
@@ -38,7 +39,7 @@ export function OnboardingCard({ steps, onStep }: { steps: Step[]; onStep: (id: 
             <div className="min-w-0 flex-1">
               <p className={cn("m-0 text-[13px] font-medium", s.done && "text-muted-foreground line-through decoration-border-strong")}>
                 {s.label}
-                {s.done && <span className="sr-only"> (마침)</span>}
+                {s.done && <span className="sr-only"> {t("(마침)")}</span>}
               </p>
               {!s.done && <p className="m-0 text-xs leading-5 text-muted-foreground">{s.hint}</p>}
             </div>

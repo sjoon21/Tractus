@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { api, errFull, errText, type ChatEntry } from "./api";
 import { ErrorDetail } from "./ErrorDetail";
+import { t } from "./i18n";
 import { answerParts, askReduce, citeLabel, citeTarget, isAsking, isMemoCite, isNoteGone, isTaggedMemo, sendNotice, START_ASK, trimHistory, turnsHistory, type AskEvent, type AskSource, type AskState, type LlmConfig } from "./ask";
 import { APP_ERROR, fmtTime, isImeKey } from "./lib";
 import { KEY_CHANGED, llmErrorView } from "./llmKey";
@@ -32,7 +33,7 @@ const fromEntry = (e: ChatEntry, i: number): Turn => ({
   state: { ...START_ASK, phase: "done", answer: e.answer, citations: e.citations, provider: e.provider, model: e.model },
 });
 
-const STATUS: Partial<Record<AskState["phase"], string>> = { starting: "준비 중…", retrieve: "관련 대화를 찾는 중…", answer: "답변 작성 중…" };
+const STATUS: Partial<Record<AskState["phase"], string>> = { starting: t("준비 중…"), retrieve: t("관련 대화를 찾는 중…"), answer: t("답변 작성 중…") };
 
 /**
  * notes: 지금 있는 노트의 ID들 (전체 범위 질문용). 목록에 없는 노트를 가리키는 인용 칩은 삭제된 노트로 보고 누를 수 없게 한다.
@@ -48,7 +49,7 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
   const services = useLlmServices("ask");
   const provider = services.provider;
   const composing = useRef(false);
-  const running = turns.find((t) => isAsking(t.state));
+  const running = turns.find((x) => isAsking(x.state));
   const runningId = useRef<string | null>(null);
   runningId.current = running?.id ?? null;
 
@@ -58,7 +59,7 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
     api.loadChat(meetingId).then(
       // 기록을 읽는 사이에 보낸 질문은 뒤에 둔다
       (entries) => alive && setTurns((ts) => [...entries.map(fromEntry), ...ts]),
-      (e) => alive && setLoadError(`지난 질문을 읽지 못했습니다: ${errText(e)}`),
+      (e) => alive && setLoadError(t("지난 질문을 읽지 못했습니다: {error}", { error: errText(e) })),
     );
     return () => {
       alive = false;
@@ -74,7 +75,7 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
   }, [provider]);
 
   useEffect(() => {
-    const un = listen<AskEvent>("ask", ({ payload: ev }) => setTurns((ts) => ts.map((t) => (t.id === ev.job ? { ...t, state: askReduce(t.state, ev) } : t))));
+    const un = listen<AskEvent>("ask", ({ payload: ev }) => setTurns((ts) => ts.map((x) => (x.id === ev.job ? { ...x, state: askReduce(x.state, ev) } : x))));
     return () => void un.then((f) => f());
   }, []);
 
@@ -111,12 +112,12 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
     try {
       await api.askStart({ job, meeting: meetingId, from: range.from || null, to: range.to || null, question, history, provider });
     } catch (e) {
-      setTurns((ts) => ts.map((t) => (t.id === job ? { ...t, state: { ...t.state, phase: "error", error: errFull(e), errorCode: APP_ERROR } } : t)));
+      setTurns((ts) => ts.map((x) => (x.id === job ? { ...x, state: { ...x.state, phase: "error", error: errFull(e), errorCode: APP_ERROR } } : x)));
     }
   };
   const cancel = () => {
     if (!running) return;
-    setTurns((ts) => ts.map((t) => (t.id === running.id ? { ...t, state: { ...t.state, phase: "cancelled" } } : t)));
+    setTurns((ts) => ts.map((x) => (x.id === running.id ? { ...x, state: { ...x.state, phase: "cancelled" } } : x)));
     api.askCancel(running.id).catch(() => {});
   };
 
@@ -128,14 +129,14 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
       {turns.length === 0 && (
         <p className="m-0 mb-4 max-w-[34ch] text-[13px] leading-relaxed text-muted-foreground">
           {meetingId
-            ? "이 노트 내용을 바탕으로 AI가 답변합니다. 답변 속 시각을 누르면 그 부분으로 이동합니다."
-            : "모든 노트 내용을 바탕으로 AI가 답변합니다. 시각을 누르면 그 노트의 해당 부분을 엽니다."}
+            ? t("이 노트 내용을 바탕으로 AI가 답변합니다. 답변 속 시각을 누르면 그 부분으로 이동합니다.")
+            : t("모든 노트 내용을 바탕으로 AI가 답변합니다. 시각을 누르면 그 노트의 해당 부분을 엽니다.")}
         </p>
       )}
       {loadError && <p className="m-0 mb-3 text-xs text-destructive">{loadError}</p>}
-      <ol className="m-0 flex flex-1 list-none flex-col gap-7 p-0" aria-label="질문과 답변">
-        {turns.map((t) => (
-          <TurnItem key={t.id} turn={t} scope={scope} onCite={onCite} notes={notes} memoIds={memoIds} />
+      <ol className="m-0 flex flex-1 list-none flex-col gap-7 p-0" aria-label={t("질문과 답변")}>
+        {turns.map((x) => (
+          <TurnItem key={x.id} turn={x} scope={scope} onCite={onCite} notes={notes} memoIds={memoIds} />
         ))}
       </ol>
       <div ref={end} aria-hidden />
@@ -150,10 +151,10 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
       >
         {!meetingId && (
           <fieldset className="m-0 flex min-w-0 items-center gap-1.5 border-0 p-0 text-xs text-muted-foreground">
-            <legend className="float-left mr-1 p-0 font-medium">기간</legend>
-            <input type="date" className={DATE} aria-label="시작 날짜" value={range.from} max={range.to || undefined} onChange={(e) => setRange({ ...range, from: e.target.value })} />
+            <legend className="float-left mr-1 p-0 font-medium">{t("기간")}</legend>
+            <input type="date" className={DATE} aria-label={t("시작 날짜")} value={range.from} max={range.to || undefined} onChange={(e) => setRange({ ...range, from: e.target.value })} />
             <span aria-hidden>–</span>
-            <input type="date" className={DATE} aria-label="끝 날짜" value={range.to} min={range.from || undefined} onChange={(e) => setRange({ ...range, to: e.target.value })} />
+            <input type="date" className={DATE} aria-label={t("끝 날짜")} value={range.to} min={range.from || undefined} onChange={(e) => setRange({ ...range, to: e.target.value })} />
           </fieldset>
         )}
         <div className="flex flex-col rounded-lg border border-input bg-background shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25">
@@ -163,9 +164,9 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
             rows={2}
             maxLength={2000}
             value={draft}
-            placeholder={meetingId ? "예: 예산은 얼마로 정했나요?" : "예: 지난주 노트들에서 정한 출시일은?"}
-            aria-label={meetingId ? "이 노트에 대해 AI에게 질문" : "AI 어시스턴트에게 질문"}
-            aria-description="Enter 보내기, Shift+Enter 줄바꿈"
+            placeholder={meetingId ? t("예: 예산은 얼마로 정했나요?") : t("예: 지난주 노트들에서 정한 출시일은?")}
+            aria-label={meetingId ? t("이 노트에 대해 AI에게 질문") : t("AI 어시스턴트에게 질문")}
+            aria-description={t("Enter 보내기, Shift+Enter 줄바꿈")}
             onChange={(e) => setDraft(e.target.value)}
             onCompositionStart={() => (composing.current = true)}
             onCompositionEnd={() => (composing.current = false)}
@@ -179,11 +180,11 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
           <div className="flex items-center gap-2 px-2 pb-2">
             <LlmServicePicker services={services} disabled={!!running} />
             {running ? (
-              <Button variant="secondary" size="icon-sm" className="ml-auto rounded-full" aria-label="멈추기" title="멈추기" onClick={cancel}>
+              <Button variant="secondary" size="icon-sm" className="ml-auto rounded-full" aria-label={t("멈추기")} title={t("멈추기")} onClick={cancel}>
                 <Square className="size-3 fill-current" />
               </Button>
             ) : (
-              <Button type="submit" size="icon-sm" className="ml-auto rounded-full" aria-label="보내기" title="보내기 (Enter)" disabled={!draft.trim()}>
+              <Button type="submit" size="icon-sm" className="ml-auto rounded-full" aria-label={t("보내기")} title={t("보내기 (Enter)")} disabled={!draft.trim()}>
                 <ArrowUp />
               </Button>
             )}
@@ -216,7 +217,7 @@ function TurnItem({ turn: { question, state: s }, scope, onCite, notes, memoIds 
               <CiteChip
                 key={i}
                 label={label ?? ""}
-                title={memo ? (scope.kind === "global" && src ? `${src.title} · 메모의 줄로 이동` : "메모의 줄로 이동") : scope.kind === "global" && src ? `${src.title} · ${fmtTime(to.t)} 위치로 이동` : `${fmtTime(to.t)} 위치로 이동`}
+                title={memo ? (scope.kind === "global" && src ? t("{title} · 메모의 줄로 이동", { title: src.title }) : t("메모의 줄로 이동")) : scope.kind === "global" && src ? t("{title} · {time} 위치로 이동", { title: src.title, time: fmtTime(to.t) }) : t("{time} 위치로 이동", { time: fmtTime(to.t) })}
                 gone={scope.kind === "global" && isNoteGone(notes, to.meetingId)}
                 onClick={() => onCite(to.meetingId, to.segId, to.t)}
               />
@@ -226,8 +227,8 @@ function TurnItem({ turn: { question, state: s }, scope, onCite, notes, memoIds 
       )}
       <p className="m-0 flex items-center gap-2 text-xs text-subtle-foreground empty:hidden" role="status">
         {status && !(s.phase === "answer" && s.answer) ? status : null}
-        {s.phase === "done" && s.citations.length === 0 && <Badge>근거 대화 없음</Badge>}
-        {s.phase === "cancelled" && "멈췄습니다"}
+        {s.phase === "done" && s.citations.length === 0 && <Badge>{t("근거 대화 없음")}</Badge>}
+        {s.phase === "cancelled" && t("멈췄습니다")}
       </p>
       {s.error && <AskError error={s.error} code={s.errorCode} />}
       {s.warning && <p className="m-0 text-xs text-memo">{s.warning}</p>}
@@ -249,7 +250,7 @@ function AskError({ error, code }: { error: string; code: string | null }) {
 }
 
 /** 회의 범위는 시각만, 전체 범위는 날짜도 ("10/2 5:31"). 메모는 시각 대신 줄 (ask.citeLabel) */
-const chipLabel = (t: number, o: { src?: AskSource | null; memo?: boolean; tagged?: boolean; line?: number }): string => citeLabel(t, { date: o.src?.date, memo: o.memo, tagged: o.tagged, line: o.line });
+const chipLabel = (sec: number, o: { src?: AskSource | null; memo?: boolean; tagged?: boolean; line?: number }): string => citeLabel(sec, { date: o.src?.date, memo: o.memo, tagged: o.tagged, line: o.line });
 
 /** gone: 삭제된 노트의 인용. 누를 수 없고 설명만 보인다 (오류 없이) */
 function CiteChip({ label, title, gone, onClick }: { label: string; title: string; gone?: boolean; onClick: () => void }) {
@@ -266,14 +267,14 @@ function Sources({ sources, scope, onCite, notes, memoIds }: { sources: AskSourc
     <details className="group text-xs">
       <summary className="flex w-fit cursor-pointer list-none items-center gap-1 font-medium text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" aria-hidden />
-        참고한 대화 <span className="text-subtle-foreground tabular-nums">{sources.length}</span>
+        {t("참고한 대화")} <span className="text-subtle-foreground tabular-nums">{sources.length}</span>
       </summary>
       <ol className="m-0 mt-2 ml-1.5 flex list-none flex-col gap-2 border-l border-border-strong p-0 pl-3">
         {sources.map((s) => (
           <li key={`${s.meeting_id}#${s.segment_id}`} className="flex items-baseline gap-2 leading-5 text-muted-foreground">
             <CiteChip
               label={chipLabel(s.start, { src: global ? s : undefined, memo: isMemoCite(s, inMemoNote(scope, memoIds, s.meeting_id, s.line)), tagged: isTaggedMemo(s), line: (scope.kind === "meeting" ? scope.memoLines?.get(s.segment_id) : undefined) ?? s.line })}
-              title={isMemoCite(s, inMemoNote(scope, memoIds, s.meeting_id, s.line)) ? `${s.title} · 메모의 줄` : `${s.title} · ${fmtTime(s.start)}`}
+              title={isMemoCite(s, inMemoNote(scope, memoIds, s.meeting_id, s.line)) ? t("{title} · 메모의 줄", { title: s.title }) : `${s.title} · ${fmtTime(s.start)}`}
               gone={global && isNoteGone(notes, s.meeting_id)}
               onClick={() => onCite(s.meeting_id, s.segment_id, s.start)}
             />

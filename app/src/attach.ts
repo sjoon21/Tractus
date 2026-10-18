@@ -2,6 +2,7 @@
 import type { MeetingInfo, PendingRecording } from "./api";
 import type { Decision } from "./caps";
 import { isMemo } from "./memo";
+import { t } from "./i18n";
 import { baseName } from "./lib";
 
 export interface AttachTarget {
@@ -67,29 +68,29 @@ export interface AttachControls {
 
 // ── 문구 (WORDS.md §4.11) ──
 
-const quoted = (title: string) => `‘${title || "제목 없음"}’`;
+const titleOf = (title: string) => title || t("제목 없음");
 
-export const RECORD_LABEL = (title: string) => `${quoted(title)} 노트에 녹음 추가 중`;
-export const PENDING_LABEL = (title: string) => `${quoted(title)} 노트에 추가할 녹음`;
-export const DROP_LABEL = (title: string) => `파일을 놓으면 ${quoted(title)} 노트에 추가합니다`;
+export const RECORD_LABEL = (title: string) => t("‘{title}’ 노트에 녹음 추가 중", { title: titleOf(title) });
+export const PENDING_LABEL = (title: string) => t("‘{title}’ 노트에 추가할 녹음", { title: titleOf(title) });
+export const DROP_LABEL = (title: string) => t("파일을 놓으면 ‘{title}’ 노트에 추가합니다", { title: titleOf(title) });
 export const DROP_CONFIRM = {
-  title: (title: string) => `${quoted(title)} 노트에 파일을 추가할까요?`,
-  body: "추가하면 지금까지 쓴 글은 메모 탭으로 옮겨지고, 노트는 녹음 노트로 바뀝니다. 되돌릴 수 없습니다.",
-  cancel: "취소",
-  confirm: "추가",
+  title: (title: string) => t("‘{title}’ 노트에 파일을 추가할까요?", { title: titleOf(title) }),
+  body: t("추가하면 지금까지 쓴 글은 메모 탭으로 옮겨지고, 노트는 녹음 노트로 바뀝니다. 되돌릴 수 없습니다."),
+  cancel: t("취소"),
+  confirm: t("추가"),
 } as const;
-export const ADD_RECORDING = "녹음 추가";
-export const ADD_FILE = "파일에서 추가";
-export const ADD_TITLE = "이 노트에 녹음을 추가합니다. 지금까지 쓴 글은 메모 탭으로 옮겨집니다";
-export const ADD_FILE_TITLE = "오디오·동영상 파일을 이 노트에 추가합니다. 지금까지 쓴 글은 메모 탭으로 옮겨집니다";
-export const ADD_BADGE = "추가하기";
-export const BUSY_RECORDING = "이미 녹음 중입니다";
-export const BUSY_CONVERTING = "변환이 끝난 뒤에 녹음할 수 있습니다";
-export const BUSY_JOB = "작업이 끝난 뒤에 추가할 수 있습니다";
-export const IMPORT_BUSY = "다른 변환이 끝난 뒤에 추가할 수 있습니다";
-export const LOCK_NOTICE = { recording: "녹음이 끝나면 다시 쓸 수 있습니다", converting: "변환이 끝나면 다시 쓸 수 있습니다" } as const;
-export const ADDED = (title: string, file: string) => `${quoted(title)} 노트에 녹음을 추가했습니다 — ${file}`;
-export const failedFile = (file: string, why: string) => `‘${baseName(file)}’을(를) 텍스트로 변환하지 못했습니다${why}`;
+export const ADD_RECORDING = t("녹음 추가");
+export const ADD_FILE = t("파일에서 추가");
+export const ADD_TITLE = t("이 노트에 녹음을 추가합니다. 지금까지 쓴 글은 메모 탭으로 옮겨집니다");
+export const ADD_FILE_TITLE = t("오디오·동영상 파일을 이 노트에 추가합니다. 지금까지 쓴 글은 메모 탭으로 옮겨집니다");
+export const ADD_BADGE = t("추가하기");
+export const BUSY_RECORDING = t("이미 녹음 중입니다");
+export const BUSY_CONVERTING = t("변환이 끝난 뒤에 녹음할 수 있습니다");
+export const BUSY_JOB = t("작업이 끝난 뒤에 추가할 수 있습니다");
+export const IMPORT_BUSY = t("다른 변환이 끝난 뒤에 추가할 수 있습니다");
+export const LOCK_NOTICE = { recording: t("녹음이 끝나면 다시 쓸 수 있습니다"), converting: t("변환이 끝나면 다시 쓸 수 있습니다") } as const;
+export const ADDED = (title: string, file: string) => t("‘{title}’ 노트에 녹음을 추가했습니다 — {file}", { title: titleOf(title), file });
+export const failedFile = (file: string, why: string) => t("‘{file}’을(를) 텍스트로 변환하지 못했습니다{why}", { file: baseName(file), why });
 
 /** 추가 단추를 못 쓰는 이유 (없으면 쓸 수 있다). busy: 요약·단어 싱크 같은 이 노트의 다른 작업 */
 export function addBlocked(o: { recording: boolean; transcribing: boolean; lock: "recording" | "converting" | null; busy?: boolean }): string | null {

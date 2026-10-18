@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/select";
 import { api, errDetail, errText, type LlmSettings } from "./api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorDetail } from "./ErrorDetail";
+import { t } from "./i18n";
 import { indexer } from "./indexer";
 import { EMBED_CONFIRM, EMBED_LABEL, EMBED_LOCAL_ONLY, EMBED_NO_KEY, EMBED_NOTE, EMBED_OPTIONS, EMBED_SAVED, type EmbeddingChoice } from "./llmKey";
 
@@ -36,7 +37,7 @@ export function EmbeddingSection({ cfg, onChanged, actions, status }: { cfg: Llm
 
   return (
     <>
-      <Section title="스마트 검색" actions={actions}>
+      <Section title={t("스마트 검색")} actions={actions}>
         <Row
           label={EMBED_LABEL}
           htmlFor={id}
