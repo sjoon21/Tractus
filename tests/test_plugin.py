@@ -96,3 +96,18 @@ def test_launcher_starts_the_server_in_the_data_folder_not_the_project(tmp_path)
     project.mkdir()
     r = subprocess.run([str(LAUNCHER)], cwd=project, env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin", "TRACTUS_BIN": str(bin_), "TRACTUS_HOME": str(data)}, capture_output=True, text=True, timeout=10)
     assert r.stdout.strip() == str(data.resolve())
+
+
+def test_every_manifest_has_the_same_version():
+    # 릴리스 때 한 곳만 올리면 앱 안 업데이트(tauri.conf.json)와 코어·플러그인 버전이 어긋난다
+    import re
+    import tomllib
+
+    versions = {
+        "tauri.conf.json": json.loads((ROOT / "app" / "src-tauri" / "tauri.conf.json").read_text())["version"],
+        "package.json": json.loads((ROOT / "app" / "package.json").read_text())["version"],
+        "Cargo.toml": tomllib.loads((ROOT / "app" / "src-tauri" / "Cargo.toml").read_text())["package"]["version"],
+        "pyproject.toml": tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"],
+        "plugin.json": json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())["version"],
+    }
+    assert len(set(versions.values())) == 1 and re.fullmatch(r"\d+\.\d+\.\d+", versions["pyproject.toml"]), versions
