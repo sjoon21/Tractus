@@ -440,6 +440,13 @@ impl TrayState {
         }
     }
 
+    /// 화면 언어가 바뀌었다: 메뉴를 새 언어로 다시 그린다
+    pub fn relabel(&self, app: &AppHandle) {
+        let mut g = self.lock();
+        g.forget_shown();
+        g.sync(app);
+    }
+
     /// 앱이 끝난다: 타이머를 멈춘다
     pub fn shutdown(&self) {
         self.lock().ticker = None;

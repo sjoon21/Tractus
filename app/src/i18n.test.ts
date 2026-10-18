@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { EN } from "./en";
-import { resolveLang, setLang, t, type Dict } from "./i18n";
+import { setLang, t, type Dict } from "./i18n";
 
 const SRC = __dirname;
 const HANGUL = /[가-힣]/;
@@ -143,11 +143,4 @@ describe("t()", () => {
     expect(t("사전에 없는 말")).toBe("사전에 없는 말");
   });
 
-  test("시스템 언어가 한국어면 한국어, 그 밖은 영어, 모르면 한국어", () => {
-    expect(resolveLang("system", "ko-KR")).toBe("ko");
-    expect(resolveLang("system", "en-GB")).toBe("en");
-    expect(resolveLang("system", "ja-JP")).toBe("en");
-    expect(resolveLang("system", null)).toBe("ko");
-    expect(resolveLang("en", "ko-KR")).toBe("en");
-  });
 });

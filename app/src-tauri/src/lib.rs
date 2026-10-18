@@ -5,7 +5,7 @@ mod attach;
 mod calendar;
 mod deferred;
 mod llm_key;
-mod locale;
+mod i18n;
 mod mcp;
 mod media;
 mod meetings;
@@ -73,6 +73,8 @@ pub struct Settings {
     pub calendar_enabled: bool,
     /// 홈 카드에서 뺄 캘린더 ID (처음에는 모두 읽는다)
     pub calendar_hidden: Vec<String>,
+    /// 화면 언어: "system"(macOS 언어, 기본) | "ko" | "en" (i18n.rs, docs/desktop.md §3.8)
+    pub ui_lang: String,
     /// 앱 설정 폴더 (키가 있는 곳). 파일에는 쓰지 않고 `AppState::settings()`가 채운다
     #[serde(skip)]
     pub config_dir: Option<PathBuf>,
@@ -105,6 +107,7 @@ impl Default for Settings {
             obsidian_audio: false,
             calendar_enabled: false,
             calendar_hidden: vec![],
+            ui_lang: "system".into(),
             config_dir: None,
             stale: vec![],
         }
@@ -197,6 +200,7 @@ impl Settings {
         // `doctor`가 앱이 쓰는 녹음 프로그램을 보게 한다 (자동으로 찾은 경로가 코어의 기본 경로와 다를 수 있다)
         env.push(("TRACTUS_REC_BIN".into(), self.rec_resolved().path));
         env.push(self.embed_mode());
+        env.push(("TRACTUS_LANG".into(), i18n::lang().into())); // 코어가 앱에 보내는 문장의 언어 (셸의 값보다 앱의 선택이 먼저다)
         env
     }
 
@@ -477,6 +481,22 @@ fn merge_flag(raw: Option<&str>, key: &str, value: bool) -> Result<String, Strin
     let mut v: Value = raw.and_then(|r| serde_json::from_str(r).ok()).filter(Value::is_object).unwrap_or_else(|| json!({}));
     v[key] = json!(value);
     serde_json::to_string_pretty(&v).map_err(|e| e.to_string())
+}
+
+/// 화면 언어: 고른 값과 지금 언어 (화면은 시작할 때 이것으로 언어를 정한다)
+#[tauri::command]
+fn ui_lang(state: State<'_, AppState>) -> Value {
+    json!({ "pref": state.settings().ui_lang, "lang": i18n::lang() })
+}
+
+/// 화면 언어를 바꾼다. 화면은 이 뒤에 다시 열린다. 메뉴 막대는 바로 새 언어로 다시 그린다
+#[tauri::command]
+fn set_ui_lang(app: AppHandle, state: State<'_, AppState>, tray: State<'_, tray::TrayState>, pref: String) -> Result<(), String> {
+    patch_settings(&state.config_path, |raw| i18n::merge_ui_lang(raw, &pref))?;
+    i18n::set(i18n::resolve(&pref, i18n::system_lang().as_deref()));
+    state.settings.lock().unwrap().ui_lang = pref;
+    tray.relabel(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1261,6 +1281,7 @@ pub fn run() {
             let config_path = app.path().app_config_dir()?.join("settings.json");
             let mut settings = Settings::load(std::fs::read_to_string(&config_path).ok().as_deref());
             settings.config_dir = config_path.parent().map(Path::to_path_buf);
+            i18n::set(i18n::resolve(&settings.ui_lang, i18n::system_lang().as_deref()));
             let mcp = Arc::new(mcp::McpClient::new(settings.mcp_spawn()));
             // 첫 검색이 빠르도록 미리 띄워 둔다 (실패해도 검색 때 다시 시도)
             let warm = mcp.clone();
@@ -1280,7 +1301,8 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             get_settings,
-            locale::system_lang,
+            ui_lang,
+            set_ui_lang,
             paths::update_available,
             save_settings,
             set_rec_mode,

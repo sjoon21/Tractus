@@ -19,6 +19,7 @@ export default {
   화면: "Appearance",
   테마: "Theme",
   언어: "Language",
+  "언어를 바꾸지 못했습니다: {error}": "Couldn’t change the language: {error}",
   "바꾸면 앱 화면을 다시 엽니다.": "Changing this reloads the app window.",
   업데이트: "Updates",
 

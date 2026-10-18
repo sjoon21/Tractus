@@ -261,6 +261,8 @@ export const api = {
   voicesForget: (id: string) => invoke<number>("voices_forget", { id }),
   /** `tractus index`: 고친 문장을 검색에 반영한다. 다른 작업이 돌고 있어 비켜 갔으면 false */
   indexRefresh: () => invoke<boolean>("index_refresh"),
+  /** 화면 언어 (settings.json ui_lang). 바꾼 뒤 화면을 다시 연다 (i18n.ts) */
+  setUiLang: (pref: "system" | "ko" | "en") => invoke<void>("set_ui_lang", { pref }),
   /** `tractus glossary add`. 새로 더한 개수 */
   glossaryAdd: (terms: string[]) => invoke<number>("glossary_add", { terms }),
   /** `tractus templates list --json`: 기본 요약 유형 → 내 요약 유형 (docs/desktop.md §2.13) */
