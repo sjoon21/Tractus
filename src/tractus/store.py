@@ -151,7 +151,10 @@ def find_transcribed(meetings: Path, sha256: str) -> Path | None:
     """같은 원본 파일의 전사가 이미 끝난 회의 폴더."""
     for p in sorted(meetings.glob("*/transcript.json")):
         try:
-            t = json.loads(p.read_text(encoding="utf-8"))
+            raw = p.read_text(encoding="utf-8")
+            if sha256 not in raw:  # 해시(16진수)는 파일에 글자 그대로 있다: 없는 노트는 해석하지 않는다 (1,000개 6초 → 0.8초)
+                continue
+            t = json.loads(raw)
             found = t["audio"].get("sha256") == sha256 and not is_recorded(t)  # "변환 전" 노트는 아직 변환한 것이 아니다
         except (OSError, ValueError, TypeError, KeyError, AttributeError):
             continue

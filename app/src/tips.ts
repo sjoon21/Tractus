@@ -67,6 +67,17 @@ export function resetTips() {
   emit();
 }
 
+/** 이 안내를 아직 보여야 하는가 (봤거나 안내를 끄면 false로 바뀐다). CoachMark가 쓸모없는 자리 찾기를 멈추는 데 쓴다 */
+export function useWanted(id: TipId): boolean {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const f = () => tick((n) => n + 1);
+    listeners.add(f);
+    return () => void listeners.delete(f);
+  }, []);
+  return wants(state, id);
+}
+
 /** ready: 이 안내의 자리(요소)가 지금 화면에 있다. show면 그린다 */
 export function useTip(id: TipId, ready: boolean): boolean {
   const [n, tick] = useState(0); // 바뀔 때마다(다른 안내가 닫힘 등) 아래 effect가 다시 돌아 빈 자리를 이어 받는다

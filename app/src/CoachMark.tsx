@@ -1,6 +1,6 @@
 // 온보딩 ③: `data-tip="<ID>"`(또는 anchor 선택자) 요소 옆에 한 번 뜨는 안내 (tips.ts). 초점을 빼앗지 않고 Esc로 닫힌다
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { seeTip, TIP_OFF, TIP_OK, TIPS, tipsOff, useTip, type TipId } from "./tips";
+import { seeTip, TIP_OFF, TIP_OK, TIPS, tipsOff, useTip, useWanted, type TipId } from "./tips";
 
 type Side = "bottom" | "top" | "right" | "left";
 const GAP = 10;
@@ -16,10 +16,12 @@ export function CoachMark({ id, ready = true, side = "bottom", anchor }: { id: T
   const selector = anchor ?? `[data-tip="${id}"]`;
   const [target, setTarget] = useState<HTMLElement | null>(null);
   const [rev, setRev] = useState(0); // 0.5초마다: 패널 접기·목록 로딩처럼 이벤트 없이 자리가 움직여도 따라간다
+  const wanted = useWanted(id); // 이미 봤거나 안내를 껐으면 자리를 찾지 않는다 (타이머도 돌지 않는다)
   useEffect(() => {
-    if (!ready) return setTarget(null);
+    if (!ready || !wanted) return setTarget(null);
     // 보이는 자리만: 숨은 탭 안의 단추나 화면 밖으로 스크롤된 자리가 "한 번에 하나" 자리를 차지해 다른 안내를 막지 않게
     const find = () => {
+      if (document.hidden) return; // 창이 숨어 있으면 쉰다
       const el = document.querySelector<HTMLElement>(selector);
       setTarget(el && onScreen(el) ? el : null);
       setRev((n) => n + 1);
@@ -27,7 +29,7 @@ export function CoachMark({ id, ready = true, side = "bottom", anchor }: { id: T
     find();
     const timer = window.setInterval(find, 500); // 늦게 그려지는 자리(목록·탭)도 잡는다
     return () => window.clearInterval(timer);
-  }, [ready, selector]);
+  }, [ready, selector, wanted]);
   const show = useTip(id, ready && !!target);
   const box = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number; ax: number; ay: number } | null>(null);

@@ -799,7 +799,7 @@ def summarize(
         _fail(str(e), code="bad_input", exit_code=2)
     if spec.is_default:  # 유형별 요약(summaries/)은 검색 색인에 들어가지 않는다
         Events.emit("stage", stage="index")
-        _sync_index_quietly()
+        _sync_index_quietly(embed=False)  # 요약은 색인에 없다: 밀린 청크를 임베딩하느라(모델 1.4 GB) 완료가 늦지 않게. 벡터는 앱의 조용한 색인이 채운다
     Events.emit("done", meeting_id=transcript["meeting_id"], meeting_dir=str(d), summary_key=key)
     detail = f"주제 {len(result.topics)}개, 결정 {len(result.decisions)}개, 할 일 {len(result.action_items)}개" if spec.is_default else f"항목 {sum(len(x.items) for x in result.sections)}개"
     console.print(f"완료: {detail} ({time.perf_counter() - t0:.0f}초)\n{sums.paths(d, key)[1]}")
