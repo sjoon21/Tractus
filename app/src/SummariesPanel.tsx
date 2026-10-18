@@ -30,7 +30,7 @@ import {
   type TemplateInfo,
 } from "./summaries";
 import { IDLE_QUEUE, queueAdvance, queueFail, queueLabel, queueStart, type QueueState } from "./summaryQueue";
-import { Copy, LoaderCircle, PencilLine, RotateCw, Trash2 } from "lucide-react";
+import { Copy, LoaderCircle, NotebookPen, PencilLine, RotateCw, Trash2 } from "lucide-react";
 import { MENU, MENU_ITEM } from "@/components/menu";
 import { Button } from "@/components/ui/button";
 import { selectClass } from "@/components/ui/select";
@@ -61,6 +61,8 @@ export interface SummariesPanelProps {
   onSelect: (doc: SummaryDoc | null) => void;
   /** 요약이 만들어졌거나 지워졌다 (노트 목록의 `요약 없음` 배지) */
   onChanged: () => void;
+  /** 녹음 노트만: 고른 요약(마크다운, 할 일은 `- [ ]`)을 내 메모 끝에 붙인다. 없으면 단추도 없다 */
+  onToMemo?: (markdown: string) => Promise<void>;
 }
 
 export function SummariesPanel(p: SummariesPanelProps) {
@@ -302,6 +304,19 @@ export function SummariesPanel(p: SummariesPanelProps) {
               >
                 <Copy />
               </Button>
+              {p.onToMemo && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-inherit hover:text-foreground"
+                  aria-label={t("메모로 보내기")}
+                  title={t("이 요약을 내 메모 끝에 붙입니다 (할 일은 체크박스로)")}
+                  disabled={busy || p.blocked}
+                  onClick={() => void p.onToMemo?.(docMarkdown(selected, p.starts, p.memoLines))}
+                >
+                  <NotebookPen />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon-sm"

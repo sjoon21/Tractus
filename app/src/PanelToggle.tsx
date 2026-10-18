@@ -102,7 +102,7 @@ export function PanelsProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("resize", paint);
   }, [widths]);
 
-  // ⌘B 왼쪽, ⌥⌘B 오른쪽. 글을 쓰는 중에도 된다(⌘B는 이 앱에서 굵게 쓰기가 아니다). 키를 누르고 있어도 한 번만
+  // ⌘B 왼쪽, ⌥⌘B 오른쪽. 글을 쓰는 중에도 된다(메모 입력창에서 글자를 골랐을 때의 ⌘B만 굵게 쓰기로 먼저 가져간다, memoEdit.ts). 키를 누르고 있어도 한 번만
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const side = panelKey(e);

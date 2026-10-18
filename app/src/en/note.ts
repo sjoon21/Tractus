@@ -217,4 +217,6 @@ export default {
   "소리 켜기": "Unmute",
   "음소거": "Mute",
   "볼륨": "Volume",
+  "요약을 메모에 붙였습니다": "Added the summary to your memo",
+  "메모에 붙이지 못했습니다: {error}": "Couldn’t add it to your memo: {error}",
 } satisfies Dict;
