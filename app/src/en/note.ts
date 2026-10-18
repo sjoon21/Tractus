@@ -214,4 +214,7 @@ export default {
   // EnhancedNote
   "대화에서 관련 내용을 찾지 못했습니다": "Nothing related was found in the transcript",
   "메모 보기": "Memo view",
+  "소리 켜기": "Unmute",
+  "음소거": "Mute",
+  "볼륨": "Volume",
 } satisfies Dict;

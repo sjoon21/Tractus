@@ -54,6 +54,31 @@
   user-select: text;
 }
 
+/* 같은 발언에서 바로 이어진 줄: 문단처럼 붙인다. 시각은 가리키거나 재생 중일 때만 */
+.seg.is-flow .seg-button {
+  padding-top: 0;
+}
+
+.seg.is-flow .seg-time {
+  opacity: 0;
+  transition: opacity var(--fast), color var(--fast);
+}
+
+.seg.is-flow .seg-button:hover .seg-time,
+.seg.is-flow .seg-button:focus-visible .seg-time,
+.seg.is-flow.is-active .seg-time {
+  opacity: 1;
+}
+
+.transcript.has-speakers .seg.is-flow .seg-button::after {
+  top: 0;
+}
+
+/* 다음 줄이 이어지면 색 줄을 아래까지 잇는다 */
+.transcript.has-speakers .seg:has(+ .seg.is-flow) .seg-button::after {
+  bottom: 0;
+}
+
 /* 지금 재생 중: 시각만 빨강 + 옅은 바탕. 큰 색 면을 만들지 않는다 */
 .seg.is-active .seg-button {
   background: color-mix(in srgb, var(--rec) 6%, transparent);
