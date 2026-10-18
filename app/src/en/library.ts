@@ -196,4 +196,6 @@ export default {
   "노트를 완성하는 중…": "Enhancing note…",
   "내가 적은 메모를 뼈대로, 대화 내용에서 찾은 세부를 붙여 노트를 완성합니다.": "Uses your memo as the outline and fills in details from the transcript.",
   "{sentence}. 다시 완성하면 반영됩니다.": "{sentence}. Enhance again to include it.",
+  "메모로 보내기": "Send to memo",
+  "이 요약을 내 메모 끝에 붙입니다 (할 일은 체크박스로)": "Add this summary to the end of your memo (to-dos become checkboxes)",
 } satisfies Dict;

@@ -54,6 +54,7 @@ import { clock, getLang, locale, t } from "./i18n";
 import { indexer } from "./indexer";
 import { printDoc } from "./print";
 import { EDIT_BLOCKED, type DeleteTarget } from "./remove";
+import { appendBlock } from "./memoEdit";
 import { PrintSheet } from "./PrintSheet";
 import { SummariesPanel } from "./SummariesPanel";
 import type { SummaryDoc } from "./summaries";
@@ -186,6 +187,26 @@ export function MeetingView({
     [commit, bumpEdit, onEdited, id],
   );
   const memoBusy = memoSave.status === "saving";
+
+  // 요약을 내 메모 끝에 붙인다 (녹음 노트의 메모 탭). 쓰던 메모를 먼저 저장하고 최신 본문에 붙인 뒤 편집기를 새 본문으로 다시 연다
+  const [memoRev, setMemoRev] = useState(0);
+  const sendToMemo = useCallback(
+    async (markdown: string) => {
+      if (!(await flushMemos())) return;
+      if (editQueue.isBlocked(id)) return notify({ text: EDIT_BLOCKED, error: true });
+      const body = appendBlock(confirmed.current?.note_memo?.body ?? "", markdown);
+      try {
+        const r = await editQueue.run(id, () => api.noteSave(id, body));
+        if (!r) return notify({ text: EDIT_BLOCKED, error: true });
+        onMemoSaved(r.meeting);
+        setMemoRev((n) => n + 1);
+        notify({ text: t("요약을 메모에 붙였습니다") });
+      } catch (e) {
+        notify({ text: t("메모에 붙이지 못했습니다: {error}", { error: errText(e) }), detail: errDetail(e), error: true });
+      }
+    },
+    [id, notify, onMemoSaved],
+  );
 
   // 제목 바꾸기: 낙관적으로 바꾸고 줄을 세워 저장한다. 실패하면 원래 제목으로 되돌리고 알린다. 폴더 이름은 그대로다 (코어)
   const renameNote = useCallback(
@@ -1082,6 +1103,7 @@ export function MeetingView({
             onRunning={setSummaryRunning}
             onSelect={setSelectedSummary}
             onChanged={onChanged}
+            onToMemo={memoNote || recorded ? undefined : sendToMemo}
           />
           )}
         </div>
@@ -1123,7 +1145,7 @@ export function MeetingView({
               mine={
                 <>
                   <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">{t("내가 적는 메모입니다. 요약과 AI 질문에 대화 내용과 함께 쓰입니다.")}</p>
-                  <MemoEditor variant="rail" id={id} initial={noteBody} savedBody={noteBody} segments={memoSegs} target={memoTarget} notify={notify} onSaved={onMemoSaved} onState={setMemoSave} />
+                  <MemoEditor key={memoRev} variant="rail" id={id} initial={noteBody} savedBody={noteBody} segments={memoSegs} target={memoTarget} notify={notify} onSaved={onMemoSaved} onState={setMemoSave} />
                 </>
               }
             />

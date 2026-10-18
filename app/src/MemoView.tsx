@@ -7,6 +7,7 @@ import { editQueue } from "./editQueue";
 import { t } from "./i18n";
 import { isImeKey, type Segment } from "./lib";
 import { checkTitle, citedRange, createAutosave, registerMemo, SAVE_STATUS, TITLE_MAX, type Autosave, type SaveState } from "./memo";
+import { checkAtClick, continueList, toggleCheck, wrapSelection, type Edit } from "./memoEdit";
 import { EDIT_BLOCKED } from "./remove";
 import { Pencil } from "lucide-react";
 import { cn } from "@/components/ui/utils";
@@ -108,6 +109,24 @@ export function MemoEditor({
   }, [target, place, variant]);
 
   const flushSoon = () => void a.flush();
+  // 편집 도움(memoEdit.ts)의 결과를 넣는다: 바뀐 부분만 insertText로 넣어 ⌘Z가 그대로 되게 한다 (못 하면 값을 바로 바꾼다)
+  const apply = (el: HTMLTextAreaElement, e: Edit) => {
+    const old = el.value;
+    let p = 0;
+    while (p < old.length && p < e.text.length && old[p] === e.text[p]) p++;
+    let s = 0;
+    while (s < old.length - p && s < e.text.length - p && old[old.length - 1 - s] === e.text[e.text.length - 1 - s]) s++;
+    el.setSelectionRange(p, old.length - s);
+    const inserted = e.text.slice(p, e.text.length - s);
+    const ok = inserted ? document.execCommand("insertText", false, inserted) : document.execCommand("delete");
+    if (ok && el.value === e.text) {
+      el.setSelectionRange(e.start, e.end); // 값이 이미 바뀌었다: 바로 고른다 (다음 화면까지 기다리면 그사이 친 글자 뒤로 캐럿이 돌아간다)
+      return;
+    }
+    setText(e.text);
+    a.change(e.text);
+    requestAnimationFrame(() => el.setSelectionRange(e.start, e.end)); // 값을 React가 다시 그린 뒤에
+  };
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col", variant === "rail" ? "pb-2" : "max-w-[46rem] pb-7")}>
       <textarea
@@ -120,18 +139,36 @@ export function MemoEditor({
         value={text}
         placeholder={t("여기에 메모를 쓰세요. 쓰는 대로 자동으로 저장됩니다")}
         aria-label={t("메모 내용")}
-        aria-keyshortcuts="Meta+S"
+        aria-keyshortcuts="Meta+S Meta+Enter Meta+B Meta+I"
         readOnly={!!locked}
         onChange={(e) => {
           setText(e.target.value);
           a.change(e.target.value);
         }}
         onBlur={flushSoon}
+        onClick={(e) => {
+          const el = e.currentTarget;
+          if (locked || el.selectionStart !== el.selectionEnd) return;
+          const r = checkAtClick(el.value, el.selectionStart); // [ ] 안을 누르면 체크
+          if (r) apply(el, r);
+        }}
         onKeyDown={(e) => {
-          // 한글 조합 중에는 아무것도 하지 않는다 (lib.isImeKey). ⌘S는 바로 저장
-          if (isImeKey(e.nativeEvent) || !(e.metaKey && e.code === "KeyS")) return;
+          // 한글 조합 중에는 아무것도 하지 않는다 (lib.isImeKey)
+          if (isImeKey(e.nativeEvent) || locked) return;
+          const el = e.currentTarget;
+          const { selectionStart: s, selectionEnd: end, value } = el;
+          if (e.metaKey && e.code === "KeyS") {
+            e.preventDefault();
+            flushSoon();
+            return;
+          }
+          let r: Edit | null = null;
+          if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.ctrlKey) r = e.metaKey ? toggleCheck(value, s, end) : continueList(value, s, end);
+          else if (e.metaKey && !e.shiftKey && !e.altKey && (e.code === "KeyB" || e.code === "KeyI")) r = wrapSelection(value, s, end, e.code === "KeyB" ? "**" : "*");
+          if (!r) return; // ⌘B에 고른 글이 없으면 노트 목록 접기로 간다
           e.preventDefault();
-          flushSoon();
+          e.stopPropagation();
+          apply(el, r);
         }}
       />
       <p className={cn("sticky bottom-0 m-0 bg-background pt-2 text-xs", state.status === "failed" ? "text-destructive" : "text-subtle-foreground")} role="status">
