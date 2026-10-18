@@ -37,6 +37,7 @@ import {
   tokenOffsets,
   transcriptRows,
   usableWords,
+  replayStart,
   wordClock,
   wordIndexAt,
   type EXPORT_FORMATS,
@@ -70,8 +71,8 @@ import { CONVERT_FIRST, deleteBlockedWhileConverting, isRecorded, keptNotice, ra
 import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type EditKind, type SaveState } from "./memo";
 import { RAIL_LABEL, railKey, railLabel, railTabs, validTab, type RailTab } from "./rail";
 import { PanelToggle, usePanels } from "./PanelToggle";
-import { releaseVoiceBoost, resumeVoiceBoost, setVoiceBoost, voiceBoostSupported } from "./voice";
-import { AudioLines, FastForward, LocateFixed, Mic, Pause, Play, TextSearch, Trash2, Upload } from "lucide-react";
+import { releaseVoiceBoost, resumeVoiceBoost, setPlaybackVolume, setVoiceBoost, voiceBoostSupported } from "./voice";
+import { AudioLines, FastForward, LocateFixed, Mic, Pause, Play, TextSearch, Trash2, Upload, Volume2, VolumeX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { selectClass } from "@/components/ui/select";
@@ -80,6 +81,16 @@ import { CHIP } from "@/components/panel/chip";
 import { EnhancedNote } from "./EnhancedNote";
 
 const RATE_KEY = "tractus.playbackRate";
+const VOLUME_KEY = "tractus.volume";
+/** 다음에 열 때도 같은 볼륨 (0..1). 음소거는 기억하지 않는다 */
+const readVolume = () => {
+  try {
+    const v = Number(localStorage.getItem(VOLUME_KEY) ?? "1");
+    return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+  } catch {
+    return 1;
+  }
+};
 const readRate = () => {
   try {
     return parseRate(localStorage.getItem(RATE_KEY));
@@ -236,6 +247,8 @@ export function MeetingView({
   const rows = useMemo(() => transcriptRows(segments, detail?.memos ?? [], filter), [detail, filter]);
   /** 화면에 보이는 세그먼트 (화자 필터 적용). 찾기와 무음 건너뛰기의 대상 */
   const visible = useMemo(() => (filter ? segments.filter((s) => s.speaker === filter) : segments), [detail, filter]);
+  const visibleRef = useRef(visible); // 단축키(R) 처리기가 매번 다시 붙지 않게
+  visibleRef.current = visible;
 
   // 화자 편집: 코어가 파일과 색인을 고치고(약 3초) 고친 회의를 돌려준다
   const [menu, setMenu] = useState<MenuTarget | null>(null);
@@ -386,6 +399,18 @@ export function MeetingView({
       // 저장소를 못 쓰면 이번만 쓴다
     }
   }, [rate, detail?.audio_path]);
+
+  // 볼륨: 목소리 선명하게(Web Audio)를 켰어도 같은 값이 되게 voice.setPlaybackVolume으로 정한다
+  const [volume, setVolume] = useState(readVolume);
+  const [muted, setMuted] = useState(false);
+  useEffect(() => {
+    if (audio.current) setPlaybackVolume(audio.current, muted ? 0 : volume);
+    try {
+      localStorage.setItem(VOLUME_KEY, String(volume));
+    } catch {
+      // 저장소를 못 쓰면 이번만 쓴다
+    }
+  }, [volume, muted, detail?.audio_path]);
 
   // 무음 건너뛰기 (5.2). 화자 필터와 함께 쓰면 '이 화자만 듣기'
   const [skip, setSkip] = useState(false);
@@ -612,6 +637,13 @@ export function MeetingView({
         e.preventDefault();
         const step = e.shiftKey ? SEEK_STEP_BIG : SEEK_STEP;
         seekTo(a.currentTime + (e.code === "ArrowLeft" ? -step : step), !a.paused);
+      } else if (e.code === "KeyR" && !e.shiftKey) {
+        // 직전 문장 다시 듣기: 지금 대화의 처음부터 (막 시작했으면 바로 앞 대화부터)
+        const to = replayStart(visibleRef.current, a.currentTime);
+        if (to !== null) {
+          e.preventDefault();
+          seekTo(to, true);
+        }
       } else if (e.shiftKey && (e.code === "Comma" || e.code === "Period")) {
         e.preventDefault();
         setRate((r) => stepRate(r, e.code === "Period" ? 1 : -1));
@@ -858,6 +890,7 @@ export function MeetingView({
                 speaker={diarized ? speakerName(r.seg.speaker, speakers) : undefined}
                 slot={slotOf.get(r.seg.speaker ?? "")}
                 turnStart={!!r.turnStart}
+                flow={!!r.flow}
                 onChip={openChip}
               />
             ) : (
@@ -947,6 +980,23 @@ export function MeetingView({
                   </option>
                 ))}
               </select>
+              <button className={TOGGLE} aria-pressed={muted} onClick={() => setMuted((m) => !m)} aria-label={muted ? t("소리 켜기") : t("음소거")} title={muted ? t("소리 켜기") : t("음소거")}>
+                {muted || volume === 0 ? <VolumeX aria-hidden /> : <Volume2 aria-hidden />}
+              </button>
+              <input
+                type="range"
+                className="h-1 w-16 accent-foreground"
+                min={0}
+                max={1}
+                step={0.05}
+                value={muted ? 0 : volume}
+                onChange={(e) => {
+                  setVolume(Number(e.target.value));
+                  setMuted(false);
+                }}
+                aria-label={t("볼륨")}
+                title={t("볼륨")}
+              />
             </div>
           )}
           {!follow && playing && (
@@ -1099,6 +1149,7 @@ const SegmentRow = memo(function SegmentRow({
   speaker,
   slot,
   turnStart,
+  flow,
   onChip,
 }: {
   seg: Segment;
@@ -1115,6 +1166,8 @@ const SegmentRow = memo(function SegmentRow({
   speaker?: string | null;
   slot?: number;
   turnStart: boolean;
+  /** 같은 발언에서 바로 이어진 줄: 문단처럼 붙여 그린다 (lib.transcriptRows) */
+  flow: boolean;
   onChip: (seg: Segment, anchor: HTMLElement) => void;
 }) {
   const diarized = speaker !== undefined;
@@ -1130,7 +1183,7 @@ const SegmentRow = memo(function SegmentRow({
   const edited = seg.corrected_text != null;
   return (
     <li
-      className={`seg ${isActive ? "is-active" : ""} ${diarized && turnStart ? "is-turn" : ""} ${isFind ? "is-find" : ""}`}
+      className={`seg ${isActive ? "is-active" : ""} ${diarized && turnStart ? "is-turn" : ""} ${flow ? "is-flow" : ""} ${isFind ? "is-find" : ""}`}
       data-seg={index}
       data-seg-id={seg.id}
       style={{ "--i": Math.min(order, 16), ...(diarized ? spkStyle(slot) : {}) } as React.CSSProperties}

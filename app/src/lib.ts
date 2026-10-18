@@ -155,7 +155,10 @@ export function clickSeekTime(seg: Segment, offset: number | null): number {
   return k < 0 || words[k].approx ? seg.start : wordClock(words).starts[k];
 }
 
-export type Row = { kind: "seg"; seg: Segment; index: number; turnStart?: boolean } | { kind: "memo"; memo: Memo };
+export type Row = { kind: "seg"; seg: Segment; index: number; turnStart?: boolean; flow?: boolean } | { kind: "memo"; memo: Memo };
+
+/** 같은 사람의 말이 이 시간(초) 안에 이어지면 한 문단으로 읽히게 붙여 그린다 (시각을 숨기고 위 간격을 없앤다) */
+export const FLOW_GAP_S = 2;
 
 /** 전사 세그먼트와 메모·북마크를 시각 순으로 합친다. 같은 시각이면 세그먼트가 먼저다. */
 export function interleave(segments: Segment[], memos: Memo[]): Row[] {
@@ -297,6 +300,7 @@ export async function renameRemembering<M>(enroll: () => Promise<{ samples: numb
 /**
  * 화면에 그릴 행. only가 있으면 그 화자의 세그먼트만(메모는 숨김). index는 원래 위치 그대로다(재생 위치 강조용).
  * turnStart: 바로 앞 행이 같은 화자의 바로 앞 세그먼트가 아니면 새 발언이다 — 이름은 발언마다 한 번만 보인다.
+ * flow: 같은 발언 안에서 앞 줄 끝과 FLOW_GAP_S 안에 이어진 줄 — 문단처럼 붙여 그린다 (데이터는 그대로, 줄마다 누르기·고치기는 같다).
  */
 export function transcriptRows(segments: Segment[], memos: Memo[], only: string | null): Row[] {
   const rows: Row[] = only === null ? interleave(segments, memos) : segments.flatMap((seg, index) => (seg.speaker === only ? [{ kind: "seg" as const, seg, index }] : []));
@@ -304,7 +308,7 @@ export function transcriptRows(segments: Segment[], memos: Memo[], only: string 
     if (r.kind !== "seg") return r;
     const prev = rows[i - 1];
     const same = prev?.kind === "seg" && prev.index === r.index - 1 && (prev.seg.speaker ?? null) === (r.seg.speaker ?? null);
-    return { ...r, turnStart: !same };
+    return { ...r, turnStart: !same, flow: same && prev.kind === "seg" && r.seg.start - prev.seg.end < FLOW_GAP_S };
   });
 }
 
@@ -885,3 +889,15 @@ export function summaryMarkdown(s: SummaryLike, starts: Map<string, number>, mem
     ...section(t("주제"), s.topics.map((t) => `- ${t.title}${at(t.segment_ids)}`)),
   ].join("\n");
 }
+
+/** 직전 문장 다시 듣기(R)에서 이 시간(초) 안이면 지금 대화가 아니라 바로 앞 대화의 처음으로 간다 (같은 줄에서 R을 거듭 누르면 한 줄씩 거슬러 올라가게) */
+export const REPLAY_BACK_S = 1.5;
+
+/** 직전 문장 다시 듣기: 지금 듣는 대화(시작 시각 순)의 처음. 시작한 지 REPLAY_BACK_S가 안 됐으면 바로 앞 대화의 처음. 대화가 없으면 null */
+export function replayStart(segs: readonly { start: number }[], t: number): number | null {
+  let i = -1;
+  for (let k = 0; k < segs.length && segs[k].start <= t; k++) i = k;
+  if (i < 0) return segs.length ? segs[0].start : null;
+  return t - segs[i].start < REPLAY_BACK_S && i > 0 ? segs[i - 1].start : segs[i].start;
+}
+

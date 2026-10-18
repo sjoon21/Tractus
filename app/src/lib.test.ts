@@ -31,6 +31,7 @@ import {
   speakerSlot,
   speakerStats,
   transcriptRows,
+  replayStart,
   warningText,
   DetailedError,
   ERROR_TEXT,
@@ -431,6 +432,12 @@ describe("화자", () => {
     const rows = transcriptRows(v2, [{ t: 5, kind: "memo", text: "m" }], null);
     expect(rows.map((r) => (r.kind === "seg" ? `${r.seg.id}${r.turnStart ? "*" : ""}` : "memo"))).toEqual(["s0001*", "memo", "s0002*", "s0003*", "s0004*", "s0005*"]);
     expect(transcriptRows(v2, [], null).map((r) => r.kind === "seg" && r.turnStart)).toEqual([true, false, true, true, true]);
+  });
+
+  test("같은 발언에서 2초 안에 이어진 줄은 문단으로 붙인다 (말이 끊긴 뒤나 다른 사람이면 새 줄)", () => {
+    const seg = (id: string, start: number, end: number, speaker: string | null) => ({ id, start, end, text: id, speaker });
+    const rows = transcriptRows([seg("a", 0, 5, "S1"), seg("b", 5.5, 9, "S1"), seg("c", 12, 15, "S1"), seg("d", 15.2, 18, "S2"), seg("e", 18.1, 20, "S2")], [], null);
+    expect(rows.map((r) => r.kind === "seg" && r.flow)).toEqual([false, true, false, false, true]);
   });
 
   test("화자 필터: 그 화자 세그먼트만, 메모는 숨기고, 원래 index를 유지(플레이어 강조용)", () => {
@@ -955,3 +962,14 @@ describe("liveReduce", () => {
     expect(liveReduce(s, { event: "progress" } as unknown as LiveEvent)).toBe(s);
   });
 });
+
+test("직전 문장 다시 듣기: 지금 대화의 처음, 막 시작했으면 바로 앞 대화의 처음", () => {
+  const segs = [{ start: 0 }, { start: 10 }, { start: 20 }];
+  expect(replayStart(segs, 15)).toBe(10);
+  expect(replayStart(segs, 10.5)).toBe(0); // 시작한 지 1.5초 안: 한 줄 더 거슬러
+  expect(replayStart(segs, 0.5)).toBe(0); // 첫 대화는 더 갈 곳이 없다
+  expect(replayStart(segs, 25)).toBe(20);
+  expect(replayStart([{ start: 3 }], 1)).toBe(3); // 첫 대화 전: 첫 대화부터
+  expect(replayStart([], 5)).toBeNull();
+});
+

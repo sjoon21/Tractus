@@ -217,4 +217,5 @@ export default {
   "녹음하거나 메모를 써서 노트를 만드세요. 녹음은 이 Mac에서 텍스트로 변환되고, 파일로 남습니다.": "Record or write a memo to create a note. Recordings are transcribed on this Mac and kept as files.",
   "최근 노트": "Recent notes",
   단축키: "Keyboard shortcuts",
+  "직전 문장 다시 듣기": "Replay the last sentence",
 } satisfies Dict;
