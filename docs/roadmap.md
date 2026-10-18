@@ -34,7 +34,7 @@
 - [ ] 키를 Keychain에 저장 (지금은 앱 설정 폴더의 0600 파일)
 - [ ] Windows 지원 (llama.cpp GGUF 경로, 필요가 확인될 때)
 
-**알려진 한계:** 메모를 모두 지우고 새로 쓰면 줄 ID가 `m0001`부터 다시 시작해 옛 요약의 근거와 겹칠 수 있습니다. 녹음을 추가하는 동안의 AI 질문은 막지 않습니다. 여러 유형을 한 번에 만드는 요약은 중간에 취소할 수 없습니다. 목록은 [ARCHITECTURE.md](../ARCHITECTURE.md) 변경 이력과 [docs/desktop.md](desktop.md) 각 절의 `알려진 한계`가 원본입니다.
+**알려진 한계:** 여러 유형을 한 번에 만드는 요약은 중간에 취소할 수 없습니다. 목록은 [ARCHITECTURE.md](../ARCHITECTURE.md) 변경 이력과 [docs/desktop.md](desktop.md) 각 절의 `알려진 한계`가 원본입니다.
 
 전체 계획과 근거는 [docs/roadmap.md](roadmap.md)와 [ARCHITECTURE.md §8](../ARCHITECTURE.md)에 있습니다. 제안할 기능과 알려진 문제는 [이슈](https://github.com/sjoon21/Tractus/issues)에 남겨 주세요.
 

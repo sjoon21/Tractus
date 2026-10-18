@@ -128,13 +128,22 @@ def apply_body(t: dict, body: str) -> tuple[dict, bool]:
         segments, seq = derive_segments(body, t["segments"], int(t.get("seg_seq") or 0))
         new = {**t, "body": body, "seg_seq": seq, "segments": segments}
         return (new, new != t)
+    seq = _memo_seq(t)
     if not body.strip():
-        new = {k: v for k, v in t.items() if k != "memo"}
+        # 키는 지우되 마지막 번호는 남긴다: 다시 쓴 메모가 m0001부터 시작해 비운 메모를 가리키던 옛 요약·질문 근거와 겹치지 않게
+        new = {k: v for k, v in t.items() if k not in ("memo", "memo_seq")} | ({"memo_seq": seq} if seq else {})
         return (new, new != t)
-    old = t.get("memo") if isinstance(t.get("memo"), dict) else {}
-    lines, seq = derive_lines(body, memo_lines(t), int(old.get("seq") or 0) if isinstance(old.get("seq"), int) else 0, "m")  # ponytail: 비운 뒤 다시 쓰면 번호가 m0001부터 다시 시작한다 (비운 메모를 가리키던 옛 요약 근거와 겹칠 수 있음)
-    new = {**t, "memo": {"body": body, "lines": lines, "seq": seq}}
+    lines, seq = derive_lines(body, memo_lines(t), seq, "m")
+    new = {k: v for k, v in t.items() if k != "memo_seq"} | {"memo": {"body": body, "lines": lines, "seq": seq}}
     return (new, new != t)
+
+
+def _memo_seq(t: dict) -> int:
+    """녹음 노트 메모가 지금까지 낸 마지막 줄 번호: memo.seq, 줄 ID, 비울 때 남긴 memo_seq 중 가장 큰 것 (모양이 다르면 0)"""
+    old = t.get("memo") if isinstance(t.get("memo"), dict) else {}
+    nums = [v for v in (old.get("seq"), t.get("memo_seq")) if isinstance(v, int) and not isinstance(v, bool)]
+    nums += [_num(m["id"], "m") for m in memo_lines(t)]
+    return max(nums, default=0)
 
 
 def apply_title(t: dict, title: str) -> dict:

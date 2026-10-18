@@ -1040,6 +1040,11 @@ export function MeetingView({
               <p className={PENDING} role="status">
                 {railNotice("ask", true)}
               </p>
+            ) : attach?.lock ? (
+              // 녹음을 추가하는 동안에는 묻지 않는다: 메모 노트가 녹음 노트로 바뀌는 중이라 근거(메모 줄 ID)가 곧 바뀐다
+              <p className={PENDING} role="status">
+                {LOCK_NOTICE[attach.lock]}
+              </p>
             ) : (
               <AskPanel scope={{ kind: "meeting", id, starts, memoLines: memoLines.size > 0 ? memoLines : undefined, memoNote }} onCite={onCite} />
             )}

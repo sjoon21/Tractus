@@ -437,3 +437,15 @@ def test_memo_folder_is_deletable_like_any_note(home):
 def test_render_markdown_memo_handles_missing_asr_and_empty_body():
     t = notes.new_memo("빈 메모", "", __import__("datetime").datetime(2026, 10, 13, 9, 5).astimezone(), "01TESTMEMO")
     assert "asr" not in t and render_markdown(t).endswith("# 빈 메모\n\n")
+
+
+def test_recording_memo_ids_keep_counting_after_the_memo_is_emptied():
+    # 비운 메모를 가리키던 요약 근거(m0001, m0002)와 다시 쓴 메모의 줄이 겹치지 않는다
+    rec = {"meeting_id": "x", "segments": []}
+    t, _ = notes.apply_body(rec, "첫 줄\n둘째 줄")
+    assert [m["id"] for m in t["memo"]["lines"]] == ["m0001", "m0002"]
+    t, changed = notes.apply_body(t, "")
+    assert changed and "memo" not in t and t["memo_seq"] == 2
+    t, _ = notes.apply_body(t, "새 줄")
+    assert [m["id"] for m in t["memo"]["lines"]] == ["m0003"] and "memo_seq" not in t
+    assert notes.apply_body(rec, "")[0] == rec  # 메모를 쓴 적 없는 노트는 그대로
