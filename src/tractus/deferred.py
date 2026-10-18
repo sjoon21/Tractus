@@ -117,7 +117,7 @@ def finish_recording(rec: Path, meetings: Path, title: str | None, stage: Callab
         digest = audio.sha256(paths)
         duration = round(len(audio.decode(paths)) / SR, 2)  # ponytail: 길이를 재려고 통째로 디코딩한다 (1시간 약 230MB). 더 길면 ffprobe로 바꾼다
         meeting_id = new_ulid()
-        title = title or (ev["title"] if (ev := load_event(rec)) else f"녹음 {info.started:%H:%M}")  # i18n-ok: 노트 데이터(다음 단계)
+        title = title or (ev["title"] if (ev := load_event(rec)) else t("녹음 {time}", time=f"{info.started:%H:%M}"))  # 기본 제목은 만들 때의 화면 언어
         d = meetings / meeting_dir_name(info.started.date().isoformat(), title, meeting_id)
         d.mkdir(parents=True)
         _write_atomic(d / MARKER, json.dumps({"recording": rec.name, "meeting_id": meeting_id, "title": title, "sha256": digest, "duration_sec": duration}, ensure_ascii=False))

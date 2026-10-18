@@ -100,3 +100,24 @@ def test_scanner_catches_f_strings_and_concatenation(tmp_path, bad):
     p = tmp_path / "m.py"
     p.write_text(src, encoding="utf-8")
     assert scan(p)[1]
+
+
+def test_builtin_summary_types_have_english_names(monkeypatch):
+    from tractus import summary_templates
+
+    monkeypatch.setenv("TRACTUS_LANG", "en")
+    names = {tpl.id: (tpl.name, tpl.description) for tpl in summary_templates.builtin_templates()}
+    assert names["meeting"][0] == "Meeting notes"
+    assert all(n and d and not HANGUL.search(n + d) for n, d in names.values())
+
+
+def test_english_ui_asks_the_ai_for_english_output(monkeypatch):
+    from tractus import enhance, summaries, summarize
+
+    t = {"meeting_id": "x", "segments": []}
+    monkeypatch.delenv("TRACTUS_LANG", raising=False)
+    ko = (summarize.system_prompt(t), summaries.system_prompt(t, "지침"), enhance.system_prompt())
+    assert all(i18n.EN_OUTPUT_RULE not in p for p in ko)  # 한국어 화면의 프롬프트는 그대로다
+    monkeypatch.setenv("TRACTUS_LANG", "en")
+    en = (summarize.system_prompt(t), summaries.system_prompt(t, "지침"), enhance.system_prompt())
+    assert all(i18n.EN_OUTPUT_RULE in p and "쓰인 언어로" not in p for p in en)

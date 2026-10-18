@@ -6,158 +6,163 @@
 
 # Tractus
 
-**음성 녹음과 메모를 온디바이스(로컬)에서 텍스트로 변환하고, 요약·검색·AI 질의응답까지 지원하는 로컬 우선 AI 노트 앱**
+**A local-first AI notes app for macOS that turns your recordings and memos into searchable, citable memory — for you and for your AI agents.**
 
-오디오 데이터는 로컬 환경에만 안전하게 보관되며, 모든 노트는 파일 시스템에 직접 소유할 수 있는 파일로 저장됩니다.
+Speech recognition, speaker detection and search run on your Mac (Apple Silicon, MLX). Audio never leaves the device, and every note is a plain file you own.
 
 [![Release][release-shield]][release-url] [![License][license-shield]][license-url] [![macOS][macos-shield]][setup-url] [![Local-first][local-shield]][how-url]
 
-[**다운로드**](https://github.com/sjoon21/Tractus/releases/latest) · [설치 안내](docs/setup.md) · [사용법](docs/usage.md) · [동작 방식](docs/how-it-works.md) · [로드맵](docs/roadmap.md)
+**English** · [한국어](README.ko.md)
+
+[**Download**](https://github.com/sjoon21/Tractus/releases/latest) · [Setup](docs/setup.md) · [Usage](docs/usage.md) · [How it works](docs/how-it-works.md) · [Roadmap](docs/roadmap.md)
 
 <br>
 
-<img src="docs/images/demo.gif" alt="데모: 녹음 노트의 메모 탭에서 노트 완성을 누르면 내 메모에 대화 내용의 세부가 붙고, Claude Code에서 같은 회의를 물으면 노트 제목과 시각을 인용해 답한다" width="100%">
+<img src="docs/images/demo-en.gif" alt="Demo: in a recorded note, Enhance turns my rough memo into a full note backed by the transcript; then Claude Code answers a question about the same meeting, citing the note title and time" width="100%">
 
-<sub>녹음 노트 → <b>노트 완성</b>(내 메모 + 대화 내용) → Claude Code에서 <b>내 회의 물어보기</b> (가상 회의 데이터)</sub>
+<sub>Recorded note → <b>Enhance</b> (my memo + transcript) → <b>ask Claude Code about the meeting</b> (sample data)</sub>
 
 </div>
 
-## 핵심 특징
+## Why Tractus
 
-- 🔒 **100% 로컬 처리 제공** — 음성 녹음, 텍스트 변환(STT), 화자 분리, 벡터 검색이 Apple Silicon 온디바이스(MLX)에서 직접 실행되며, 오디오 데이터를 외부 서버로 전송하지 않습니다.
-- 📁 **로컬 파일 기반 저장** — 모든 노트는 `~/Tractus/meetings/` 내의 표준 파일(오디오·JSON·Markdown·자막)로 관리되어 사용자가 데이터를 온전히 소유하며, Obsidian 등 원하는 도구와 자유롭게 연동됩니다.
-- 🧾 **타임스탬프 연동 요약** — 회의 결정 사항 및 액션 아이템마다 원본 대화 타임스탬프가 링크되어, 클릭 한 번으로 해당 오디오 구간을 즉시 다시 들을 수 있습니다.
-- 🇰🇷 **한국어 회의에 강한 음성 인식** — 실제 회의 녹음으로 직접 재 보니 Qwen3-ASR-1.7B가 Whisper-large-v3-turbo보다 글자 오류가 36% 적었고(CER 9.49 vs 14.92), 1시간 녹음을 8.2분에 받아 적었습니다 (M3 · 16GB, [벤치마크](docs/benchmark.md)).
-- 🤖 **AI 에이전트 연동 (MCP 지원)** — Model Context Protocol(MCP) 서버를 기본 내장하여 Claude Code, Codex, Antigravity 등의 AI 에이전트가 로컬 노트를 직접 검색하고 인용할 수 있습니다.
+- 🔒 **Everything heavy runs locally.** Recording, transcription, speaker detection and smart search run on-device with MLX. No audio is uploaded, and recording, transcription and search work without any API key.
+- 🤖 **Meeting memory for AI agents.** A built-in MCP server and a one-line Claude Code plugin let Claude Code, Codex and other agents search your notes and answer with citations like `[Weekly dev sync 00:02:11]`.
+- 🧾 **Every claim points back to the audio.** Each summary item, to-do and AI answer links to the exact moment in the recording — click to listen.
+- 📁 **Plain files you own.** Notes live in `~/Tractus/meetings/` as audio, JSON, Markdown and subtitles. Send any note to Obsidian with one click.
+- 🎯 **Measured, not guessed.** We benchmarked on-device models on real meetings: Qwen3-ASR-1.7B made 36% fewer character errors than Whisper-large-v3-turbo on Korean meetings (CER 9.49 vs 14.92) and fewer word errors on English meetings (AMI WER 9.50 vs 14.28), transcribing an hour of audio in 8.2 minutes on an M3 ([benchmark](docs/benchmark.md)).
 
-## 주요 기능
+## Features
 
-- **유연한 음성 녹음** — 대면 마이크 녹음, 화상 회의 시스템 오디오 캡처, 녹음 일시정지, 실시간 메모 및 북마크, 메뉴바 빠른 녹음
-- **온디바이스 음성 인식(STT)** — Apple MLX 기반 Qwen3-ASR 모델로 한국어·영어 자동 감지, 오디오 및 동영상 파일 드래그 앤 드롭 변환
-- **화자 분리 및 식별 (Diarization)** — 음성 특징 기반 화자 분리 및 프로필 등록을 통한 화자 자동 인식/제안
-- **단어 단위 오디오 싱크 (Word-level Alignment)** — 재생 중인 단어 실시간 하이라이트 및 단어 클릭 시 해당 위치 즉시 탐색/재생
-- **다양한 AI 요약** — 회의록, 핵심 요약, 할 일 중심 등 6가지 기본 템플릿 및 사용자 정의(커스텀) 프롬프트 요약 지원
-- **AI 질의응답 (Q&A)** — 단일 노트 또는 전체 노트를 대상으로 한 자연어 질의응답 및 원본 발화 타임스탬프 근거 제공
-- **하이브리드 검색** — 키워드 정확 일치(BM25/FTS5) 및 시맨틱 벡터 유사도 결합 검색 (⌘K)
-- **정리 및 내보내기** — 즐겨찾기, 태그, 폴더 관리 / TXT, MD, SRT, VTT, CSV, DOCX, PDF 및 전체 백업(ZIP) 지원, Obsidian 볼트로 보내기
-- **캘린더 연동** — macOS 캘린더의 곧 시작하는 일정을 홈에 보여 주고, 일정 제목과 참석자 이름으로 바로 녹음
-- **네이티브 UI/UX** — 라이트·다크 모드, macOS 네이티브 인터페이스, 인앱 자동 업데이트
+- **Record anything** — in-person (microphone) or video calls (microphone + system audio), pause/resume, memos and bookmarks while recording, quick recording from the menu bar
+- **On-device transcription** — Qwen3-ASR on Apple MLX with automatic language detection (Korean, English and more); drop in audio or video files
+- **Speakers** — automatic speaker detection, rename speakers, and optional voice profiles that suggest names in later recordings
+- **Word sync** — the spoken word highlights during playback; click any word to jump there
+- **Enhanced notes** — write rough memos while recording, and Tractus fills in the details from the transcript
+- **Summaries** — meeting minutes, brief, to-dos, lecture, interview, ideas, or your own instructions
+- **Ask AI** — ask one note or all of your notes; answers cite the lines they're based on
+- **Smart search** — word match plus similar-meaning search across every note (⌘K)
+- **Organize and export** — favorites, tags, folders; TXT, Markdown, SRT, VTT, CSV, DOCX, PDF, full backup (ZIP), and Send to Obsidian
+- **Calendar** — upcoming events from macOS Calendar appear on Home; record with the event title, and attendee names help recognition
+- **Native feel** — light and dark mode, English and Korean UI, in-app updates
 
-## 스크린샷
+## Screenshots
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/note-dark.png">
-  <img src="docs/images/note-light.png" alt="노트 화면: 화자별 대화 내용과 타임스탬프가 연동된 요약" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/en/note-dark.png">
+  <img src="docs/images/en/note-light.png" alt="Note: transcript by speaker, and a summary whose items link to the moments they came from" width="100%">
 </picture>
 
 <table>
   <tr>
     <td width="50%">
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/home-dark.png">
-        <img src="docs/images/home-light.png" alt="홈: 빠른 동작과 최근 노트 목록">
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/en/home-dark.png">
+        <img src="docs/images/en/home-light.png" alt="Home: quick actions and recent notes">
       </picture>
-      <p align="center"><b>홈</b> — 녹음·작성·가져오기와 최근 노트 목록</p>
+      <p align="center"><b>Home</b> — record, write, import, recent notes</p>
     </td>
     <td width="50%">
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/ask-dark.png">
-        <img src="docs/images/ask-light.png" alt="AI 질의응답: 근거 타임스탬프가 연동된 답변">
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/en/ask-dark.png">
+        <img src="docs/images/en/ask-light.png" alt="Ask AI: answers cite the lines they come from">
       </picture>
-      <p align="center"><b>AI 질의응답</b> — 답변마다 원본 대화 타임스탬프 근거 제공</p>
+      <p align="center"><b>Ask AI</b> — every answer cites the transcript</p>
     </td>
   </tr>
   <tr>
     <td width="50%">
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/record-dark.png">
-        <img src="docs/images/record-light.png" alt="녹음 화면">
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/en/record-dark.png">
+        <img src="docs/images/en/record-light.png" alt="Recording screen">
       </picture>
-      <p align="center"><b>녹음</b> — 오디오 레벨 미터, 북마크, 타임스탬프 메모</p>
+      <p align="center"><b>Record</b> — level meter, bookmarks, timestamped memos</p>
     </td>
     <td width="50%">
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings-dark.png">
-        <img src="docs/images/settings-light.png" alt="설정 화면">
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/en/settings-dark.png">
+        <img src="docs/images/en/settings-light.png" alt="Settings screen">
       </picture>
-      <p align="center"><b>설정</b> — 테마, 녹음, AI 서비스 및 모델 설정</p>
+      <p align="center"><b>Settings</b> — appearance and language, recording, AI services, models</p>
     </td>
   </tr>
 </table>
 
-> 스크린샷은 가상 회의 데이터로 생성되었습니다.
+> Screenshots use made-up sample data.
 
-## 빠른 시작
+## Quick start
 
-1. [릴리스](https://github.com/sjoon21/Tractus/releases/latest)에서 `Tractus-…-arm64.dmg`를 다운로드하여 `Tractus.app`을 `Applications` 폴더로 끌어다 놓습니다.
-2. 터미널에서 ffmpeg를 설치합니다.
+1. Download `Tractus-…-arm64.dmg` from [Releases](https://github.com/sjoon21/Tractus/releases/latest) and drag `Tractus.app` into `Applications`.
+2. Install ffmpeg:
    ```bash
    brew install ffmpeg
    ```
-3. 앱을 실행하면 **초기 설정 마법사(Setup Doctor)**가 온디바이스 모델 다운로드 및 AI 서비스 설정을 안내합니다.
+3. Open the app. The **setup check** walks you through downloading the on-device models and (optionally) adding an AI service key for summaries and Ask AI.
 
 > [!NOTE]
-> 아직 Apple 서명 및 공증을 받지 않은 빌드입니다. 처음 실행 시 "확인되지 않은 개발자" 경고가 나타나면 시스템 설정 › 개인정보 보호 및 보안 › `그래도 열기`를 클릭하세요. 소스 코드 직접 빌드 방법과 문제 해결은 [설치 안내](docs/setup.md)에서 확인할 수 있습니다.
+> This build isn't signed or notarized by Apple yet. If macOS says the developer can't be verified, go to System Settings › Privacy & Security and click `Open Anyway`. Building from source and troubleshooting are covered in [Setup](docs/setup.md).
 
-**요구 사양:** Apple Silicon(M1 이상), macOS 14.4 이상, 권장 메모리 16GB (8GB 환경은 경량 구성 권장)
+**Requirements:** Apple Silicon (M1 or later), macOS 14.4+, 16 GB memory recommended (8 GB works with the lite models).
 
-### Claude Code에서 내 회의 물어보기
+### Ask Claude Code about your meetings
 
-앱을 설치했다면 Claude Code에 플러그인 하나만 추가하면 됩니다. 경로·환경변수를 따로 설정할 필요가 없습니다.
+With the app installed, add one plugin to Claude Code — no paths or environment variables to set up:
 
 ```
 /plugin install tractus --marketplace sjoon21/Tractus
 ```
 
 ```text
-> 지난주 회의에서 정한 릴리스 날짜가 언제였지?
-릴리스는 10월 22일로 확정했습니다. 결제 이슈와 QA 기간 부족으로 일주일 미뤘습니다. (주간 개발 회의, 00:02:11)
+> When did we decide to ship the release?
+The release moved to October 22 — a week later than planned, because of the payment
+API issue and too little QA time. [Weekly dev sync 00:02:11]
 ```
 
-검색·요약·할 일 도구(MCP)와 회의 기억 스킬, `/tractus:recap 지난주`(기간 회고)가 들어 있습니다. 노트는 이 Mac에 있고, Claude가 읽는 내용만 Claude로 전달됩니다. 자세한 내용은 [에이전트 연동](docs/mcp.md)을 참고하세요.
+The plugin bundles the MCP tools (search, transcripts, summaries, to-dos), a meeting-memory skill, and `/tractus:recap last week` for a period recap. Your notes stay on your Mac; only what Claude reads is sent to Claude. See [Agents (MCP)](docs/mcp.md).
 
-## 데이터 처리 및 프라이버시 정책
+## Privacy
 
-| 데이터 구분 | 처리 및 저장 위치 |
+| Data | Where it goes |
 | --- | --- |
-| 음성 오디오, 화자 음성 프로필 | 로컬 기기 내에서만 처리 및 보관 (외부 전송 없음) |
-| 노트 원본, 메타데이터, 검색 색인 | 로컬 파일 시스템(`~/Tractus/meetings/`) 및 SQLite DB |
-| 요약 및 AI 질문 요청 | 사용자가 설정한 AI 서비스로 필요한 텍스트만 전송 (Upstage·OpenAI·Claude·Gemini·OpenAI 호환 API) |
+| Audio, speaker voice profiles | Stays on your Mac. Never uploaded. |
+| Notes, metadata, search data | Local files (`~/Tractus/meetings/`) and a local SQLite database |
+| Summaries and Ask AI | Only the needed text is sent to the AI service you choose (Upstage, OpenAI, Claude, Gemini, or any OpenAI-compatible API — including one running on your Mac) |
 
-외부 AI 서비스 API 키가 없어도 녹음, 음성 인식(STT), 화자 분리, 로컬 검색, 파일 내보내기 등 핵심 기능은 온디바이스에서 완전히 동작합니다. 자세한 데이터 흐름은 [동작 방식](docs/how-it-works.md#무엇이-이-mac에-남고-무엇이-나가는가)에서 확인하실 수 있습니다.
+Without any AI key you can still record, transcribe, detect speakers, search and export. Details: [How it works](docs/how-it-works.md).
 
-## 문서
+## Documentation
 
-| 문서 | 내용 |
+Most docs are in Korean for now.
+
+| Doc | What's in it |
 | --- | --- |
-| [설치 안내](docs/setup.md) | 설치 프로그램 배포판, 소스 빌드, 시스템 권한, 자동 업데이트, 문제 해결 |
-| [사용법](docs/usage.md) | 노트 생성, 화자 관리 및 대화 편집, 요약·AI 질의응답, 단축키 |
-| [AI 서비스와 키](docs/ai-services.md) | AI 서비스 설정, 서비스별 기본 모델, 검색 임베딩 설정 |
-| [모델과 라이선스](docs/models.md) | 모델 다운로드, 모델 목록 및 라이선스, 기술 선정 근거 |
-| [CLI](docs/cli.md) | 터미널 CLI 도구(변환·요약·질문·검색·내보내기) 사용법 |
-| [음성 인식 벤치마크](docs/benchmark.md) | Mac에서 한국어 회의를 받아 적는 모델 비교 (Qwen3-ASR · Whisper · Nemotron) |
-| [에이전트 연동 (MCP)](docs/mcp.md) | Claude Code 플러그인, Codex·Antigravity 연동 설정 및 제공 도구(7개) 안내 |
-| [동작 방식](docs/how-it-works.md) | 시스템 구성 아키텍처, 로컬 처리 및 외부 전송 데이터 흐름 |
-| [아키텍처](ARCHITECTURE.md) | 설계 결정 사유, 변경 이력, 벤치마크 결과 |
-| [앱 계약](docs/desktop.md) · [디자인 지침](app/DESIGN.md) | 데스크톱 앱과 코어 간 인터페이스 계약, 화면 UI/UX 규칙 |
-| [로드맵](docs/roadmap.md) | 개발 로드맵, 진행 현황 및 알려진 한계점 |
-| [기여 안내](CONTRIBUTING.md) | 개발 환경 구축, 테스트 실행, 커밋 및 기여 규칙 |
+| [Setup](docs/setup.md) | Installer, building from source, permissions, updates, troubleshooting |
+| [Usage](docs/usage.md) | Creating notes, speakers and editing, summaries and Ask AI, shortcuts |
+| [AI services and keys](docs/ai-services.md) | Configuring AI services, default models, smart search options |
+| [Models and licenses](docs/models.md) | Model downloads, list and licenses, why these models |
+| [CLI](docs/cli.md) | The `tractus` command line: transcribe, summarize, ask, search, export |
+| [Speech recognition benchmark](docs/benchmark.md) | Qwen3-ASR vs Whisper vs Nemotron on Korean and English meetings |
+| [Agents (MCP)](docs/mcp.md) | Claude Code plugin, Codex and other agents, the 7 MCP tools |
+| [How it works](docs/how-it-works.md) | Architecture, what stays local and what leaves your Mac |
+| [Architecture](ARCHITECTURE.md) | Design decisions, change log, benchmark results |
+| [Roadmap](docs/roadmap.md) | What's done, what's next, known limits |
+| [Contributing](CONTRIBUTING.md) | Dev setup, tests, commit rules |
 
-## 기술 스택 (Tech Stack)
+## Tech stack
 
 [![Python][python-badge]][python-url] [![MLX][mlx-badge]][mlx-url] [![Tauri][tauri-badge]][tauri-url] [![React][react-badge]][react-url] [![Tailwind][tailwind-badge]][tailwind-url] [![Swift][swift-badge]][swift-url] [![SQLite][sqlite-badge]][sqlite-url] [![MCP][mcp-badge]][mcp-url]
 
-코어 CLI 및 파이프라인은 Python, 온디바이스 모델 추론(음성 인식·화자 분리·임베딩)은 Apple MLX, 데스크톱 앱은 Tauri 2(Rust + React), 시스템 오디오 캡처 모듈은 Swift로 구현되었습니다. 세부 아키텍처는 [동작 방식](docs/how-it-works.md)을 참조하세요.
+The core CLI and pipeline are Python; on-device inference (speech recognition, speaker detection, embeddings) uses Apple MLX; the desktop app is Tauri 2 (Rust + React); system audio capture is a small Swift helper.
 
-## 기여 및 문의
+## Contributing
 
-버그 리포트, 기능 제안, 문의 사항은 [GitHub Issues](https://github.com/sjoon21/Tractus/issues)에 남겨 주세요. 코드 기여를 원하시는 분은 [기여 안내](CONTRIBUTING.md)를 먼저 확인해 주시기 바랍니다.
+Bug reports and ideas are welcome in [GitHub Issues](https://github.com/sjoon21/Tractus/issues). For code, start with [Contributing](CONTRIBUTING.md).
 
-## 라이선스
+## License
 
-본 프로젝트는 [Apache License 2.0](LICENSE) 라이선스를 따릅니다. 포함된 각 AI 모델의 개별 라이선스 및 고지 사항은 [NOTICE](NOTICE) 및 [모델과 라이선스](docs/models.md)를 참조하세요.
+[Apache License 2.0](LICENSE). Each bundled or downloaded model has its own license — see [NOTICE](NOTICE) and [Models and licenses](docs/models.md).
 
-<p align="right"><a href="#readme-top">맨 위로 ↑</a></p>
+<p align="right"><a href="#readme-top">Back to top ↑</a></p>
 
 [release-shield]: https://img.shields.io/github/v/release/sjoon21/Tractus?style=for-the-badge&color=blue
 [release-url]: https://github.com/sjoon21/Tractus/releases/latest

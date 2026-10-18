@@ -1,7 +1,9 @@
 ---
 id: todo
 name: 할 일 중심
+name_en: To-dos
 description: 해야 할 일을 담당과 기한까지 모아 정리합니다
+description_en: Everything to do, with owners and due dates
 order: 30
 ---
 앞으로 해야 할 일을 중심으로 정리한다.

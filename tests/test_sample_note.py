@@ -85,3 +85,26 @@ def test_sample_action_items_are_not_given_to_agents(home):
     assert structured(call(server, "list_action_items", {}))["items"] == []
     by_id = structured(call(server, "list_action_items", {"meeting_id": r["meeting_id"]}))["items"]
     assert len(by_id) == 3  # 그 노트를 ID로 직접 물으면 준다
+
+
+def test_english_ui_gets_the_same_sample_in_english(home, monkeypatch):
+    import re
+
+    from tractus import sample_note
+
+    # 문장 상수는 모듈을 불러올 때 언어를 정한다: 앱처럼 TRACTUS_LANG을 정한 새 프로세스로 만든다
+    import os
+    import subprocess
+    import sys
+
+    env = {**os.environ, "TRACTUS_LANG": "en", "TRACTUS_HOME": str(home)}
+    r = subprocess.run([sys.executable, "-c", "from tractus.cli import app; app()", "note", "sample"], env=env, capture_output=True, text=True, timeout=60)
+    d = Path(json.loads(r.stdout.strip().splitlines()[-1])["meeting_dir"])
+    monkeypatch.setenv("TRACTUS_LANG", "en")
+    t = read_transcript(d)
+    assert t["title"].startswith("Sample") and len(t["segments"]) == 10 and t["segments"][0]["lang"] == "en"
+    texts = json.dumps(t, ensure_ascii=False) + "".join(p.read_text(encoding="utf-8") for p in d.rglob("*.md")) + json.dumps(sums.read_data(d, "enhanced"), ensure_ascii=False)
+    assert not re.search(r"[가-힣]", texts)  # 대화·메모·요약·완성된 노트·문서 머리말 모두 영어
+    ko = json.loads(sample_note.data_path().with_name("sample_note.json").read_text(encoding="utf-8"))
+    en = json.loads(sample_note.data_path().read_text(encoding="utf-8"))
+    assert [s[:3] for s in ko["segments"]] == [s[:3] for s in en["segments"]] and ko["marks"] == [{**m, "text": m["text"] if m["text"] is None else "pool 50"} for m in en["marks"]]

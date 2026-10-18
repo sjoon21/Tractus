@@ -1,7 +1,9 @@
 ---
 id: ideas
 name: 아이디어 정리
+name_en: Ideas
 description: 아이디어마다 장단점과 다음 단계를 정리합니다
+description_en: Pros, cons and next steps for each idea
 order: 60
 ---
 브레인스토밍·아이디어 논의를 정리한다.

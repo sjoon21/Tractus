@@ -56,7 +56,9 @@ def load_glossary(path: Path) -> list[str]:
     return terms
 
 
-GLOSSARY_HEADER = "# 자주 쓰는 단어\n\n녹음을 텍스트로 변환할 때 이 단어들을 더 정확하게 인식합니다. 한 줄에 하나씩 `- 단어` 형식으로 적습니다.\n\n"  # i18n-ok: 데이터 폴더 파일(glossary.md, 다음 단계)
+def _glossary_header() -> str:
+    """새 glossary.md의 머리말 (만들 때의 화면 언어)"""
+    return t("# 자주 쓰는 단어\n\n녹음을 텍스트로 변환할 때 이 단어들을 더 정확하게 인식합니다. 한 줄에 하나씩 `- 단어` 형식으로 적습니다.\n\n")
 
 
 def add_glossary_terms(path: Path, terms: list[str]) -> int:
@@ -65,7 +67,7 @@ def add_glossary_terms(path: Path, terms: list[str]) -> int:
     have = set(load_glossary(path))
     new = [t for t in dict.fromkeys(" ".join(t.split()) for t in terms) if t and t not in have]
     if new:
-        text = path.read_text(encoding="utf-8") if path.exists() else GLOSSARY_HEADER
+        text = path.read_text(encoding="utf-8") if path.exists() else _glossary_header()
         if text and not text.endswith("\n"):
             text += "\n"
         _write_atomic(path, text + "".join(f"- {t}\n" for t in new))
@@ -372,9 +374,9 @@ def speaker_name(t: dict, label: str | None) -> str | None:
     return ((t.get("speakers") or {}).get(label) or {}).get("name") or label
 
 
-def speaker_display(t: dict, label: str | None, auto: str = "참석자 {n}") -> str | None:  # i18n-ok: 노트 폴더 파일·프롬프트·색인은 한국어(다음 단계)
+def speaker_display(t: dict, label: str | None, auto: str = "참석자 {n}") -> str | None:  # i18n-ok: 기본은 AI 프롬프트·검색 색인용 한국어. 문서는 t("참석자 {n}")을 넘긴다
     """사람이 읽는 문서·프롬프트용 이름 (WORDS.md §2): 정한 이름, 없으면 S3 → '참석자 3', 화자를 모르면 None.
-    auto는 이름 없는 참석자의 모양이다. 내보내기는 화면 언어로 t("참석자 {n}")을 넘긴다."""
+    auto는 이름 없는 참석자의 모양이다. transcript.md·vtt·내보내기는 화면 언어로 t("참석자 {n}")을 넘긴다."""
     name = speaker_name(t, label)
     m = re.fullmatch(r"S(\d+)", name or "")
     return auto.replace("{n}", m.group(1)) if m and name == label else name
@@ -514,7 +516,6 @@ def is_memo(t: dict) -> bool:
 
 RECORDED = "recorded"
 NOT_CONVERTED = t("먼저 텍스트로 변환하세요.")
-NOT_CONVERTED_NOTE = "아직 텍스트로 변환하지 않았습니다."  # i18n-ok: 노트 폴더 파일(다음 단계). 내보내기는 _doc_words(ui=True)
 
 
 def is_sample(t: dict) -> bool:
@@ -570,16 +571,14 @@ def _vtt_time(sec: float) -> str:
     return f"{ms // 3_600_000:02d}:{ms // 60_000 % 60:02d}:{ms // 1000 % 60:02d}.{ms % 1000:03d}"
 
 
-def _doc_words(ui: bool) -> dict[str, str]:
-    """transcript.md·vtt에 쓰는 말. 노트 폴더 파일은 한국어 그대로(다음 단계), 내보내기(ui=True)는 화면 언어."""
-    if not ui:
-        return {"not_converted": NOT_CONVERTED_NOTE, "memo": "메모", "bookmark": "북마크", "speaker": "참석자 {n}"}  # i18n-ok: 노트 폴더 파일(다음 단계)
+def _doc_words() -> dict[str, str]:
+    """transcript.md·vtt·내보내기에 쓰는 말 (쓰는 때의 화면 언어, TRACTUS_LANG)."""
     return {"not_converted": t("아직 텍스트로 변환하지 않았습니다."), "memo": t("메모"), "bookmark": t("북마크"), "speaker": t("참석자 {n}")}
 
 
-def render_vtt(t: dict, ui: bool = False) -> str:
-    """WebVTT 자막. 큐 ID는 세그먼트 ID, 화자는 <v 이름> (브라우저 <track>, Obsidian Media Extended가 그대로 읽음). ui: 내보내기(화면 언어)."""
-    auto = _doc_words(ui)["speaker"]
+def render_vtt(t: dict) -> str:
+    """WebVTT 자막. 큐 ID는 세그먼트 ID, 화자는 <v 이름> (브라우저 <track>, Obsidian Media Extended가 그대로 읽음)."""
+    auto = _doc_words()["speaker"]
 
     def voice(s: dict) -> str:  # 화자는 <v 이름> 태그. 이름 안의 마크업 문자는 뺀다
         name = speaker_display(t, s.get("speaker"), auto)
@@ -610,12 +609,12 @@ def _meta_lines(t: dict, folder: str | None) -> list[str]:
     return [*([f"tags: [{', '.join(_yaml_scalar(x) for x in tags)}]"] if tags else []), *(["favorite: true"] if t.get("favorite") is True else []), *([f"folder: {_yaml_scalar(folder)}"] if folder else [])]
 
 
-def render_markdown(t: dict, memos: list[dict] | None = None, folder: str | None = None, ui: bool = False) -> str:
+def render_markdown(t: dict, memos: list[dict] | None = None, folder: str | None = None) -> str:
     """사람·에이전트용 전사. 줄마다 `[HH:MM:SS] **화자**: 텍스트` (화자를 모르면 생략).
     frontmatter는 Obsidian 등에서 그대로 읽힌다. 메모·북마크는 시각 순으로 끼워 넣는다.
     직접 쓴 메모 노트는 시각·길이 없이 줄마다 문단으로 쓴다. 사용자 메모가 있는 녹음 노트는 끝에 `## 메모` 절이 붙는다.
-    ui: 내보내기(화면 언어). 노트 폴더의 transcript.md는 한국어다."""
-    words = _doc_words(ui)
+    문서의 말(메모·북마크·이름 없는 참석자)은 쓰는 때의 화면 언어다."""
+    words = _doc_words()
     if is_memo(t):
         head = ["---", f"meeting_id: {t['meeting_id']}", f"title: {_yaml_scalar(t['title'])}", f"created_at: {t['created_at']}", "kind: memo", *_meta_lines(t, folder), "---", "", f"# {t['title']}", ""]
         paras = [seg_text(s) for s in t["segments"] if seg_text(s)]

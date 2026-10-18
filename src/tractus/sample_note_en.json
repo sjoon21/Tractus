@@ -1,0 +1,60 @@
+{
+ "title": "Sample: Weekly dev sync",
+ "lang": "en",
+ "duration_sec": 300.0,
+ "speakers": {"S1": "Maya Chen", "S2": "Jordan Park", "S3": "Sam Rivera"},
+ "segments": [
+  ["S1", 0.0, 24.5, "Okay, let's start the weekly dev sync. Three things today: the payment API latency issue, the next release date, and the onboarding docs."],
+  ["S2", 25.0, 52.0, "Since last week the payment API's p95 latency has climbed to 800 milliseconds. It looks like the DB connection pool is maxing out."],
+  ["S2", 53.0, 80.0, "I'd raise the pool size from 20 to 50 and look at the slow query log first. Sam, could you check that by Wednesday?"],
+  ["S3", 81.0, 95.0, "Sure, I'll analyze the slow queries and share the results by Wednesday."],
+  ["S1", 96.0, 130.0, "Next, the release. It was planned for October 15, but with the payment issue, how about pushing it a week? QA didn't have enough time either."],
+  ["S2", 131.0, 160.0, "Agreed. Let's lock the release for October 22. I'll let the marketing team know today."],
+  ["S1", 161.0, 200.0, "For QA, it'd be great if Alex could re-scope the regression tests. By next Monday."],
+  ["S1", 201.0, 240.0, "Last, the onboarding docs are split between Notion and Confluence, and new hires get confused. We should keep them in one place."],
+  ["S2", 241.0, 280.0, "We still disagree on where, so let's pick it up next meeting. Everyone bring the pros and cons."],
+  ["S1", 281.0, 300.0, "Sounds good. That's it for today. Thanks, everyone."]
+ ],
+ "memo": "Payment API slow - why?\n\nRelease date\n\nWhere do onboarding docs live",
+ "marks": [{"t": 70.0, "kind": "memo", "text": "pool 50"}, {"t": 140.0, "kind": "bookmark", "text": null}],
+ "summary": {
+  "title": "Weekly dev sync",
+  "summary": "The payment API's p95 latency rose to 800 ms, most likely because the DB connection pool is saturated; the team will raise the pool size to 50 and analyze slow queries first. Because of the payment issue and too little QA time, the release moved a week to October 22. Consolidating the scattered onboarding docs will be discussed again next meeting.",
+  "topics": [
+   {"title": "Payment API latency", "segment_ids": ["s0002", "s0003", "s0004"]},
+   {"title": "Release date", "segment_ids": ["s0005", "s0006", "s0007"]},
+   {"title": "Onboarding docs", "segment_ids": ["s0008", "s0009"]}
+  ],
+  "decisions": [
+   {"text": "Raise the DB connection pool size from 20 to 50", "segment_ids": ["s0003"]},
+   {"text": "Lock the release for October 22", "segment_ids": ["s0006"]}
+  ],
+  "action_items": [
+   {"task": "Analyze slow queries and share the results", "owner": "Sam Rivera", "due": "Wednesday", "segment_ids": ["s0003", "s0004"]},
+   {"task": "Tell the marketing team about the new release date", "owner": "Jordan Park", "due": "Today", "segment_ids": ["s0006"]},
+   {"task": "Re-scope the regression tests", "owner": "Alex Kim", "due": "Next Monday", "segment_ids": ["s0007"]}
+  ]
+ },
+ "enhanced": {
+  "title": "Weekly dev sync",
+  "blocks": [
+   {"source": "m0001", "heading": "", "items": [
+    {"text": "p95 latency has climbed to 800 ms since last week", "segment_ids": ["s0002"], "owner": null, "due": null},
+    {"text": "The likely cause is a saturated DB connection pool", "segment_ids": ["s0002"], "owner": null, "due": null}]},
+   {"source": "m0002", "heading": "", "items": [
+    {"text": "Pushed a week from October 15 and locked for October 22", "segment_ids": ["s0005", "s0006"], "owner": null, "due": null},
+    {"text": "Reasons: the payment issue and too little QA time", "segment_ids": ["s0005"], "owner": null, "due": null}]},
+   {"source": "m0003", "heading": "", "items": [
+    {"text": "Split between Notion and Confluence today, which confuses new hires", "segment_ids": ["s0008"], "owner": null, "due": null},
+    {"text": "Where to consolidate them will be decided next meeting", "segment_ids": ["s0009"], "owner": null, "due": null}]},
+   {"source": "r0001", "heading": "", "items": [
+    {"text": "Raise the pool size from 20 to 50 and check the slow query log first", "segment_ids": ["s0003"], "owner": null, "due": null}]},
+   {"source": "r0002", "heading": "", "items": [
+    {"text": "The marketing team will hear about the date change today", "segment_ids": ["s0006"], "owner": null, "due": null}]}
+  ],
+  "todos": [
+   {"text": "Analyze slow queries and share the results", "segment_ids": ["s0003", "s0004"], "owner": "Sam Rivera", "due": "Wednesday"},
+   {"text": "Re-scope the regression tests", "segment_ids": ["s0007"], "owner": "Alex Kim", "due": "Next Monday"}
+  ]
+ }
+}

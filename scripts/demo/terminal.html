@@ -16,8 +16,9 @@
 <div id="cap">Claude Code에서 내 회의를 물어봅니다 · tractus 플러그인</div>
 <script>
 const out = document.getElementById("out");
-const Q = "3분기 예산 회의에서 GPU 서버 구매는 어떻게 하기로 했어?";
-const ANSWER = [
+const KO = {};
+KO.Q = "3분기 예산 회의에서 GPU 서버 구매는 어떻게 하기로 했어?";
+KO.ANSWER = [
   ['<span class="b">3분기 GPU 서버 구매는 보류하고, 클라우드 GPU를 월 800만 원 한도로 쓰기로 했습니다.</span>', ""],
   ["", ""],
   ["  • H100 두 장 서버 견적은 대당 9,800만 원이었습니다. ", '<span class="c">(3분기 예산 계획 회의, 00:01:16)</span>'],
@@ -27,19 +28,44 @@ const ANSWER = [
   ["  이후 9월 회의에서 올해는 사지 않고 내년 1분기에 다시 검토하기로 바뀌었습니다.", ""],
   ["  ", '<span class="c">(4분기 예산 및 OKR 회의, 00:02:08)</span>'],
 ];
+KO.HEAD = "╭ tractus 플러그인 · 내 Mac의 노트를 검색합니다";
+KO.QUERY = "GPU 서버 구매";
+KO.FOUND = "노트 2개에서 근거를 찾았습니다";
+const EN = {
+  cap: "Ask Claude Code about your notes · tractus plugin",
+  HEAD: "╭ tractus plugin · searches the notes on this Mac",
+  Q: "In the Q3 budget meeting, what did we decide about buying a GPU server?",
+  QUERY: "GPU server purchase",
+  FOUND: "Found evidence in 2 notes",
+  ANSWER: [
+    ['<span class="b">The Q3 GPU server purchase is on hold; cloud GPUs are capped at $8K a month instead.</span>', ""],
+    ["", ""],
+    ["  • The quote for a server with two H100s was $98K each. ", '<span class="c">[Q3 budget planning 00:01:16]</span>'],
+    ["  • Buying felt early, since experiments don't run every day. ", '<span class="c">[Q3 budget planning 00:01:33]</span>'],
+    ["  • The team settled on holding the purchase with an $8K monthly budget. ", '<span class="c">[Q3 budget planning 00:01:56]</span>'],
+    ["", ""],
+    ["  In the September meeting this changed: no purchase this year, revisit in Q1 next year.", ""],
+    ["  ", '<span class="c">[Q4 budget and OKRs 00:02:08]</span>'],
+  ],
+};
+const isEn = location.search.includes("lang=en");
+const { Q, ANSWER, HEAD, QUERY, FOUND } = isEn ? EN : KO;
+if (isEn) { document.getElementById("cap").textContent = EN.cap; document.documentElement.lang = "en"; }
+// 답을 찍는 단위: 한국어는 글자마다, 영어는 낱말마다(글자 수가 많아 프레임·GIF가 두 배로 커진다)
+const [STEP_RE, STEP_MS] = isEn ? [/<[^>]+>|[^<\s]+\s*|\s+/gu, 40] : [/<[^>]+>|./gsu, 14];
 let html = "";
 const render = (cursor = true) => (out.innerHTML = html + (cursor ? '<span class="cur"></span>' : ""));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 window.play = async () => {
-  html = '<span class="d">╭ tractus 플러그인 · 내 Mac의 노트를 검색합니다</span>\n\n<span class="p">&gt;</span> ';
+  html = `<span class="d">${HEAD}</span>\n\n<span class="p">&gt;</span> `;
   render(); await sleep(700);
-  for (const ch of Q) { html += ch; render(); await sleep(55); }
+  for (const ch of Q) { html += ch; render(); await sleep(isEn ? 35 : 55); } // 영어 질문은 길어서 빠르게
   await sleep(500); html += "\n\n"; render(); await sleep(300);
-  html += '<span class="ok">⏺</span> <span class="b">tractus</span> · search_meetings <span class="d">(query: "GPU 서버 구매")</span>\n'; render(); await sleep(900);
-  html += '  <span class="d">⎿  노트 2개에서 근거를 찾았습니다</span>\n\n'; render(); await sleep(700);
+  html += `<span class="ok">⏺</span> <span class="b">tractus</span> · search_meetings <span class="d">(query: "${QUERY}")</span>\n`; render(); await sleep(900);
+  html += `  <span class="d">⎿  ${FOUND}</span>\n\n`; render(); await sleep(700);
   html += '<span class="ok">⏺</span> ';
   for (const [text, cite] of ANSWER) {
-    for (const ch of text.match(/<[^>]+>|./gsu) || []) { html += ch; if (!ch.startsWith("<")) { render(); await sleep(14); } }
+    for (const ch of text.match(STEP_RE) || []) { html += ch; if (!ch.startsWith("<")) { render(); await sleep(STEP_MS); } }
     if (cite) { await sleep(120); html += cite; render(); }
     html += "\n"; render(); await sleep(260);
   }

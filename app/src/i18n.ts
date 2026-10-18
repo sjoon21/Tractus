@@ -23,6 +23,12 @@ export function setLang(l: Lang, d: Dict = {}): void {
   if (typeof document !== "undefined") document.documentElement.lang = l;
 }
 
+/** 시각 표기: 한국어는 `15:00`, 영어는 `3:00 PM` (목록·캘린더·노트 머리가 같은 모양을 쓰게) */
+export function clock(h: number, m: number): string {
+  const mm = String(m).padStart(2, "0");
+  return lang === "en" ? `${h % 12 || 12}:${mm} ${h < 12 ? "AM" : "PM"}` : `${String(h).padStart(2, "0")}:${mm}`;
+}
+
 export function t(ko: string, vars?: Readonly<Record<string, string | number>>): string {
   const e = lang === "en" ? dict[ko] : undefined;
   const s = e === undefined ? ko : typeof e === "string" ? e : vars?.n === 1 ? e[0] : e[1];

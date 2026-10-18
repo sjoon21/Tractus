@@ -19,7 +19,7 @@ from tractus.i18n import t
 from tractus.llm import LLMError, Provider, stream_chat
 from tractus.store import _write_atomic, is_memo, memo_segments, seg_text, speaker_display, stamp
 
-NO_EVIDENCE = "노트 내용에서 답을 찾지 못했습니다."  # i18n-ok: AI 프롬프트의 거절 문장이자 답변 (AI 답변 언어는 다음 PR)
+NO_EVIDENCE = t("노트 내용에서 답을 찾지 못했습니다.")  # 근거가 없을 때의 답이자 프롬프트의 거절 문장 (화면 언어). 답 자체는 질문의 언어로 쓴다
 MAX_QUESTION = 2000
 HISTORY_MESSAGES, HISTORY_CHARS = 6, 12_000
 MEETING_CHARS = 100_000  # 회의 전사가 이보다 길면 회의 안에서 검색한 부분만 보낸다

@@ -1,6 +1,6 @@
 """요약 유형(템플릿): 기본 유형(src/tractus/templates/*.md)과 내 유형($TRACTUS_HOME/templates/<id>.md) (docs/desktop.md §2.13).
 
-파일 형식은 둘 다 같다: 맨 앞 `---` 머리말(id, name, description, order | created)과 본문(요약 지침).
+파일 형식은 둘 다 같다: 맨 앞 `---` 머리말(id, name, description, order | created, 기본 유형은 영어 화면용 name_en·description_en)과 본문(요약 지침).
 지침은 요약의 구성(섹션·어투)만 정한다. 출력 스키마·근거·언어·안전 규칙은 summaries.SYSTEM_PROMPT가 정하고 언제나 우선한다.
 내 유형의 ID는 `u-` + 16진수 8자, 파일 이름이 곧 ID다 (한글 이름이어도 파일 이름은 안전하다)."""
 
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from tractus.i18n import t
+from tractus.i18n import lang, t
 from tractus.store import _write_atomic, one_line
 
 BUILTIN_DIR = Path(__file__).parent / "templates"
@@ -58,7 +58,10 @@ def _from_file(path: Path, builtin: bool) -> Template:
     tid = meta.get("id", "")
     if tid != path.stem or not body:
         raise ValueError(f"{path.name}: id가 파일 이름과 다르거나 본문이 비었습니다")  # words-ok: 파일 손상  # i18n-ok: 화면에 나가지 않는다 (내 유형은 건너뛰고, 기본 유형 파일은 개발 오류)
-    return Template(tid, meta.get("name") or tid, meta.get("description", ""), body, builtin, meta.get("order" if builtin else "created", ""))
+    en = lang() == "en"  # 기본 유형 파일의 name_en·description_en (영어 화면). 내 유형은 쓴 그대로다
+    name = (en and meta.get("name_en")) or meta.get("name") or tid
+    description = (en and meta.get("description_en")) or meta.get("description", "")
+    return Template(tid, name, description, body, builtin, meta.get("order" if builtin else "created", ""))
 
 
 def builtin_templates() -> list[Template]:

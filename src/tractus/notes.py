@@ -112,13 +112,13 @@ def new_memo(title: str, body: str, now: datetime, meeting_id: str) -> dict:
 def create_memo(meetings: Path, title: str | None, body: str = "", now: datetime | None = None) -> tuple[Path, dict]:
     """meetings/<날짜>_<제목>_<ULID>/에 메모를 만든다. 제목이 없으면 '메모 HH:MM'. 잘못된 제목·본문은 ValueError."""
     now = now or datetime.now().astimezone()
-    title = clean_title(title) if title and title.strip() else f"메모 {now:%H:%M}"  # i18n-ok: 노트 데이터(다음 단계)
+    title = clean_title(title) if title and title.strip() else t("메모 {time}", time=f"{now:%H:%M}")  # 기본 제목은 만들 때의 화면 언어
     body = clean_body(body)
-    t = new_memo(title, body, now, new_ulid())  # 줄 수 검사(ValueError)는 폴더를 만들기 전에 끝난다
-    d = meetings / meeting_dir_name(now.date().isoformat(), title, t["meeting_id"])
+    note = new_memo(title, body, now, new_ulid())  # 줄 수 검사(ValueError)는 폴더를 만들기 전에 끝난다
+    d = meetings / meeting_dir_name(now.date().isoformat(), title, note["meeting_id"])
     d.mkdir(parents=True)
-    save_transcript(d, t)  # transcript.json이 마지막: 이 파일이 생기면 노트가 생긴 것이다
-    return d, t
+    save_transcript(d, note)  # transcript.json이 마지막: 이 파일이 생기면 노트가 생긴 것이다
+    return d, note
 
 
 def apply_body(t: dict, body: str) -> tuple[dict, bool]:

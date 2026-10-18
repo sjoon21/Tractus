@@ -1,7 +1,9 @@
 ---
 id: lecture
 name: 강의·세미나 노트
+name_en: Lecture notes
 description: 개념, 정의, 예시, 질문을 공부하기 좋게 정리합니다
+description_en: Concepts, definitions, examples and questions, ready to study
 order: 40
 ---
 강의·세미나를 공부용 노트로 정리한다.

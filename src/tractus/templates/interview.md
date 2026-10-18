@@ -1,7 +1,9 @@
 ---
 id: interview
 name: 인터뷰·면담 정리
+name_en: Interview
 description: 질문별 답변과 인상적인 말을 정리합니다
+description_en: Answers by question and memorable quotes
 order: 50
 ---
 인터뷰·면담을 질문별로 정리한다.

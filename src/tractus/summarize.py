@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from tractus.i18n import ai_prompt, t
 from tractus.llm import Provider, complete_json
 from tractus.store import _hms, _write_atomic, is_memo, memo_lines, seg_text, speaker_display
 
@@ -32,8 +33,11 @@ RECORDING_MEMO_PROMPT = """
 - 입력 끝의 '사용자가 적은 메모'는 사용자가 직접 쓴 글이라 음성 인식 결과가 아니다. 줄 앞에는 m으로 시작하는 ID만 있다. 메모는 사용자가 따로 챙겨 둔 내용이므로 요약·주제·할 일에 빠뜨리지 않고 반영하고, 그 항목의 segment_ids에 해당 메모 줄 ID(예: m0001)를 넣는다. 전사와 겹치면 전사 ID와 메모 ID를 함께 넣는다. 결정 사항은 전사에서 합의·확정된 것이 우선이고, 메모는 '결정'이라고 분명히 적은 것만 넣는다. 메모에 적힌 일은 하기로 한 사람이 분명하지 않아도 할 일(owner null)로 넣을 수 있다."""  # i18n-ok: AI 프롬프트
 
 
+LANG_RULE = "- 회의에서 쓰인 언어로 작성한다 (한국어 회의면 한국어). 영어 기술 용어는 원문 표기를 살린다."  # i18n-ok: AI 프롬프트 (영어 화면이면 i18n.ai_prompt가 바꾼다)
+
+
 def system_prompt(transcript: dict) -> str:
-    return SYSTEM_PROMPT + (MEMO_PROMPT if is_memo(transcript) else RECORDING_MEMO_PROMPT if memo_lines(transcript) else "")
+    return ai_prompt(SYSTEM_PROMPT, LANG_RULE) + (MEMO_PROMPT if is_memo(transcript) else RECORDING_MEMO_PROMPT if memo_lines(transcript) else "")
 
 
 class _Strict(BaseModel):
@@ -132,7 +136,7 @@ def _where(ids: list[str], transcript: dict, rng: bool = False) -> str:
         parts.append(f"{lo}–{hi}" if rng else lo)
     lines = sorted(m["line"] for m in memo_lines(transcript) if m["id"] in ids)
     if lines:
-        parts.append(f"메모 {lines[0]}번째 줄" if lines[0] == lines[-1] else f"메모 {lines[0]}–{lines[-1]}번째 줄")  # i18n-ok: 노트에 저장되는 summary.md (요약 언어는 다음 PR)
+        parts.append(t("메모 {n}번째 줄", n=lines[0]) if lines[0] == lines[-1] else t("메모 {a}–{b}번째 줄", a=lines[0], b=lines[-1]))  # summary.md는 만들 때의 화면 언어
     return f" [{', '.join(parts)}]" if parts else ""
 
 
@@ -149,18 +153,18 @@ def render_summary_md(s: MeetingSummary, transcript: dict, provider: str, model:
         "",
         s.summary,
         "",
-        "## 주제",  # i18n-ok: 노트에 저장되는 summary.md (요약 언어는 다음 PR)
+        "## " + t("주제"),
         "",
     ]
-    for t in s.topics:
-        out += [f"### {t.title}{_where(t.segment_ids, transcript, rng=True)}", ""]
-    out += ["## 결정 사항", ""] + ([f"- {d.text}{_where(d.segment_ids, transcript)}" for d in s.decisions] or ["- 없음"])  # i18n-ok: 노트에 저장되는 summary.md (요약 언어는 다음 PR)
-    out += ["", "## 할 일", ""]  # i18n-ok: 노트에 저장되는 summary.md (요약 언어는 다음 PR)
+    for topic in s.topics:
+        out += [f"### {topic.title}{_where(topic.segment_ids, transcript, rng=True)}", ""]
+    out += ["## " + t("결정 사항"), ""] + ([f"- {d.text}{_where(d.segment_ids, transcript)}" for d in s.decisions] or ["- " + t("없음")])
+    out += ["", "## " + t("할 일"), ""]
     for a in s.action_items:
         who = ", ".join(x for x in (a.owner, a.due) if x)
         out.append(f"- [ ] {a.task}{' — ' + who if who else ''}{_where(a.segment_ids, transcript)}")
     if not s.action_items:
-        out.append("- 없음")  # i18n-ok: 노트에 저장되는 summary.md (요약 언어는 다음 PR)
+        out.append("- " + t("없음"))
     return "\n".join(out) + "\n"
 
 

@@ -167,7 +167,7 @@ def _source_from_recording(d: Path) -> Source:
         raise typer.BadParameter(t("{path}에 녹음된 소리가 없습니다", path=d), param_hint="--recording")
     marks = [m for m in rec.get("marks") or [] if isinstance(m, dict) and isinstance(m.get("t"), (int, float))]
     ev = load_event(d)
-    return Source(paths=tracks, name=d.name, title=ev["title"] if ev else f"녹음 {started:%H:%M}", recorded=started, marks=marks, recording_dir=d, event=ev)  # i18n-ok: 기본 제목은 노트 데이터(다음 단계)
+    return Source(paths=tracks, name=d.name, title=ev["title"] if ev else t("녹음 {time}", time=f"{started:%H:%M}"), recorded=started, marks=marks, recording_dir=d, event=ev)  # 기본 제목은 만들 때의 화면 언어
 
 
 def _source_from_file(file: Path) -> Source:

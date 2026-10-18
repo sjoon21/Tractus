@@ -1,7 +1,7 @@
 // macOS 캘린더 (docs/design/calendar.md, WORDS.md §4.24): 홈의 `곧 시작하는 일정` 카드와 설정 문구.
 import { useEffect, useState } from "react";
 import { api, type CalendarEvent } from "./api";
-import { t } from "./i18n";
+import { clock, t } from "./i18n";
 
 export const POLL_MS = 60_000;
 export const CAL_SECTION = t("캘린더");
@@ -16,7 +16,7 @@ export const CAL_LIST_HINT = t("끈 캘린더의 일정은 홈에 보이지 않�
 export const CARD_LABEL = t("곧 시작하는 일정");
 export const CARD_RECORD = t("이 일정으로 녹음");
 
-const hm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+const hm = (d: Date) => clock(d.getHours(), d.getMinutes());
 
 /** `10:00–11:00 · 진행 중` / `· 5분 뒤` / `· 곧 시작` */
 export function eventWhen(ev: Pick<CalendarEvent, "start" | "end">, now: Date): string {

@@ -34,3 +34,16 @@ def t(ko: str, **vars: object) -> str:
         elif isinstance(e, list) and len(e) == 2:
             s = e[0] if vars.get("n") == 1 else e[1]
     return _VAR.sub(lambda m: str(vars[m.group(1)]) if m.group(1) in vars else m.group(0), s) if vars else s
+
+
+# 영어 화면에서 AI 결과(요약·노트 완성)의 언어 규칙. 프롬프트는 한국어 그대로 두고 언어 규칙 한 줄만 바꾼다 (ARCHITECTURE v3.46)
+EN_OUTPUT_RULE = "- 결과는 모두 영어(English)로 쓴다. 노트가 다른 언어여도 영어로 옮겨 쓰고, 영어 기술 용어는 원문 표기를 살린다."  # i18n-ok: AI 프롬프트
+
+
+def ai_prompt(prompt: str, ko_rule: str) -> str:
+    """영어 화면이면 프롬프트의 결과 언어 규칙(ko_rule, '노트에서 쓰인 언어로 쓴다' 줄)을 영어로 쓰라는 규칙으로 바꾼다. 한국어 화면은 그대로다."""
+    if lang() != "en":
+        return prompt
+    if ko_rule not in prompt:
+        raise ValueError("결과 언어 규칙이 프롬프트에 없습니다")  # i18n-ok: 개발자 오류 (프롬프트와 규칙 상수가 어긋남)
+    return prompt.replace(ko_rule, EN_OUTPUT_RULE)
