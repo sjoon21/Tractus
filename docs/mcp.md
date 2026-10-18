@@ -1,5 +1,7 @@
 # Claude Code·Codex·Antigravity 연동 (MCP)
 
+**한국어** · [English](en/mcp.md)
+
 에이전트 CLI가 Tractus를 도구로 써서 과거 노트를 검색합니다. 근거를 `[노트 제목 00:05:31]` 형식으로 인용하고, 요약을 직접 써서 저장할 수도 있습니다. **MCP 서버는 LLM을 호출하지 않습니다.** 추론은 각 CLI가 자기 구독·키로 합니다.
 
 ## Claude Code 플러그인 (권장)

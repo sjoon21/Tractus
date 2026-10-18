@@ -14,7 +14,7 @@ Speech recognition, speaker detection and search run on your Mac (Apple Silicon,
 
 **English** · [한국어](README.ko.md)
 
-[**Download**](https://github.com/sjoon21/Tractus/releases/latest) · [Setup](docs/setup.md) · [Usage](docs/usage.md) · [How it works](docs/how-it-works.md) · [Roadmap](docs/roadmap.md)
+[**Download**](https://github.com/sjoon21/Tractus/releases/latest) · [Setup](docs/en/setup.md) · [Usage](docs/en/usage.md) · [How it works](docs/en/how-it-works.md) · [Roadmap](docs/roadmap.md)
 
 <br>
 
@@ -100,7 +100,7 @@ Speech recognition, speaker detection and search run on your Mac (Apple Silicon,
 3. Open the app. The **setup check** walks you through downloading the on-device models and (optionally) adding an AI service key for summaries and Ask AI.
 
 > [!NOTE]
-> This build isn't signed or notarized by Apple yet. If macOS says the developer can't be verified, go to System Settings › Privacy & Security and click `Open Anyway`. Building from source and troubleshooting are covered in [Setup](docs/setup.md).
+> This build isn't signed or notarized by Apple yet. If macOS says the developer can't be verified, go to System Settings › Privacy & Security and click `Open Anyway`. Building from source and troubleshooting are covered in [Setup](docs/en/setup.md).
 
 **Requirements:** Apple Silicon (M1 or later), macOS 14.4+, 16 GB memory recommended (8 GB works with the lite models).
 
@@ -118,7 +118,7 @@ The release moved to October 22 — a week later than planned, because of the pa
 API issue and too little QA time. [Weekly dev sync 00:02:11]
 ```
 
-The plugin bundles the MCP tools (search, transcripts, summaries, to-dos), a meeting-memory skill, and `/tractus:recap last week` for a period recap. Your notes stay on your Mac; only what Claude reads is sent to Claude. See [Agents (MCP)](docs/mcp.md).
+The plugin bundles the MCP tools (search, transcripts, summaries, to-dos), a meeting-memory skill, and `/tractus:recap last week` for a period recap. Your notes stay on your Mac; only what Claude reads is sent to Claude. See [Agents (MCP)](docs/en/mcp.md).
 
 ## Privacy
 
@@ -128,25 +128,25 @@ The plugin bundles the MCP tools (search, transcripts, summaries, to-dos), a mee
 | Notes, metadata, search data | Local files (`~/Tractus/meetings/`) and a local SQLite database |
 | Summaries and Ask AI | Only the needed text is sent to the AI service you choose (Upstage, OpenAI, Claude, Gemini, or any OpenAI-compatible API — including one running on your Mac) |
 
-Without any AI key you can still record, transcribe, detect speakers, search and export. Details: [How it works](docs/how-it-works.md).
+Without any AI key you can still record, transcribe, detect speakers, search and export. Details: [How it works](docs/en/how-it-works.md).
 
 ## Documentation
 
-Most docs are in Korean for now.
+User guides are in English; the developer docs (CLI, models, benchmark, architecture) are in Korean for now.
 
 | Doc | What's in it |
 | --- | --- |
-| [Setup](docs/setup.md) | Installer, building from source, permissions, updates, troubleshooting |
-| [Usage](docs/usage.md) | Creating notes, speakers and editing, summaries and Ask AI, shortcuts |
-| [AI services and keys](docs/ai-services.md) | Configuring AI services, default models, smart search options |
-| [Models and licenses](docs/models.md) | Model downloads, list and licenses, why these models |
-| [CLI](docs/cli.md) | The `tractus` command line: transcribe, summarize, ask, search, export |
-| [Speech recognition benchmark](docs/benchmark.md) | Qwen3-ASR vs Whisper vs Nemotron on Korean and English meetings |
-| [Agents (MCP)](docs/mcp.md) | Claude Code plugin, Codex and other agents, the 7 MCP tools |
-| [How it works](docs/how-it-works.md) | Architecture, what stays local and what leaves your Mac |
-| [Architecture](ARCHITECTURE.md) | Design decisions, change log, benchmark results |
-| [Roadmap](docs/roadmap.md) | What's done, what's next, known limits |
-| [Contributing](CONTRIBUTING.md) | Dev setup, tests, commit rules |
+| [Setup](docs/en/setup.md) | Installer, building from source, permissions, updates, troubleshooting |
+| [Usage](docs/en/usage.md) | Creating notes, speakers and editing, summaries and Ask AI, shortcuts |
+| [AI services and keys](docs/en/ai-services.md) | Configuring AI services, default models, smart search options |
+| [Models and licenses](docs/models.md) (Korean) | Model downloads, list and licenses, why these models |
+| [CLI](docs/cli.md) (Korean) | The `tractus` command line: transcribe, summarize, ask, search, export |
+| [Speech recognition benchmark](docs/benchmark.md) (Korean) | Qwen3-ASR vs Whisper vs Nemotron on Korean and English meetings |
+| [Agents (MCP)](docs/en/mcp.md) | Claude Code plugin, Codex and other agents, the 7 MCP tools |
+| [How it works](docs/en/how-it-works.md) | Architecture, what stays local and what leaves your Mac |
+| [Architecture](ARCHITECTURE.md) (Korean) | Design decisions, change log, benchmark results |
+| [Roadmap](docs/roadmap.md) (Korean) | What's done, what's next, known limits |
+| [Contributing](CONTRIBUTING.md) (Korean) | Dev setup, tests, commit rules |
 
 ## Tech stack
 
@@ -169,9 +169,9 @@ Bug reports and ideas are welcome in [GitHub Issues](https://github.com/sjoon21/
 [license-shield]: https://img.shields.io/badge/license-Apache--2.0-blue?style=for-the-badge
 [license-url]: LICENSE
 [macos-shield]: https://img.shields.io/badge/macOS-Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white
-[setup-url]: docs/setup.md
+[setup-url]: docs/en/setup.md
 [local-shield]: https://img.shields.io/badge/local--first-audio_stays_on_Mac-2ea44f?style=for-the-badge
-[how-url]: docs/how-it-works.md
+[how-url]: docs/en/how-it-works.md
 [python-badge]: https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white
 [python-url]: https://www.python.org
 [mlx-badge]: https://img.shields.io/badge/MLX-000000?style=flat&logo=apple&logoColor=white
