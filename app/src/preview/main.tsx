@@ -170,6 +170,7 @@ const handlers: Record<string, (a: T) => unknown> = {
   llm_key_status: (a) => ({ saved: a.provider === "upstage" || a.provider === "claude" }),
   voices_list: () => ({ people: [], needs_reenroll: false, model_present: true }),
   update_available: () => false,
+  system_lang: () => new URLSearchParams(location.search).get("lang") ?? "ko-KR", // ?lang=en-US로 영어 화면 확인
   tray_hides_on_close: () => true,
   mcp_call: (a) => ({
     content: [{ type: "text", text: JSON.stringify(a.name === "status" ? { home: "~/Tractus", meetings: notes.length, indexed_chunks: 120, vectors: 120, vector_search: true, hint: null } : { query: a.arguments.query, vector_used: true, hits: [] }) }],
