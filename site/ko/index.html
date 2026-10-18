@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tractus — 맥에서 바로 텍스트로 바꾸는 로컬 회의록 앱</title>
+<meta name="description" content="Tractus는 무료 오픈소스 맥 회의록 앱입니다. 녹음을 내 Mac 안에서 텍스트로 변환하고(한국어·영어, Apple Silicon), 참석자를 구분하고, 요약·검색·AI 질문까지 합니다. 오디오는 Mac 밖으로 나가지 않습니다.">
+<link rel="canonical" href="https://sjoon21.github.io/Tractus/ko/">
+<link rel="alternate" hreflang="en" href="https://sjoon21.github.io/Tractus/">
+<link rel="alternate" hreflang="ko" href="https://sjoon21.github.io/Tractus/ko/">
+<link rel="alternate" hreflang="x-default" href="https://sjoon21.github.io/Tractus/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Tractus">
+<meta property="og:title" content="Tractus — 맥 로컬 회의록·음성 텍스트 변환">
+<meta property="og:description" content="녹음을 내 Mac 안에서 텍스트로 바꾸고 요약·검색·AI 질문까지. 오디오는 Mac 밖으로 나가지 않습니다.">
+<meta property="og:url" content="https://sjoon21.github.io/Tractus/ko/">
+<meta property="og:image" content="https://sjoon21.github.io/Tractus/assets/og-ko.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:locale:alternate" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#fbfbfa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141415" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/icon.png">
+<link rel="stylesheet" href="../style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Tractus",
+  "description": "맥 로컬 회의록 앱: 내 Mac 안에서 한국어·영어 음성을 텍스트로 변환하고, 참석자 구분, 요약, 검색, AI 에이전트용 MCP를 지원합니다.",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "macOS 14.4 이상 (Apple Silicon)",
+  "softwareVersion": "0.4.0",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "KRW" },
+  "downloadUrl": "https://github.com/sjoon21/Tractus/releases/latest",
+  "url": "https://sjoon21.github.io/Tractus/ko/",
+  "sameAs": ["https://github.com/sjoon21/Tractus"],
+  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+  "inLanguage": ["ko", "en"],
+  "image": "https://sjoon21.github.io/Tractus/assets/og-ko.png"
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    { "@type": "Question", "name": "Tractus는 무료인가요?", "acceptedAnswer": { "@type": "Answer", "text": "네. Apache 2.0 라이선스의 무료 오픈소스입니다. 녹음, 텍스트 변환, 참석자 구분, 검색, 내보내기는 계정이나 API 키 없이 됩니다. 요약과 AI 질문은 직접 고른 AI 서비스(Upstage, OpenAI, Claude, Gemini, OpenAI 호환 API, 내 Mac의 AI)를 씁니다." } },
+    { "@type": "Question", "name": "녹음 파일이 외부로 전송되나요?", "acceptedAnswer": { "@type": "Answer", "text": "아니요. 음성 인식, 참석자 구분, 스마트 검색은 Apple MLX로 내 Mac 안에서 돕니다. 요약이나 AI 질문을 할 때 필요한 텍스트만, 고른 AI 서비스로 보냅니다." } },
+    { "@type": "Question", "name": "어떤 Mac에서 쓸 수 있나요?", "acceptedAnswer": { "@type": "Answer", "text": "Apple Silicon(M1 이상) Mac, macOS 14.4 이상입니다. 메모리 16GB 이상을 권장하고, 8GB는 저사양 구성으로 씁니다." } },
+    { "@type": "Question", "name": "클로바노트 대신 쓸 수 있나요?", "acceptedAnswer": { "@type": "Answer", "text": "녹음 → 텍스트 변환 → 요약 → 검색이라는 흐름은 같지만, 음성 인식을 클라우드가 아니라 내 Mac에서 하고 노트를 내가 가진 파일로 남긴다는 점이 다릅니다. 영어 용어가 섞인 한국어 회의에 맞춰 조정했습니다." } },
+    { "@type": "Question", "name": "한국어 음성 인식은 얼마나 정확한가요?", "acceptedAnswer": { "@type": "Answer", "text": "실제 한국어 회의(5.2시간)로 잰 결과, 기본 모델 Qwen3-ASR-1.7B의 글자 오류율은 9.49%로 Whisper-large-v3-turbo(14.92%)보다 오류가 36% 적었습니다. 노트 제목과 메모의 낱말, 자주 쓰는 단어를 함께 넣어 분야 용어를 더 정확하게 받아 적습니다." } }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="wrap top">
+  <a class="brand" href="./"><img src="../assets/icon.png" alt="" width="28" height="28">Tractus</a>
+  <nav aria-label="주 메뉴">
+    <a href="#features">기능</a>
+    <a href="benchmark/">벤치마크</a>
+    <a href="https://github.com/sjoon21/Tractus/blob/main/README.ko.md">GitHub</a>
+    <a href="../" hreflang="en" lang="en">English</a>
+  </nav>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <p class="eyebrow"><span class="dot" aria-hidden="true"></span>무료 오픈소스 · macOS · Apple Silicon</p>
+    <h1>회의 녹음을 내 Mac 안에서 텍스트로.</h1>
+    <p class="lede">Tractus는 녹음을 이 Mac에서 바로 한국어·영어 텍스트로 바꾸고, 참석자를 구분하고, 근거가 달린 요약과 검색, AI 질문까지 하는 로컬 회의록 앱입니다. 오디오는 Mac 밖으로 나가지 않습니다.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/sjoon21/Tractus/releases/latest">Mac용 다운로드</a>
+      <a class="btn" href="https://github.com/sjoon21/Tractus/blob/main/README.ko.md">GitHub에서 보기</a>
+      <span class="note">v0.4.0 · macOS 14.4 이상 · Apache 2.0</span>
+    </div>
+    <figure class="demo">
+      <video src="../assets/demo-ko.mp4" poster="../assets/demo-ko.jpg" autoplay muted loop playsinline preload="metadata" width="960" height="600" aria-label="데모: 녹음하며 적은 메모에 대화 내용의 세부가 붙어 완성된 노트가 되고, Claude Code가 같은 회의를 노트 제목과 시각을 근거로 답한다"></video>
+    </figure>
+    <p class="caption">녹음 노트 → 노트 완성(내 메모 + 대화 내용) → Claude Code에서 회의 물어보기 (가상 데이터)</p>
+  </div>
+
+  <section class="wrap" aria-labelledby="why">
+    <p class="kicker">왜 Tractus인가</p>
+    <h2 id="why">녹음은 내 Mac에, 근거는 문장마다.</h2>
+    <ol class="why">
+      <li><span class="n">01</span><h3>무거운 일은 모두 이 Mac에서</h3><p>녹음, 음성 인식, 참석자 구분, 스마트 검색이 Apple MLX로 내 Mac 안에서 돕니다. 오디오를 올리지 않고, 계정이나 API 키도 필요 없습니다.</p></li>
+      <li><span class="n">02</span><h3>모든 요약에 근거 시각</h3><p>요약 항목, 할 일, AI 답변마다 근거가 된 대화의 시각이 붙습니다. 누르면 그 자리부터 다시 듣습니다.</p></li>
+      <li><span class="n">03</span><h3>내가 가진 파일로</h3><p>노트는 오디오·JSON·Markdown 파일로 남습니다. TXT, Markdown, SRT, VTT, CSV, DOCX, PDF로 내보내고 Obsidian으로 보낼 수 있습니다.</p></li>
+      <li><span class="n">04</span><h3>AI 에이전트의 회의 기억</h3><p>MCP 서버와 Claude Code 플러그인으로 에이전트가 내 회의를 찾아 <code>[주간 개발 회의 00:02:11]</code>처럼 근거를 달아 답합니다.</p></li>
+    </ol>
+  </section>
+
+  <section class="wrap" id="features" aria-labelledby="features-title">
+    <p class="kicker">기능</p>
+    <h2 id="features-title">녹음부터 믿을 수 있는 회의록까지</h2>
+    <p class="sub">대면 회의와 화상 회의를 녹음하고, 받아 적은 내용을 읽고 고치고 다시 씁니다.</p>
+
+    <div class="feature">
+      <div class="text">
+        <h3>내 Mac에서 하는 음성 텍스트 변환</h3>
+        <p>Qwen3-ASR이 한국어·영어를 자동으로 감지해 받아 적고, 영어 용어가 섞인 한국어 회의에 강합니다. 참석자를 구분하고, 한 번 이름을 붙이면 다음 녹음부터 이름을 제안합니다.</p>
+        <ul>
+          <li>노트 제목과 메모의 낱말이 분야 용어 인식을 돕습니다</li>
+          <li>잘못 들은 용어를 고치면 자주 쓰는 단어로 추가하자고 제안합니다</li>
+          <li>단어 싱크: 재생 중인 단어를 강조하고 단어를 눌러 그 자리부터 듣기</li>
+        </ul>
+      </div>
+      <figure><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/ko/note-dark.png"><img src="../assets/ko/note-light.png" alt="Tractus 노트 화면: 참석자별 대화 내용과 시각이 달린 요약" width="2220" height="1455" loading="lazy"></picture></figure>
+    </div>
+
+    <div class="feature flip">
+      <div class="text">
+        <h3>근거가 달린 요약과 AI 질문</h3>
+        <p>회의록, 핵심 요약, 할 일 중심, 강의·세미나, 인터뷰, 아이디어 정리, 내가 쓴 요약 방법. 노트 하나나 모든 노트에 묻고, 답에는 근거 대화가 붙습니다.</p>
+        <ul>
+          <li>노트 완성: 녹음하며 대충 적은 메모에 대화 내용의 세부를 붙입니다</li>
+          <li>Upstage, OpenAI, Claude, Gemini, 내 Mac의 AI 중에서 고릅니다</li>
+        </ul>
+      </div>
+      <figure><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/ko/ask-dark.png"><img src="../assets/ko/ask-light.png" alt="Tractus AI 질문: 근거 시각이 달린 답변" width="2220" height="1455" loading="lazy"></picture></figure>
+    </div>
+
+    <div class="feature">
+      <div class="text">
+        <h3>쓰고, 정리하고, 찾기</h3>
+        <p>체크박스와 서식을 쓰는 메모, 즐겨찾기·태그·폴더, 모든 노트에서 단어와 비슷한 뜻을 함께 찾는 스마트 검색(⌘K).</p>
+        <ul>
+          <li>macOS 캘린더 일정으로 바로 녹음, 참석자 이름이 인식을 돕습니다</li>
+          <li>라이트·다크 모드, 한국어·영어 화면, 앱 안 업데이트</li>
+        </ul>
+      </div>
+      <figure><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/ko/home-dark.png"><img src="../assets/ko/home-light.png" alt="Tractus 홈: 빠른 동작과 최근 노트" width="2220" height="1455" loading="lazy"></picture></figure>
+    </div>
+  </section>
+
+  <section class="wrap" aria-labelledby="accuracy">
+    <p class="kicker">직접 잰 정확도</p>
+    <h2 id="accuracy">한국어 회의에서 Whisper보다 오류 36% 적게</h2>
+    <p class="sub">실제 한국어 회의(5.2시간), 한·영 섞인 말, 영어 회의로 M3 Mac에서 직접 쟀습니다. 낮을수록 좋습니다.</p>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>모델</th><th>한국어 회의 (CER)</th><th>한·영 섞인 말 (MER)</th><th>영어 회의 (WER)</th><th>1시간 처리</th></tr></thead>
+        <tbody>
+          <tr class="win"><td>Qwen3-ASR-1.7B (Tractus 기본)</td><td>9.49</td><td>24.1</td><td>9.50</td><td>8.2분</td></tr>
+          <tr><td>Qwen3-ASR-0.6B (저사양)</td><td>11.47</td><td>26.1</td><td>10.14</td><td>3.3분</td></tr>
+          <tr><td>Whisper-large-v3-turbo</td><td>14.92</td><td>26.6</td><td>14.28</td><td>6.0분</td></tr>
+          <tr><td>Nemotron 3.5 ASR 0.6B</td><td>10.93</td><td>45.1</td><td>14.13</td><td>7.6분</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lower">AI Hub 회의 음성, HiKE, AMI · MLX 8bit · Apple M3 16GB. <a href="benchmark/">벤치마크 전체 보기 →</a></p>
+  </section>
+
+  <section class="wrap split" aria-labelledby="agents">
+    <div>
+      <p class="kicker">Claude Code와 함께</p>
+      <h2 id="agents">에이전트에게 회의에서 정한 것을 묻기</h2>
+      <p class="sub">플러그인을 설치하면 Claude Code가 내 회의를 검색하고 대화 내용과 할 일을 읽어, 정확한 시각을 근거로 답합니다. 노트는 이 Mac에 있고, Claude가 읽는 내용만 Claude로 갑니다.</p>
+    </div>
+    <pre><span class="c"># Claude Code에서</span>
+<span class="p">/plugin</span> install tractus --marketplace sjoon21/Tractus
+
+<span class="p">&gt;</span> 지난주 회의에서 정한 릴리스 날짜가 언제였지?
+릴리스는 10월 22일로 확정했습니다. 결제 이슈와
+QA 기간 부족으로 일주일 미뤘습니다.
+(주간 개발 회의, 00:02:11)</pre>
+  </section>
+
+  <section class="wrap faq" aria-labelledby="faq">
+    <p class="kicker">자주 묻는 질문</p>
+    <h2 id="faq">질문</h2>
+    <details><summary>Tractus는 무료인가요?</summary><p>네. Apache 2.0 라이선스의 무료 오픈소스입니다. 녹음, 텍스트 변환, 참석자 구분, 검색, 내보내기는 계정이나 API 키 없이 됩니다. 요약과 AI 질문은 직접 고른 AI 서비스(Upstage, OpenAI, Claude, Gemini, OpenAI 호환 API, 내 Mac의 AI)를 씁니다.</p></details>
+    <details><summary>녹음 파일이 외부로 전송되나요?</summary><p>아니요. 음성 인식, 참석자 구분, 스마트 검색은 Apple MLX로 내 Mac 안에서 돕니다. 요약이나 AI 질문을 할 때 필요한 텍스트만, 고른 AI 서비스로 보냅니다.</p></details>
+    <details><summary>어떤 Mac에서 쓸 수 있나요?</summary><p>Apple Silicon(M1 이상) Mac, macOS 14.4 이상입니다. 메모리 16GB 이상을 권장하고, 8GB는 저사양 구성으로 씁니다. ffmpeg가 필요합니다(<code>brew install ffmpeg</code>).</p></details>
+    <details><summary>클로바노트 대신 쓸 수 있나요?</summary><p>녹음 → 텍스트 변환 → 요약 → 검색이라는 흐름은 같지만, 음성 인식을 클라우드가 아니라 내 Mac에서 하고 노트를 내가 가진 파일로 남긴다는 점이 다릅니다. 영어 용어가 섞인 한국어 회의에 맞춰 조정했습니다.</p></details>
+    <details><summary>한국어 음성 인식은 얼마나 정확한가요?</summary><p>실제 한국어 회의(5.2시간)로 잰 결과, 기본 모델 Qwen3-ASR-1.7B의 글자 오류율은 9.49%로 Whisper-large-v3-turbo(14.92%)보다 오류가 36% 적었습니다. 노트 제목과 메모의 낱말, 자주 쓰는 단어를 함께 넣어 분야 용어를 더 정확하게 받아 적습니다.</p></details>
+    <details><summary>Apple 서명을 받았나요?</summary><p>아직 받지 않았습니다. 처음 열 때 "확인되지 않은 개발자" 경고가 나오면 시스템 설정 › 개인정보 보호 및 보안에서 '그래도 열기'를 누르세요. 자세한 내용은 <a href="https://github.com/sjoon21/Tractus/blob/main/docs/setup.md">설치 안내</a>에 있습니다.</p></details>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Tractus · Apache 2.0</span>
+    <a href="https://github.com/sjoon21/Tractus/blob/main/README.ko.md">GitHub</a>
+    <a href="https://github.com/sjoon21/Tractus/releases/latest">다운로드</a>
+    <a href="https://github.com/sjoon21/Tractus/blob/main/docs/usage.md">사용법</a>
+    <a href="https://github.com/sjoon21/Tractus/blob/main/docs/mcp.md">에이전트 연동</a>
+    <a href="benchmark/">벤치마크</a>
+    <a href="../" hreflang="en" lang="en">English</a>
+  </div>
+</footer>
+</body>
+</html>

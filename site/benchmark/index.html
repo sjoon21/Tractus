@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Korean speech recognition on a Mac: Qwen3-ASR vs Whisper vs Nemotron — Tractus</title>
+<meta name="description" content="We benchmarked on-device speech recognition on an Apple M3 Mac with MLX. On 5.2 hours of real Korean meetings, Qwen3-ASR-1.7B made 36% fewer character errors than Whisper-large-v3-turbo (CER 9.49 vs 14.92) and transcribed an hour of audio in 8.2 minutes.">
+<link rel="canonical" href="https://sjoon21.github.io/Tractus/benchmark/">
+<link rel="alternate" hreflang="en" href="https://sjoon21.github.io/Tractus/benchmark/">
+<link rel="alternate" hreflang="ko" href="https://sjoon21.github.io/Tractus/ko/benchmark/">
+<link rel="alternate" hreflang="x-default" href="https://sjoon21.github.io/Tractus/benchmark/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Korean speech recognition on a Mac: Qwen3-ASR vs Whisper vs Nemotron">
+<meta property="og:description" content="On real Korean meetings, Qwen3-ASR-1.7B made 36% fewer errors than Whisper (CER 9.49 vs 14.92).">
+<meta property="og:url" content="https://sjoon21.github.io/Tractus/benchmark/">
+<meta property="og:image" content="https://sjoon21.github.io/Tractus/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../assets/icon.png">
+<link rel="stylesheet" href="../style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Korean speech recognition on a Mac: Qwen3-ASR vs Whisper vs Nemotron",
+  "datePublished": "2026-10-02",
+  "dateModified": "2026-10-18",
+  "inLanguage": "en",
+  "author": { "@type": "Organization", "name": "Tractus", "url": "https://github.com/sjoon21/Tractus" },
+  "about": ["Korean speech recognition", "Qwen3-ASR", "Whisper", "Apple MLX"],
+  "mainEntityOfPage": "https://sjoon21.github.io/Tractus/benchmark/"
+}
+</script>
+</head>
+<body>
+<header class="wrap top">
+  <a class="brand" href="../"><img src="../assets/icon.png" alt="" width="28" height="28">Tractus</a>
+  <nav aria-label="Main">
+    <a href="../#features">Features</a>
+    <a href="./" aria-current="page">Benchmark</a>
+    <a href="https://github.com/sjoon21/Tractus">GitHub</a>
+    <a href="../ko/benchmark/" hreflang="ko" lang="ko">한국어</a>
+  </nav>
+</header>
+<main class="wrap">
+<article class="article">
+  <h1>Picking a model to transcribe Korean meetings on a Mac: Qwen3-ASR, Whisper and Nemotron</h1>
+  <p class="meta">Measured 2026-10-02 · Apple M3, 16 GB unified memory · everything runs locally with MLX · 28 runs, 0 failures</p>
+  <p class="tldr"><b>TL;DR:</b> On Korean meetings, <b>Qwen3-ASR-1.7B</b> made <b>36% fewer errors</b> than Whisper-large-v3-turbo (CER 9.49 vs 14.92) and transcribed an hour of audio in <b>8.2 minutes</b>. Tractus uses it as the default model.</p>
+  <p>Tractus turns meeting recordings into text on your Mac, so we needed a model that runs on a Mac, handles Korean meetings well, and keeps the English terms people drop into Korean (<code>p95 latency</code>, <code>connection pool</code>). Most published numbers are for read speech or English, so we measured on data closer to real meetings.</p>
+
+  <h2>What we measured</h2>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Dataset</th><th>What it tests</th><th>Metric</th></tr></thead>
+    <tbody>
+      <tr><td>FLEURS-ko</td><td>Clean read Korean; checks we reproduce published numbers</td><td>CER</td></tr>
+      <tr><td>HiKE</td><td>Korean–English code-switching</td><td>MER</td></tr>
+      <tr><td>AI Hub meeting speech</td><td>Real multi-speaker meetings, 4 sessions, 66–90 min, 5.2 h total</td><td>CER</td></tr>
+      <tr><td>AMI</td><td>English meetings</td><td>WER</td></tr>
+    </tbody>
+  </table></div>
+  <p class="lower">Lower is better for every metric. AI Hub data can't be redistributed, so only metrics are published.</p>
+
+  <h2>Results</h2>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Model</th><th>FLEURS-ko CER</th><th>HiKE MER</th><th>AI Hub meetings CER</th><th>AMI WER</th><th>1 h of audio</th><th>Peak memory</th></tr></thead>
+    <tbody>
+      <tr class="win"><td>Qwen3-ASR-1.7B</td><td>2.62</td><td>24.1</td><td>9.49</td><td>9.50</td><td>8.2 min</td><td>3.6 GB</td></tr>
+      <tr><td>Qwen3-ASR-0.6B</td><td>3.92</td><td>26.1</td><td>11.47</td><td>10.14</td><td>3.3 min</td><td>2.4 GB</td></tr>
+      <tr><td>Whisper-large-v3-turbo</td><td>3.08</td><td>26.6</td><td>14.92</td><td>14.28</td><td>6.0 min</td><td>2.2 GB</td></tr>
+      <tr><td>Nemotron 3.5 ASR 0.6B</td><td>7.02</td><td>45.1</td><td>10.93</td><td>14.13</td><td>7.6 min</td><td>2.0 GB</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>The gap is biggest on real meetings.</b> The 1.7B model makes 36% fewer character errors than Whisper; even the small 0.6B beats Whisper.</li>
+    <li><b>All four models reproduce their published FLEURS numbers within 0.5 points</b>, so the pipeline is trustworthy.</li>
+    <li><b>Long meetings finish.</b> All four 66–90 minute sessions were transcribed to the end.</li>
+  </ul>
+
+  <h2>What we learned</h2>
+  <ul>
+    <li><b>Forcing the language to Korean makes things worse.</b> English-heavy speech got translated and the small model fell into repetition loops. Tractus detects the language automatically.</li>
+    <li><b>Custom vocabulary works.</b> Term recall rose from 71.6% to 84.2%. On a real meeting, a few domain terms took one misheard word from 10 mistakes to 0 (2026-10-18), so Tractus also feeds in words from the note's title and memos.</li>
+    <li><b>Chunk length barely matters.</b> 15, 30 and 60 second chunks gave CER 9.69, 9.49 and 9.39; cutting at speaker changes cost 0.1 points.</li>
+    <li><b>Prompting Whisper with English terms backfires.</b> Output drifted into English and CER went from 16.7 to 58.3.</li>
+  </ul>
+
+  <h2>Why not Nemotron</h2>
+  <p>Its meeting CER beats the 0.6B model, but on code-switched speech its MER (45.1) is nearly twice the others, and it spells English acronyms in Hangul — term recall was 1.1%.</p>
+
+  <h2>Limits</h2>
+  <ul>
+    <li>AI Hub covers one domain and four sessions; rankings are reliable, absolute numbers vary by meeting.</li>
+    <li>One device: Apple M3 with 16 GB.</li>
+  </ul>
+  <p>Code and full tables: <a href="https://github.com/sjoon21/Tractus/tree/main/bench">bench/</a> · <a href="https://github.com/sjoon21/Tractus/blob/main/docs/benchmark.md">original write-up (Korean)</a></p>
+</article>
+</main>
+<footer>
+  <div class="wrap">
+    <span>Tractus · Apache 2.0</span>
+    <a href="../">Home</a>
+    <a href="https://github.com/sjoon21/Tractus/releases/latest">Download</a>
+    <a href="../ko/benchmark/" hreflang="ko" lang="ko">한국어</a>
+  </div>
+</footer>
+</body>
+</html>

@@ -14,7 +14,7 @@ Speech recognition, speaker detection and search run on your Mac (Apple Silicon,
 
 **English** · [한국어](README.ko.md)
 
-[**Download**](https://github.com/sjoon21/Tractus/releases/latest) · [Setup](docs/en/setup.md) · [Usage](docs/en/usage.md) · [How it works](docs/en/how-it-works.md) · [Roadmap](docs/roadmap.md)
+[**Download**](https://github.com/sjoon21/Tractus/releases/latest) · [Website](https://sjoon21.github.io/Tractus/) · [Setup](docs/en/setup.md) · [Usage](docs/en/usage.md) · [How it works](docs/en/how-it-works.md) · [Roadmap](docs/roadmap.md)
 
 <br>
 

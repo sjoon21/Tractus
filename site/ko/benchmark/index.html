@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>맥에서 한국어 회의를 받아 적는 모델 비교: Qwen3-ASR · Whisper · Nemotron — Tractus</title>
+<meta name="description" content="Apple M3 Mac에서 MLX로 한국어 음성 인식 모델을 직접 쟀습니다. 실제 한국어 회의 5.2시간에서 Qwen3-ASR-1.7B는 Whisper-large-v3-turbo보다 글자 오류가 36% 적었고(CER 9.49 vs 14.92), 1시간 녹음을 8.2분에 받아 적었습니다.">
+<link rel="canonical" href="https://sjoon21.github.io/Tractus/ko/benchmark/">
+<link rel="alternate" hreflang="ko" href="https://sjoon21.github.io/Tractus/ko/benchmark/">
+<link rel="alternate" hreflang="en" href="https://sjoon21.github.io/Tractus/benchmark/">
+<link rel="alternate" hreflang="x-default" href="https://sjoon21.github.io/Tractus/benchmark/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="맥에서 한국어 회의를 받아 적는 모델 비교: Qwen3-ASR · Whisper · Nemotron">
+<meta property="og:description" content="실제 한국어 회의에서 Qwen3-ASR-1.7B가 Whisper보다 글자 오류 36% 적음 (CER 9.49 vs 14.92).">
+<meta property="og:url" content="https://sjoon21.github.io/Tractus/ko/benchmark/">
+<meta property="og:image" content="https://sjoon21.github.io/Tractus/assets/og-ko.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../../assets/icon.png">
+<link rel="stylesheet" href="../../style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "맥에서 한국어 회의를 받아 적는 모델 비교: Qwen3-ASR · Whisper · Nemotron",
+  "datePublished": "2026-10-02",
+  "dateModified": "2026-10-18",
+  "inLanguage": "ko",
+  "author": { "@type": "Organization", "name": "Tractus", "url": "https://github.com/sjoon21/Tractus" },
+  "about": ["Korean speech recognition", "Qwen3-ASR", "Whisper", "Apple MLX"],
+  "mainEntityOfPage": "https://sjoon21.github.io/Tractus/ko/benchmark/"
+}
+</script>
+</head>
+<body>
+<header class="wrap top">
+  <a class="brand" href="../"><img src="../../assets/icon.png" alt="" width="28" height="28">Tractus</a>
+  <nav aria-label="주 메뉴">
+    <a href="../#features">기능</a>
+    <a href="./" aria-current="page">벤치마크</a>
+    <a href="https://github.com/sjoon21/Tractus/blob/main/README.ko.md">GitHub</a>
+    <a href="../../benchmark/" hreflang="en" lang="en">English</a>
+  </nav>
+</header>
+<main class="wrap">
+<article class="article">
+  <h1>맥에서 한국어 회의를 받아 적는 모델 고르기: Qwen3-ASR · Whisper · Nemotron</h1>
+  <p class="meta">2026-10-02 측정 · Apple M3, 통합 메모리 16GB · 모두 MLX로 이 Mac에서만 실행 · 28회 실행, 오류 0건</p>
+  <p class="tldr"><b>한 줄 요약:</b> 한국어 회의에서는 <b>Qwen3-ASR-1.7B</b>가 Whisper-large-v3-turbo보다 오류가 <b>36% 적었고</b>(CER 9.49 vs 14.92), 1시간 녹음을 <b>8.2분</b>에 받아 적었습니다. Tractus는 이 결과로 기본 모델을 정했습니다.</p>
+  <p>Tractus는 회의 녹음을 이 Mac에서 텍스트로 바꿉니다. 그래서 Mac에서 돌릴 수 있고, 한국어 회의에 강하고, 한국어 사이에 섞인 영어 용어(<code>p95 latency</code>, <code>connection pool</code>)도 받아 적는 모델이 필요했습니다. 공개된 수치는 대부분 낭독 음성이나 영어 기준이라, 실제 회의에 가까운 데이터로 직접 쟀습니다.</p>
+
+  <h2>무엇으로 쟀나</h2>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>데이터</th><th>무엇을 보나</th><th>지표</th></tr></thead>
+    <tbody>
+      <tr><td>FLEURS-ko</td><td>깨끗한 한국어 낭독. 공개 수치 재현 확인</td><td>CER</td></tr>
+      <tr><td>HiKE</td><td>한·영 코드스위칭</td><td>MER</td></tr>
+      <tr><td>AI Hub 회의 음성</td><td>실제 다자 회의 4세션, 66–90분, 총 5.2시간</td><td>CER</td></tr>
+      <tr><td>AMI</td><td>영어 회의</td><td>WER</td></tr>
+    </tbody>
+  </table></div>
+  <p class="lower">모든 지표는 낮을수록 좋습니다. AI Hub 데이터는 재배포가 금지되어 지표만 공개합니다.</p>
+
+  <h2>결과</h2>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>모델</th><th>FLEURS-ko CER</th><th>HiKE MER</th><th>AI Hub 회의 CER</th><th>AMI WER</th><th>1시간 처리</th><th>피크 메모리</th></tr></thead>
+    <tbody>
+      <tr class="win"><td>Qwen3-ASR-1.7B</td><td>2.62</td><td>24.1</td><td>9.49</td><td>9.50</td><td>8.2분</td><td>3.6 GB</td></tr>
+      <tr><td>Qwen3-ASR-0.6B</td><td>3.92</td><td>26.1</td><td>11.47</td><td>10.14</td><td>3.3분</td><td>2.4 GB</td></tr>
+      <tr><td>Whisper-large-v3-turbo</td><td>3.08</td><td>26.6</td><td>14.92</td><td>14.28</td><td>6.0분</td><td>2.2 GB</td></tr>
+      <tr><td>Nemotron 3.5 ASR 0.6B</td><td>7.02</td><td>45.1</td><td>10.93</td><td>14.13</td><td>7.6분</td><td>2.0 GB</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>회의에서 차이가 가장 큽니다.</b> 1.7B가 Whisper보다 글자 오류가 36% 적고, 작은 0.6B도 Whisper보다 낫습니다.</li>
+    <li><b>FLEURS는 네 모델 모두 공개 수치와 0.5%p 안에서 재현됐습니다.</b> 측정 파이프라인은 믿을 만합니다.</li>
+    <li><b>긴 회의도 끝까지 받아 적습니다.</b> 66–90분 세션 4개를 모두 완주했습니다.</li>
+  </ul>
+
+  <h2>측정하면서 알게 된 것</h2>
+  <ul>
+    <li><b>언어를 한국어로 고정하면 오히려 나빠집니다.</b> 영어 위주 발화를 번역해 버리고 반복 루프에 빠졌습니다. Tractus 기본값은 언어 자동 감지입니다.</li>
+    <li><b>용어 힌트(자주 쓰는 단어)는 효과가 있습니다.</b> 용어 재현율이 71.6%에서 84.2%로 올랐습니다. 실제 회의 노트에서도 분야 용어 몇 개를 넣자 "온톨로지" 오인식이 10번에서 0번이 됐습니다(2026-10-18). 그래서 Tractus는 노트 제목과 메모의 낱말을 함께 넣습니다.</li>
+    <li><b>청크 길이는 거의 상관없습니다.</b> 15·30·60초 청크의 CER은 9.69·9.49·9.39였습니다. 화자가 바뀌는 지점에서 잘라도 CER 차이는 0.1%p였습니다.</li>
+    <li><b>Whisper에 영어 용어를 프롬프트로 주면 역효과가 납니다.</b> 출력이 영어로 끌려가 CER이 16.7에서 58.3으로 나빠졌습니다.</li>
+  </ul>
+
+  <h2>왜 Nemotron은 고르지 않았나</h2>
+  <p>회의 CER만 보면 0.6B보다 낫지만, 한·영 코드스위칭에서 MER이 45.1로 다른 모델의 두 배 가까이 나빴고, 영문 약어를 한글 발음으로 적어 용어 재현율이 1.1%에 그쳤습니다.</p>
+
+  <h2>한계</h2>
+  <ul>
+    <li>AI Hub는 한 분야 4세션뿐입니다. 순위는 믿을 만하지만 절대값은 회의마다 다릅니다.</li>
+    <li>측정 기기는 Apple M3·16GB 한 대입니다.</li>
+  </ul>
+  <p>측정 코드와 전체 표: <a href="https://github.com/sjoon21/Tractus/tree/main/bench">bench/</a> · <a href="https://github.com/sjoon21/Tractus/blob/main/docs/benchmark.md">원문 문서</a></p>
+</article>
+</main>
+<footer>
+  <div class="wrap">
+    <span>Tractus · Apache 2.0</span>
+    <a href="../">홈</a>
+    <a href="https://github.com/sjoon21/Tractus/releases/latest">다운로드</a>
+    <a href="../../benchmark/" hreflang="en" lang="en">English</a>
+  </div>
+</footer>
+</body>
+</html>
