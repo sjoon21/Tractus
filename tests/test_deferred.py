@@ -199,7 +199,7 @@ def test_convert_fills_the_note_in_place(env, fake_asr, tmp_path):
     assert notes_in(home) == [d]
 
     t = read_transcript(d)
-    assert "state" not in t and [s["text"] for s in t["segments"]] == ["청크0", "청크1", "청크2"] and t["asr"]["model"] == cli.MODELS[cli.Track.lite] and t["asr"]["hotwords"] == ["김철수", "WTO"]
+    assert "state" not in t and [s["text"] for s in t["segments"]] == ["청크0", "청크1", "청크2"] and t["asr"]["model"] == cli.MODELS[cli.Track.lite] and t["asr"]["hotwords"][:2] == ["김철수", "WTO"]  # 뒤에는 녹음 중 메모의 낱말 (asr.note_terms)
     assert (t["meeting_id"], t["title"], t["created_at"]) == (before["meeting_id"], before["title"], before["created_at"]) and t["audio"] == before["audio"]
     assert (d / "audio.ogg").read_bytes() == audio_bytes and not (d / "tracks").exists()  # 트랙은 변환이 끝나면 지워진다
     assert files(d) == ["audio.ogg", "memos.json", "transcript.json", "transcript.md", "transcript.vtt"]

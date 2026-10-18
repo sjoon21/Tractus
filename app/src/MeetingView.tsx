@@ -55,6 +55,7 @@ import { indexer } from "./indexer";
 import { printDoc } from "./print";
 import { EDIT_BLOCKED, type DeleteTarget } from "./remove";
 import { appendBlock } from "./memoEdit";
+import { termFromEdit } from "./vocab";
 import { PrintSheet } from "./PrintSheet";
 import { SummariesPanel } from "./SummariesPanel";
 import type { SummaryDoc } from "./summaries";
@@ -330,8 +331,28 @@ export function MeetingView({
   const undoStack = useRef<TextEdit[][]>([]);
   // 저장 한 묶음 (serial 안에서 부른다). 되돌리기 묶음은 저장이 성공한 뒤 코어가 확인한 직전 상태로 만든다:
   // 화면(낙관적 반영)으로 만들면 앞 묶음이 실패했을 때 저장된 적 없는 문장으로 되돌린다
+  // 고친 낱말을 자주 쓰는 단어로 제안한다 (vocab.ts). 한 번 물은 낱말은 이 화면에서 다시 묻지 않는다
+  const askedTerms = useRef(new Set<string>());
+  const suggestTerm = useCallback(
+    (term: string) => {
+      if (askedTerms.current.has(term)) return;
+      askedTerms.current.add(term);
+      notify({
+        text: t("자주 쓰는 단어에 추가할까요? — {term} (다음 녹음부터 더 정확하게 인식합니다)", { term }),
+        action: {
+          label: t("추가"),
+          run: () =>
+            void api.glossaryAdd([term]).then(
+              (n) => notify({ text: n ? t("자주 쓰는 단어에 추가했습니다 — {term} (다음 녹음부터 더 정확하게 인식합니다)", { term }) : t("이미 자주 쓰는 단어에 있습니다 — {term}", { term }) }),
+              (e) => notify({ text: t("자주 쓰는 단어에 추가하지 못했습니다: {error}", { error: errText(e) }), error: true }),
+            ),
+        },
+      });
+    },
+    [notify],
+  );
   const persist = useCallback(
-    async (edits: TextEdit[], isUndo: boolean) => {
+    async (edits: TextEdit[], isUndo: boolean, suggest = false) => {
       const before = confirmed.current;
       try {
         const { changed, meeting } = await api.editSegments(id, edits);
@@ -341,6 +362,9 @@ export function MeetingView({
           bumpEdit("text");
           indexer.touch(); // 한가할 때 조용히 검색에 반영한다 (마지막 수정 뒤 60초, 갱신 사이 5분)
           if (!isUndo && before) undoStack.current.push(inverseEdits(before.segments, edits));
+          const old = suggest && edits.length === 1 ? before?.segments.find((s) => s.id === edits[0].id) : undefined;
+          const term = old ? termFromEdit(segText(old), edits[0].text) : null;
+          if (term) suggestTerm(term);
         }
       } catch (e) {
         // 아무것도 쓰이지 않았다(코어 계약). 화면은 원래 문장으로 돌아가므로 고친 문장을 메시지에 남긴다
@@ -354,15 +378,16 @@ export function MeetingView({
         setPending((p) => p.filter((x) => x !== edits));
       }
     },
-    [id, commit, bumpEdit, onEdited],
+    [id, commit, bumpEdit, onEdited, suggestTerm],
   );
+  /** suggestTerm: 대화 한 줄을 직접 고쳤을 때 (찾아 바꾸기는 '자주 쓰는 단어에 추가' 체크가 따로 있다) */
   const saveText = useCallback(
-    (edits: TextEdit[]) => {
+    (edits: TextEdit[], suggestTerm = false) => {
       if (!edits.length) return;
       if (editQueue.isBlocked(id)) return setEditError(EDIT_BLOCKED); // 삭제를 기다리는 중: 낙관적 반영도 하지 않는다
       setEditError(null);
       setPending((p) => [...p, edits]);
-      void serial(() => persist(edits, false));
+      void serial(() => persist(edits, false, suggestTerm));
     },
     [id, serial, persist],
   );
@@ -385,7 +410,7 @@ export function MeetingView({
       if (raw === null) return;
       const text = oneLine(raw);
       if (!text) return setEditError(t("빈 내용은 저장할 수 없습니다. 원래 내용을 그대로 둡니다"));
-      if (text !== oneLine(segText(seg))) saveText([{ id: seg.id, text }]);
+      if (text !== oneLine(segText(seg))) saveText([{ id: seg.id, text }], true);
     },
     [saveText],
   );

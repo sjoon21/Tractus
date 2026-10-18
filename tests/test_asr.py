@@ -119,3 +119,12 @@ def test_long_chunks_and_other_languages_are_left_alone():
     model = FakeModel({None: FakeOut("Ja, genau.", language=["German"])})
     assert Transcriber(model).transcribe([0.0] * 16000 * 2).text == "Ja, genau."
 
+
+
+def test_note_terms_pick_term_like_words_from_title_and_memos():
+    from tractus.asr import NOTE_TERMS_MAX, note_terms
+
+    assert note_terms("자원 온톨로지 미팅", "GraphRAG로 루트 코즈 찾기, K8s 파드는?") == ["자원", "온톨로지", "GraphRAG", "루트", "코즈", "찾기", "K8s", "파드"]
+    assert note_terms("녹음 14:05") == [] and note_terms("Recording 2:05 PM", "") == ["PM"]
+    assert note_terms("온톨로지 온톨로지를") == ["온톨로지"]  # 조사를 떼고 한 번만
+    assert len(note_terms(" ".join(f"용어{chr(0xAC00 + i)}" for i in range(40)))) == NOTE_TERMS_MAX

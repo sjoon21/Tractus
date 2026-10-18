@@ -65,6 +65,29 @@ def echoes_hotwords(text: str, hotwords: list[str]) -> bool:
     return sum(len(re.sub(r"\s", "", h)) for h in found) >= ECHO_COVER * max(len(body), 1)
 
 
+# 노트에서 고른 용어 (v3.53): 제목·녹음 중 메모·내가 쓴 메모의 낱말을 그 노트 변환의 hotwords 끝에 붙인다.
+# 사용자가 자주 쓰는 단어를 거의 채우지 않는다(실제 노트 0개). 흔한 말은 빼고, 자주 쓰는 단어보다 뒤라 상한(HOTWORDS_MAX)에 먼저 잘린다
+NOTE_TERMS_MAX = 20
+_JOSA = ("에서는", "에서", "으로", "이랑", "한테", "까지", "부터", "처럼", "보다", "에게", "로", "를", "을", "이", "가", "은", "는", "에", "와", "과", "도", "의", "랑", "만")  # i18n-ok: 조사 (데이터)
+_COMMON = {"회의", "미팅", "메모", "녹음", "노트", "오늘", "내일", "어제", "다음", "이번", "지난", "확인", "정리", "논의", "관련", "진행", "공유", "그리고", "그래서", "하지만", "예시", "recording", "memo", "meeting", "note", "the", "and", "for", "with"}  # i18n-ok: 흔한 말 (데이터)
+
+
+def note_terms(*texts: str) -> list[str]:
+    """노트의 글(제목·메모)에서 용어 후보: 영문·숫자가 섞인 낱말과 두 글자 이상 한글 낱말(조사를 뗀다). 흔한 말·숫자·시각은 뺀다. 처음 나온 순서로 NOTE_TERMS_MAX개"""
+    out: list[str] = []
+    for text in texts:
+        for raw in (text or "").split():
+            w = raw.strip(".,!?;:()[]{}\"'“”‘’「」『』·-–—~*#>")
+            if re.search(r"[가-힣]$", w):  # i18n-ok: 한글 판별
+                w = next((w[: -len(j)] for j in _JOSA if w.endswith(j) and len(w) - len(j) >= 2), w)
+            keep = len(w) >= 2 and not re.fullmatch(r"[\d:./%]+", w) and (re.search(r"[A-Za-z]", w) or re.fullmatch(r"[가-힣]+", w))  # i18n-ok: 한글 판별
+            if keep and w.lower() not in _COMMON and w not in out:
+                out.append(w)
+            if len(out) >= NOTE_TERMS_MAX:
+                return out
+    return out
+
+
 def _lang_code(name: str | list[str] | None) -> str | None:
     if isinstance(name, list):  # mlx-audio Qwen3-ASR은 감지 언어를 ["Korean"]처럼 목록으로 돌려준다
         name = name[0] if name else None

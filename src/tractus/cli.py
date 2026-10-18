@@ -31,7 +31,7 @@ from tractus.llm import LLMError, check_connection, list_models, make_client, re
 from tractus.paths import home_dir, models_dir  # noqa: E402
 from tractus.align import MODEL_DIR as ALIGNER_DIR  # noqa: E402
 from tractus.align import align_segments, is_approximate, load_aligner  # noqa: E402
-from tractus.asr import SR, Transcriber  # noqa: E402
+from tractus.asr import SR, Transcriber, note_terms  # noqa: E402
 from tractus.diarize import FLUID, FLUID_MIN_CLIP_S, MAX_SPEAKERS, NEMOTRON, MODEL_DIR as DIARIZER_DIR  # noqa: E402
 from tractus.diarize import fluid_hint, load_diarizer, load_fluid, split_chunks  # noqa: E402
 from tractus.export import FORMATS as EXPORT_FORMATS, UnsupportedFormat, render_export, write_bytes_atomic  # noqa: E402
@@ -39,7 +39,7 @@ from tractus import attach, deferred, enhance, notes, obsidian, sample_note  # n
 from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_suggestions, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
 from tractus.store import IncompleteError, load_glossary, meeting_dir_name, new_ulid, save_transcript, seg_text, speaker_name, write_transcript  # noqa: E402
 from tractus.store import CHUNKS_FILE, JOB_FILE, edit_transcript, forget_person, note_lock, read_transcript, render_files  # noqa: E402
-from tractus.store import NOT_CONVERTED, _hms, is_memo, is_recorded, memo_lines, stamp  # noqa: E402
+from tractus.store import NOT_CONVERTED, _hms, is_memo, is_recorded, load_memos, memo_lines, stamp  # noqa: E402
 from tractus.vad import find_chunks  # noqa: E402
 from tractus.i18n import t  # noqa: E402
 from tractus.calendar_event import load_event, save_event  # noqa: E402
@@ -469,8 +469,12 @@ def _new_job(
         save_event(d, source.event)
 
     ev = source.event or load_event(d)  # 나중에 변환(--into)은 노트 폴더의 일정을 읽는다
-    # 이 노트에 가까운 것부터: 참석자 이름(이 노트의 변환에만) → 명령의 --term → 자주 쓰는 단어. 앞의 asr.HOTWORDS_MAX개만 쓴다
-    hotwords = list(dict.fromkeys((ev["attendees"] if ev else []) + terms + load_glossary(home_dir() / "glossary.md")))
+    # 이 노트에 가까운 것부터: 참석자 이름(이 노트의 변환에만) → 명령의 --term → 자주 쓰는 단어 → 노트의 제목·메모에서 고른 낱말. 앞의 asr.HOTWORDS_MAX개만 쓴다
+    old = (append or into or (None, {}))[1]
+    marks = source.marks or (load_memos(into[0]) if into else [])  # 변환 전 노트는 녹음 중 메모를 memos.json에 두었다
+    mine = [str(old.get("body") or "")] + [m["text"] for m in memo_lines(old)] + [str(m.get("text") or "") for m in marks]
+    picked = note_terms(title, *mine)  # 기본 제목(녹음 14:05)은 흔한 말·시각이라 남지 않는다
+    hotwords = list(dict.fromkeys((ev["attendees"] if ev else []) + terms + load_glossary(home_dir() / "glossary.md") + picked))
     job = Job(
         dir=d, meeting_id=meeting_id, sha256=digest, source=source.name, title=title,
         created_at=created_at, duration_sec=round(len(pcm) / SR, 2),
