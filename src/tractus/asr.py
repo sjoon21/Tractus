@@ -27,7 +27,11 @@ HOTWORD_MIN_S = 1.0  # 이보다 짧은 청크에는 넣지 않는다: 무음·�
 HOTWORDS_MAX = 50  # 방해 단어가 100개를 넘으면 크게 나빠진다 (Huber & Waibel, arXiv 2608.05759). 앞에 둔 것이 먼저 남는다
 ECHO_MIN_TERMS = 3  # 서로 다른 단어가 이만큼 나오고
 ECHO_COVER = 0.8  # 출력 글자의 이만큼을 덮으면 목록을 받아 적은 것으로 본다 (용어가 많은 정상 문장도 절반 넘게 덮는다)
-LOOP_RETRY_TEMPERATURE = 0.3  # 반복 루프가 난 청크만 한 번 더 (탐욕 디코딩이 같은 루프에 다시 빠지지 않게)
+LOOP_RETRY_TEMPERATURE = 0.3
+# 짧은 한국어 맞장구("네", "음", "아 맞아요")를 중국어·일본어로 감지해 한자로 받아 적는다 (실제 회의 노트 2026-10-18: 앞 70줄 중 3줄).
+# ponytail: 짧은 청크·중국어/일본어 감지만 한국어로 다시 한다. 정말 중국어·일본어 회의면 짧은 맞장구가 한국어가 된다 (노트 전체 언어로 판단하게 바꿀 때까지)
+MISDETECT_MAX_S = 5.0
+MISDETECT_LANGS = {"zh", "ja"}  # 반복 루프가 난 청크만 한 번 더 (탐욕 디코딩이 같은 루프에 다시 빠지지 않게)
 
 
 @dataclass(frozen=True)
@@ -102,6 +106,10 @@ class Transcriber:
             looped = has_loop(out.text) or out.generation_tokens >= cap
             text = collapse_repeats(out.text) if looped else out.text.strip()
             return Segment(text=text, lang=_lang_code(out.language), repaired=True)
+        if not looped and name is None and len(audio) / SR < MISDETECT_MAX_S and _lang_code(out.language) in MISDETECT_LANGS:
+            ko = self._generate(audio, LANGUAGE_NAMES["ko"], hw, cap)
+            if not (has_loop(ko.text) or ko.generation_tokens >= cap):
+                return Segment(text=ko.text.strip(), lang="ko", repaired=True)
         if looped:
             retry = self._generate(audio, None, hw, cap, LOOP_RETRY_TEMPERATURE)
             if not (has_loop(retry.text) or retry.generation_tokens >= cap):

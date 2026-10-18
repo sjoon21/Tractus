@@ -103,3 +103,19 @@ def test_hitting_token_cap_counts_as_loop():
     model = FakeModel({None: FakeOut("abcdefgh", generation_tokens=max_tokens_for(10.0))})
     seg = Transcriber(model).transcribe(AUDIO, language=None)
     assert seg.repaired
+
+
+def test_short_chunk_detected_as_chinese_is_redone_in_korean():
+    short = [0.0] * 16000 * 2
+    model = FakeModel({None: FakeOut("对，嗯，对。", language=["Chinese"]), "Korean": FakeOut("네 음 네")})
+    seg = Transcriber(model).transcribe(short)
+    assert [c["language"] for c in model.calls] == [None, "Korean"]
+    assert seg.text == "네 음 네" and seg.lang == "ko" and seg.repaired
+
+
+def test_long_chunks_and_other_languages_are_left_alone():
+    model = FakeModel({None: FakeOut("我们开始开会吧", language=["Chinese"])})
+    assert Transcriber(model).transcribe(AUDIO).text == "我们开始开会吧"  # 10초: 정말 중국어일 수 있다
+    model = FakeModel({None: FakeOut("Ja, genau.", language=["German"])})
+    assert Transcriber(model).transcribe([0.0] * 16000 * 2).text == "Ja, genau."
+
