@@ -26,29 +26,6 @@ def cer(refs: list[str], hyps: list[str]) -> float:
     return jiwer.cer([r for r, _ in pairs], [h for _, h in pairs]) * 100
 
 
-def _spaced(text: str) -> str:
-    """문장부호만 지우고 띄어쓰기는 남긴다 (공백은 하나로)."""
-    text = unicodedata.normalize("NFC", text).lower()
-    return " ".join("".join(c for c in text if not unicodedata.category(c).startswith("P")).split())
-
-
-def wer_ko(refs: list[str], hyps: list[str]) -> float:
-    """띄어쓰기를 살린 코퍼스 단위 WER(%). CER(norm_ko)이 지우는 띄어쓰기 오류가 보인다 (2026-10-18, STT 품질 측정)."""
-    pairs = [(_spaced(r), _spaced(h)) for r, h in zip(refs, hyps)]
-    pairs = [(r, h or "<empty>") for r, h in pairs if r]
-    return jiwer.wer([r for r, _ in pairs], [h for _, h in pairs]) * 100
-
-
-# 혼자 떨어진 소리 군말. 정답(AI Hub)에는 있고 모델은 대부분 지워서, 그대로 세면 모델이 군말을 지운 것이 오류로 잡힌다
-FILLERS = {"어", "음", "아", "에", "으", "흠", "엄", "어어", "음음"}
-
-
-def cer_nofill(refs: list[str], hyps: list[str]) -> float:
-    """혼자 떨어진 소리 군말(FILLERS)을 양쪽에서 뺀 CER(%)."""
-    drop = lambda s: " ".join(w for w in _spaced(s).split() if w not in FILLERS)  # noqa: E731
-    return cer([drop(r) for r in refs], [drop(h) for h in hyps])
-
-
 _en_norm = None
 
 

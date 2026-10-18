@@ -204,8 +204,7 @@ def run_der(args) -> None:
 def run_cli(wav: Path, home: Path, extra: list[str]) -> dict:
     """stage 이벤트 시각(초, 시작 기준)을 돌려준다."""
     env = {**os.environ, "TRACTUS_HOME": str(home), "TRACTUS_MODELS_DIR": str(ROOT / "models")}
-    # 단어 싱크는 CER과 무관하고 시간만 든다
-    cmd = ["uv", "run", "--project", str(ROOT), "tractus", "transcribe", str(wav), "--track", "standard", "--no-align", "--progress-json", *extra]
+    cmd = ["uv", "run", "--project", str(ROOT), "tractus", "transcribe", str(wav), "--track", "standard", "--progress-json", *extra]
     t0, stages = time.perf_counter(), {}
     with subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True) as p:
         for line in p.stdout:
@@ -265,8 +264,6 @@ def run_asr(args) -> None:
             hyp = " ".join(seg["text"] for seg in t["segments"] if seg["text"])
             hyps[cond].append(hyp)
             r[f"cer_{cond}"] = round(asr_score.cer([refs[sid]], [hyp]), 2)
-            r[f"wer_{cond}"] = round(asr_score.wer_ko([refs[sid]], [hyp]), 2)
-            r[f"cer_nofill_{cond}"] = round(asr_score.cer_nofill([refs[sid]], [hyp]), 2)
             r[f"rtf_asr_{cond}"] = round((st["index"] - st["transcribe"]) / durs[sid], 4)
             r[f"pre_asr_s_{cond}"] = round(st["encode"] - st["vad"], 1)  # VAD + (화자 분리 로드·실행·해제)
             r[f"segments_{cond}"] = len(t["segments"])
@@ -277,7 +274,7 @@ def run_asr(args) -> None:
                 write_rttm(t, sid, hyp_dir / f"{sid}.rttm")
         r["diar_overhead_s"] = round(r["pre_asr_s_diar"] - r["pre_asr_s_nodiar"], 1)
         rows.append(r)
-    total = {f"{m}_{c}": round(fn(list(refs.values()), hyps[c]), 2) for c in conds for m, fn in (("cer", asr_score.cer), ("wer", asr_score.wer_ko), ("cer_nofill", asr_score.cer_nofill))}
+    total = {f"cer_{c}": round(asr_score.cer(list(refs.values()), hyps[c]), 2) for c in conds}
     total["rtf_asr"] = {c: round(sum(r[f"rtf_asr_{c}"] * r["min"] for r in rows) / sum(r["min"] for r in rows), 4) for c in conds}
     total["diar_overhead_s"] = round(sum(r["diar_overhead_s"] for r in rows), 1)
     total["delta_cer_pp"] = round(total["cer_diar"] - total["cer_nodiar"], 2)
