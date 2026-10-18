@@ -218,4 +218,6 @@ export default {
   "최근 노트": "Recent notes",
   단축키: "Keyboard shortcuts",
   "직전 문장 다시 듣기": "Replay the last sentence",
+  "노트 목록 폭 조절": "Resize note list",
+  "오른쪽 패널 폭 조절": "Resize right panel",
 } satisfies Dict;

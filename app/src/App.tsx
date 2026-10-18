@@ -43,7 +43,7 @@ import { BULK_MIN, CONVERT_ALL, CONVERT_PAUSED, CONVERT_ALL_LINE, CONVERT_ALL_TI
 import { NoteLibrary } from "./NoteLibrary";
 import { touchNote as touchNoteIn, type Folder } from "./organize";
 import { OrganizeContext, useOrganizeState } from "./useOrganize";
-import { PanelToggle, usePanels } from "./PanelToggle";
+import { PanelResizer, PanelToggle, usePanels } from "./PanelToggle";
 import { RAIL_REC_LABEL, railPendingLabel, railRecState } from "./panels";
 import { check } from "@tauri-apps/plugin-updater";
 import { AudioLines, Box, CalendarClock, ChevronRight, CircleAlert, FileText, House, Mic, Search, Settings, Sparkles, SquarePen, Stethoscope, Upload, X } from "lucide-react";
@@ -750,6 +750,7 @@ export function App() {
         {/* 타이틀바를 겹친 창: 신호등 단추 자리 + 창 끌기 */}
         <div data-tauri-drag-region className="h-[52px] shrink-0" />
         <PanelToggle side="left" />
+        {!panels.state.left && <PanelResizer side="left" />}
         {panels.state.left && (
           <GatedButton
             gate={recording || recordBlocked ? OK : recordGate}

@@ -70,7 +70,7 @@ import { useConvertJob } from "./convertJobs";
 import { CONVERT_FIRST, deleteBlockedWhileConverting, isRecorded, keptNotice, railNotice, RECORDED_BADGE, recordedStats, type ConvertControls } from "./recorded";
 import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type EditKind, type SaveState } from "./memo";
 import { RAIL_LABEL, railKey, railLabel, railTabs, validTab, type RailTab } from "./rail";
-import { PanelToggle, usePanels } from "./PanelToggle";
+import { PanelResizer, PanelToggle, usePanels } from "./PanelToggle";
 import { releaseVoiceBoost, resumeVoiceBoost, setPlaybackVolume, setVoiceBoost, voiceBoostSupported } from "./voice";
 import { AudioLines, FastForward, LocateFixed, Mic, Pause, Play, TextSearch, Trash2, Upload, Volume2, VolumeX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -1027,6 +1027,7 @@ export function MeetingView({
 
       <aside className="summary-col relative flex min-h-0 flex-col border-l border-border bg-background max-[1180px]:overflow-visible max-[1180px]:border-t max-[1180px]:border-l-0" aria-label={railLabel(memoNote)}>
         <PanelToggle side="right" />
+        {!railCollapsed && <PanelResizer side="right" className="max-[1180px]:hidden" />}
         <div id="rail-body" className="rail-body flex min-h-0 flex-1 flex-col overflow-y-auto max-[1180px]:overflow-visible" hidden={railCollapsed}>
         <div
           className="sticky top-0 z-10 flex h-[52px] shrink-0 items-center gap-1 bg-background/90 pr-12 pl-4 backdrop-blur-md"

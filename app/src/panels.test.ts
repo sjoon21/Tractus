@@ -2,10 +2,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 import { flushMemos, registerMemo } from "./memo";
-import { PanelsContext, PanelToggle, type PanelsApi } from "./PanelToggle";
+import { PanelResizer, PanelsContext, PanelToggle, type PanelsApi } from "./PanelToggle";
 import appSrc from "./App.tsx?raw";
 import meetingSrc from "./MeetingView.tsx?raw";
-import { canCollapse, EXPANDED, initialPanels, NARROW_PX, PANELS_KEY, PANEL_TEXT, RAIL_REC_LABEL, panelKey, readPanels, restore, revealFor, choose, railPendingLabel, railRecState, serialize, toggleLabel, togglePanel, writePanels } from "./panels";
+import { canCollapse, clampWidth, DEFAULT_WIDTHS, restoreWidths, widthByKey, EXPANDED, initialPanels, NARROW_PX, PANELS_KEY, PANEL_TEXT, RAIL_REC_LABEL, panelKey, readPanels, restore, revealFor, choose, railPendingLabel, railRecState, serialize, toggleLabel, togglePanel, writePanels } from "./panels";
 
 const key = (over: Partial<Parameters<typeof panelKey>[0]> = {}) => ({ code: "KeyB", metaKey: true, ctrlKey: false, shiftKey: false, altKey: false, ...over });
 const memStore = (init: Record<string, string> = {}) => {
@@ -179,7 +179,7 @@ describe("words", () => {
 });
 
 describe("toggle button render", () => {
-  const api = (state: { left: boolean; right: boolean }): PanelsApi => ({ state, toggle: async () => {}, reveal() {}, registerRight: () => () => {} });
+  const api = (state: { left: boolean; right: boolean }): PanelsApi => ({ state, toggle: async () => {}, reveal() {}, registerRight: () => () => {}, widths: DEFAULT_WIDTHS, setWidth() {} });
   const html = (side: "left" | "right", state: { left: boolean; right: boolean }) => renderToStaticMarkup(createElement(PanelsContext.Provider, { value: api(state) }, createElement(PanelToggle, { side })));
 
   test("expanded: says what it does, exposes state, controls and shortcut", () => {
@@ -207,3 +207,37 @@ describe("toggle button render", () => {
     expect(meeting).toContain('<PanelToggle side="right" />');
   });
 });
+
+describe("패널 폭 조절", () => {
+  test("범위와 가운데 최소 폭을 지킨다", () => {
+    expect(clampWidth("left", 100, 340, 1600)).toBe(200);
+    expect(clampWidth("left", 999, 340, 1600)).toBe(400);
+    expect(clampWidth("right", 500, 260, 1600)).toBe(500);
+    expect(clampWidth("right", 560, 400, 1100)).toBe(280); // 1100 − 400 − 420 = 280: 가운데를 지킨다
+    expect(clampWidth("right", 560, 400, 900)).toBe(280); // 그래도 최소보다 작아지지 않는다
+  });
+
+  test("저장한 폭: 없거나 깨지면 기본값, 범위 밖은 범위 안으로", () => {
+    expect(restoreWidths(null)).toEqual(DEFAULT_WIDTHS);
+    expect(restoreWidths("{")).toEqual(DEFAULT_WIDTHS);
+    expect(restoreWidths('{"left": 9999, "right": "x"}')).toEqual({ left: 400, right: 340 });
+  });
+
+  test("←/→는 경계가 움직이는 방향, Home·End는 최소·최대", () => {
+    expect(widthByKey("left", "ArrowRight", 260)).toBe(276);
+    expect(widthByKey("right", "ArrowLeft", 340)).toBe(356);
+    expect(widthByKey("right", "ArrowRight", 340)).toBe(324);
+    expect(widthByKey("left", "Home", 300)).toBe(200);
+    expect(widthByKey("left", "Enter", 300)).toBeNull();
+  });
+});
+
+test("폭 조절 손잡이: separator와 현재·최소·최대 폭, 이름", () => {
+  const api: PanelsApi = { state: EXPANDED, toggle: async () => {}, reveal() {}, registerRight: () => () => {}, widths: { left: 300, right: 340 }, setWidth() {} };
+  const out = renderToStaticMarkup(createElement(PanelsContext.Provider, { value: api }, createElement(PanelResizer, { side: "left" })));
+  expect(out).toContain('role="separator"');
+  expect(out).toContain('aria-valuenow="300"');
+  expect(out).toContain('aria-valuemin="200"');
+  expect(out).toContain('aria-label="노트 목록 폭 조절"');
+});
+
