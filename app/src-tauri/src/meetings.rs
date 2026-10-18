@@ -1,5 +1,6 @@
 //! 회의 폴더 읽기. 파일이 원본이다(ARCHITECTURE.md §4.1, §6). 쓰기는 하지 않는다.
 
+use crate::i18n::{t, tv};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -259,8 +260,8 @@ pub struct MeetingDetail {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
-    let raw = fs::read_to_string(path).map_err(|e| format!("노트 파일을 읽지 못했습니다\n{}: {e}", path.display()))?;
-    serde_json::from_str(&raw).map_err(|e| format!("노트 파일을 읽지 못했습니다\n{}: {e}", path.display()))
+    let raw = fs::read_to_string(path).map_err(|e| tv("노트 파일을 읽지 못했습니다\n{path}: {e}", &[("path", path.display().to_string()), ("e", e.to_string())]))?;
+    serde_json::from_str(&raw).map_err(|e| tv("노트 파일을 읽지 못했습니다\n{path}: {e}", &[("path", path.display().to_string()), ("e", e.to_string())]))
 }
 
 /// "memo"만 메모이고 없거나 모르는 값은 녹음이다 (옛 파일을 옮기지 않는다)
@@ -401,16 +402,16 @@ pub fn pending_recordings(home: &Path) -> Vec<PendingRecording> {
 
 pub fn find_dir(home: &Path, id: &str) -> Result<PathBuf, String> {
     if id.is_empty() || id.contains(['/', '\\']) || id.contains("..") {
-        return Err(format!("잘못된 노트 ID: {id}"));
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
     }
     // 폴더 이름은 <날짜>_<제목>_<meeting_id> (store.meeting_dir_name)
     let suffix = format!("_{id}");
     fs::read_dir(home.join("meetings"))
-        .map_err(|e| format!("노트 폴더를 읽을 수 없습니다\n{e}"))?
+        .map_err(|e| tv("노트 폴더를 읽을 수 없습니다\n{e}", &[("e", e.to_string())]))?
         .flatten()
         .map(|e| e.path())
         .find(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with(&suffix)))
-        .ok_or_else(|| "노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.".to_string())
+        .ok_or_else(|| t("노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다."))
 }
 
 pub fn load(home: &Path, id: &str) -> Result<MeetingDetail, String> {

@@ -2,6 +2,7 @@
 //! 노트 폴더($TRACTUS_HOME)는 동기화될 수 있어 쓰지 않는다. 키는 webview·settings.json·인수·로그·오류 문구로 나가지 않고,
 //! 요약·질문·연결 테스트를 돌리는 tractus 프로세스의 환경변수로만 들어간다 (Settings::tractus_llm). 고른 서비스·주소·AI 모델은 settings.json에 둔다.
 
+use crate::i18n::{t, tv};
 use crate::{ask, AppState, BusyGuard, Settings};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -31,7 +32,9 @@ pub const DEFAULT_PROVIDER: &str = "upstage";
 const MIN_LEN: usize = 5;
 const MAX_LEN: usize = 200;
 const MODEL_MAX: usize = 200;
-const LOCAL_ONLY_EMBED: &str = "로컬 전용 모드에서는 스마트 검색을 Upstage로 처리할 수 없습니다.";
+fn local_only_embed() -> String {
+    t("로컬 전용 모드에서는 스마트 검색을 Upstage로 처리할 수 없습니다.")
+}
 /// 코어는 30초에 스스로 끝낸다 (llm.TEST_TIMEOUT_S). 그래도 안 끝나면 이 시간 뒤에 죽여 BusyGuard가 풀리게 한다
 const TEST_DEADLINE: Duration = Duration::from_secs(35);
 /// 연결 테스트가 도는 동안 표시하는 대상 (노트가 아니므로 삭제를 막지 않는다)
@@ -116,7 +119,7 @@ fn check_provider(id: &str) -> Result<&str, String> {
     if is_provider(id) {
         Ok(id)
     } else {
-        Err(format!("알 수 없는 AI 서비스입니다: {id}"))
+        Err(tv("알 수 없는 AI 서비스입니다: {id}", &[("id", id.to_string())]))
     }
 }
 
@@ -134,16 +137,16 @@ pub fn validate(raw: &str) -> Result<String, String> {
     let key = raw.trim();
     let len = key.chars().count();
     if len == 0 {
-        return Err("API 키를 입력하세요.".into());
+        return Err(t("API 키를 입력하세요."));
     }
     if !(MIN_LEN..=MAX_LEN).contains(&len) {
-        return Err(format!("API 키는 {MIN_LEN}자에서 {MAX_LEN}자 사이여야 합니다."));
+        return Err(tv("API 키는 {MIN_LEN}자에서 {MAX_LEN}자 사이여야 합니다.", &[("MIN_LEN", MIN_LEN.to_string()), ("MAX_LEN", MAX_LEN.to_string())]));
     }
     if key.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return Err("API 키 중간에 공백이나 줄바꿈이 있습니다. 키만 그대로 붙여 넣으세요.".into());
+        return Err(t("API 키 중간에 공백이나 줄바꿈이 있습니다. 키만 그대로 붙여 넣으세요."));
     }
     if !key.chars().all(|c| c.is_ascii_graphic()) {
-        return Err("API 키에 영문·숫자·기호가 아닌 글자가 있습니다. 키만 그대로 붙여 넣으세요.".into());
+        return Err(t("API 키에 영문·숫자·기호가 아닌 글자가 있습니다. 키만 그대로 붙여 넣으세요."));
     }
     Ok(key.to_string())
 }
@@ -159,7 +162,7 @@ pub fn load(dir: &Path, provider: &str) -> Option<String> {
 pub fn save(dir: &Path, provider: &str, raw: &str) -> Result<(), String> {
     let file = file_name(check_provider(provider)?);
     let key = validate(raw)?;
-    let fail = |e: std::io::Error| format!("API 키를 저장하지 못했습니다\n{e}");
+    let fail = |e: std::io::Error| tv("API 키를 저장하지 못했습니다\n{e}", &[("e", e.to_string())]);
     fs::create_dir_all(dir).map_err(fail)?;
     let tmp = dir.join(format!("{file}.tmp"));
     let written = (|| {
@@ -178,7 +181,7 @@ pub fn save(dir: &Path, provider: &str, raw: &str) -> Result<(), String> {
 /// 없어도 성공
 pub fn delete(dir: &Path, provider: &str) -> Result<(), String> {
     match fs::remove_file(dir.join(file_name(check_provider(provider)?))) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(format!("API 키를 지우지 못했습니다\n{e}")),
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(tv("API 키를 지우지 못했습니다\n{e}", &[("e", e.to_string())])),
         _ => Ok(()),
     }
 }
@@ -234,11 +237,11 @@ pub fn normalize_base_url(raw: &str) -> Result<String, String> {
         return Ok(String::new());
     }
     if has_userinfo(raw) {
-        return Err("서비스 주소에 사용자 이름이나 비밀번호를 넣을 수 없습니다. API 키는 따로 입력하세요.".into());
+        return Err(t("서비스 주소에 사용자 이름이나 비밀번호를 넣을 수 없습니다. API 키는 따로 입력하세요."));
     }
     match parse_url(raw) {
         Some(_) => Ok(raw.trim_end_matches('/').to_string()),
-        None => Err("서비스 주소는 http:// 또는 https://로 시작하는 올바른 주소여야 합니다.".into()),
+        None => Err(t("서비스 주소는 http:// 또는 https://로 시작하는 올바른 주소여야 합니다.")),
     }
 }
 
@@ -246,7 +249,7 @@ pub fn normalize_base_url(raw: &str) -> Result<String, String> {
 pub fn normalize_model(raw: &str) -> Result<String, String> {
     let model = raw.trim();
     if model.chars().count() > MODEL_MAX || model.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return Err("AI 모델 이름에는 공백이나 줄바꿈을 넣을 수 없고 200자까지 쓸 수 있습니다.".into());
+        return Err(t("AI 모델 이름에는 공백이나 줄바꿈을 넣을 수 없고 200자까지 쓸 수 있습니다."));
     }
     Ok(model.to_string())
 }
@@ -308,7 +311,7 @@ pub fn effective(cfg: ask::LlmConfig, c: &Choice, key_saved: bool) -> ask::LlmCo
 }
 
 fn dir(state: &AppState) -> Result<&Path, String> {
-    state.config_path.parent().ok_or_else(|| "앱 설정 폴더를 찾을 수 없습니다".to_string())
+    state.config_path.parent().ok_or_else(|| t("앱 설정 폴더를 찾을 수 없습니다"))
 }
 
 #[derive(Serialize)]
@@ -421,14 +424,14 @@ pub fn llm_default_save(state: State<'_, AppState>, provider: String) -> Result<
 #[tauri::command]
 pub fn embedding_provider_save(state: State<'_, AppState>, provider: String) -> Result<(), String> {
     if !matches!(provider.as_str(), "local" | "upstage") {
-        return Err(format!("알 수 없는 스마트 검색 방식입니다: {provider}"));
+        return Err(tv("알 수 없는 스마트 검색 방식입니다: {provider}", &[("provider", provider.to_string())]));
     }
     let s = state.settings();
     if provider == "upstage" && !s.key_saved("upstage") {
-        return Err("Upstage API 키를 먼저 등록하세요.".into());
+        return Err(t("Upstage API 키를 먼저 등록하세요."));
     }
     if provider == "upstage" && ask::llm_config(&[&s.tractus_cwd(), &s.home()], |k| std::env::var(k).ok()).local_only {
-        return Err(LOCAL_ONLY_EMBED.into());
+        return Err(local_only_embed());
     }
     patch_file(&state, |v| v["embedding_provider"] = provider.clone().into())?;
     state.settings.lock().unwrap().embedding_provider = provider;
@@ -457,7 +460,7 @@ pub fn parse_test(stdout: &str, stderr: &str, exit_ok: bool) -> TestResult {
     match line {
         Some(v) if exit_ok && v["ok"] == true => TestResult { ok: true, provider: get(&v, "provider"), model: get(&v, "model"), host: get(&v, "host"), latency_ms: v["latency_ms"].as_u64(), empty: v["empty"] == true, ..Default::default() },
         Some(v) if v["event"] == "error" => TestResult { code: get(&v, "code"), message: get(&v, "message"), ..Default::default() },
-        _ => TestResult { message: crate::last_error_line(stderr).or_else(|| Some("연결 테스트 결과를 읽지 못했습니다".into())), ..Default::default() },
+        _ => TestResult { message: crate::last_error_line(stderr).or_else(|| Some(t("연결 테스트 결과를 읽지 못했습니다"))), ..Default::default() },
     }
 }
 
@@ -496,22 +499,22 @@ fn wait_with_deadline(mut child: Child, limit: Duration) -> Result<Option<Output
 
 /// `tractus llm <sub>`를 선택한 서비스의 환경(실제 요약·질문과 같은 환경변수)으로 시간 제한 안에 돌린다.
 /// 실행하기 전에 막히거나(키 없는 직접 입력) 시간이 넘으면 Err(코드, 문장). 실행하지 못하면 바깥 Err(화면 문장)
-fn run_llm_sub(s: &Settings, config_dir: Option<&Path>, provider: Option<&str>, env: impl Fn(&str) -> Option<String>, sub: &str) -> Result<Result<Output, (&'static str, &'static str)>, String> {
+fn run_llm_sub(s: &Settings, config_dir: Option<&Path>, provider: Option<&str>, env: impl Fn(&str) -> Option<String>, sub: &str) -> Result<Result<Output, (&'static str, String)>, String> {
     let set = ask::llm_config(&[&s.tractus_cwd(), &s.home()], &env);
     let c = s.llm_choice(provider)?;
     if set.provider.is_none() && custom_needs_key(&c, config_dir.and_then(|d| load(d, c.provider)).as_deref()) {
-        return Ok(Err(("llm_config", "직접 입력한 서비스는 이 Mac이 아니면 API 키가 필요합니다")));
+        return Ok(Err(("llm_config", t("직접 입력한 서비스는 이 Mac이 아니면 API 키가 필요합니다"))));
     }
     let mut cmd = s.tractus_llm_with(&["llm", sub], config_dir, provider, env)?;
     cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let child = cmd.spawn().map_err(|e| crate::procs::cannot_run(&s.tractus_resolved().path, e))?;
-    Ok(wait_with_deadline(child, TEST_DEADLINE)?.ok_or(("llm_conn", "시간이 너무 오래 걸렸습니다")))
+    Ok(wait_with_deadline(child, TEST_DEADLINE)?.ok_or_else(|| ("llm_conn", t("시간이 너무 오래 걸렸습니다"))))
 }
 
 pub fn run_test_for(s: &Settings, config_dir: Option<&Path>, provider: Option<&str>, env: impl Fn(&str) -> Option<String>) -> Result<TestResult, String> {
     Ok(match run_llm_sub(s, config_dir, provider, env, "test")? {
         Ok(out) => parse_test(&String::from_utf8_lossy(&out.stdout), &String::from_utf8_lossy(&out.stderr), out.status.success()),
-        Err((code, message)) => TestResult { code: Some(code.into()), message: Some(message.into()), ..Default::default() },
+        Err((code, message)) => TestResult { code: Some(code.into()), message: Some(message), ..Default::default() },
     })
 }
 
@@ -519,7 +522,7 @@ pub fn run_test_for(s: &Settings, config_dir: Option<&Path>, provider: Option<&s
 #[tauri::command]
 pub async fn llm_test(state: State<'_, AppState>, provider: Option<String>) -> Result<TestResult, String> {
     if crate::is_busy(&state.busy, TEST_TARGET) {
-        return Err("이미 연결을 확인하고 있습니다.".into());
+        return Err(t("이미 연결을 확인하고 있습니다."));
     }
     let guard = BusyGuard::new(&state.busy, TEST_TARGET);
     let s = state.settings();
@@ -546,14 +549,14 @@ pub fn parse_models(stdout: &str, stderr: &str, exit_ok: bool) -> ModelList {
     match line {
         Some(v) if exit_ok && v["models"].is_array() => ModelList { models: v["models"].as_array().unwrap().iter().filter_map(|m| m.as_str().map(String::from)).collect(), ..Default::default() },
         Some(v) if v["event"] == "error" => ModelList { code: get(&v, "code"), message: get(&v, "message"), ..Default::default() },
-        _ => ModelList { message: crate::last_error_line(stderr).or_else(|| Some("AI 모델 목록을 읽지 못했습니다".into())), ..Default::default() },
+        _ => ModelList { message: crate::last_error_line(stderr).or_else(|| Some(t("AI 모델 목록을 읽지 못했습니다"))), ..Default::default() },
     }
 }
 
 pub fn run_models_for(s: &Settings, config_dir: Option<&Path>, provider: Option<&str>, env: impl Fn(&str) -> Option<String>) -> Result<ModelList, String> {
     Ok(match run_llm_sub(s, config_dir, provider, env, "models")? {
         Ok(out) => parse_models(&String::from_utf8_lossy(&out.stdout), &String::from_utf8_lossy(&out.stderr), out.status.success()),
-        Err((code, message)) => ModelList { code: Some(code.into()), message: Some(message.into()), ..Default::default() },
+        Err((code, message)) => ModelList { code: Some(code.into()), message: Some(message), ..Default::default() },
     })
 }
 

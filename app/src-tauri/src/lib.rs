@@ -5,7 +5,7 @@ mod attach;
 mod calendar;
 mod deferred;
 mod llm_key;
-mod locale;
+mod i18n;
 mod mcp;
 mod media;
 mod meetings;
@@ -19,6 +19,7 @@ mod summaries;
 mod tray;
 mod voices;
 
+use crate::i18n::{t, tv};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
@@ -73,6 +74,8 @@ pub struct Settings {
     pub calendar_enabled: bool,
     /// 홈 카드에서 뺄 캘린더 ID (처음에는 모두 읽는다)
     pub calendar_hidden: Vec<String>,
+    /// 화면 언어: "system"(macOS 언어, 기본) | "ko" | "en" (i18n.rs, docs/desktop.md §3.8)
+    pub ui_lang: String,
     /// 앱 설정 폴더 (키가 있는 곳). 파일에는 쓰지 않고 `AppState::settings()`가 채운다
     #[serde(skip)]
     pub config_dir: Option<PathBuf>,
@@ -105,6 +108,7 @@ impl Default for Settings {
             obsidian_audio: false,
             calendar_enabled: false,
             calendar_hidden: vec![],
+            ui_lang: "system".into(),
             config_dir: None,
             stale: vec![],
         }
@@ -197,6 +201,7 @@ impl Settings {
         // `doctor`가 앱이 쓰는 녹음 프로그램을 보게 한다 (자동으로 찾은 경로가 코어의 기본 경로와 다를 수 있다)
         env.push(("TRACTUS_REC_BIN".into(), self.rec_resolved().path));
         env.push(self.embed_mode());
+        env.push(("TRACTUS_LANG".into(), i18n::lang().into())); // 코어가 앱에 보내는 문장의 언어 (셸의 값보다 앱의 선택이 먼저다)
         env
     }
 
@@ -290,7 +295,7 @@ impl Settings {
     /// 이번에 고른 AI 서비스(없으면 기본 서비스)와 그 서비스에 저장한 주소·AI 모델. 모르는 서비스는 오류
     fn llm_choice(&self, provider: Option<&str>) -> Result<llm_key::Choice<'_>, String> {
         let provider = match provider {
-            Some(p) => llm_key::canonical(p).ok_or_else(|| format!("알 수 없는 AI 서비스입니다: {p}"))?,
+            Some(p) => llm_key::canonical(p).ok_or_else(|| tv("알 수 없는 AI 서비스입니다: {id}", &[("id", p.to_string())]))?,
             None => self.default_provider(),
         };
         let profile = self.llm_profiles.get(provider);
@@ -431,7 +436,7 @@ pub(crate) fn patch_settings(path: &Path, merge: impl FnOnce(Option<&str>) -> Re
     });
     written.and_then(|_| std::fs::rename(&tmp, path)).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
-        format!("설정을 저장할 수 없습니다\n{e}")
+        tv("설정을 저장할 수 없습니다\n{e}", &[("e", e.to_string())])
     })
 }
 
@@ -458,7 +463,7 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, tray: State<'_, tra
 /// 모드 버튼 한 번에 환경변수에서 온 home 같은 기본값이 파일에 굳지 않게 한다.
 fn merge_rec_mode(raw: Option<&str>, mode: &str) -> Result<String, String> {
     if !matches!(mode, "in_person" | "hybrid") {
-        return Err(format!("알 수 없는 녹음 방식: {mode}"));
+        return Err(tv("알 수 없는 녹음 방식: {mode}", &[("mode", mode.to_string())]));
     }
     let mut v: Value = raw.and_then(|r| serde_json::from_str(r).ok()).filter(Value::is_object).unwrap_or_else(|| json!({}));
     v["rec_mode"] = json!(mode);
@@ -477,6 +482,22 @@ fn merge_flag(raw: Option<&str>, key: &str, value: bool) -> Result<String, Strin
     let mut v: Value = raw.and_then(|r| serde_json::from_str(r).ok()).filter(Value::is_object).unwrap_or_else(|| json!({}));
     v[key] = json!(value);
     serde_json::to_string_pretty(&v).map_err(|e| e.to_string())
+}
+
+/// 화면 언어: 고른 값과 지금 언어 (화면은 시작할 때 이것으로 언어를 정한다)
+#[tauri::command]
+fn ui_lang(state: State<'_, AppState>) -> Value {
+    json!({ "pref": state.settings().ui_lang, "lang": i18n::lang() })
+}
+
+/// 화면 언어를 바꾼다. 화면은 이 뒤에 다시 열린다. 메뉴 막대는 바로 새 언어로 다시 그린다
+#[tauri::command]
+fn set_ui_lang(app: AppHandle, state: State<'_, AppState>, tray: State<'_, tray::TrayState>, pref: String) -> Result<(), String> {
+    patch_settings(&state.config_path, |raw| i18n::merge_ui_lang(raw, &pref))?;
+    i18n::set(i18n::resolve(&pref, i18n::system_lang().as_deref()));
+    state.settings.lock().unwrap().ui_lang = pref;
+    tray.relabel(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -509,7 +530,7 @@ async fn load_meeting(state: State<'_, AppState>, id: String) -> Result<meetings
 #[tauri::command]
 async fn mcp_call(state: State<'_, AppState>, name: String, arguments: Value) -> Result<Value, String> {
     if !matches!(name.as_str(), "search_meetings" | "status") {
-        return Err(format!("허용하지 않는 검색 요청입니다: {name}"));
+        return Err(tv("허용하지 않는 검색 요청입니다: {name}", &[("name", name.to_string())]));
     }
     let client = state.mcp.clone();
     blocking(move || client.call_tool(&name, arguments)).await
@@ -520,7 +541,7 @@ const REC_FLAGS: &[&str] = &["--no-system", "--echo-cancel"];
 
 fn check_rec_flags(flags: &[String]) -> Result<(), String> {
     match flags.iter().find(|f| !REC_FLAGS.contains(&f.as_str())) {
-        Some(f) => Err(format!("허용하지 않는 녹음 설정입니다: {f}")),
+        Some(f) => Err(tv("허용하지 않는 녹음 설정입니다: {f}", &[("f", f.to_string())])),
         None => Ok(()),
     }
 }
@@ -531,7 +552,7 @@ const LIVE_STOP_WAIT: Duration = Duration::from_secs(5);
 /// `tractus live --recording <녹음 폴더> --progress-json` (docs/desktop.md §2.8). 이 앱이 만든 녹음 폴더만 받는다
 fn live_args(home: &Path, dir: &Path) -> Result<Vec<String>, String> {
     if !meetings::is_recording_dir(home, dir) {
-        return Err(format!("녹음 폴더가 아닙니다: {}", dir.display()));
+        return Err(tv("녹음 폴더가 아닙니다: {path}", &[("path", dir.display().to_string())]));
     }
     Ok(vec!["live".into(), "--recording".into(), dir.to_string_lossy().into_owned(), "--progress-json".into()])
 }
@@ -575,7 +596,7 @@ fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>, tar
     let event = event.as_ref().map(calendar::clean_event).transpose()?; // 캘린더 일정으로 시작한 녹음 (docs/design/calendar.md)
     let mut rec = state.rec.lock().unwrap();
     if rec.is_some() {
-        return Err("이미 녹음 중입니다".into());
+        return Err(t("이미 녹음 중입니다"));
     }
     let s = state.settings();
     if let Some(id) = &target {
@@ -648,8 +669,8 @@ fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>, tar
 fn rec_send(state: State<'_, AppState>, cmd: String, text: Option<String>) -> Result<(), String> {
     let line = procs::recorder_line(&cmd, text.as_deref())?;
     let mut rec = state.rec.lock().unwrap();
-    let stdin = rec.as_mut().ok_or("녹음 중이 아닙니다")?;
-    stdin.write_all(line.as_bytes()).and_then(|_| stdin.flush()).map_err(|e| format!("녹음 프로그램에 명령을 보내지 못했습니다\n{e}"))?;
+    let stdin = rec.as_mut().ok_or_else(|| t("녹음 중이 아닙니다"))?;
+    stdin.write_all(line.as_bytes()).and_then(|_| stdin.flush()).map_err(|e| tv("녹음 프로그램에 명령을 보내지 못했습니다\n{e}", &[("e", e.to_string())]))?;
     // 자막도 지금 멈추기 시작한다 (녹음 헬퍼가 파일을 마무리하는 동안). 끝나기를 기다리는 것은 stopped 때(stop_live)
     if cmd == "stop" {
         if let Some(p) = state.live.lock().unwrap().as_mut() {
@@ -666,7 +687,7 @@ fn job_args(home: &Path, kind: &str, target: &str) -> Result<Vec<String>, String
         "transcribe" => {
             // 녹음 폴더만 받는다 (임의 경로 전사 방지. 성공하면 코어가 이 폴더를 지운다)
             if !meetings::is_recording_dir(home, Path::new(target)) {
-                return Err(format!("녹음 폴더가 아닙니다: {target}"));
+                return Err(tv("녹음 폴더가 아닙니다: {path}", &[("path", target.to_string())]));
             }
             Ok(args(&["transcribe", "--recording", target, "--progress-json"]))
         }
@@ -675,7 +696,7 @@ fn job_args(home: &Path, kind: &str, target: &str) -> Result<Vec<String>, String
         "align" if is_meeting_id(target) => Ok(args(&["align", target, "--progress-json"])),
         // 파일 가져오기 (Phase 5.5). 원본 파일은 건드리지 않는다. 이미 전사한 파일이면 코어가 duplicate 경고 + done
         "import" => import_args(Path::new(target)),
-        _ => Err(format!("잘못된 작업: {kind} {target}")),
+        _ => Err(tv("잘못된 작업: {kind} {target}", &[("kind", kind.to_string()), ("target", target.to_string())])),
     }
 }
 
@@ -908,9 +929,9 @@ enum SpeakerEdit {
 
 /// `tractus speakers <회의> <명령> -- <인자…>`. 인자는 `--` 뒤에 둔다("-박" 같은 이름을 옵션으로 읽지 않게)
 fn speakers_args(id: &str, edit: &SpeakerEdit) -> Result<Vec<String>, String> {
-    let bad = || "잘못된 참석자 편집입니다".to_string();
+    let bad = || t("잘못된 참석자 편집입니다");
     if !is_meeting_id(id) {
-        return Err(format!("잘못된 노트 ID: {id}"));
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
     }
     let (op, rest) = match edit {
         SpeakerEdit::Rename { label, name } if is_tagged(label, 'S') && !name.contains(['\n', '\r']) => ("rename", vec![label.as_str(), name.trim()]),
@@ -930,12 +951,12 @@ fn run_tractus(s: &Settings, args: &[String], input: Option<&str>, what: &str) -
     let mut child = cmd.spawn().map_err(|e| procs::cannot_run(&s.tractus_resolved().path, e))?;
     if let (Some(text), Some(mut stdin)) = (input, child.stdin.take()) {
         // 코어는 stdin을 다 읽은 뒤에 출력하므로 먼저 쓰고 닫아도 막히지 않는다
-        stdin.write_all(text.as_bytes()).map_err(|e| format!("{what}\n입력을 넘기지 못했습니다: {e}"))?;
+        stdin.write_all(text.as_bytes()).map_err(|e| tv("{what}\n입력을 넘기지 못했습니다: {e}", &[("what", what.to_string()), ("e", e.to_string())]))?;
     }
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
-        return Err(last_error_line(&err).unwrap_or_else(|| format!("{what} (종료 코드 {})", out.status.code().map_or("없음".into(), |c| c.to_string()))));
+        return Err(last_error_line(&err).unwrap_or_else(|| tv("{what} (종료 코드 {code})", &[("what", what.to_string()), ("code", out.status.code().map_or(t("없음"), |c| c.to_string()))])));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
@@ -959,7 +980,7 @@ fn stdout_json(out: &str) -> Result<Value, String> {
         .find(|l| !l.trim().is_empty())
         .and_then(|l| serde_json::from_str::<Value>(l).ok())
         .filter(Value::is_object)
-        .ok_or_else(|| "결과를 읽지 못했습니다".to_string())
+        .ok_or_else(|| t("결과를 읽지 못했습니다"))
 }
 
 /// 화자 편집을 코어에 맡기고(transcript.json·md·vtt·검색 색인을 코어가 고친다) 고친 회의를 다시 읽어 돌려준다.
@@ -970,7 +991,7 @@ async fn edit_speakers(state: State<'_, AppState>, id: String, edit: SpeakerEdit
     let guard = BusyGuard::new(&state.busy, &id);
     blocking(move || {
         let _guard = guard;
-        run_tractus(&s, &args, None, "참석자를 고치지 못했습니다")?;
+        run_tractus(&s, &args, None, &t("참석자를 고치지 못했습니다"))?;
         meetings::load(&s.home(), &id)
     })
     .await
@@ -986,10 +1007,10 @@ struct TextEdit {
 /// `tractus segments <회의> edit` 인수와 stdin JSON. 문장은 인수가 아니라 stdin으로 넘긴다(길이·특수 문자 걱정 없이)
 fn segments_edit(id: &str, edits: &[TextEdit]) -> Result<(Vec<String>, String), String> {
     if !is_meeting_id(id) {
-        return Err(format!("잘못된 노트 ID: {id}"));
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
     }
     if edits.is_empty() || edits.iter().any(|e| !is_tagged(&e.id, 's') || e.text.trim().is_empty()) {
-        return Err("빈 내용은 저장할 수 없습니다".into());
+        return Err(t("빈 내용은 저장할 수 없습니다"));
     }
     Ok((["segments", id, "edit"].map(String::from).to_vec(), json!({ "edits": edits }).to_string()))
 }
@@ -1009,7 +1030,7 @@ async fn edit_segments(state: State<'_, AppState>, id: String, edits: Vec<TextEd
     let guard = BusyGuard::new(&state.busy, &id);
     blocking(move || {
         let _guard = guard;
-        let changed = stdout_json(&run_tractus(&s, &args, Some(&input), "대화 내용을 수정하지 못했습니다")?)?["changed"].as_u64().unwrap_or(0);
+        let changed = stdout_json(&run_tractus(&s, &args, Some(&input), &t("대화 내용을 수정하지 못했습니다"))?)?["changed"].as_u64().unwrap_or(0);
         Ok(EditResult { changed, meeting: meetings::load(&s.home(), &id)? })
     })
     .await
@@ -1019,7 +1040,7 @@ async fn edit_segments(state: State<'_, AppState>, id: String, edits: Vec<TextEd
 fn glossary_args(terms: &[String]) -> Result<Vec<String>, String> {
     let terms: Vec<&str> = terms.iter().map(|t| t.trim()).filter(|t| !t.is_empty()).collect();
     if terms.is_empty() || terms.iter().any(|t| t.contains(['\n', '\r'])) {
-        return Err("자주 쓰는 단어에 추가할 단어가 없습니다".into());
+        return Err(t("자주 쓰는 단어에 추가할 단어가 없습니다"));
     }
     Ok(["glossary", "add", "--"].into_iter().chain(terms).map(String::from).collect())
 }
@@ -1029,7 +1050,7 @@ fn glossary_args(terms: &[String]) -> Result<Vec<String>, String> {
 async fn glossary_add(state: State<'_, AppState>, terms: Vec<String>) -> Result<u64, String> {
     let s = state.settings();
     let args = glossary_args(&terms)?;
-    blocking(move || Ok(stdout_json(&run_tractus(&s, &args, None, "자주 쓰는 단어에 추가하지 못했습니다")?)?["added"].as_u64().unwrap_or(0))).await
+    blocking(move || Ok(stdout_json(&run_tractus(&s, &args, None, &t("자주 쓰는 단어에 추가하지 못했습니다"))?)?["added"].as_u64().unwrap_or(0))).await
 }
 
 /// 수정한 문장을 검색에 반영한다: `tractus index` (바뀐 노트만 다시 읽고 임베딩한다). 앱이 한가할 때 조용히 부른다.
@@ -1066,7 +1087,7 @@ fn index_outcome(exit: &Value) -> Result<bool, String> {
     match exit["code"].as_i64() {
         Some(0) => Ok(true),
         None => Ok(false),
-        Some(code) => Err(last_error_line(exit["stderr"].as_str().unwrap_or("")).unwrap_or_else(|| format!("스마트 검색 정보를 갱신하지 못했습니다 (종료 코드 {code})"))),
+        Some(code) => Err(last_error_line(exit["stderr"].as_str().unwrap_or("")).unwrap_or_else(|| tv("스마트 검색 정보를 갱신하지 못했습니다 (종료 코드 {code})", &[("code", code.to_string())]))),
     }
 }
 
@@ -1079,8 +1100,8 @@ const TITLE_MAX: usize = 120;
 fn clean_title(raw: &str) -> Result<String, String> {
     let title = raw.split_whitespace().collect::<Vec<_>>().join(" ");
     match title.chars().count() {
-        0 => Err("제목을 입력하세요.".into()),
-        n if n > TITLE_MAX => Err(format!("제목은 {TITLE_MAX}자까지 쓸 수 있습니다.")),
+        0 => Err(t("제목을 입력하세요.")),
+        n if n > TITLE_MAX => Err(tv("제목은 {TITLE_MAX}자까지 쓸 수 있습니다.", &[("TITLE_MAX", TITLE_MAX.to_string())])),
         _ => Ok(title),
     }
 }
@@ -1097,10 +1118,10 @@ fn note_new_args(title: Option<&str>) -> Result<(Vec<String>, Option<String>), S
 /// `tractus note save <노트>` 인수와 stdin JSON. 본문은 인수가 아니라 stdin으로 넘긴다 (길이·특수 문자 걱정 없이)
 fn note_save_args(id: &str, body: &str) -> Result<(Vec<String>, String), String> {
     if !is_meeting_id(id) {
-        return Err(format!("잘못된 노트 ID: {id}"));
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
     }
     if body.chars().count() > MEMO_BODY_MAX {
-        return Err("메모는 200,000자까지 쓸 수 있습니다.".into());
+        return Err(t("메모는 200,000자까지 쓸 수 있습니다."));
     }
     Ok((["note", "save", id].map(String::from).to_vec(), json!({ "body": body }).to_string()))
 }
@@ -1108,7 +1129,7 @@ fn note_save_args(id: &str, body: &str) -> Result<(Vec<String>, String), String>
 /// `tractus note title <노트>` 인수와 stdin JSON
 fn note_title_args(id: &str, title: &str) -> Result<(Vec<String>, String, String), String> {
     if !is_meeting_id(id) {
-        return Err(format!("잘못된 노트 ID: {id}"));
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
     }
     let title = clean_title(title)?;
     Ok((["note", "title", id].map(String::from).to_vec(), json!({ "title": title }).to_string(), title))
@@ -1125,8 +1146,8 @@ async fn note_new(state: State<'_, AppState>, title: Option<String>) -> Result<N
     let s = state.settings();
     let (args, input) = note_new_args(title.as_deref())?;
     blocking(move || {
-        let v = stdout_json(&run_tractus(&s, &args, input.as_deref(), "메모를 만들지 못했습니다")?)?;
-        let meeting_id = v["meeting_id"].as_str().filter(|id| is_meeting_id(id)).ok_or("만든 메모를 찾지 못했습니다")?.to_string();
+        let v = stdout_json(&run_tractus(&s, &args, input.as_deref(), &t("메모를 만들지 못했습니다"))?)?;
+        let meeting_id = v["meeting_id"].as_str().filter(|id| is_meeting_id(id)).ok_or_else(|| t("만든 메모를 찾지 못했습니다"))?.to_string();
         Ok(NoteNew { meeting_id })
     })
     .await
@@ -1148,7 +1169,7 @@ async fn note_save(state: State<'_, AppState>, id: String, body: String) -> Resu
     let guard = BusyGuard::new(&state.busy, &id);
     blocking(move || {
         let _guard = guard;
-        let segments = stdout_json(&run_tractus(&s, &args, Some(&input), "메모를 저장하지 못했습니다")?)?["segments"].as_u64().unwrap_or(0);
+        let segments = stdout_json(&run_tractus(&s, &args, Some(&input), &t("메모를 저장하지 못했습니다"))?)?["segments"].as_u64().unwrap_or(0);
         Ok(NoteSaved { segments, meeting: meetings::load(&s.home(), &id)? })
     })
     .await
@@ -1159,8 +1180,8 @@ async fn note_save(state: State<'_, AppState>, id: String, body: String) -> Resu
 async fn note_sample(state: State<'_, AppState>) -> Result<String, String> {
     let s = state.settings();
     blocking(move || {
-        let v = stdout_json(&run_tractus(&s, &["note".into(), "sample".into()], None, "예시 노트를 만들지 못했습니다")?)?;
-        v["meeting_id"].as_str().filter(|id| is_meeting_id(id)).map(String::from).ok_or_else(|| "예시 노트를 만들지 못했습니다".into())
+        let v = stdout_json(&run_tractus(&s, &["note".into(), "sample".into()], None, &t("예시 노트를 만들지 못했습니다"))?)?;
+        v["meeting_id"].as_str().filter(|id| is_meeting_id(id)).map(String::from).ok_or_else(|| t("예시 노트를 만들지 못했습니다"))
     })
     .await
 }
@@ -1173,7 +1194,7 @@ async fn note_title(state: State<'_, AppState>, id: String, title: String) -> Re
     let guard = BusyGuard::new(&state.busy, &id);
     blocking(move || {
         let _guard = guard;
-        let v = stdout_json(&run_tractus(&s, &args, Some(&input), "제목을 바꾸지 못했습니다")?)?;
+        let v = stdout_json(&run_tractus(&s, &args, Some(&input), &t("제목을 바꾸지 못했습니다"))?)?;
         Ok(v["title"].as_str().map_or(sent, String::from))
     })
     .await
@@ -1185,7 +1206,7 @@ const EXPORT_FORMATS: &[&str] = &["txt", "md", "srt", "vtt", "csv", "docx", "bun
 /// summary: md·docx에 넣을 요약의 key (화면에서 고른 요약). 없으면 코어가 기본 요약을 쓴다
 fn export_args(id: &str, format: &str, out: &Path, summary: Option<&str>) -> Result<Vec<String>, String> {
     if !is_meeting_id(id) || !EXPORT_FORMATS.contains(&format) || !out.is_absolute() || out.file_name().is_none() || summary.is_some_and(|k| !summaries::is_summary_key(k)) {
-        return Err(format!("잘못된 내보내기: {id} {format} {}", out.display()));
+        return Err(tv("잘못된 내보내기: {id} {format} {path}", &[("id", id.to_string()), ("format", format.to_string()), ("path", out.display().to_string())]));
     }
     let out = out.to_string_lossy();
     let mut args: Vec<String> = ["export", id, "--format", format, "--out", &out, "--force"].map(String::from).to_vec();
@@ -1203,8 +1224,8 @@ async fn export_meeting(state: State<'_, AppState>, id: String, format: String, 
     let guard = BusyGuard::new(&state.busy, &id);
     blocking(move || {
         let _guard = guard;
-        let v = stdout_json(&run_tractus(&s, &args, None, "내보내지 못했습니다")?)?;
-        let path = v["path"].as_str().ok_or("내보낸 파일 위치를 알 수 없습니다")?.to_string();
+        let v = stdout_json(&run_tractus(&s, &args, None, &t("내보내지 못했습니다"))?)?;
+        let path = v["path"].as_str().ok_or_else(|| t("내보낸 파일 위치를 알 수 없습니다"))?.to_string();
         // Finder 보여 주기가 실패해도 파일은 이미 저장됐다
         if let Err(e) = tauri_plugin_opener::reveal_item_in_dir(&path) {
             eprintln!("Finder에서 보여 주지 못했습니다: {e}");
@@ -1221,7 +1242,7 @@ const IMPORT_EXTS: &[&str] = &["m4a", "mp3", "wav", "aac", "flac", "ogg", "opus"
 fn import_args(path: &Path) -> Result<Vec<String>, String> {
     let ext_ok = path.extension().and_then(OsStr::to_str).is_some_and(|e| IMPORT_EXTS.contains(&e.to_ascii_lowercase().as_str()));
     if !(path.is_absolute() && ext_ok && path.is_file()) {
-        return Err(format!("가져올 수 없는 파일입니다: {}", path.display()));
+        return Err(tv("가져올 수 없는 파일입니다: {path}", &[("path", path.display().to_string())]));
     }
     Ok(vec!["transcribe".into(), path.to_string_lossy().into_owned(), "--progress-json".into()])
 }
@@ -1261,6 +1282,7 @@ pub fn run() {
             let config_path = app.path().app_config_dir()?.join("settings.json");
             let mut settings = Settings::load(std::fs::read_to_string(&config_path).ok().as_deref());
             settings.config_dir = config_path.parent().map(Path::to_path_buf);
+            i18n::set(i18n::resolve(&settings.ui_lang, i18n::system_lang().as_deref()));
             let mcp = Arc::new(mcp::McpClient::new(settings.mcp_spawn()));
             // 첫 검색이 빠르도록 미리 띄워 둔다 (실패해도 검색 때 다시 시도)
             let warm = mcp.clone();
@@ -1280,7 +1302,8 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             get_settings,
-            locale::system_lang,
+            ui_lang,
+            set_ui_lang,
             paths::update_available,
             save_settings,
             set_rec_mode,

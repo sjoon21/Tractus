@@ -47,7 +47,11 @@
     "macOS": {
       "minimumSystemVersion": "14.4",
       "signingIdentity": "-",
-      "entitlements": "./Entitlements.plist"
+      "entitlements": "./Entitlements.plist",
+      "files": {
+        "Resources/en.lproj/InfoPlist.strings": "./locales/en.lproj/InfoPlist.strings",
+        "Resources/ko.lproj/InfoPlist.strings": "./locales/ko.lproj/InfoPlist.strings"
+      }
     }
   },
   "plugins": {

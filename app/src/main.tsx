@@ -3,12 +3,11 @@
 import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "./theme.css";
 import { invoke } from "@tauri-apps/api/core";
-import { readLangPref, resolveLang, setLang } from "./i18n";
+import { setLang, setLangPref, type Lang, type LangPref } from "./i18n";
 
 async function start() {
-  const pref = readLangPref();
-  const system = pref === "system" ? await invoke<string | null>("system_lang").catch(() => null) : null;
-  const lang = resolveLang(pref, system);
+  const { pref, lang } = await invoke<{ pref: LangPref; lang: Lang }>("ui_lang").catch(() => ({ pref: "system" as LangPref, lang: "ko" as Lang }));
+  setLangPref(pref);
   setLang(lang, lang === "en" ? (await import("./en")).EN : {});
   const [{ createRoot }, { initTheme }, { App }, { PanelsProvider }] = await Promise.all([import("react-dom/client"), import("./themePref"), import("./App"), import("./PanelToggle")]);
   initTheme();

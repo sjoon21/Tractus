@@ -4,6 +4,7 @@
 //! - 하위 프로세스가 죽으면 대기 중인 호출은 실패하고, 다음 호출이 새로 띄운다(한 번 재시도).
 //! - `call_tool`은 블로킹이다. Tauri 명령에서는 spawn_blocking으로 불러 UI 스레드를 막지 않는다.
 
+use crate::i18n::{t, tv};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -65,7 +66,7 @@ impl McpClient {
     pub fn call_tool(&self, name: &str, arguments: Value) -> Result<Value, String> {
         let params = json!({"name": name, "arguments": arguments});
         match self.request("tools/call", params.clone()) {
-            Err(e) if e == DISCONNECTED => self.request("tools/call", params),
+            Err(e) if e == disconnected() => self.request("tools/call", params),
             r => r,
         }
     }
@@ -86,11 +87,11 @@ impl McpClient {
             if !conn.alive.load(Ordering::SeqCst) {
                 conn.pending.lock().unwrap().remove(&id);
                 *guard = None;
-                return Err(DISCONNECTED.into());
+                return Err(disconnected());
             }
             if let Err(e) = send(&mut conn.stdin, &json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})) {
                 *guard = None;
-                return Err(if e.kind() == std::io::ErrorKind::BrokenPipe { DISCONNECTED.into() } else { e.to_string() });
+                return Err(if e.kind() == std::io::ErrorKind::BrokenPipe { disconnected() } else { e.to_string() });
             }
             rx
         };
@@ -104,7 +105,7 @@ fn connect(spec: Spawn, id: u64) -> Result<Conn, String> {
     if let Some(cwd) = &spec.cwd {
         cmd.current_dir(cwd);
     }
-    let mut child = cmd.spawn().map_err(|e| format!("스마트 검색을 시작하지 못했습니다 ({})\n{e}", spec.program.display()))?;
+    let mut child = cmd.spawn().map_err(|e| tv("스마트 검색을 시작하지 못했습니다 ({path})\n{e}", &[("path", spec.program.display().to_string()), ("e", e.to_string())]))?;
     let stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let pending: Pending = Arc::default();
@@ -122,13 +123,15 @@ fn connect(spec: Spawn, id: u64) -> Result<Conn, String> {
         "clientInfo": {"name": "tractus-app", "version": env!("CARGO_PKG_VERSION")}
     }});
     let mut conn = Conn { spec, child, stdin, pending, alive };
-    send(&mut conn.stdin, &init).map_err(|e| format!("스마트 검색을 시작하지 못했습니다\n{e}"))?;
-    wait(rx).map_err(|e| format!("스마트 검색을 시작하지 못했습니다\n{e}"))?;
+    send(&mut conn.stdin, &init).map_err(|e| tv("스마트 검색을 시작하지 못했습니다\n{e}", &[("e", e.to_string())]))?;
+    wait(rx).map_err(|e| tv("스마트 검색을 시작하지 못했습니다\n{e}", &[("e", e.to_string())]))?;
     send(&mut conn.stdin, &json!({"jsonrpc": "2.0", "method": "notifications/initialized"})).map_err(|e| e.to_string())?;
     Ok(conn)
 }
 
-const DISCONNECTED: &str = "검색 엔진이 종료되었습니다. 다시 검색하면 새로 시작합니다";
+fn disconnected() -> String {
+    t("검색 엔진이 종료되었습니다. 다시 검색하면 새로 시작합니다")
+}
 
 fn send(w: &mut impl Write, msg: &Value) -> std::io::Result<()> {
     let mut line = serde_json::to_vec(msg)?;
@@ -140,8 +143,8 @@ fn send(w: &mut impl Write, msg: &Value) -> std::io::Result<()> {
 fn wait(rx: std::sync::mpsc::Receiver<Result<Value, String>>) -> Result<Value, String> {
     match rx.recv_timeout(CALL_TIMEOUT) {
         Ok(r) => r,
-        Err(RecvTimeoutError::Timeout) => Err("검색 응답이 너무 늦습니다. 잠시 후 다시 시도하세요".into()),
-        Err(RecvTimeoutError::Disconnected) => Err(DISCONNECTED.into()),
+        Err(RecvTimeoutError::Timeout) => Err(t("검색 응답이 너무 늦습니다. 잠시 후 다시 시도하세요")),
+        Err(RecvTimeoutError::Disconnected) => Err(disconnected()),
     }
 }
 
@@ -156,7 +159,7 @@ fn read_loop(reader: impl BufRead, pending: &Pending, alive: &AtomicBool) {
             continue;
         }
         let result = match msg.get("error") {
-            Some(err) => Err(err.get("message").and_then(Value::as_str).unwrap_or("검색 중 오류가 났습니다").to_string()),
+            Some(err) => Err(err.get("message").and_then(Value::as_str).map_or_else(|| t("검색 중 오류가 났습니다"), String::from)),
             None => Ok(msg.get("result").cloned().unwrap_or(Value::Null)),
         };
         if let Some(tx) = pending.lock().unwrap().remove(&id) {
@@ -219,7 +222,7 @@ for line in sys.stdin:
         let c = client();
         let pid1 = c.call_tool("status", json!({})).unwrap()["structuredContent"]["pid"].clone();
         // crash는 재시도해도 또 죽으므로 끝내 실패한다
-        assert_eq!(c.call_tool("crash", json!({})).unwrap_err(), DISCONNECTED);
+        assert_eq!(c.call_tool("crash", json!({})).unwrap_err(), disconnected());
         let pid2 = c.call_tool("status", json!({})).unwrap()["structuredContent"]["pid"].clone();
         assert_ne!(pid1, pid2);
     }

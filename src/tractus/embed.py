@@ -15,6 +15,8 @@ from pathlib import Path
 
 import numpy as np
 
+from tractus.i18n import t
+
 log = logging.getLogger("tractus.embed")
 
 MODEL_REPO = "mlx-community/Qwen3-Embedding-0.6B-8bit"
@@ -124,9 +126,9 @@ class UpstageEmbedder:
                 data = sorted(self._client.embeddings.create(model=model, input=batch, encoding_format="float").data, key=lambda d: d.index)
             except Exception as e:  # noqa: BLE001 — 오류 본문에 노트 문장이 들어 있을 수 있어 상태 코드만 남긴다
                 status = getattr(e, "status_code", None)
-                raise RuntimeError(f"Upstage 임베딩 호출 실패 ({host_of(self.provider.base_url)} {f'HTTP {status}' if status else type(e).__name__})") from None  # words-ok: 코어 로그·건너뜀 줄 (앱은 코드 없는 줄을 자세히로 접는다)
+                raise RuntimeError(t("Upstage 임베딩 호출 실패 ({host} {detail})", host=host_of(self.provider.base_url), detail=f"HTTP {status}" if status else type(e).__name__)) from None  # words-ok: 코어 로그·건너뜀 줄 (앱은 코드 없는 줄을 자세히로 접는다)
             if len(data) != len(batch) or any(len(d.embedding) != self.dim for d in data):  # 섞인 차원의 벡터를 인덱스에 넣지 않는다
-                raise RuntimeError(f"Upstage 임베딩 응답이 맞지 않습니다 (기대: {len(batch)}개 x {self.dim}차원)")  # words-ok: 코어 로그
+                raise RuntimeError(t("Upstage 임베딩 응답이 맞지 않습니다 (기대: {n}개 x {dim}차원)", n=len(batch), dim=self.dim))  # words-ok: 코어 로그
             out[s : s + len(batch)] = np.asarray([d.embedding for d in data], np.float32)
         return out
 
@@ -140,7 +142,7 @@ def upstage_embedder() -> "UpstageEmbedder | None":
         if base := os.environ.get("UPSTAGE_BASE_URL", "").strip():
             provider = replace(provider, base_url=llm.normalize_base_url(base, "UPSTAGE_BASE_URL"))
         if llm.local_only() and not llm.is_loopback(provider.base_url):
-            raise llm.LLMError("로컬 전용 모드(TRACTUS_LOCAL_ONLY)에서는 Upstage를 쓸 수 없습니다")
+            raise llm.LLMError(t("로컬 전용 모드(TRACTUS_LOCAL_ONLY)에서는 Upstage를 쓸 수 없습니다"))
     except llm.LLMError as e:
         log.warning("Upstage 검색을 쓰지 않습니다: %s", e)
         return None

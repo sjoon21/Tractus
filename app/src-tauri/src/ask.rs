@@ -1,5 +1,6 @@
 //! 회의 질의 `tractus ask` (docs/roadmap.md §3 6.3): 인수와 stdin JSON, 그리고 보내기 전 안내에 쓸 LLM 설정 읽기.
 
+use crate::i18n::{t, tv};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::Path;
@@ -21,19 +22,19 @@ fn is_date(d: &str) -> bool {
 pub fn ask_args(meeting: Option<&str>, from: Option<&str>, to: Option<&str>) -> Result<Vec<String>, String> {
     let (from, to) = (from.filter(|d| !d.is_empty()), to.filter(|d| !d.is_empty()));
     if meeting.is_some() && (from.is_some() || to.is_some()) {
-        return Err("기간은 전체 노트 질문에서만 고를 수 있습니다".into());
+        return Err(t("기간은 전체 노트 질문에서만 고를 수 있습니다"));
     }
     let mut args = vec!["ask".to_string()];
     if let Some(id) = meeting {
         if !crate::is_meeting_id(id) {
-            return Err(format!("잘못된 노트 ID: {id}"));
+            return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
         }
         args.extend(["--meeting".into(), id.into(), "--save".into()]);
     }
     for (flag, d) in [("--from", from), ("--to", to)] {
         match d {
             Some(d) if is_date(d) => args.extend([flag.into(), d.into()]),
-            Some(d) => return Err(format!("날짜는 YYYY-MM-DD로 적습니다: {d}")),
+            Some(d) => return Err(tv("날짜는 YYYY-MM-DD로 적습니다: {d}", &[("d", d.to_string())])),
             None => {}
         }
     }
@@ -45,10 +46,10 @@ pub fn ask_args(meeting: Option<&str>, from: Option<&str>, to: Option<&str>) -> 
 pub fn ask_input(question: &str, history: &[ChatMessage]) -> Result<String, String> {
     let question = question.trim();
     if question.is_empty() {
-        return Err("질문이 비어 있습니다".into());
+        return Err(t("질문이 비어 있습니다"));
     }
     if history.iter().any(|m| !matches!(m.role.as_str(), "user" | "assistant")) {
-        return Err("잘못된 질문 기록입니다".into());
+        return Err(t("잘못된 질문 기록입니다"));
     }
     Ok(json!({ "question": question, "history": history }).to_string())
 }

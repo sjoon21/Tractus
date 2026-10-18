@@ -1,0 +1,4 @@
+/* macOS permission prompts. Source: ../../Info.plist (Korean) — keep both languages in sync */
+"NSMicrophoneUsageDescription" = "Tractus needs microphone access to record. Recordings stay on this Mac.";
+"NSAudioCaptureUsageDescription" = "Tractus needs system audio recording access to capture the other side of a video call. Recordings stay on this Mac.";
+"NSCalendarsFullAccessUsageDescription" = "Tractus shows upcoming events and records with the event title and attendee names. Events are read only on this Mac.";

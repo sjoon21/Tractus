@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Callable
 
 from tractus.asr import Segment
+from tractus.i18n import t
 
 SR = 16000
 SCHEMA_VERSION = 2  # 2: segment.speaker("S1"…), 최상위 speakers·diarization. 1도 그대로 읽는다
@@ -55,7 +56,7 @@ def load_glossary(path: Path) -> list[str]:
     return terms
 
 
-GLOSSARY_HEADER = "# 자주 쓰는 단어\n\n녹음을 텍스트로 변환할 때 이 단어들을 더 정확하게 인식합니다. 한 줄에 하나씩 `- 단어` 형식으로 적습니다.\n\n"
+GLOSSARY_HEADER = "# 자주 쓰는 단어\n\n녹음을 텍스트로 변환할 때 이 단어들을 더 정확하게 인식합니다. 한 줄에 하나씩 `- 단어` 형식으로 적습니다.\n\n"  # i18n-ok: 데이터 폴더 파일(glossary.md, 다음 단계)
 
 
 def add_glossary_terms(path: Path, terms: list[str]) -> int:
@@ -173,9 +174,9 @@ def find_meeting_dir(meetings: Path, ref: str) -> Path:
     ref = ref.strip()
     hits = [d for d in sorted(meetings.glob("*")) if ref and ref in d.name and (d / "transcript.json").is_file()] if ref else []
     if not hits:
-        raise LookupError(f"‘{ref}’에 해당하는 노트가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.")
+        raise LookupError(t("‘{ref}’에 해당하는 노트가 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.", ref=ref))
     if len(hits) > 1:
-        raise LookupError(f"‘{ref}’에 해당하는 노트가 {len(hits)}개입니다: " + ", ".join(d.name for d in hits[:5]))
+        raise LookupError(t("‘{ref}’에 해당하는 노트가 {n}개입니다: {names}", ref=ref, n=len(hits), names=", ".join(d.name for d in hits[:5])))
     _clean_stale_job(hits[0])
     return hits[0]
 
@@ -209,7 +210,7 @@ def build_transcript(job: Job) -> dict:
     done = job.done()
     missing = [i for i in range(len(job.chunks)) if i not in done]
     if missing:
-        raise IncompleteError(f"변환이 끝나지 않은 구간이 있습니다 ({missing[:10]}). 같은 명령으로 다시 실행하세요")
+        raise IncompleteError(t("변환이 끝나지 않은 구간이 있습니다 ({chunks}). 같은 명령으로 다시 실행하세요", chunks=missing[:10]))
     segments = []
     for i, (s, e, speaker) in enumerate(job.chunks):
         seg = done[i]
@@ -371,11 +372,12 @@ def speaker_name(t: dict, label: str | None) -> str | None:
     return ((t.get("speakers") or {}).get(label) or {}).get("name") or label
 
 
-def speaker_display(t: dict, label: str | None) -> str | None:
-    """사람이 읽는 문서·프롬프트용 이름 (WORDS.md §2): 정한 이름, 없으면 S3 → '참석자 3', 화자를 모르면 None."""
+def speaker_display(t: dict, label: str | None, auto: str = "참석자 {n}") -> str | None:  # i18n-ok: 노트 폴더 파일·프롬프트·색인은 한국어(다음 단계)
+    """사람이 읽는 문서·프롬프트용 이름 (WORDS.md §2): 정한 이름, 없으면 S3 → '참석자 3', 화자를 모르면 None.
+    auto는 이름 없는 참석자의 모양이다. 내보내기는 화면 언어로 t("참석자 {n}")을 넘긴다."""
     name = speaker_name(t, label)
     m = re.fullmatch(r"S(\d+)", name or "")
-    return f"참석자 {m.group(1)}" if m and name == label else name
+    return auto.replace("{n}", m.group(1)) if m and name == label else name
 
 
 def one_line(s: str) -> str:
@@ -388,10 +390,17 @@ def _clean_name(raw: str) -> str | None:
     자동 라벨(S2)처럼 보이는 이름은 거부한다 (라벨과 헷갈리고 요약의 owner 정리에서 지워진다). 빈 문자열은 이름 지움."""
     name = one_line(re.sub(r"[\[\]<>*_`\\]", "", raw))
     if raw.strip() and not name:
-        raise ValueError("이름에 쓸 수 있는 글자가 없습니다 ([ ] < > * _ ` \\ 는 쓸 수 없습니다).")
-    if re.fullmatch(r"(S|참석자\s*)\d+", name, re.IGNORECASE):
-        raise ValueError(f"‘참석자 1’, ‘S1’처럼 자동으로 붙는 이름은 쓸 수 없습니다: {name}")
+        raise ValueError(t("이름에 쓸 수 있는 글자가 없습니다 ([ ] < > * _ ` \\ 는 쓸 수 없습니다)."))
+    if re.fullmatch(r"(S|참석자\s*|Speaker\s*)\d+", name, re.IGNORECASE):  # i18n-ok: 입력 검사 (영어 화면의 이름 없는 참석자 표시도 막는다)
+        raise ValueError(t("‘참석자 1’, ‘S1’처럼 자동으로 붙는 이름은 쓸 수 없습니다: {name}", name=name))
     return name or None
+
+
+# apply_speaker_edit·apply_text_edits는 전사를 t로 받아 t()를 부를 수 없다: 문장을 모듈에서 만든다
+SPEAKER_GONE = t("참석자를 찾지 못했습니다. 노트를 다시 열어 주세요.")
+SEGMENT_GONE = t("해당 대화를 찾지 못했습니다. 노트를 다시 열어 주세요.")
+SAME_SPEAKER = t("같은 참석자끼리는 합칠 수 없습니다.")
+SEGMENT_EMPTY = t("대화 내용을 비워 둘 수 없습니다.")
 
 
 def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
@@ -407,7 +416,7 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
 
     def known(label: str) -> str:
         if label not in speakers:
-            raise ValueError("참석자를 찾지 못했습니다. 노트를 다시 열어 주세요.")
+            raise ValueError(SPEAKER_GONE)
         return label
 
     if op == "rename" and len(args) == 2:
@@ -422,7 +431,7 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
     elif op == "set" and len(args) == 2:
         seg = next((s for s in t["segments"] if s["id"] == args[0]), None)
         if seg is None:
-            raise ValueError("해당 대화를 찾지 못했습니다. 노트를 다시 열어 주세요.")
+            raise ValueError(SEGMENT_GONE)
         if args[1] == "new":
             used = [_label_key(k)[0] for k in [*speakers, *(s.get("speaker") or "" for s in t["segments"])] if k[1:].isdigit()]
             label = f"S{max(used, default=0) + 1}"
@@ -433,7 +442,7 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
     elif op == "merge" and len(args) == 2:
         src, dst = known(args[0]), known(args[1])
         if src == dst:
-            raise ValueError("같은 참석자끼리는 합칠 수 없습니다.")
+            raise ValueError(SAME_SPEAKER)
         for seg in t["segments"]:
             if seg.get("speaker") == src:
                 seg["speaker"] = dst
@@ -444,7 +453,7 @@ def apply_speaker_edit(t: dict, op: str, *args: str) -> dict:
         else:
             speakers[dst] = {**s_dst, "dismissed": refused}
     else:
-        raise ValueError(f"알 수 없는 화자 편집: {op} {' '.join(args)}")  # words-ok: 앱 계약 오류
+        raise ValueError(f"알 수 없는 화자 편집: {op} {' '.join(args)}")  # words-ok: 앱 계약 오류  i18n-ok: 앱 계약 오류(개발자용)
     t["speakers"] = _speakers_map(speakers, t["segments"])
     return t
 
@@ -469,12 +478,12 @@ def apply_text_edits(t: dict, edits: list) -> tuple[dict, int]:
     plan = []
     for e in edits:
         if not isinstance(e, dict) or not isinstance(e.get("id"), str) or not isinstance(e.get("text"), str):
-            raise ValueError(f"편집 형식은 {{\"id\": \"s0012\", \"text\": \"…\"}}입니다: {str(e)[:80]}")  # words-ok: 앱 계약 오류
+            raise ValueError(f"편집 형식은 {{\"id\": \"s0012\", \"text\": \"…\"}}입니다: {str(e)[:80]}")  # words-ok: 앱 계약 오류  i18n-ok: 앱 계약 오류(개발자용)
         if e["id"] not in by_id:
-            raise ValueError("해당 대화를 찾지 못했습니다. 노트를 다시 열어 주세요.")
+            raise ValueError(SEGMENT_GONE)
         text = one_line(e["text"])
         if not text:
-            raise ValueError("대화 내용을 비워 둘 수 없습니다.")
+            raise ValueError(SEGMENT_EMPTY)
         plan.append((by_id[e["id"]], text))
     from tractus.align import remap_words  # align이 store를 불러오므로 여기서 불러온다
 
@@ -504,8 +513,8 @@ def is_memo(t: dict) -> bool:
 
 
 RECORDED = "recorded"
-NOT_CONVERTED = "먼저 텍스트로 변환하세요."
-NOT_CONVERTED_NOTE = "아직 텍스트로 변환하지 않았습니다."
+NOT_CONVERTED = t("먼저 텍스트로 변환하세요.")
+NOT_CONVERTED_NOTE = "아직 텍스트로 변환하지 않았습니다."  # i18n-ok: 노트 폴더 파일(다음 단계). 내보내기는 _doc_words(ui=True)
 
 
 def is_sample(t: dict) -> bool:
@@ -522,8 +531,8 @@ def stamp(s: dict) -> str:
     """세그먼트(또는 근거·인용)의 위치 표기. 녹음 노트의 사용자 메모 줄(source "memo")은 '메모 n번째 줄',
     메모 노트의 줄(line이 있는 것)은 'n번째 줄', 그 밖에는 HH:MM:SS."""
     if s.get("source") == "memo" and s.get("line"):
-        return f"메모 {s['line']}번째 줄"
-    return f"{s['line']}번째 줄" if s.get("line") else _hms(s["start"])
+        return f"메모 {s['line']}번째 줄"  # i18n-ok: 앱이 검색 결과·MCP 출력에서 읽는다
+    return f"{s['line']}번째 줄" if s.get("line") else _hms(s["start"])  # i18n-ok: 앱이 검색 결과·MCP 출력에서 읽는다
 
 
 def memo_lines(t: dict) -> list[dict]:
@@ -545,7 +554,6 @@ def memo_segments(t: dict) -> list[dict]:
 
 
 MEMOS_FILE = "memos.json"
-_MARK_LABEL = {"memo": "메모", "bookmark": "북마크"}
 
 
 def load_memos(d: Path) -> list[dict]:
@@ -562,10 +570,19 @@ def _vtt_time(sec: float) -> str:
     return f"{ms // 3_600_000:02d}:{ms // 60_000 % 60:02d}:{ms // 1000 % 60:02d}.{ms % 1000:03d}"
 
 
-def render_vtt(t: dict) -> str:
-    """WebVTT 자막. 큐 ID는 세그먼트 ID, 화자는 <v 이름> (브라우저 <track>, Obsidian Media Extended가 그대로 읽음)."""
+def _doc_words(ui: bool) -> dict[str, str]:
+    """transcript.md·vtt에 쓰는 말. 노트 폴더 파일은 한국어 그대로(다음 단계), 내보내기(ui=True)는 화면 언어."""
+    if not ui:
+        return {"not_converted": NOT_CONVERTED_NOTE, "memo": "메모", "bookmark": "북마크", "speaker": "참석자 {n}"}  # i18n-ok: 노트 폴더 파일(다음 단계)
+    return {"not_converted": t("아직 텍스트로 변환하지 않았습니다."), "memo": t("메모"), "bookmark": t("북마크"), "speaker": t("참석자 {n}")}
+
+
+def render_vtt(t: dict, ui: bool = False) -> str:
+    """WebVTT 자막. 큐 ID는 세그먼트 ID, 화자는 <v 이름> (브라우저 <track>, Obsidian Media Extended가 그대로 읽음). ui: 내보내기(화면 언어)."""
+    auto = _doc_words(ui)["speaker"]
+
     def voice(s: dict) -> str:  # 화자는 <v 이름> 태그. 이름 안의 마크업 문자는 뺀다
-        name = speaker_display(t, s.get("speaker"))
+        name = speaker_display(t, s.get("speaker"), auto)
         return f"<v {' '.join(re.sub(r'[<>&]', '', name).split())}>" if name else ""
 
     cues = [
@@ -593,10 +610,12 @@ def _meta_lines(t: dict, folder: str | None) -> list[str]:
     return [*([f"tags: [{', '.join(_yaml_scalar(x) for x in tags)}]"] if tags else []), *(["favorite: true"] if t.get("favorite") is True else []), *([f"folder: {_yaml_scalar(folder)}"] if folder else [])]
 
 
-def render_markdown(t: dict, memos: list[dict] | None = None, folder: str | None = None) -> str:
+def render_markdown(t: dict, memos: list[dict] | None = None, folder: str | None = None, ui: bool = False) -> str:
     """사람·에이전트용 전사. 줄마다 `[HH:MM:SS] **화자**: 텍스트` (화자를 모르면 생략).
     frontmatter는 Obsidian 등에서 그대로 읽힌다. 메모·북마크는 시각 순으로 끼워 넣는다.
-    직접 쓴 메모 노트는 시각·길이 없이 줄마다 문단으로 쓴다. 사용자 메모가 있는 녹음 노트는 끝에 `## 메모` 절이 붙는다."""
+    직접 쓴 메모 노트는 시각·길이 없이 줄마다 문단으로 쓴다. 사용자 메모가 있는 녹음 노트는 끝에 `## 메모` 절이 붙는다.
+    ui: 내보내기(화면 언어). 노트 폴더의 transcript.md는 한국어다."""
+    words = _doc_words(ui)
     if is_memo(t):
         head = ["---", f"meeting_id: {t['meeting_id']}", f"title: {_yaml_scalar(t['title'])}", f"created_at: {t['created_at']}", "kind: memo", *_meta_lines(t, folder), "---", "", f"# {t['title']}", ""]
         paras = [seg_text(s) for s in t["segments"] if seg_text(s)]
@@ -614,20 +633,20 @@ def render_markdown(t: dict, memos: list[dict] | None = None, folder: str | None
         "",
         f"# {t['title']}",
         "",
-        *([NOT_CONVERTED_NOTE, ""] if is_recorded(t) else []),
+        *([words["not_converted"], ""] if is_recorded(t) else []),
     ]
     def who(s: dict) -> str:
-        name = speaker_display(t, s.get("speaker"))
+        name = speaker_display(t, s.get("speaker"), words["speaker"])
         return f"**{name}**: " if name else ""
 
     rows = [(s["start"], 0, f"[{_hms(s['start'])}] {who(s)}{seg_text(s)}") for s in t["segments"] if seg_text(s)]
     for m in memos or []:
-        label = _MARK_LABEL.get(m.get("kind"), "메모")
+        label = words["bookmark"] if m.get("kind") == "bookmark" else words["memo"]
         text = f" {m['text']}" if m.get("text") else ""
         rows.append((m["t"], 1, f"[{_hms(m['t'])}] ({label}){text}"))
     lines = [r[2] for r in sorted(rows, key=lambda r: (r[0], r[1]))]
     if memo := memo_lines(t):  # 사용자가 적은 메모: 대화 내용 뒤에 줄마다 문단으로
-        lines += ["", "## 메모", ""] + [x for m in memo for x in (m["text"], "")][:-1]
+        lines += ["", f"## {words['memo']}", ""] + [x for m in memo for x in (m["text"], "")][:-1]
     return "\n".join(head + lines) + "\n"
 
 

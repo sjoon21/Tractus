@@ -7,7 +7,7 @@ import { Row, Section } from "@/components/ui/section";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { readTheme, saveTheme, THEME_OPTIONS, type ThemePref } from "./themePref";
-import { LANG_OPTIONS, readLangPref, saveLangPref, t, type LangPref } from "./i18n";
+import { LANG_OPTIONS, readLangPref, t, type LangPref } from "./i18n";
 import { api, errDetail, errText, type McpStatus, type Settings, type VoiceList, type VoicePerson } from "./api";
 import { AFTER_SETTING, afterRecord, type AfterRecord } from "./afterRecord";
 import { ErrorDetail } from "./ErrorDetail";
@@ -323,10 +323,11 @@ function Segmented<V extends string>({ label, value, options, onPick }: { label:
   );
 }
 
-/** 화면 테마·언어: 저장 단추 없이 바로 적용한다 (themePref.ts·i18n.ts, 이 Mac의 브라우저 저장소). 언어는 시작할 때 정하므로 화면을 다시 연다 */
+/** 화면 테마·언어: 저장 단추 없이 바로 적용한다. 테마는 이 Mac의 브라우저 저장소(themePref.ts), 언어는 settings.json(Rust i18n.rs)이고 시작할 때 정하므로 화면을 다시 연다 */
 function ThemeSection() {
   const [theme, setTheme] = useState<ThemePref>(readTheme);
   const lang = readLangPref();
+  const [langErr, setLangErr] = useState<string | null>(null);
   return (
     <Section title={t("화면")}>
       <Row
@@ -345,7 +346,7 @@ function ThemeSection() {
       />
       <Row
         label={t("언어")}
-        hint={t("바꾸면 앱 화면을 다시 엽니다.")}
+        hint={langErr ?? t("바꾸면 앱 화면을 다시 엽니다.")}
         control={
           <Segmented<LangPref>
             label={t("언어")}
@@ -353,8 +354,10 @@ function ThemeSection() {
             options={LANG_OPTIONS.map((o) => ({ value: o.value, label: o.label() }))}
             onPick={(v) => {
               if (v === lang) return;
-              saveLangPref(v);
-              location.reload();
+              api
+                .setUiLang(v)
+                .then(() => location.reload())
+                .catch((e) => setLangErr(t("언어를 바꾸지 못했습니다: {error}", { error: errText(e) })));
             }}
           />
         }

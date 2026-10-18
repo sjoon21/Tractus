@@ -5,6 +5,7 @@
 //!
 //! 두 작업은 "job" 이벤트로 진행을 보낸다 (`{job, kind: "finish" | "convert"}`). 오류 문자열: 첫 줄은 화면 문장(WORDS.md), 둘째 줄부터는 원래 오류.
 
+use crate::i18n::tv;
 use crate::{cancel_index, clean_title, hold, is_meeting_id, meetings, procs, release, AppState};
 use serde_json::{json, Value};
 use std::path::Path;
@@ -16,7 +17,7 @@ const AFTER_RECORD: &[&str] = &["ask", "convert", "later"];
 /// 설정 파일의 `after_record`만 바꾼다. 환경변수에서 온 기본값(home 등)이 파일에 굳지 않게 다른 키는 그대로 둔다
 pub fn merge_after_record(raw: Option<&str>, value: &str) -> Result<String, String> {
     if !AFTER_RECORD.contains(&value) {
-        return Err(format!("알 수 없는 설정입니다: {value}"));
+        return Err(tv("알 수 없는 설정입니다: {value}", &[("value", value.to_string())]));
     }
     let mut v: Value = raw.and_then(|r| serde_json::from_str(r).ok()).filter(Value::is_object).unwrap_or_else(|| json!({}));
     v["after_record"] = json!(value);
@@ -35,7 +36,7 @@ pub fn set_after_record(state: State<'_, AppState>, value: String) -> Result<(),
 /// 제목은 `=`로 붙인다: `-`로 시작하는 제목을 옵션으로 읽지 않게
 fn finish_args(home: &Path, dir: &Path, title: Option<&str>) -> Result<Vec<String>, String> {
     if !meetings::is_recording_dir(home, dir) {
-        return Err(format!("녹음 폴더가 아닙니다: {}", dir.display()));
+        return Err(tv("녹음 폴더가 아닙니다: {path}", &[("path", dir.display().to_string())]));
     }
     let mut args = vec!["recording".to_string(), "finish".into(), dir.to_string_lossy().into_owned(), "--progress-json".into()];
     if let Some(t) = title.map(str::trim).filter(|t| !t.is_empty()) {
@@ -47,7 +48,7 @@ fn finish_args(home: &Path, dir: &Path, title: Option<&str>) -> Result<Vec<Strin
 /// `tractus transcribe --into <노트 ID> --progress-json`. 노트가 변환 전인지는 코어가 본다 (`not_recorded`)
 fn convert_args(id: &str) -> Result<Vec<String>, String> {
     if !is_meeting_id(id) {
-        return Err(format!("잘못된 노트 ID: {id}"));
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
     }
     Ok(["transcribe", "--into", id, "--progress-json"].map(String::from).to_vec())
 }

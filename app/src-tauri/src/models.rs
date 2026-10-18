@@ -2,6 +2,7 @@
 //! 받기는 `tractus models download --progress-json`을 하위 프로세스로 띄워 JSON 줄을 `job` 이벤트(kind "models")로 그대로 보낸다.
 //! 앱은 코어가 주는 키를 느슨하게 읽는다: 모르는 키·이상한 항목은 건너뛰고, 점검을 못 읽으면 doctor는 `doctor: null`로 답해 화면이 모든 기능을 쓸 수 있다고 본다.
 
+use crate::i18n::{t, tv};
 use super::{blocking, expand, procs, run_tractus, AppState, Settings};
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -15,7 +16,9 @@ const IDS_MAX: usize = 16;
 const PRESETS: &[&str] = &["required", "standard", "lite", "all"];
 /// 멈추기(SIGTERM) 뒤에도 안 끝나면 강제로 끝내기까지 기다리는 시간
 const KILL_AFTER: Duration = Duration::from_secs(10);
-const BUSY: &str = "다른 모델을 받는 중입니다. 끝난 뒤에 다시 시도하세요.";
+fn busy() -> String {
+    t("다른 모델을 받는 중입니다. 끝난 뒤에 다시 시도하세요.")
+}
 
 /// 모델 ID: 소문자·숫자·`-`만, 처음은 `-`가 아니다 (코어 레지스트리 ID, 옵션처럼 읽히지 않게)
 pub fn valid_id(id: &str) -> bool {
@@ -36,7 +39,7 @@ fn doctor_args() -> Vec<String> {
 
 fn remove_args(id: &str) -> Result<Vec<String>, String> {
     if !valid_id(id) {
-        return Err(format!("잘못된 모델 ID입니다: {id}"));
+        return Err(tv("잘못된 모델 ID입니다: {id}", &[("id", id.to_string())]));
     }
     Ok(to_args(&["models", "remove", id, "--yes"]))
 }
@@ -45,7 +48,7 @@ fn remove_args(id: &str) -> Result<Vec<String>, String> {
 fn move_args(dest: &str) -> Result<Vec<String>, String> {
     let dest = expand(dest);
     if !dest.is_absolute() || dest.to_string_lossy().contains('\0') {
-        return Err(format!("폴더는 전체 경로로 지정하세요: {}", dest.display()));
+        return Err(tv("폴더는 전체 경로로 지정하세요: {path}", &[("path", dest.display().to_string())]));
     }
     Ok(vec!["models".into(), "move".into(), "--yes".into(), dest.to_string_lossy().into_owned()])
 }
@@ -55,22 +58,22 @@ fn download_args(ids: &[String], preset: Option<&str>) -> Result<Vec<String>, St
     let mut uniq: Vec<&str> = vec![];
     for id in ids {
         if !valid_id(id) {
-            return Err(format!("잘못된 모델 ID입니다: {id}"));
+            return Err(tv("잘못된 모델 ID입니다: {id}", &[("id", id.to_string())]));
         }
         if !uniq.contains(&id.as_str()) {
             uniq.push(id);
         }
     }
     if uniq.len() > IDS_MAX {
-        return Err("한 번에 받을 수 있는 모델 수를 넘었습니다".into());
+        return Err(t("한 번에 받을 수 있는 모델 수를 넘었습니다"));
     }
     if let Some(p) = preset {
         if !PRESETS.contains(&p) {
-            return Err(format!("알 수 없는 구성입니다: {p}"));
+            return Err(tv("알 수 없는 구성입니다: {p}", &[("p", p.to_string())]));
         }
     }
     if uniq.is_empty() && preset.is_none() {
-        return Err("받을 모델이 없습니다".into());
+        return Err(t("받을 모델이 없습니다"));
     }
     let mut args = to_args(&["models", "download"]);
     args.extend(uniq.iter().map(|s| s.to_string()));
@@ -185,12 +188,14 @@ fn model_row(v: &Value) -> Option<ModelRow> {
     })
 }
 
-const LIST_FAILED: &str = "모델 목록을 읽지 못했습니다";
+fn list_failed() -> String {
+    t("모델 목록을 읽지 못했습니다")
+}
 
 /// `tractus models list --json` (docs/desktop.md §2.15). 읽지 못하는 항목은 건너뛴다
 fn parse_models_list(out: &str) -> Result<ModelsList, String> {
-    let v = parse_object(out).ok_or(LIST_FAILED)?;
-    let models = v.get("models").and_then(Value::as_array).ok_or(LIST_FAILED)?.iter().filter_map(model_row).collect();
+    let v = parse_object(out).ok_or_else(list_failed)?;
+    let models = v.get("models").and_then(Value::as_array).ok_or_else(list_failed)?.iter().filter_map(model_row).collect();
     let unregistered = v.get("unregistered").and_then(Value::as_array).map(|a| a.iter().filter_map(|u| Some(Unregistered { name: s_of(u, "name")?, bytes: bytes_of(u, "bytes").unwrap_or(0) })).collect()).unwrap_or_default();
     Ok(ModelsList { models_dir: s_of(&v, "models_dir").unwrap_or_default(), disk_free_bytes: bytes_of(&v, "disk_free_bytes"), download_active: bool_of(&v, "download_active").unwrap_or(false), models, unregistered })
 }
@@ -279,11 +284,13 @@ fn track_of(v: &Value) -> Option<String> {
     }
 }
 
-const DOCTOR_FAILED: &str = "점검 정보를 읽지 못했습니다";
+fn doctor_failed() -> String {
+    t("점검 정보를 읽지 못했습니다")
+}
 
 /// `tractus doctor --json`. 빠진 키는 비어 있는 값으로 본다 (점검이 일부만 와도 쓸 수 있게)
 fn parse_doctor(out: &str) -> Result<Doctor, String> {
-    let v = parse_object(out).ok_or(DOCTOR_FAILED)?;
+    let v = parse_object(out).ok_or_else(doctor_failed)?;
     let empty = json!({});
     let sys = v.get("system").unwrap_or(&empty);
     let tools = v.get("tools").unwrap_or(&empty);
@@ -356,7 +363,7 @@ fn doctor_report(s: &Settings) -> DoctorReport {
     let (doctor, core_error) = if !tractus_bin_exists {
         (None, Some(procs::cannot_run(&core.path, "No such file or directory")))
     } else {
-        match run_tractus(s, &doctor_args(), None, DOCTOR_FAILED).and_then(|out| parse_doctor(&out)) {
+        match run_tractus(s, &doctor_args(), None, &doctor_failed()).and_then(|out| parse_doctor(&out)) {
             Ok(mut d) => {
                 apply_embedding(&mut d, s, crate::ask::llm_config(&[&s.tractus_cwd(), &s.home()], |k| std::env::var(k).ok()).local_only);
                 (Some(d), None)
@@ -399,7 +406,7 @@ fn slot() -> &'static Slot {
 fn start(slot: &Slot, cmd: Command, job: &str, emit: impl Fn(Value) + Send + Sync + 'static) -> Result<(), String> {
     let mut held = slot.lock().unwrap();
     if held.is_some() {
-        return Err(BUSY.into());
+        return Err(busy());
     }
     let tag = json!({"job": job, "kind": "models"}).as_object().unwrap().clone();
     let (done_slot, done_job) = (slot.clone(), job.to_string());
@@ -449,7 +456,7 @@ fn downloading() -> bool {
 #[tauri::command]
 pub async fn models_list(state: State<'_, AppState>) -> Result<ModelsList, String> {
     let s = state.settings();
-    blocking(move || parse_models_list(&run_tractus(&s, &list_args(), None, LIST_FAILED)?)).await
+    blocking(move || parse_models_list(&run_tractus(&s, &list_args(), None, &list_failed())?)).await
 }
 
 /// 점검. 실패하지 않는다: 코어를 못 불러도 `doctor: null` + 이유로 답한다
@@ -480,9 +487,9 @@ pub async fn models_remove(state: State<'_, AppState>, id: String) -> Result<(),
     let s = state.settings();
     let args = remove_args(&id)?;
     if downloading() {
-        return Err("모델을 받는 중에는 삭제할 수 없습니다".into());
+        return Err(t("모델을 받는 중에는 삭제할 수 없습니다"));
     }
-    blocking(move || run_tractus(&s, &args, None, "모델을 삭제하지 못했습니다").map(|_| ())).await
+    blocking(move || run_tractus(&s, &args, None, &t("모델을 삭제하지 못했습니다")).map(|_| ())).await
 }
 
 /// 모델 폴더 옮기기 (지금 모델 폴더 → dest, 등록된 모델만). 설정은 건드리지 않는다: 화면이 성공한 뒤에 `models_dir`을 저장한다.
@@ -492,9 +499,9 @@ pub async fn models_move(state: State<'_, AppState>, dest: String) -> Result<Val
     let s = state.settings();
     let args = move_args(&dest)?;
     if downloading() {
-        return Err("모델을 받는 중에는 옮길 수 없습니다".into());
+        return Err(t("모델을 받는 중에는 옮길 수 없습니다"));
     }
-    blocking(move || parse_object(&run_tractus(&s, &args, None, "모델을 옮기지 못했습니다")?).ok_or_else(|| "모델을 옮긴 결과를 읽지 못했습니다".to_string())).await
+    blocking(move || parse_object(&run_tractus(&s, &args, None, &t("모델을 옮기지 못했습니다"))?).ok_or_else(|| t("모델을 옮긴 결과를 읽지 못했습니다"))).await
 }
 
 /// 등록되지 않은 폴더 정리 (`tractus models prune --yes --json`). → {"removed": [{"name","bytes"}], "freed_bytes"}
@@ -502,9 +509,9 @@ pub async fn models_move(state: State<'_, AppState>, dest: String) -> Result<Val
 pub async fn models_prune(state: State<'_, AppState>) -> Result<Value, String> {
     let s = state.settings();
     if downloading() {
-        return Err("모델을 받는 중에는 정리할 수 없습니다".into());
+        return Err(t("모델을 받는 중에는 정리할 수 없습니다"));
     }
-    blocking(move || parse_object(&run_tractus(&s, &to_args(&["models", "prune", "--yes", "--json"]), None, "폴더를 정리하지 못했습니다")?).ok_or_else(|| "정리한 결과를 읽지 못했습니다".to_string())).await
+    blocking(move || parse_object(&run_tractus(&s, &to_args(&["models", "prune", "--yes", "--json"]), None, &t("폴더를 정리하지 못했습니다"))?).ok_or_else(|| t("정리한 결과를 읽지 못했습니다"))).await
 }
 
 #[cfg(test)]
@@ -617,7 +624,7 @@ mod tests {
     #[test]
     fn models_list_rejects_garbage() {
         for bad in ["", "not json", "[]", "{}", r#"{"models": "x"}"#, "null"] {
-            assert_eq!(parse_models_list(bad).unwrap_err(), LIST_FAILED, "{bad}");
+            assert_eq!(parse_models_list(bad).unwrap_err(), list_failed(), "{bad}");
         }
     }
 
@@ -662,7 +669,7 @@ mod tests {
         assert_eq!(d.recommended_track.as_deref(), Some("asr-lite"));
         assert!(d.capabilities.is_empty());
         for bad in ["", "nope", "[]"] {
-            assert_eq!(parse_doctor(bad).unwrap_err(), DOCTOR_FAILED, "{bad}");
+            assert_eq!(parse_doctor(bad).unwrap_err(), doctor_failed(), "{bad}");
         }
     }
 
@@ -686,7 +693,7 @@ mod tests {
         let d = tmp("realcore");
         let s = Settings { home: d.join("home").to_string_lossy().into_owned(), models_dir: d.join("models").to_string_lossy().into_owned(), ..Default::default() };
         eprintln!("TRACTUS_HOME={} TRACTUS_MODELS_DIR={}", s.home, s.models_dir);
-        let l = parse_models_list(&run_tractus(&s, &list_args(), None, LIST_FAILED).unwrap()).unwrap();
+        let l = parse_models_list(&run_tractus(&s, &list_args(), None, &list_failed()).unwrap()).unwrap();
         assert_eq!(l.models.len(), 8);
         assert!(l.models.iter().all(|m| m.state == "missing" && m.size_bytes > 0));
         let r = doctor_report(&s);
@@ -719,13 +726,13 @@ mod tests {
         assert!(kinds.contains(&"stage") && kinds.contains(&"progress") && kinds.contains(&"model_done") && kinds.contains(&"done"), "{kinds:?}");
         assert_eq!(events.last().unwrap()["code"], 0);
         assert!(events.iter().all(|e| e["job"] == "REAL" && e["kind"] == "models"));
-        let l = parse_models_list(&run_tractus(&s, &list_args(), None, LIST_FAILED).unwrap()).unwrap();
+        let l = parse_models_list(&run_tractus(&s, &list_args(), None, &list_failed()).unwrap()).unwrap();
         let vad = l.models.iter().find(|m| m.id == "vad").unwrap();
         assert_eq!((vad.state.as_str(), vad.installed), ("installed", true));
         assert!(l.models.iter().filter(|m| m.id != "vad").all(|m| !m.installed));
         // 지우기도 앱 명령 그대로
         run_tractus(&s, &remove_args("vad").unwrap(), None, "x").unwrap();
-        let l = parse_models_list(&run_tractus(&s, &list_args(), None, LIST_FAILED).unwrap()).unwrap();
+        let l = parse_models_list(&run_tractus(&s, &list_args(), None, &list_failed()).unwrap()).unwrap();
         assert_eq!(l.models.iter().find(|m| m.id == "vad").unwrap().state, "missing");
     }
 
@@ -825,7 +832,7 @@ mod tests {
         start(&slot, Command::new(&bin), "J1", move |v| tx.send(v).unwrap()).unwrap();
         // 받는 중에 또 시작하면 거절한다
         let (tx2, _rx2) = channel::<Value>();
-        assert_eq!(start(&slot, Command::new(&bin), "J2", move |v| tx2.send(v).unwrap()).unwrap_err(), BUSY);
+        assert_eq!(start(&slot, Command::new(&bin), "J2", move |v| tx2.send(v).unwrap()).unwrap_err(), busy());
         let got: Vec<Value> = (0..3).map(|_| rx.recv_timeout(Duration::from_secs(5)).unwrap()).collect();
         assert_eq!(got[0], json!({"event": "progress", "model": "vad", "done": 1, "total": 2, "job": "J1", "kind": "models"}));
         assert_eq!(got[1]["event"], "done");

@@ -25,6 +25,7 @@ from typing import Callable, Iterator
 
 from tractus import diarize, paths
 from tractus import models_registry as reg
+from tractus.i18n import t
 
 Emit = Callable[..., None]
 DISK_MARGIN = 1.1  # 남은 용량 ≥ 받을 크기 × 1.1
@@ -52,7 +53,7 @@ def download_lock(root: Path) -> Iterator[None]:
         fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         f.close()
-        raise ModelError(code="busy", message="다른 모델 받기가 이미 진행 중입니다") from None
+        raise ModelError(code="busy", message=t("다른 모델 받기가 이미 진행 중입니다")) from None
     f.truncate(0)
     f.write(str(os.getpid()))  # lock_held가 잠그지 않고 읽는다
     f.flush()
@@ -189,14 +190,14 @@ def _download_url(m: reg.Model, root: Path, report: _Reporter, cancel: threading
                     report(done)
     if hashlib.sha256(part.read_bytes()).hexdigest() != m.sha256:
         part.unlink()
-        raise ModelError("hash_mismatch", f"내려받은 파일의 sha256이 맞지 않아 지웠습니다: {name}", m.id)
+        raise ModelError("hash_mismatch", t("내려받은 파일의 sha256이 맞지 않아 지웠습니다: {name}", name=name), m.id)
     part.replace(final)
 
 
 def _download_helper(m: reg.Model, root: Path, report: _Reporter, cancel: threading.Event) -> None:
     binary = diarize.fluid_bin()
     if not diarize._executable(binary):
-        raise ModelError("helper_missing", f"tractus-diar 도우미 프로그램이 없습니다:\n  {reg.build_hint('diar_helper')}", m.id)
+        raise ModelError("helper_missing", t("tractus-diar 도우미 프로그램이 없습니다:\n  {hint}", hint=reg.build_hint("diar_helper")), m.id)
     proc = subprocess.Popen([str(binary), "download", "--models", str(root / m.local_dir)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     threading.Thread(target=lambda: (cancel.wait(), proc.poll() is None and proc.terminate()), daemon=True).start()
     out, err = proc.communicate()
@@ -210,7 +211,7 @@ def _download_helper(m: reg.Model, root: Path, report: _Reporter, cancel: thread
                 if isinstance(ev, dict) and ev.get("event") == "error":
                     message = str(ev.get("message"))
         raise ModelError("no_network" if "network" in (message + err).lower() or "offline" in (message + err).lower() else "unknown",
-                         message or err.strip()[-300:] or f"tractus-diar 종료 코드 {proc.returncode}", m.id)
+                         message or err.strip()[-300:] or t("tractus-diar 종료 코드 {code}", code=proc.returncode), m.id)
 
 
 _FETCH = {"hf": _download_hf, "url": _download_url, "helper": _download_helper}
@@ -224,7 +225,7 @@ def plan(ids: list[str], root: Path) -> tuple[list[str], int]:
         if st.installed:
             continue
         if st.state == "corrupt":
-            raise ModelError("corrupt", f"파일이 손상됐습니다. `tractus models remove {i} --yes`로 지운 뒤 다시 받으세요", i)
+            raise ModelError("corrupt", t("파일이 손상됐습니다. `tractus models remove {id} --yes`로 지운 뒤 다시 받으세요", id=i), i)
         todo.append(i)
         need += max(reg.get(i).size_bytes - st.installed_bytes, 0)
     return todo, need
@@ -235,7 +236,7 @@ def download(ids: list[str], root: Path, emit: Emit, cancel: threading.Event) ->
     root.mkdir(parents=True, exist_ok=True)
     todo, need = plan(ids, root)
     if need and (free := disk_free(root)) < need * DISK_MARGIN:
-        raise ModelError("disk_full", f"저장 공간이 모자랍니다: 필요 {need * DISK_MARGIN / 1e9:.1f}GB, 남은 공간 {free / 1e9:.1f}GB ({root})")
+        raise ModelError("disk_full", t("저장 공간이 모자랍니다: 필요 {need}GB, 남은 공간 {free}GB ({path})", need=f"{need * DISK_MARGIN / 1e9:.1f}", free=f"{free / 1e9:.1f}", path=root))
     overall, base, done = sum(reg.get(i).size_bytes for i in todo), 0, []
     with download_lock(root):
         for n, i in enumerate(todo, 1):
@@ -247,9 +248,9 @@ def download(ids: list[str], root: Path, emit: Emit, cancel: threading.Event) ->
             except (ModelError, Cancelled):
                 raise
             except Exception as e:  # noqa: BLE001 — 허브·네트워크 예외를 코드로 바꾼다
-                raise ModelError(classify(e), f"{m.name}을(를) 받지 못했습니다: {e}", i) from e
+                raise ModelError(classify(e), t("{name}을(를) 받지 못했습니다: {error}", name=m.name, error=e), i) from e
             if m.kind != "helper" and not reg.inspect(i, root).installed:
-                raise ModelError("hash_mismatch", f"받은 파일의 크기가 맞지 않습니다: {m.name}", i)
+                raise ModelError("hash_mismatch", t("받은 파일의 크기가 맞지 않습니다: {name}", name=m.name), i)
             if m.kind == "hf":
                 _write_marker(m, root / m.local_dir)
             report(m.size_bytes, force=True)
@@ -296,7 +297,7 @@ def prune(root: Path) -> dict:
         for u in unregistered(root):  # 잠근 뒤 다시 본다: 확인 사이에 바뀐 것을 지우지 않게
             path = root / u["name"]
             if not _inside(path, root):
-                raise ModelError(code="unsafe_path", message=f"모델 폴더가 아닌 곳은 지우지 않습니다: {path}")
+                raise ModelError(code="unsafe_path", message=t("모델 폴더가 아닌 곳은 지우지 않습니다: {path}", path=path))
             shutil.rmtree(path)
             removed.append(u)
     return {"removed": removed, "freed_bytes": sum(u["bytes"] for u in removed)}
@@ -308,11 +309,11 @@ def remove(model_id: str, root: Path) -> dict:
     m = reg.get(model_id)
     path = root / m.local_dir
     if not _inside(path, root):
-        raise ModelError(code="unsafe_path", message=f"모델 폴더가 아닌 곳은 지우지 않습니다: {path}", model=model_id)
+        raise ModelError(code="unsafe_path", message=t("모델 폴더가 아닌 곳은 지우지 않습니다: {path}", path=path), model=model_id)
     if not path.exists():
         return {"id": model_id, "removed": False, "freed_bytes": 0}
     if not path.is_dir():
-        raise ModelError(code="unsafe_path", message=f"모델 폴더가 아니어서 지우지 않습니다: {path}", model=model_id)
+        raise ModelError(code="unsafe_path", message=t("모델 폴더가 아니어서 지우지 않습니다: {path}", path=path), model=model_id)
     with download_lock(root):
         freed = reg._dir_bytes(path)
         shutil.rmtree(path)
@@ -328,18 +329,18 @@ def move(src: Path, dest: Path) -> dict:
     → {"moved": [ID], "freed_bytes": 원래 위치의 볼륨에서 비운 바이트 (같은 볼륨이면 0)}"""
     src, dest = src.resolve(), dest.expanduser().resolve()
     if _is_notes_home(dest):
-        raise ModelError(code="bad_argument", message=f"노트가 들어 있는 폴더는 모델 폴더로 쓸 수 없습니다: {dest}")
+        raise ModelError(code="bad_argument", message=t("노트가 들어 있는 폴더는 모델 폴더로 쓸 수 없습니다: {path}", path=dest))
     if src == dest or dest.is_relative_to(src) or src.is_relative_to(dest):
-        raise ModelError(code="bad_argument", message=f"같은 폴더이거나 서로 안에 들어 있어 옮길 수 없습니다: {dest}")
+        raise ModelError(code="bad_argument", message=t("같은 폴더이거나 서로 안에 들어 있어 옮길 수 없습니다: {path}", path=dest))
     found = [m for m in reg.MODELS if (src / m.local_dir).is_dir() and not (src / m.local_dir).is_symlink()]
     if not found:
         return {"moved": [], "freed_bytes": 0}
     if clash := [m.id for m in found if (dest / m.local_dir).exists()]:
-        raise ModelError(code="exists", message=f"대상 폴더에 같은 모델이 이미 있습니다: {', '.join(clash)}")
+        raise ModelError(code="exists", message=t("대상 폴더에 같은 모델이 이미 있습니다: {ids}", ids=", ".join(clash)))
     size = sum(reg._dir_bytes(src / m.local_dir) for m in found)
     same_volume = src.stat().st_dev == nearest_existing(dest).stat().st_dev
     if not same_volume and (free := disk_free(dest)) < size * DISK_MARGIN:
-        raise ModelError(code="disk_full", message=f"저장 공간이 모자랍니다: 필요 {size * DISK_MARGIN / 1e9:.1f}GB, 남은 공간 {free / 1e9:.1f}GB ({dest})")
+        raise ModelError(code="disk_full", message=t("저장 공간이 모자랍니다: 필요 {need}GB, 남은 공간 {free}GB ({path})", need=f"{size * DISK_MARGIN / 1e9:.1f}", free=f"{free / 1e9:.1f}", path=dest))
     moved, leftover = [], []
     with download_lock(src), download_lock(dest):
         for m in found:
@@ -352,12 +353,12 @@ def move(src: Path, dest: Path) -> dict:
             except OSError as e:  # 옮기다 끊김: 반쯤 복사된 것을 치운다 (원본은 그대로)
                 if not same_volume:
                     shutil.rmtree(b, ignore_errors=True)
-                raise ModelError(code=classify(e), message=f"{m.name}을(를) 옮기지 못했습니다: {e}", model=m.id) from e
+                raise ModelError(code=classify(e), message=t("{name}을(를) 옮기지 못했습니다: {error}", name=m.name, error=e), model=m.id) from e
             if not same_volume:  # 복사가 끝난 뒤의 원본 지우기: 실패해도 복사본은 지우지 않는다
                 try:
                     shutil.rmtree(a)
                 except OSError as e:
                     leftover.append(m.local_dir)
-                    print(f"경고: 옛 폴더를 다 지우지 못해 남겼습니다 ({a}): {e}", file=sys.stderr)
+                    print(t("경고: 옛 폴더를 다 지우지 못해 남겼습니다 ({path}): {error}", path=a, error=e), file=sys.stderr)
             moved.append(m.id)
     return {"moved": moved, "freed_bytes": 0 if same_volume else size, **({"leftover": leftover} if leftover else {})}

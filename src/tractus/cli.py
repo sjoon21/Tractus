@@ -41,6 +41,7 @@ from tractus.store import IncompleteError, load_glossary, meeting_dir_name, new_
 from tractus.store import CHUNKS_FILE, JOB_FILE, edit_transcript, forget_person, note_lock, read_transcript, render_files  # noqa: E402
 from tractus.store import NOT_CONVERTED, _hms, is_memo, is_recorded, memo_lines, stamp  # noqa: E402
 from tractus.vad import find_chunks  # noqa: E402
+from tractus.i18n import t  # noqa: E402
 from tractus.calendar_event import load_event, save_event  # noqa: E402
 from tractus import models_cli, organize_cli  # noqa: E402
 from tractus import models_registry as registry  # noqa: E402
@@ -84,7 +85,7 @@ def local_model(repo: str) -> Path:
     # 받다 만 모델(config.json만 있고 가중치가 없는 폴더)이 로드 단계에서 트레이스백으로 죽지 않게 레지스트리의 완료 검사를 쓴다
     if not (registry.usable(m.id, models_dir()) if m else (path / "config.json").exists()):
         hint = registry.install_hint(m, models_dir()) if m else f"  hf download {repo} --local-dir {path}"
-        raise typer.BadParameter(f"모델이 없습니다: {path}\n{hint}\n(모델 위치는 TRACTUS_MODELS_DIR 환경변수로 바꿀 수 있습니다)", param_hint="모델")  # words-ok: 앱은 model_missing 코드로 문장을 바꾼다 (원래 문구는 자세히)
+        raise typer.BadParameter(t("모델이 없습니다: {path}\n{hint}\n(모델 위치는 TRACTUS_MODELS_DIR 환경변수로 바꿀 수 있습니다)", path=path, hint=hint), param_hint=t("모델"))  # words-ok: 앱은 model_missing 코드로 문장을 바꾼다 (원래 문구는 자세히)
     return path
 
 
@@ -100,7 +101,7 @@ def auto_track() -> Track:
     if pick is None or registry.get(pick).repo == MODELS[want]:
         return want
     used = Track.lite if want is Track.standard else Track.standard
-    _warn("asr_track_fallback", f"{want.value} 변환 엔진이 없어 {used.value} 엔진으로 변환합니다 (받으려면 tractus models download {'asr-std' if want is Track.standard else 'asr-lite'})")
+    _warn("asr_track_fallback", t("{want} 변환 엔진이 없어 {used} 엔진으로 변환합니다 (받으려면 tractus models download {model})", want=want.value, used=used.value, model="asr-std" if want is Track.standard else "asr-lite"))
     return used
 
 
@@ -138,7 +139,7 @@ def _fail_audio(e: audio.FFmpegError) -> NoReturn:
     """ffmpeg가 없으면 설치 안내(ffmpeg_missing), 그 밖의 ffmpeg 실패는 audio_failed."""
     if isinstance(e, audio.FFmpegMissing):
         _fail(str(e), code="ffmpeg_missing")
-    _fail(f"음성 파일을 읽지 못했습니다: {e}", code="audio_failed")
+    _fail(t("음성 파일을 읽지 못했습니다: {error}", error=e), code="audio_failed")
 
 
 @dataclass(frozen=True)
@@ -160,13 +161,13 @@ def _source_from_recording(d: Path) -> Source:
         tracks = [d / name for name in rec["tracks"].values()]
         started = datetime.fromisoformat(rec["started_at"]).astimezone()
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
-        raise typer.BadParameter(f"녹음 파일을 찾지 못했습니다 (recording.json): {e}", param_hint="--recording") from e
+        raise typer.BadParameter(t("녹음 파일을 찾지 못했습니다 (recording.json): {error}", error=e), param_hint="--recording") from e
     tracks = [p for p in tracks if p.is_file() and p.stat().st_size > 44]  # 44바이트 = 빈 WAV 헤더
     if not tracks:
-        raise typer.BadParameter(f"{d}에 녹음된 소리가 없습니다", param_hint="--recording")
+        raise typer.BadParameter(t("{path}에 녹음된 소리가 없습니다", path=d), param_hint="--recording")
     marks = [m for m in rec.get("marks") or [] if isinstance(m, dict) and isinstance(m.get("t"), (int, float))]
     ev = load_event(d)
-    return Source(paths=tracks, name=d.name, title=ev["title"] if ev else f"녹음 {started:%H:%M}", recorded=started, marks=marks, recording_dir=d, event=ev)
+    return Source(paths=tracks, name=d.name, title=ev["title"] if ev else f"녹음 {started:%H:%M}", recorded=started, marks=marks, recording_dir=d, event=ev)  # i18n-ok: 기본 제목은 노트 데이터(다음 단계)
 
 
 def _source_from_file(file: Path) -> Source:
@@ -196,9 +197,9 @@ def transcribe(
     Events.enabled = progress_json
     if into:
         if file is not None or recording is not None or append_to:
-            raise typer.BadParameter("--into는 녹음 파일, --recording, --append-to와 함께 쓸 수 없습니다", param_hint="--into")
+            raise typer.BadParameter(t("--into는 녹음 파일, --recording, --append-to와 함께 쓸 수 없습니다"), param_hint="--into")
     elif (file is None) == (recording is None):
-        raise typer.BadParameter("녹음 파일 또는 --recording 폴더 중 하나만 지정하세요")
+        raise typer.BadParameter(t("녹음 파일 또는 --recording 폴더 중 하나만 지정하세요"))
     append = _append_target(append_to) if append_to else None
     convert = _into_target(into) if into else None
     try:
@@ -245,16 +246,16 @@ def _into_target(ref: str) -> tuple[Path, dict]:
     return d, t
 
 
-def _source_from_note(d: Path, t: dict) -> Source:
+def _source_from_note(d: Path, note: dict) -> Source:
     """"변환 전" 노트의 변환 입력: tracks/의 원본 트랙, 없으면 audio.ogg (경고 tracks_missing). 둘 다 없으면 BadParameter(앱은 code recording_missing)."""
     try:
-        paths, marks, lossless = deferred.note_tracks(d, t)
+        paths, marks, lossless = deferred.note_tracks(d, note)
     except deferred.RecordingError as e:
         raise typer.BadParameter(str(e), param_hint="--into") from e
     if not lossless:
-        _warn("tracks_missing", "녹음 원본 트랙이 없어 보관한 audio.ogg로 변환합니다 (음질이 조금 낮을 수 있습니다)")
-    created = datetime.fromisoformat(t["created_at"]).astimezone() if isinstance(t.get("created_at"), str) else datetime.now().astimezone()
-    return Source(paths=paths, name=str((t.get("audio") or {}).get("source") or d.name), title=t["title"], recorded=created, marks=marks)
+        _warn("tracks_missing", t("녹음 원본 트랙이 없어 보관한 audio.ogg로 변환합니다 (음질이 조금 낮을 수 있습니다)"))
+    created = datetime.fromisoformat(note["created_at"]).astimezone() if isinstance(note.get("created_at"), str) else datetime.now().astimezone()
+    return Source(paths=paths, name=str((note.get("audio") or {}).get("source") or d.name), title=note["title"], recorded=created, marks=marks)
 
 
 def _transcribe(
@@ -268,15 +269,15 @@ def _transcribe(
     Events.emit("stage", stage="decode")  # 큰 파일은 해시 계산에도 몇 초 걸린다. 앱이 바로 진행 표시를 하도록 먼저 알린다
     digest = (into[1]["audio"].get("sha256") if into else None) or audio.sha256(source.paths)  # 변환 전 노트는 저장할 때 잰 원본 트랙의 해시를 그대로 쓴다
     if not into and (done_dir := find_transcribed(meetings, digest)):
-        _warn("duplicate", f"이미 전사된 파일입니다: {done_dir}\n다시 전사하려면 이 폴더를 지우고 실행하세요.")
+        _warn("duplicate", t("이미 전사된 파일입니다: {path}\n다시 전사하려면 이 폴더를 지우고 실행하세요.", path=done_dir))
         Events.emit("done", meeting_id=json.loads((done_dir / "transcript.json").read_text(encoding="utf-8"))["meeting_id"], meeting_dir=str(done_dir))
         raise typer.Exit(0)
 
     job = find_job(meetings, digest, append[1]["meeting_id"] if append else None, into[1]["meeting_id"] if into else None)
     if job:
         if track and track.value != job.track:
-            console.print(f"[yellow]진행 중인 작업의 트랙({job.track})으로 이어서 합니다.[/yellow]")
-        console.print(f"이어서 진행합니다: {job.dir.name} ({len(job.done())}/{len(job.chunks)} 청크 완료)")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+            console.print(f"[yellow]{t('진행 중인 작업의 트랙({track})으로 이어서 합니다.', track=job.track)}[/yellow]")
+        console.print(t("이어서 진행합니다: {name} ({done}/{total} 청크 완료)", name=job.dir.name, done=len(job.done()), total=len(job.chunks)))  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
         pcm = audio.decode(source.paths)
     else:
         job, pcm = _new_job(source, meetings, digest, title, track or auto_track(), language, term, diarize, max_speakers, engine, append, into)
@@ -316,7 +317,7 @@ def _run_diarizer(engine: str, diarizer, pcm, max_speakers: int | None, fallback
         Events.emit("stage", stage="diarize", engine=engine)
         return diarizer.diarize(pcm, max_speakers), diarizer.info
     except Exception as e:  # noqa: BLE001 — 화자 분리 실패가 전사를 막지 않는다
-        _warn(code, f"화자 분리({engine})에 실패해 {fallback}: {e}")
+        _warn(code, t("화자 분리({engine})에 실패해 {fallback}: {error}", engine=engine, fallback=fallback, error=e))
         return None
 
 
@@ -328,22 +329,22 @@ def _diarize(pcm, max_speakers: int | None, engine: DiarizerEngine = DiarizerEng
     models = models_dir()
     if engine is DiarizerEngine.fluid:
         if len(pcm) / SR < FLUID_MIN_CLIP_S:
-            _warn("fluid_short_clip", f"{FLUID_MIN_CLIP_S:.0f}초보다 짧은 클립은 fluid 엔진이 화자를 과하게 나눌 수 있습니다. 결과가 이상하면 --diarizer nemotron으로 다시 해 보세요")
+            _warn("fluid_short_clip", t("{sec}초보다 짧은 클립은 fluid 엔진이 화자를 과하게 나눌 수 있습니다. 결과가 이상하면 --diarizer nemotron으로 다시 해 보세요", sec=f"{FLUID_MIN_CLIP_S:.0f}"))
         fluid = load_fluid(models)
         if fluid is None:
-            _warn("fluid_missing", f"fluid 화자 분리 헬퍼나 모델이 없어 Nemotron으로 화자 분리합니다:\n{fluid_hint(models)}")
-        elif res := _run_diarizer(FLUID, fluid, pcm, max_speakers, "Nemotron으로 다시 합니다"):
+            _warn("fluid_missing", t("fluid 화자 분리 헬퍼나 모델이 없어 Nemotron으로 화자 분리합니다:\n{hint}", hint=fluid_hint(models)))
+        elif res := _run_diarizer(FLUID, fluid, pcm, max_speakers, t("Nemotron으로 다시 합니다")):
             return res
 
     try:
         nemotron = load_diarizer(models)
     except Exception as e:  # noqa: BLE001
-        _warn("diarizer_failed", f"화자 분리 모델을 올리지 못해 화자 분리 없이 전사합니다: {e}")
+        _warn("diarizer_failed", t("화자 분리 모델을 올리지 못해 화자 분리 없이 전사합니다: {error}", error=e))
         return [], None
     if nemotron is None:
-        _warn("diarizer_missing", f"화자 분리 모델이 없어 화자 분리 없이 전사합니다: {models / DIARIZER_DIR}\n{registry.install_hint('diarizer', models)}")
+        _warn("diarizer_missing", t("화자 분리 모델이 없어 화자 분리 없이 전사합니다: {path}\n{hint}", path=models / DIARIZER_DIR, hint=registry.install_hint("diarizer", models)))
         return [], None
-    res = _run_diarizer(NEMOTRON, nemotron, pcm, max_speakers, "화자 분리 없이 전사합니다")
+    res = _run_diarizer(NEMOTRON, nemotron, pcm, max_speakers, t("화자 분리 없이 전사합니다"))
     if res is None:
         return [], None
     capped = len({spk for _, _, spk in res[0]}) >= MAX_SPEAKERS and (max_speakers is None or max_speakers > MAX_SPEAKERS)
@@ -353,9 +354,9 @@ def _diarize(pcm, max_speakers: int | None, engine: DiarizerEngine = DiarizerEng
     _free_mlx()  # Nemotron을 내린 뒤 헬퍼(CoreML, 별도 프로세스)를 돌린다
     fluid = load_fluid(models)
     if fluid is None:
-        _warn("diarizer_cap", f"화자가 {MAX_SPEAKERS}명을 넘을 수 있지만 fluid 헬퍼나 모델이 없어 {MAX_SPEAKERS}명으로 나눕니다:\n{fluid_hint(models)}")
+        _warn("diarizer_cap", t("화자가 {n}명을 넘을 수 있지만 fluid 헬퍼나 모델이 없어 {n}명으로 나눕니다:\n{hint}", n=MAX_SPEAKERS, hint=fluid_hint(models)))
         return res
-    return _run_diarizer(FLUID, fluid, pcm, max_speakers, f"Nemotron 결과({MAX_SPEAKERS}명)를 씁니다", "diarizer_cap_failed") or res
+    return _run_diarizer(FLUID, fluid, pcm, max_speakers, t("Nemotron 결과({n}명)를 씁니다", n=MAX_SPEAKERS), "diarizer_cap_failed") or res
 
 
 def _suggest_voices(pcm, turns: list[dict]) -> dict:
@@ -367,12 +368,12 @@ def _suggest_voices(pcm, turns: list[dict]) -> dict:
             return {}
         embedder = voices.load_embedder(models_dir())
         if embedder is None:
-            _warn("voices_model_missing", f"목소리 모델이 없어 등록된 목소리를 맞춰 보지 않습니다: {voices.model_hint(models_dir())}")
+            _warn("voices_model_missing", t("목소리 모델이 없어 등록된 목소리를 맞춰 보지 않습니다: {hint}", hint=voices.model_hint(models_dir())))
             return {}
         Events.emit("stage", stage="voices")
-        return voices.suggest(embedder, pcm, turns, people, sorted({t["speaker"] for t in turns}))
+        return voices.suggest(embedder, pcm, turns, people, sorted({x["speaker"] for x in turns}))
     except Exception as e:  # noqa: BLE001 — 목소리 제안 실패가 전사를 막지 않는다
-        _warn("voices_failed", f"등록된 목소리를 맞춰 보지 못했습니다 (`tractus voices match <노트>`로 다시 시도): {e}")
+        _warn("voices_failed", t("등록된 목소리를 맞춰 보지 못했습니다 (`tractus voices match <노트>`로 다시 시도): {error}", error=e))
         return {}
 
 
@@ -381,7 +382,7 @@ def _aligner_hint() -> str:
 
 
 def _align_progress() -> Progress:
-    return Progress(TextColumn("단어 타이밍"), BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(), console=console)
+    return Progress(TextColumn(t("단어 타이밍")), BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(), console=console)
 
 
 def _save_words(d: Path, segments: list[dict], ids: set[str]) -> dict:
@@ -406,30 +407,30 @@ def _save_words(d: Path, segments: list[dict], ids: set[str]) -> dict:
     return edit_transcript(d, merge)
 
 
-def _align(d: Path, t: dict, pcm) -> None:
+def _align(d: Path, note: dict, pcm) -> None:
     """전사 뒤 단어 타이밍을 채워 다시 저장한다. 모델이 없거나 실패하면 words = null로 두고 경고만 한다 (`tractus align`으로 나중에)."""
-    if not t["segments"]:
+    if not note["segments"]:
         return
     try:
         aligner = load_aligner(models_dir())
         if aligner is None:
-            _warn("aligner_missing", f"단어 타이밍 모델이 없어 단어 타이밍 없이 저장합니다: {_aligner_hint()}")
+            _warn("aligner_missing", t("단어 타이밍 모델이 없어 단어 타이밍 없이 저장합니다: {hint}", hint=_aligner_hint()))
             return
         Events.emit("stage", stage="align")
         with _align_progress() as progress:
-            bar = progress.add_task("", total=len(t["segments"]))
+            bar = progress.add_task("", total=len(note["segments"]))
 
             def tick(n: int, total: int) -> None:
                 progress.advance(bar)
                 Events.emit("progress", done=n, total=total)
 
-            segments, *_ = align_segments(aligner, pcm, t["segments"], on_progress=tick)
+            segments, *_ = align_segments(aligner, pcm, note["segments"], on_progress=tick)
     except Exception as e:  # noqa: BLE001 — 단어 타이밍 실패가 전사를 막지 않는다
-        _warn("aligner_failed", f"단어 타이밍을 만들지 못했습니다 (`tractus align {t['meeting_id']}`로 다시 시도): {e}")
+        _warn("aligner_failed", t("단어 타이밍을 만들지 못했습니다 (`tractus align {meeting}`로 다시 시도): {error}", meeting=note["meeting_id"], error=e))
         return
-    counts = _save_words(d, segments, {s["id"] for s in t["segments"]})
+    counts = _save_words(d, segments, {s["id"] for s in note["segments"]})
     if counts["approximate"]:
-        console.print(f"[yellow]단어 타이밍을 정확히 맞추지 못해 고르게 나눈 세그먼트 {counts['approximate']}개 (`tractus align --force`로 다시 시도)[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+        console.print(f"[yellow]{t('단어 타이밍을 정확히 맞추지 못해 고르게 나눈 세그먼트 {n}개 (`tractus align --force`로 다시 시도)', n=counts['approximate'])}[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
 
 
 def _new_job(
@@ -437,7 +438,7 @@ def _new_job(
     engine: DiarizerEngine = DiarizerEngine.auto, append: tuple[Path, dict] | None = None, into: tuple[Path, dict] | None = None,
 ):
     vad_dir, _ = local_model(VAD_MODEL), local_model(MODELS[track])  # 오래 걸리는 작업 전에 모델부터 확인
-    with console.status("오디오 디코딩·VAD·화자 분리 중…"):
+    with console.status(t("오디오 디코딩·VAD·화자 분리 중…")):
         pcm = audio.decode(source.paths)
         Events.emit("stage", stage="vad")
         chunks = find_chunks(pcm, vad_dir)
@@ -459,7 +460,7 @@ def _new_job(
         created_at = source.recorded.isoformat(timespec="seconds")
     # ponytail: Opus 인코딩 중 강제 종료되면 .job.json 없는 폴더가 남는다. 다음 실행은 새 폴더로 처음부터 진행
     if not (into and (d / "audio.ogg").is_file()):  # 변환 전 노트는 저장할 때 이미 audio.ogg를 만들었다 (트랙이 없어 audio.ogg로 변환하는 경우도 다시 만들지 않는다)
-        with console.status("원본을 audio.ogg로 보관 중…"):
+        with console.status(t("원본을 audio.ogg로 보관 중…")):
             Events.emit("stage", stage="encode")
             audio.encode_opus(source.paths, d / "audio.ogg")
     if source.marks:
@@ -477,7 +478,7 @@ def _new_job(
     )
     job.save()
     n_spk = len({c[2] for c in chunks} - {None})
-    console.print(f"노트 폴더: {d}\n트랙 {track.value} ({MODELS[track]}), 청크 {len(chunks)}개, 화자 {n_spk}명(추정), 용어 {len(hotwords)}개")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+    console.print(t("노트 폴더: {path}\n트랙 {track} ({model}), 청크 {chunks}개, 화자 {speakers}명(추정), 용어 {terms}개", path=d, track=track.value, model=MODELS[track], chunks=len(chunks), speakers=n_spk, terms=len(hotwords)))  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
     return job, pcm
 
 
@@ -523,7 +524,7 @@ def _run(job: Job, pcm, source: Source, keep_tracks: bool, align: bool = True) -
     done = job.done()
     todo = [i for i in range(len(job.chunks)) if i not in done]
     t0, repaired = time.perf_counter(), 0
-    columns = [TextColumn("전사"), BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(), TextColumn("남은 시간"), TimeRemainingColumn()]
+    columns = [TextColumn(t("전사")), BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(), TextColumn(t("남은 시간")), TimeRemainingColumn()]
     try:
         Events.emit("stage", stage="transcribe")
         Events.emit("progress", done=len(done), total=len(job.chunks))
@@ -538,12 +539,12 @@ def _run(job: Job, pcm, source: Source, keep_tracks: bool, align: bool = True) -
                 Events.emit("progress", done=n, total=len(job.chunks))
     except KeyboardInterrupt:
         console.print()
-        _fail("변환을 중단했습니다. 같은 명령으로 다시 실행하면 이어서 진행합니다.", code="interrupted", exit_code=130)
+        _fail(t("변환을 중단했습니다. 같은 명령으로 다시 실행하면 이어서 진행합니다."), code="interrupted", exit_code=130)
 
     elapsed = time.perf_counter() - t0
     job.suggestions = _still_registered(job.suggestions)
     try:
-        t = _write_result(job)
+        note = _write_result(job)
     except IncompleteError as e:
         _fail(str(e), code="incomplete")
     # ASR 모델을 내린 뒤 색인한다: 1.7B(3.6GB)와 임베딩 모델(1.4GB)이 통합 메모리에 함께 올라가지 않게
@@ -554,16 +555,16 @@ def _run(job: Job, pcm, source: Source, keep_tracks: bool, align: bool = True) -
         deferred.drop_tracks(job.dir)  # 변환 전 노트가 보관하던 원본 트랙 (--keep-tracks면 노트의 tracks/에 남긴다)
     if align:
         try:
-            _align(job.dir, t, pcm)
+            _align(job.dir, note, pcm)
         except KeyboardInterrupt:
             console.print()
-            _fail(f"단어 싱크를 맞추다가 중단했습니다. 대화 내용은 저장했고, `tractus align {job.meeting_id}`로 나중에 맞출 수 있습니다.", code="align_interrupted", exit_code=130)
+            _fail(t("단어 싱크를 맞추다가 중단했습니다. 대화 내용은 저장했고, `tractus align {meeting}`로 나중에 맞출 수 있습니다.", meeting=job.meeting_id), code="align_interrupted", exit_code=130)
         _free_mlx()  # 정렬 모델을 내린 뒤 임베딩 모델을 올린다
     Events.emit("stage", stage="index")
     _sync_index_quietly()
     rtf = f" (RTF {elapsed / job.duration_sec:.3f})" if not done and job.duration_sec else ""  # 이어하기면 일부만 처리해 RTF가 의미 없음
     console.print(
-        f"완료: 세그먼트 {len(t['segments'])}개, 반복 출력 보정 {repaired}건, {elapsed / 60:.1f}분{rtf}\n"
+        t("완료: 세그먼트 {n}개, 반복 출력 보정 {repaired}건, {minutes}분", n=len(note["segments"]), repaired=repaired, minutes=f"{elapsed / 60:.1f}") + f"{rtf}\n"
         f"{job.dir / 'transcript.md'}"
     )
     Events.emit("done", meeting_id=job.meeting_id, meeting_dir=str(job.dir))
@@ -593,7 +594,7 @@ def recording_finish(
     except ValueError as e:
         _fail(str(e), code="bad_input", exit_code=2)
     if not recording.is_dir():
-        _fail(f"녹음 폴더를 찾지 못했습니다: {recording}", code="recording_missing", exit_code=2)
+        _fail(t("녹음 폴더를 찾지 못했습니다: {path}", path=recording), code="recording_missing", exit_code=2)
     meetings = home_dir() / "meetings"
     meetings.mkdir(parents=True, exist_ok=True)
     try:
@@ -603,10 +604,10 @@ def recording_finish(
     except audio.FFmpegError as e:
         _fail_audio(e)
     except OSError as e:  # 디스크 부족·권한 등. 녹음 폴더는 그대로 남아 있다 (같은 명령으로 다시 실행하면 이어서 끝낸다)
-        _fail(f"녹음을 저장하지 못했습니다: {e}", exit_code=1)
+        _fail(t("녹음을 저장하지 못했습니다: {error}", error=e), exit_code=1)
     except KeyboardInterrupt:
         console.print()
-        _fail("저장을 중단했습니다. 같은 명령으로 다시 실행하면 이어서 진행합니다.", code="interrupted", exit_code=130)
+        _fail(t("저장을 중단했습니다. 같은 명령으로 다시 실행하면 이어서 진행합니다."), code="interrupted", exit_code=130)
     if progress_json:
         Events.emit("done", meeting_id=mid, meeting_dir=str(d))
     else:
@@ -631,7 +632,7 @@ def live_cmd(
 
     memory = physical_memory()
     if memory < STANDARD_MIN_MEMORY and not force:
-        _fail(f"실시간 텍스트 변환은 메모리 16GB 이상에서만 켭니다 (이 Mac {memory / 1024**3:.0f}GB). 녹음과 함께 약 2GB를 더 써서 녹음 뒤 변환이 느려지거나 메모리가 부족할 수 있습니다. 그래도 쓰려면 --force", code="live_low_memory")
+        _fail(t("실시간 텍스트 변환은 메모리 16GB 이상에서만 켭니다 (이 Mac {gb}GB). 녹음과 함께 약 2GB를 더 써서 녹음 뒤 변환이 느려지거나 메모리가 부족할 수 있습니다. 그래도 쓰려면 --force", gb=f"{memory / 1024**3:.0f}"), code="live_low_memory")
     try:
         vad_dir, asr_dir = local_model(VAD_MODEL), local_model(MODELS[Track.standard if engine is LiveEngine.std else Track.lite])
     except typer.BadParameter as e:
@@ -659,7 +660,7 @@ def live_cmd(
     try:
         live_mod.run(recording, emit, _warn, stop, vad_dir, asr_dir, models_dir() / DIARIZER_DIR if speakers else None, hotwords)
     except (live_mod.LiveError, ValueError, OSError) as e:
-        _fail(f"실시간 텍스트 변환을 멈췄습니다: {e}", code="live_failed")
+        _fail(t("실시간 텍스트 변환을 멈췄습니다: {error}", error=e), code="live_failed")
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
@@ -681,21 +682,21 @@ def align_cmd(
     except typer.BadParameter as e:
         _emit_error(str(e))
         raise
-    t = _read_transcript(d)
-    if is_memo(t):
+    note = _read_transcript(d)
+    if is_memo(note):
         _fail(notes.NO_AUDIO_ALIGN, code="no_audio", exit_code=2)
-    if is_recorded(t):
+    if is_recorded(note):
         _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
-    todo = {s["id"] for s in t["segments"] if force or s.get("words") is None}
-    counts = {"aligned": 0, "approximate": 0, "failed": 0, "skipped": len(t["segments"])}
+    todo = {s["id"] for s in note["segments"] if force or s.get("words") is None}
+    counts = {"aligned": 0, "approximate": 0, "failed": 0, "skipped": len(note["segments"])}
     if todo:
         aligner = load_aligner(models_dir())
         if aligner is None:
-            _fail(f"단어 싱크 엔진 파일이 없습니다: {_aligner_hint()}", code="model_missing")
+            _fail(t("단어 싱크 엔진 파일이 없습니다: {hint}", hint=_aligner_hint()), code="model_missing")
         try:
             audio.require_ffmpeg()
             Events.emit("stage", stage="decode")
-            pcm = audio.decode(d / t["audio"]["file"])
+            pcm = audio.decode(d / note["audio"]["file"])
         except audio.FFmpegError as e:
             _fail_audio(e)
         Events.emit("stage", stage="align")
@@ -707,11 +708,11 @@ def align_cmd(
                 progress.advance(bar)
                 Events.emit("progress", done=n, total=total)
 
-            segments, *_ = align_segments(aligner, pcm, t["segments"], on_progress=tick, only=todo)
+            segments, *_ = align_segments(aligner, pcm, note["segments"], on_progress=tick, only=todo)
         counts = _save_words(d, segments, todo)
-        console.print(f"단어 타이밍: 성공 {counts['aligned']}, 추정 {counts['approximate']}, 실패 {counts['failed']}, 건너뜀 {counts['skipped']} ({time.perf_counter() - t0:.1f}초)")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+        console.print(t("단어 타이밍: 성공 {aligned}, 추정 {approximate}, 실패 {failed}, 건너뜀 {skipped} ({sec}초)", **counts, sec=f"{time.perf_counter() - t0:.1f}"))  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
     if progress_json:
-        Events.emit("done", meeting_id=t["meeting_id"], meeting_dir=str(d), **counts)
+        Events.emit("done", meeting_id=note["meeting_id"], meeting_dir=str(d), **counts)
     else:
         print(json.dumps(counts))
 
@@ -736,18 +737,18 @@ def _sync_index_quietly(embed: bool = True) -> None:
     from tractus.index import Index
 
     try:
-        with console.status("검색 색인 갱신 중…"):
+        with console.status(t("검색 색인 갱신 중…")):
             idx = _open_index() if embed else Index(home_dir())
             try:
                 r = idx.sync(embed=embed)
             finally:
                 idx.close()
         if r.added or r.updated:
-            console.print(f"검색 색인: 추가 {r.added}, 갱신 {r.updated}")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+            console.print(t("검색 색인: 추가 {added}, 갱신 {updated}", added=r.added, updated=r.updated))  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
         if r.errors:
-            console.print(f"[yellow]색인하지 못한 항목 {len(r.errors)}개 — `tractus index`로 자세히 확인[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+            console.print(f"[yellow]{t('색인하지 못한 항목 {n}개 — `tractus index`로 자세히 확인', n=len(r.errors))}[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
     except Exception as e:  # noqa: BLE001 — 색인은 언제든 `tractus index`로 다시 만들 수 있다
-        console.print(f"[yellow]검색 색인 갱신 실패 (`tractus index`로 다시 시도):[/yellow] {escape(str(e))}")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+        console.print(f"[yellow]{t('검색 색인 갱신 실패 (`tractus index`로 다시 시도):')}[/yellow] {escape(str(e))}")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
 
 
 @app.command()
@@ -769,7 +770,7 @@ def summarize(
         raise
     if template == enhance.KEY:  # 노트 완성: 요약 유형 목록에 없는 전용 경로 (docs/design/enhanced-notes.md)
         if custom:
-            _fail("요약 유형과 직접 입력은 함께 쓸 수 없습니다.", code="bad_input", exit_code=2)
+            _fail(t("요약 유형과 직접 입력은 함께 쓸 수 없습니다."), code="bad_input", exit_code=2)
         return _enhance(d, provider, model)
     try:
         spec = sums.resolve_spec(home_dir(), template, sys.stdin.read() if custom else None)
@@ -779,17 +780,17 @@ def summarize(
     if is_recorded(transcript):
         _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
     if not transcript["segments"]:
-        _fail("메모가 비어 있어 요약할 수 없습니다" if is_memo(transcript) else "인식된 대화가 없어 요약할 수 없습니다", code="no_segments")
+        _fail(t("메모가 비어 있어 요약할 수 없습니다") if is_memo(transcript) else t("인식된 대화가 없어 요약할 수 없습니다"), code="no_segments")
     try:
         p, m = resolve_provider(provider, model)
         t0 = time.perf_counter()
         Events.emit("stage", stage="summarize")
-        with console.status(f"{p.name}/{m}로 요약 중… (세그먼트 {len(transcript['segments'])}개)"):
+        with console.status(t("{provider}/{model}로 요약 중… (세그먼트 {n}개)", provider=p.name, model=m, n=len(transcript["segments"]))):
             result = summ.summarize(make_client(p), p, m, transcript) if spec.is_default else sums.summarize_generic(make_client(p), p, m, transcript, spec)
     except LLMError as e:
         if e.code == "llm_invalid":  # 검증 오류 원문(pydantic, s0012 ID)은 stderr에만 남긴다
             console.print(f"[red]{escape(str(e))}[/red]")  # 검증 오류의 [type=…] 같은 대괄호를 rich 마크업으로 해석하지 않게 한다
-            _fail("AI 응답이 형식에 맞지 않아 요약하지 못했습니다", code=e.code)
+            _fail(t("AI 응답이 형식에 맞지 않아 요약하지 못했습니다"), code=e.code)
         _fail(str(e), code=e.code)
     try:
         if spec.is_default:
@@ -801,8 +802,11 @@ def summarize(
         Events.emit("stage", stage="index")
         _sync_index_quietly(embed=False)  # 요약은 색인에 없다: 밀린 청크를 임베딩하느라(모델 1.4 GB) 완료가 늦지 않게. 벡터는 앱의 조용한 색인이 채운다
     Events.emit("done", meeting_id=transcript["meeting_id"], meeting_dir=str(d), summary_key=key)
-    detail = f"주제 {len(result.topics)}개, 결정 {len(result.decisions)}개, 할 일 {len(result.action_items)}개" if spec.is_default else f"항목 {sum(len(x.items) for x in result.sections)}개"
-    console.print(f"완료: {detail} ({time.perf_counter() - t0:.0f}초)\n{sums.paths(d, key)[1]}")
+    detail = (
+        t("주제 {topics}개, 결정 {decisions}개, 할 일 {actions}개", topics=len(result.topics), decisions=len(result.decisions), actions=len(result.action_items)) if spec.is_default
+        else t("항목 {n}개", n=sum(len(x.items) for x in result.sections))
+    )
+    console.print(t("완료: {detail} ({sec}초)", detail=detail, sec=f"{time.perf_counter() - t0:.0f}") + f"\n{sums.paths(d, key)[1]}")
 
 
 def _enhance(d: Path, provider: str | None, model: str | None) -> None:
@@ -813,21 +817,21 @@ def _enhance(d: Path, provider: str | None, model: str | None) -> None:
     if is_recorded(transcript):
         _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
     if not transcript["segments"]:
-        _fail("인식된 대화가 없어 노트를 완성할 수 없습니다", code="no_segments")
+        _fail(t("인식된 대화가 없어 노트를 완성할 수 없습니다"), code="no_segments")
     try:
         p, m = resolve_provider(provider, model)
         t0 = time.perf_counter()
         Events.emit("stage", stage="summarize")
-        with console.status(f"{p.name}/{m}로 노트 완성 중… (세그먼트 {len(transcript['segments'])}개)"):
+        with console.status(t("{provider}/{model}로 노트 완성 중… (세그먼트 {n}개)", provider=p.name, model=m, n=len(transcript["segments"]))):
             result = enhance.enhance(make_client(p), p, m, transcript, d)
     except LLMError as e:
         if e.code == "llm_invalid":
             console.print(f"[red]{escape(str(e))}[/red]")
-            _fail("AI 응답이 형식에 맞지 않아 노트를 완성하지 못했습니다", code=e.code)
+            _fail(t("AI 응답이 형식에 맞지 않아 노트를 완성하지 못했습니다"), code=e.code)
         _fail(str(e), code=e.code)
     key = enhance.write(d, transcript, result, p.name, m)
     Events.emit("done", meeting_id=transcript["meeting_id"], meeting_dir=str(d), summary_key=key)
-    console.print(f"완료: 블록 {len(result['sections'])}개 ({time.perf_counter() - t0:.0f}초)\n{sums.paths(d, key)[1]}")
+    console.print(t("완료: 블록 {n}개 ({sec}초)", n=len(result["sections"]), sec=f"{time.perf_counter() - t0:.0f}") + f"\n{sums.paths(d, key)[1]}")
 
 
 def _save_chat(d: Path, question: str, done: dict) -> None:
@@ -836,7 +840,7 @@ def _save_chat(d: Path, question: str, done: dict) -> None:
     try:
         save_chat(d, _read_transcript(d)["meeting_id"], {"question": question, **{k: done[k] for k in ("answer", "citations", "provider", "model", "no_evidence")}})
     except (OSError, ValueError) as e:  # ValueError: 깨졌거나 다른 형식의 chat.json (덮어쓰지 않음)
-        _warn("chat_save_failed", f"질문 기록을 저장하지 못했습니다: {e}")
+        _warn("chat_save_failed", t("질문 기록을 저장하지 못했습니다: {error}", error=e))
 
 
 @app.command()
@@ -860,7 +864,7 @@ def ask(
     except ValueError as e:
         _fail(str(e))
     if save and not meeting:
-        _fail("--save는 --meeting과 함께만 쓸 수 있습니다 (노트 폴더의 chat.json에 저장)")
+        _fail(t("--save는 --meeting과 함께만 쓸 수 있습니다 (노트 폴더의 chat.json에 저장)"))
     try:
         d = resolve_meeting(meeting) if meeting else None
     except typer.BadParameter as e:
@@ -880,11 +884,11 @@ def ask(
     def get_sources() -> list[dict]:
         if d is None:
             return search(date_from=date_from, date_to=date_to)
-        t = _read_transcript(d)
-        src = qa.transcript_sources(t)
-        if is_recorded(t) and not src:
+        note = _read_transcript(d)
+        src = qa.transcript_sources(note)
+        if is_recorded(note) and not src:
             _warn("not_converted", NOT_CONVERTED)  # 변환 전 노트: 대화 내용이 없고 메모도 없으면 LLM을 부르지 않고 '근거 없음'으로 끝난다
-        return search(meeting_id=t["meeting_id"]) if qa.too_long(src) else src
+        return search(meeting_id=note["meeting_id"]) if qa.too_long(src) else src
 
     try:
         p, m = resolve_provider(provider, model)
@@ -900,7 +904,7 @@ def ask(
     if not progress_json and done:
         print(done["answer"])
         if done["citations"]:
-            print("\n근거:")
+            print("\n" + t("근거:"))
         for c in done["citations"]:
             sid = c["segment_id"] if d else f"{c['meeting_id']}#{c['segment_id']}"
             print(f"  [{sid} {stamp(c)}]")
@@ -946,7 +950,7 @@ def index(rebuild: bool = typer.Option(False, "--rebuild", help="색인 파일�
     from tractus import embed
 
     t0 = time.perf_counter()
-    with console.status("색인 중… (처음에는 임베딩 모델을 올리느라 몇 초 걸립니다)"):
+    with console.status(t("색인 중… (처음에는 임베딩 모델을 올리느라 몇 초 걸립니다)")):
         idx = _open_index()
         try:
             r = idx.rebuild() if rebuild else idx.sync()  # rebuild는 파일을 지우지 않고 같은 DB를 비운다 (실행 중인 MCP 서버도 같은 DB를 봄)
@@ -955,17 +959,19 @@ def index(rebuild: bool = typer.Option(False, "--rebuild", help="색인 파일�
         finally:
             idx.close()
     console.print(
-        f"노트 {st['meetings']}개, 청크 {st['chunks']}개, 벡터 {st['vectors']}개 "
-        f"(추가 {r.added}, 갱신 {r.updated}, 삭제 {r.removed}, 임베딩 {r.embedded}, {time.perf_counter() - t0:.1f}초)"
+        t(
+            "노트 {notes}개, 청크 {chunks}개, 벡터 {vectors}개 (추가 {added}, 갱신 {updated}, 삭제 {removed}, 임베딩 {embedded}, {sec}초)",
+            notes=st["meetings"], chunks=st["chunks"], vectors=st["vectors"], added=r.added, updated=r.updated, removed=r.removed, embedded=r.embedded, sec=f"{time.perf_counter() - t0:.1f}",
+        )
     )
     if not has_embedder and embed.mode() == "upstage":
-        console.print("[yellow]Upstage 임베딩을 쓸 수 없어 키워드 검색만 됩니다. UPSTAGE_API_KEY와 위의 건너뜀 줄을 확인하세요.[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+        console.print(f"[yellow]{t('Upstage 임베딩을 쓸 수 없어 키워드 검색만 됩니다. UPSTAGE_API_KEY와 위의 건너뜀 줄을 확인하세요.')}[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
     elif not has_embedder:
-        console.print("[yellow]임베딩 모델이 없거나 올리지 못해 키워드 검색만 됩니다. `tractus models download embedding`으로 받으세요.[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+        console.print(f"[yellow]{t('임베딩 모델이 없거나 올리지 못해 키워드 검색만 됩니다. `tractus models download embedding`으로 받으세요.')}[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
     elif st["pending"]:
-        console.print(f"[yellow]벡터가 없는 청크 {st['pending']}개가 남았습니다.[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+        console.print(f"[yellow]{t('벡터가 없는 청크 {n}개가 남았습니다.', n=st['pending'])}[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
     for err in r.errors:
-        console.print(f"[yellow]건너뜀:[/yellow] {escape(err)}")
+        console.print(f"[yellow]{t('건너뜀:')}[/yellow] {escape(err)}")
 
 
 @app.command()
@@ -987,7 +993,7 @@ def search(
     finally:
         idx.close()
     if not res.hits:
-        console.print("결과 없음")
+        console.print(t("결과 없음"))
     for h in res.hits:
         print(f"{h.date} {h.title} ({'+'.join(h.matched)})")
         for s in h.segments:
@@ -1001,7 +1007,7 @@ def _iso_date(value: str | None, name: str) -> str | None:
     try:
         return date.fromisoformat(value).isoformat()
     except ValueError as e:
-        raise typer.BadParameter(f"{name}는 YYYY-MM-DD 형식이어야 합니다: {value!r}") from e
+        raise typer.BadParameter(t("{name}는 YYYY-MM-DD 형식이어야 합니다: {value}", name=name, value=repr(value))) from e
 
 
 speakers_app = typer.Typer(help="노트의 화자 보기·이름 짓기·고치기. transcript.json과 md·vtt를 다시 쓰고 검색 색인을 갱신한다 (오디오는 건드리지 않음)")
@@ -1020,36 +1026,36 @@ def _read_transcript(d: Path) -> dict:
 @speakers_app.command("list")
 def speakers_list(ctx: typer.Context, as_json: bool = typer.Option(False, "--json", help="JSON으로 stdout에 출력 (데스크톱 앱용)")) -> None:
     """화자별 이름·세그먼트 수·발화 시간."""
-    t = _read_transcript(ctx.obj)
+    note = _read_transcript(ctx.obj)
     rows = [
-        {"label": label, "name": (info or {}).get("name"), "display": speaker_name(t, label), "suggested": (info or {}).get("suggested"),
-         "segments": sum(1 for s in t["segments"] if s.get("speaker") == label),
-         "talk_sec": round(sum(s["end"] - s["start"] for s in t["segments"] if s.get("speaker") == label), 2)}
-        for label, info in (t.get("speakers") or {}).items()
+        {"label": label, "name": (info or {}).get("name"), "display": speaker_name(note, label), "suggested": (info or {}).get("suggested"),
+         "segments": sum(1 for s in note["segments"] if s.get("speaker") == label),
+         "talk_sec": round(sum(s["end"] - s["start"] for s in note["segments"] if s.get("speaker") == label), 2)}
+        for label, info in (note.get("speakers") or {}).items()
     ]
     if as_json:
-        print(json.dumps({"meeting_id": t["meeting_id"], "speakers": rows, "diarization": t.get("diarization")}, ensure_ascii=False))
+        print(json.dumps({"meeting_id": note["meeting_id"], "speakers": rows, "diarization": note.get("diarization")}, ensure_ascii=False))
         return
     if not rows:
-        print("화자 정보가 없습니다 (화자 분리 없이 전사됨). `tractus speakers <노트> set <세그먼트> new`로 직접 붙일 수 있습니다")
+        print(t("화자 정보가 없습니다 (화자 분리 없이 전사됨). `tractus speakers <노트> set <세그먼트> new`로 직접 붙일 수 있습니다"))
     for r in rows:
-        hint = f"\t{r['suggested']['name']}? (자동 인식 {r['suggested']['score']:.0%})" if r["suggested"] else ""
-        print(f"{r['label']}\t{r['name'] or '-'}\t세그먼트 {r['segments']}개\t{_hms(r['talk_sec'])}{hint}")
+        hint = "\t" + t("{name}? (자동 인식 {pct})", name=r["suggested"]["name"], pct=f"{r['suggested']['score']:.0%}") if r["suggested"] else ""
+        print(f"{r['label']}\t{r['name'] or '-'}\t{t('세그먼트 {n}개', n=r['segments'])}\t{_hms(r['talk_sec'])}{hint}")
 
 
 def _edit_speakers(d: Path, op: str, *args: str) -> None:
-    t = _read_transcript(d)
-    if is_memo(t):
-        _fail("메모에는 참석자를 지정할 수 없습니다.", exit_code=2)
-    if is_recorded(t):
+    note = _read_transcript(d)
+    if is_memo(note):
+        _fail(t("메모에는 참석자를 지정할 수 없습니다."), exit_code=2)
+    if is_recorded(note):
         _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
     try:
-        edit_transcript(d, lambda t: (apply_speaker_edit(t, op, *args), None))
+        edit_transcript(d, lambda note: (apply_speaker_edit(note, op, *args), None))
     except ValueError as e:
         console.print(f"[red]{escape(str(e))}[/red]")
         raise typer.Exit(1)
     _sync_index_quietly(embed=False)
-    console.print(f"저장했습니다: {d / 'transcript.json'}")
+    console.print(t("저장했습니다: {path}", path=d / "transcript.json"))
 
 
 @speakers_app.command("rename")
@@ -1079,7 +1085,7 @@ def speakers_dismiss(ctx: typer.Context, label: str = typer.Argument(..., help="
 voices_app = typer.Typer(help="목소리 프로필($TRACTUS_HOME/voices.json, 권한 0600). 등록한 사람의 목소리로 새 노트 화자에 이름을 제안한다. 이 Mac 밖으로 보내지 않는다")
 app.add_typer(voices_app, name="voices")
 
-CONSENT_MESSAGE = (
+CONSENT_MESSAGE = t(
     "목소리는 생체정보(개인정보보호법 제23조 민감정보)입니다. 본인이거나 녹음·등록에 동의를 받은 사람만 등록하세요.\n"
     "동의를 받았으면 --consent를 붙여 다시 실행하세요. 등록한 목소리는 이 Mac의 voices.json에만 저장되고 `tractus voices forget`으로 지웁니다."
 )
@@ -1094,7 +1100,7 @@ def _profiles() -> dict:
     try:
         return voices.load_profiles(home_dir())
     except ValueError as e:  # 깨진 voices.json은 덮어쓰지 않는다
-        console.print(f"[red]참석자 목소리 프로필을 읽지 못했습니다:[/red] {escape(str(e))}")
+        console.print(f"[red]{t('참석자 목소리 프로필을 읽지 못했습니다:')}[/red] {escape(str(e))}")
         raise typer.Exit(1)
 
 
@@ -1105,7 +1111,7 @@ def _voice_embedder():
         _fail(str(e))
     if embedder is None:
         console.print(voices.model_hint(models_dir()), markup=False)  # 받는 방법은 앞 줄에, 앱이 보이는 마지막 줄은 문장으로
-        _fail("목소리 인식에 필요한 파일이 없습니다.")
+        _fail(t("목소리 인식에 필요한 파일이 없습니다."))
     return embedder
 
 
@@ -1129,11 +1135,11 @@ def voices_list(as_json: bool = typer.Option(False, "--json", help="JSON으로 s
         print(json.dumps({"people": rows, "reenroll": reenroll, "model_present": voices.model_present(models_dir())}, ensure_ascii=False))
         return
     if reenroll:
-        console.print("[yellow]목소리 모델이 바뀌어 등록된 목소리를 쓸 수 없습니다. 다시 등록하세요 (`tractus voices enroll`).[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+        console.print(f"[yellow]{t('목소리 모델이 바뀌어 등록된 목소리를 쓸 수 없습니다. 다시 등록하세요 (`tractus voices enroll`).')}[/yellow]")  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
     if not rows:
-        print("등록된 목소리가 없습니다. `tractus voices enroll <노트> S1 --name 이름 --consent`로 등록합니다")
+        print(t("등록된 목소리가 없습니다. `tractus voices enroll <노트> S1 --name 이름 --consent`로 등록합니다"))
     for r in rows:
-        print(f"{r['name']}\t표본 {r['samples']}개\t{(r['created_at'] or '')[:10]}\t{r['id']}")
+        print(f"{r['name']}\t{t('표본 {n}개', n=r['samples'])}\t{(r['created_at'] or '')[:10]}\t{r['id']}")
 
 
 @voices_app.command("enroll")
@@ -1148,22 +1154,22 @@ def voices_enroll(
         console.print(f"[red]{escape(CONSENT_MESSAGE)}[/red]")
         raise typer.Exit(2)
     d = resolve_meeting(meeting)
-    t = _read_transcript(d)
-    if is_memo(t):
-        _fail("녹음이 없는 노트라 목소리를 등록할 수 없습니다.", exit_code=2)
-    if is_recorded(t):
+    note = _read_transcript(d)
+    if is_memo(note):
+        _fail(t("녹음이 없는 노트라 목소리를 등록할 수 없습니다."), exit_code=2)
+    if is_recorded(note):
         _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
     try:
-        renamed = apply_speaker_edit(t, "rename", label, name)
+        renamed = apply_speaker_edit(note, "rename", label, name)
     except ValueError as e:
         _fail(str(e))
     clean = renamed["speakers"][label]["name"]
     if not clean:
-        _fail("이름을 입력하세요.")
+        _fail(t("이름을 입력하세요."))
     embedder = _voice_embedder()
-    emb = voices.speaker_embedding(embedder, _meeting_pcm(d, t), t["segments"], label)
+    emb = voices.speaker_embedding(embedder, _meeting_pcm(d, note), note["segments"], label)
     if emb is None:
-        _fail(f"이 참석자가 {voices.MIN_CLIP_S:g}초 이상 이어서 말한 부분이 없어 목소리를 등록할 수 없습니다.")
+        _fail(t("이 참석자가 {sec}초 이상 이어서 말한 부분이 없어 목소리를 등록할 수 없습니다.", sec=f"{voices.MIN_CLIP_S:g}"))
     with note_lock(d):  # 오래 걸리는 임베딩은 잠금 밖에서 하고, 읽기부터 쓰기까지만 잠근다 (그 사이의 편집을 덮어쓰지 않게 다시 읽는다)
         try:
             renamed = apply_speaker_edit(_read_transcript(d), "rename", label, clean)
@@ -1172,7 +1178,7 @@ def voices_enroll(
         with voices.profiles_lock(home_dir()):  # 다른 노트의 등록·forget과 voices.json을 덮어쓰지 않게
             data = _profiles()
             previous = data if (home_dir() / voices.VOICES_FILE).exists() else None
-            data, person = voices.enroll(data, clean, emb, t["meeting_id"])
+            data, person = voices.enroll(data, clean, emb, note["meeting_id"])
             voices.save_profiles(home_dir(), data)
             try:
                 save_transcript(d, renamed)
@@ -1256,7 +1262,7 @@ def render_cmd(
 ) -> None:
     """transcript.json으로 transcript.md·vtt를 다시 만든다 (표시 문구가 바뀐 뒤 기존 노트에 반영). stdout: {"rendered": N}"""
     if (meeting is None) == (not all_notes):
-        raise typer.BadParameter("노트 하나 또는 --all 중 하나만 지정하세요")
+        raise typer.BadParameter(t("노트 하나 또는 --all 중 하나만 지정하세요"))
     dirs = [p.parent for p in sorted((home_dir() / "meetings").glob("*/transcript.json"))] if all_notes else [resolve_meeting(meeting)]
     rendered = 0
     for d in dirs:
@@ -1265,8 +1271,8 @@ def render_cmd(
                 render_files(d, _read_transcript(d))
         except (OSError, ValueError, KeyError, TypeError) as e:  # 형식이 깨진 transcript.json은 KeyError로 나온다
             if not all_notes:
-                _fail(f"문서를 다시 만들지 못했습니다: {e}")
-            console.print(f"[yellow]건너뜀:[/yellow] {escape(d.name)}: {escape(str(e))}")
+                _fail(t("문서를 다시 만들지 못했습니다: {error}", error=e))
+            console.print(f"[yellow]{t('건너뜀:')}[/yellow] {escape(d.name)}: {escape(str(e))}")
             continue
         rendered += 1
     print(json.dumps({"rendered": rendered}))
@@ -1286,17 +1292,17 @@ def segments_edit(ctx: typer.Context) -> None:
     """stdin의 JSON 한 개 {"edits": [{"id": "s0012", "text": "새 문장"}]}로 세그먼트 텍스트를 고친다.
     원문과 같으면 교정을 지운다. 없는 id·빈 텍스트가 하나라도 있으면 아무것도 쓰지 않고 종료 코드 1. stdout: {"changed": N}"""
     d = ctx.obj
-    t = _read_transcript(d)
-    if is_memo(t):
+    note = _read_transcript(d)
+    if is_memo(note):
         _fail(notes.MEMO_EDIT_HERE, exit_code=2)
-    if is_recorded(t):
+    if is_recorded(note):
         _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
     try:
         req = json.loads(sys.stdin.read())
         edits = req.get("edits") if isinstance(req, dict) else None
         if not isinstance(edits, list):
-            raise ValueError('입력은 {"edits": [{"id": "s0012", "text": "…"}]} 형식이어야 합니다')  # words-ok: 앱 계약 오류
-        changed = edit_transcript(d, lambda t: apply_text_edits(t, edits))
+            raise ValueError(t("입력은 {shape} 형식이어야 합니다", shape='{"edits": [{"id": "s0012", "text": "…"}]}'))  # words-ok: 앱 계약 오류
+        changed = edit_transcript(d, lambda note: apply_text_edits(note, edits))
     except ValueError as e:  # json.JSONDecodeError 포함
         console.print(f"[red]{escape(str(e))}[/red]")
         raise typer.Exit(1)
@@ -1323,7 +1329,7 @@ def _read_json_object(raw: str, shape: str) -> dict:
     except ValueError:
         req = None
     if not isinstance(req, dict):
-        raise ValueError(f"입력은 {shape} 형식이어야 합니다")  # words-ok: 앱 계약 오류
+        raise ValueError(t("입력은 {shape} 형식이어야 합니다", shape=shape))  # words-ok: 앱 계약 오류
     return req
 
 
@@ -1343,12 +1349,12 @@ def note_new(title: str = typer.Option(None, "--title", help="제목. stdin의 t
         req = _read_json_object(raw, '{"title": "…", "body": "…"}') if raw.strip() else {}
         for key in ("title", "body"):
             if not isinstance(req.get(key, ""), str):
-                raise ValueError(f'입력은 {{"title": "…", "body": "…"}} 형식이어야 합니다')  # words-ok: 앱 계약 오류
-        d, t = notes.create_memo(home_dir() / "meetings", title or req.get("title"), req.get("body", ""))
+                raise ValueError(t("입력은 {shape} 형식이어야 합니다", shape='{"title": "…", "body": "…"}'))  # words-ok: 앱 계약 오류
+        d, note = notes.create_memo(home_dir() / "meetings", title or req.get("title"), req.get("body", ""))
     except ValueError as e:
         _fail(str(e), exit_code=2)
     _sync_index_quietly(embed=False)
-    print(json.dumps({"meeting_id": t["meeting_id"], "meeting_dir": str(d.resolve())}, ensure_ascii=False))
+    print(json.dumps({"meeting_id": note["meeting_id"], "meeting_dir": str(d.resolve())}, ensure_ascii=False))
 
 
 @note_app.command("sample")
@@ -1369,7 +1375,7 @@ def note_save(meeting: str = typer.Argument(..., help="노트 폴더 경로 또�
     try:
         req = _read_json_object(sys.stdin.read(), '{"body": "…"}')
         if not isinstance(req.get("body"), str):
-            raise ValueError('입력은 {"body": "…"} 형식이어야 합니다')  # words-ok: 앱 계약 오류
+            raise ValueError(t("입력은 {shape} 형식이어야 합니다", shape='{"body": "…"}'))  # words-ok: 앱 계약 오류
         body = notes.clean_body(req["body"])
 
         def fn(t: dict):
@@ -1393,7 +1399,7 @@ def note_title(meeting: str = typer.Argument(..., help="노트 폴더 경로 또
     try:
         req = _read_json_object(sys.stdin.read(), '{"title": "…"}')
         if not isinstance(req.get("title"), str):
-            raise ValueError('입력은 {"title": "…"} 형식이어야 합니다')  # words-ok: 앱 계약 오류
+            raise ValueError(t("입력은 {shape} 형식이어야 합니다", shape='{"title": "…"}'))  # words-ok: 앱 계약 오류
         title = notes.clean_title(req["title"])
         with note_lock(d):  # transcript.json과 요약 파일을 한 번에 바꾼다
             edit_transcript(d, lambda t: (notes.apply_title(t, title), None))
@@ -1436,18 +1442,18 @@ def export_cmd(
     if summary and sums.read_data(d, summary) is None:
         _fail(sums.NO_SUCH_SUMMARY, exit_code=2)
     if out.exists() and not force:
-        console.print(f"[red]이미 있는 파일입니다 (덮어쓰려면 --force):[/red] {escape(str(out))}")
+        console.print(f"[red]{t('이미 있는 파일입니다 (덮어쓰려면 --force):')}[/red] {escape(str(out))}")
         raise typer.Exit(1)
     try:
         write_bytes_atomic(out, render_export(d, fmt.value, summary))
     except UnsupportedFormat as e:  # 메모를 srt·vtt로
         _fail(str(e), exit_code=2)
     except OSError as e:  # 임시 파일(.tmp) 경로 대신 사용자가 고른 경로를 알린다
-        console.print(f"[red]{escape(str(out))}에 저장할 수 없습니다 ({escape(e.strerror or str(e))})[/red]")
+        console.print(f"[red]{escape(t('{path}에 저장할 수 없습니다 ({error})', path=out, error=e.strerror or e))}[/red]")
         raise typer.Exit(1)
     except ValueError as e:  # 제목 등에 남은 제어 문자를 docx(lxml)가 거부하는 경우. 원인은 앞 줄, 앱이 보이는 마지막 줄은 문장
         console.print(str(e), markup=False)
-        console.print("[red]제목이나 대화 내용에 쓸 수 없는 글자가 있습니다.[/red]")
+        console.print(f"[red]{t('제목이나 대화 내용에 쓸 수 없는 글자가 있습니다.')}[/red]")
         raise typer.Exit(1)
     print(json.dumps({"path": str(out.resolve())}, ensure_ascii=False))
 
@@ -1465,13 +1471,13 @@ def obsidian_cmd(
     d = resolve_meeting(meeting)
     if summary and sums.read_data(d, summary) is None:
         _fail(sums.NO_SUCH_SUMMARY, exit_code=2)
-    t = read_transcript(d)
+    note = read_transcript(d)
     try:
-        r = obsidian.send(d, t, home_dir(), vault.expanduser(), summary, with_audio, force)
+        r = obsidian.send(d, note, home_dir(), vault.expanduser(), summary, with_audio, force)
     except ValueError as e:
         _fail(str(e), code="obsidian_vault", exit_code=2)
     except OSError as e:
-        _fail(f"볼트에 쓰지 못했습니다 ({e.strerror or e})", code="obsidian_write")
+        _fail(t("볼트에 쓰지 못했습니다 ({error})", error=e.strerror or e), code="obsidian_write")
     print(json.dumps(r, ensure_ascii=False))
 
 
@@ -1506,7 +1512,7 @@ def templates_save(
     try:
         req = _read_json_object(sys.stdin.read(), '{"prompt": "…"}')
         if not isinstance(req.get("prompt"), str):
-            raise ValueError('입력은 {"prompt": "…"} 형식이어야 합니다')  # words-ok: 앱 계약 오류
+            raise ValueError(t("입력은 {shape} 형식이어야 합니다", shape='{"prompt": "…"}'))  # words-ok: 앱 계약 오류
         saved = tmpls.save_user_template(home_dir(), name, req["prompt"], description, tid)
     except ValueError as e:
         _fail(str(e), code="bad_input", exit_code=2)

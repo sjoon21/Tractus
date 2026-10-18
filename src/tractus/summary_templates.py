@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from tractus.i18n import t
 from tractus.store import _write_atomic, one_line
 
 BUILTIN_DIR = Path(__file__).parent / "templates"
@@ -20,14 +21,14 @@ MAX_USER_TEMPLATES = 50
 USER_ID = re.compile(r"u-[0-9a-f]{8}")
 _CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")  # \t·\n만 남긴다
 
-NAME_EMPTY = "이름을 입력하세요."
-NAME_LONG = f"이름은 {MAX_NAME}자까지 쓸 수 있습니다."
-DESC_LONG = f"설명은 {MAX_DESC}자까지 쓸 수 있습니다."
-PROMPT_EMPTY = "요약 방법을 입력하세요."
-PROMPT_LONG = f"요약 방법은 {MAX_PROMPT:,}자까지 쓸 수 있습니다."
-TOO_MANY = f"내 요약 유형은 {MAX_USER_TEMPLATES}개까지 만들 수 있습니다."
-BUILTIN_FIXED = "기본 요약 유형은 고치거나 삭제할 수 없습니다. 복사해서 새로 만드세요."
-NOT_FOUND = "요약 유형을 찾을 수 없습니다."
+NAME_EMPTY = t("이름을 입력하세요.")
+NAME_LONG = t("이름은 {n}자까지 쓸 수 있습니다.", n=MAX_NAME)
+DESC_LONG = t("설명은 {n}자까지 쓸 수 있습니다.", n=MAX_DESC)
+PROMPT_EMPTY = t("요약 방법을 입력하세요.")
+PROMPT_LONG = t("요약 방법은 {n}자까지 쓸 수 있습니다.", n=f"{MAX_PROMPT:,}")
+TOO_MANY = t("내 요약 유형은 {n}개까지 만들 수 있습니다.", n=MAX_USER_TEMPLATES)
+BUILTIN_FIXED = t("기본 요약 유형은 고치거나 삭제할 수 없습니다. 복사해서 새로 만드세요.")
+NOT_FOUND = t("요약 유형을 찾을 수 없습니다.")
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,7 @@ def parse(text: str) -> tuple[dict, str]:
     """`---` 머리말(`key: value` 줄)과 본문. 머리말이 없거나 닫히지 않으면 ValueError."""
     m = re.match(r"---\n(.*?)\n---\n?(.*)\Z", text.replace("\r\n", "\n"), re.S)
     if not m:
-        raise ValueError("머리말이 없습니다")  # words-ok: 파일 손상, 목록에서 건너뛴다
+        raise ValueError("머리말이 없습니다")  # words-ok: 파일 손상, 목록에서 건너뛴다  # i18n-ok: 화면에 나가지 않는다 (건너뜀)
     meta = {k.strip(): v.strip() for k, _, v in (line.partition(":") for line in m.group(1).split("\n")) if k.strip()}
     return meta, m.group(2).strip()
 
@@ -56,7 +57,7 @@ def _from_file(path: Path, builtin: bool) -> Template:
     meta, body = parse(path.read_text(encoding="utf-8"))
     tid = meta.get("id", "")
     if tid != path.stem or not body:
-        raise ValueError(f"{path.name}: id가 파일 이름과 다르거나 본문이 비었습니다")  # words-ok: 파일 손상
+        raise ValueError(f"{path.name}: id가 파일 이름과 다르거나 본문이 비었습니다")  # words-ok: 파일 손상  # i18n-ok: 화면에 나가지 않는다 (내 유형은 건너뛰고, 기본 유형 파일은 개발 오류)
     return Template(tid, meta.get("name") or tid, meta.get("description", ""), body, builtin, meta.get("order" if builtin else "created", ""))
 
 

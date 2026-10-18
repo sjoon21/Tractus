@@ -4,6 +4,7 @@
 //! 녹음 시작·종료·북마크는 직접 하지 않는다: `tray-action` 이벤트를 화면에 보내고 화면이 창의 단추와 같은 길로 처리한다.
 //! 경과 시간은 화면 타이머에 기대지 않는다 (숨은 webview는 타이머가 늦어진다): 화면이 녹음 시작 시각을 한 번 보내고 Rust가 1초마다 제목을 고친다.
 
+use crate::i18n::{t, tv};
 use crate::{AppState, Settings};
 use serde_json::{json, Value};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
@@ -40,22 +41,7 @@ const ID_STATUS: &str = "tray:status";
 /// 최근 노트 항목 ID는 이 접두어 + 노트 ID
 const ID_NOTE: &str = "tray:note:";
 
-// 문구는 WORDS.md §4.16
-const STATUS_IDLE: &str = "대기 중";
-const STATUS_STARTING: &str = "녹음 준비 중…";
-const STATUS_CONVERTING: &str = "변환 중…";
-/// 뒤에 일시정지 시점의 경과가 붙는다 (예: `일시정지됨 12:34`)
-const STATUS_PAUSED: &str = "일시정지됨";
-const STATUS_NO_RECORDER: &str = "녹음 프로그램을 찾지 못해 녹음할 수 없습니다";
-const LABEL_START: &str = "녹음 시작";
-const LABEL_PAUSE: &str = "일시정지";
-const LABEL_RESUME: &str = "계속";
-const LABEL_STOP: &str = "녹음 종료";
-const LABEL_BOOKMARK: &str = "북마크 남기기";
-const LABEL_RECENT: &str = "최근 노트";
-const LABEL_OPEN: &str = "Tractus 열기";
-const LABEL_QUIT: &str = "종료";
-const UNTITLED: &str = "제목 없음";
+// 문구는 WORDS.md §4.16 (render·recent_label·build_menu에서 t())
 
 // 아이콘은 @2x(36 px)를 쓴다: tray-icon은 macOS에서 어떤 이미지든 높이 18pt로 맞추므로 18pt 격자로 그려 줄이지 않고 픽셀에 딱 맞춘다. 1x 파일은 디자이너가 바꿔 끼우기 쉽게 같이 둔다
 const ICON_IDLE: &[u8] = include_bytes!("../icons/tray/tray-idle@2x.png");
@@ -158,7 +144,7 @@ pub fn elapsed_secs(started_ms: i64, now_ms: i64) -> u64 {
 pub fn recent_label(title: &str) -> String {
     let one_line = title.split_whitespace().collect::<Vec<_>>().join(" ");
     if one_line.is_empty() {
-        return UNTITLED.into();
+        return t("제목 없음");
     }
     if one_line.chars().count() <= RECENT_TITLE_CHARS {
         return one_line;
@@ -169,7 +155,7 @@ pub fn recent_label(title: &str) -> String {
 /// 메뉴 한 줄. 상태 줄은 따로 둔다 (경과 시간이 1초마다 바뀌므로 메뉴를 다시 만들지 않고 글자만 고친다)
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Entry {
-    Item { id: &'static str, label: &'static str, enabled: bool },
+    Item { id: &'static str, label: String, enabled: bool },
     Separator,
     /// (메뉴 항목 ID, 글자). 비어 있으면 `최근 노트`는 못 누른다
     Recent(Vec<(String, String)>),
@@ -193,12 +179,13 @@ pub fn render(p: &Payload, now_ms: i64) -> View {
     // 일시정지: 화면이 일시정지한 순간의 경과를 보낸다. 시계를 읽지 않으므로 멈춰 있고 타이머도 필요 없다
     let paused = (p.phase == Phase::Paused).then(|| fmt_elapsed(p.elapsed_ms.map_or(0, |ms| (ms / 1000) as u64)));
     let status = match (p.phase, &elapsed) {
-        (Phase::Recording, Some(e)) => format!("녹음 중 {e}"),
-        (Phase::Recording, None) => STATUS_STARTING.into(),
-        (Phase::Paused, _) => format!("{STATUS_PAUSED} {}", paused.as_deref().unwrap_or("00:00")),
-        (Phase::Converting, _) => p.progress_pct.map_or_else(|| STATUS_CONVERTING.into(), |n| format!("변환 중 {n}%")),
-        (Phase::Idle, _) if p.ready && !p.can_record => STATUS_NO_RECORDER.into(),
-        (Phase::Idle, _) => STATUS_IDLE.into(),
+        (Phase::Recording, Some(e)) => tv("녹음 중 {time}", &[("time", e.clone())]),
+        (Phase::Recording, None) => t("녹음 준비 중…"),
+        // 뒤에 일시정지 시점의 경과가 붙는다 (예: `일시정지됨 12:34`)
+        (Phase::Paused, _) => tv("일시정지됨 {time}", &[("time", paused.clone().unwrap_or_else(|| "00:00".into()))]),
+        (Phase::Converting, _) => p.progress_pct.map_or_else(|| t("변환 중…"), |n| tv("변환 중 {pct}%", &[("pct", n.to_string())])),
+        (Phase::Idle, _) if p.ready && !p.can_record => t("녹음 프로그램을 찾지 못해 녹음할 수 없습니다"),
+        (Phase::Idle, _) => t("대기 중"),
     };
     let recent = p.recent.iter().take(RECENT_MAX).map(|n| (format!("{ID_NOTE}{}", n.id), recent_label(&n.title))).collect();
     View {
@@ -207,16 +194,16 @@ pub fn render(p: &Payload, now_ms: i64) -> View {
         recording_icon: p.phase == Phase::Recording,
         ticking: live,
         entries: vec![
-            Entry::Item { id: ID_START, label: LABEL_START, enabled: p.ready && !matches!(p.phase, Phase::Recording | Phase::Paused) && p.can_record },
+            Entry::Item { id: ID_START, label: t("녹음 시작"), enabled: p.ready && !matches!(p.phase, Phase::Recording | Phase::Paused) && p.can_record },
             // 일시정지 중에는 같은 자리가 `계속`이 된다
-            if p.phase == Phase::Paused { Entry::Item { id: ID_RESUME, label: LABEL_RESUME, enabled: true } } else { Entry::Item { id: ID_PAUSE, label: LABEL_PAUSE, enabled: live } },
-            Entry::Item { id: ID_STOP, label: LABEL_STOP, enabled: live || p.phase == Phase::Paused },
-            Entry::Item { id: ID_BOOKMARK, label: LABEL_BOOKMARK, enabled: (live || p.phase == Phase::Paused) && p.can_bookmark },
+            if p.phase == Phase::Paused { Entry::Item { id: ID_RESUME, label: t("계속"), enabled: true } } else { Entry::Item { id: ID_PAUSE, label: t("일시정지"), enabled: live } },
+            Entry::Item { id: ID_STOP, label: t("녹음 종료"), enabled: live || p.phase == Phase::Paused },
+            Entry::Item { id: ID_BOOKMARK, label: t("북마크 남기기"), enabled: (live || p.phase == Phase::Paused) && p.can_bookmark },
             Entry::Separator,
             Entry::Recent(recent),
             Entry::Separator,
-            Entry::Item { id: ID_OPEN, label: LABEL_OPEN, enabled: true },
-            Entry::Item { id: ID_QUIT, label: LABEL_QUIT, enabled: true },
+            Entry::Item { id: ID_OPEN, label: t("Tractus 열기"), enabled: true },
+            Entry::Item { id: ID_QUIT, label: t("종료"), enabled: true },
         ],
     }
 }
@@ -243,10 +230,10 @@ fn build_menu(app: &AppHandle, view: &View) -> tauri::Result<(Menu<Wry>, MenuIte
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     for entry in &view.entries {
         match entry {
-            Entry::Item { id, label, enabled } => menu.append(&MenuItem::with_id(app, *id, *label, *enabled, None::<&str>)?)?,
+            Entry::Item { id, label, enabled } => menu.append(&MenuItem::with_id(app, *id, label, *enabled, None::<&str>)?)?,
             Entry::Separator => menu.append(&PredefinedMenuItem::separator(app)?)?,
             Entry::Recent(notes) => {
-                let sub = Submenu::with_id(app, ID_RECENT, LABEL_RECENT, !notes.is_empty())?;
+                let sub = Submenu::with_id(app, ID_RECENT, t("최근 노트"), !notes.is_empty())?;
                 for (id, label) in notes {
                     sub.append(&MenuItem::with_id(app, id.as_str(), label, true, None::<&str>)?)?;
                 }
@@ -440,6 +427,13 @@ impl TrayState {
         }
     }
 
+    /// 화면 언어가 바뀌었다: 메뉴를 새 언어로 다시 그린다
+    pub fn relabel(&self, app: &AppHandle) {
+        let mut g = self.lock();
+        g.forget_shown();
+        g.sync(app);
+    }
+
     /// 앱이 끝난다: 타이머를 멈춘다
     pub fn shutdown(&self) {
         self.lock().ticker = None;
@@ -510,11 +504,11 @@ mod tests {
         Payload { ready: true, can_record: true, ..Payload::default() }
     }
 
-    fn item(view: &View, id: &str) -> (&'static str, bool) {
+    fn item<'a>(view: &'a View, id: &str) -> (&'a str, bool) {
         view.entries
             .iter()
             .find_map(|e| match e {
-                Entry::Item { id: i, label, enabled } if *i == id => Some((*label, *enabled)),
+                Entry::Item { id: i, label, enabled } if *i == id => Some((label.as_str(), *enabled)),
                 _ => None,
             })
             .unwrap()

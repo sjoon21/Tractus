@@ -3,15 +3,22 @@
 //! 녹음 헬퍼는 attach.json을 모른다. 코어는 변환이 끝나 녹음 폴더를 지울 때 이 파일도 함께 지운다.
 //! 오류 문자열: 첫 줄은 화면 문장(WORDS.md).
 
+use crate::i18n::{t, tv};
 use crate::meetings;
 use std::fs;
 use std::path::Path;
 
 pub const ATTACH_FILE: &str = "attach.json";
 
-const HAS_AUDIO: &str = "이미 녹음이 있는 노트에는 녹음을 추가할 수 없습니다.";
-const BUSY_NOTE: &str = "이 노트를 처리하는 중이라 지금은 녹음을 추가할 수 없습니다. 끝난 뒤에 다시 시도하세요.";
-const NOT_FOUND: &str = "노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.";
+fn has_audio() -> String {
+    t("이미 녹음이 있는 노트에는 녹음을 추가할 수 없습니다.")
+}
+fn busy_note() -> String {
+    t("이 노트를 처리하는 중이라 지금은 녹음을 추가할 수 없습니다. 끝난 뒤에 다시 시도하세요.")
+}
+fn not_found() -> String {
+    t("노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.")
+}
 
 fn is_note_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric())
@@ -20,19 +27,19 @@ fn is_note_id(id: &str) -> bool {
 /// 녹음을 덧붙일 수 있는 노트인가: 있는 노트이고, 글만 있고(`kind: "memo"`, 오디오 파일 없음), 지금 쓰는 중이 아니다
 pub fn check_target(home: &Path, id: &str, is_busy: impl Fn(&str) -> bool) -> Result<(), String> {
     if !is_note_id(id) {
-        return Err(format!("잘못된 노트 ID: {id}"));
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
     }
     let dir = meetings::find_dir(home, id)?;
-    let raw = fs::read_to_string(dir.join("transcript.json")).map_err(|_| NOT_FOUND.to_string())?;
-    let t: serde_json::Value = serde_json::from_str(&raw).map_err(|_| NOT_FOUND.to_string())?;
+    let raw = fs::read_to_string(dir.join("transcript.json")).map_err(|_| not_found())?;
+    let t: serde_json::Value = serde_json::from_str(&raw).map_err(|_| not_found())?;
     if t["meeting_id"].as_str() != Some(id) {
-        return Err(NOT_FOUND.into());
+        return Err(not_found());
     }
     if t["kind"].as_str() != Some("memo") || t["audio"]["file"].as_str().is_some_and(|f| !f.is_empty()) {
-        return Err(HAS_AUDIO.into());
+        return Err(has_audio());
     }
     if is_busy(id) {
-        return Err(BUSY_NOTE.into());
+        return Err(busy_note());
     }
     Ok(())
 }
@@ -41,7 +48,7 @@ pub fn check_target(home: &Path, id: &str, is_busy: impl Fn(&str) -> bool) -> Re
 pub fn write_attach(rec_dir: &Path, id: &str) -> Result<(), String> {
     let tmp = rec_dir.join(format!("{ATTACH_FILE}.tmp"));
     let body = serde_json::json!({ "meeting_id": id }).to_string();
-    fs::write(&tmp, body).and_then(|_| fs::rename(&tmp, rec_dir.join(ATTACH_FILE))).map_err(|e| format!("녹음 폴더를 준비하지 못했습니다\n{e}"))
+    fs::write(&tmp, body).and_then(|_| fs::rename(&tmp, rec_dir.join(ATTACH_FILE))).map_err(|e| tv("녹음 폴더를 준비하지 못했습니다\n{e}", &[("e", e.to_string())]))
 }
 
 /// 시작하지 못한 녹음 폴더 정리: attach.json과 (비어 있으면) 폴더만 지운다
@@ -61,7 +68,7 @@ pub fn read_attach(rec_dir: &Path) -> Option<String> {
 pub fn with_target(mut args: Vec<String>, kind: &str, id: Option<&str>, home: &Path, is_busy: impl Fn(&str) -> bool) -> Result<Vec<String>, String> {
     let Some(id) = id else { return Ok(args) };
     if !matches!(kind, "transcribe" | "import") {
-        return Err(format!("잘못된 작업: {kind} {id}"));
+        return Err(tv("잘못된 작업: {kind} {id}", &[("kind", kind.to_string()), ("id", id.to_string())]));
     }
     check_target(home, id, is_busy)?;
     args.extend(["--append-to".to_string(), id.to_string()]);
@@ -96,10 +103,10 @@ mod tests {
         note(&home, "01REC", r#"{"meeting_id":"01REC","audio":{"file":"audio.ogg"},"segments":[]}"#);
         note(&home, "01ODD", r#"{"meeting_id":"01ODD","kind":"memo","audio":{"file":"audio.ogg"},"segments":[]}"#);
         assert!(check_target(&home, "01MEMO", |_| false).is_ok());
-        assert_eq!(check_target(&home, "01REC", |_| false).unwrap_err(), HAS_AUDIO);
-        assert_eq!(check_target(&home, "01ODD", |_| false).unwrap_err(), HAS_AUDIO);
-        assert_eq!(check_target(&home, "01MEMO", |k| k == "01MEMO").unwrap_err(), BUSY_NOTE);
-        assert_eq!(check_target(&home, "01GONE", |_| false).unwrap_err(), NOT_FOUND);
+        assert_eq!(check_target(&home, "01REC", |_| false).unwrap_err(), has_audio());
+        assert_eq!(check_target(&home, "01ODD", |_| false).unwrap_err(), has_audio());
+        assert_eq!(check_target(&home, "01MEMO", |k| k == "01MEMO").unwrap_err(), busy_note());
+        assert_eq!(check_target(&home, "01GONE", |_| false).unwrap_err(), not_found());
         for bad in ["", "../x", "01 MEMO", "a/b"] {
             assert!(check_target(&home, bad, |_| false).unwrap_err().starts_with("잘못된 노트 ID"), "{bad}");
         }

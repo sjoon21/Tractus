@@ -18,6 +18,8 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from tractus.i18n import t
+
 T = TypeVar("T", bound=BaseModel)
 TEMPERATURE = 0.2  # 0–1 범위만 사용 (Claude 호환 레이어는 1 초과를 잘라냄)
 TIMEOUT_S = 300
@@ -85,7 +87,7 @@ def is_loopback(url: str) -> bool:
 def normalize_base_url(raw: str, var: str = "TRACTUS_LLM_BASE_URL") -> str:
     """http/https + 호스트가 있는 주소만 받고 끝의 `/`를 뗀다. 사용자 이름·비밀번호가 들어 있으면 거절한다. 오류 문장에 주소를 넣지 않는다."""
     raw = raw.strip()
-    bad = f"서비스 주소가 올바르지 않습니다. http:// 또는 https://로 시작하는 주소를 입력하세요 ({var})"
+    bad = t("서비스 주소가 올바르지 않습니다. http:// 또는 https://로 시작하는 주소를 입력하세요 ({var})", var=var)
     if re.search(r"[\s\\\x00-\x1f]", raw):
         raise LLMError(bad)
     try:
@@ -96,7 +98,7 @@ def normalize_base_url(raw: str, var: str = "TRACTUS_LLM_BASE_URL") -> str:
     if u.scheme not in ("http", "https") or not u.hostname:
         raise LLMError(bad)
     if u.username is not None or u.password is not None:
-        raise LLMError("서비스 주소에 사용자 이름이나 비밀번호를 넣을 수 없습니다. API 키는 따로 입력하세요")
+        raise LLMError(t("서비스 주소에 사용자 이름이나 비밀번호를 넣을 수 없습니다. API 키는 따로 입력하세요"))
     return raw.rstrip("/")
 
 
@@ -112,9 +114,9 @@ def resolve_provider(name: str | None, model: str | None, need_model: bool = Tru
     selected = os.environ.get("TRACTUS_LLM_PROVIDER")
     name = name or selected
     if not name:
-        raise LLMError(f"AI 서비스를 지정하세요: --provider 또는 TRACTUS_LLM_PROVIDER ({', '.join(PROVIDERS)})")
+        raise LLMError(t("AI 서비스를 지정하세요: --provider 또는 TRACTUS_LLM_PROVIDER ({choices})", choices=", ".join(PROVIDERS)))
     if name not in PROVIDERS:
-        raise LLMError(f"알 수 없는 AI 서비스 {name!r}. 가능한 값: {', '.join(PROVIDERS)}")
+        raise LLMError(t("알 수 없는 AI 서비스 {name}. 가능한 값: {choices}", name=repr(name), choices=", ".join(PROVIDERS)))
     provider = PROVIDERS[name]
     pre = _env_prefix(provider)
     use_global = name == "custom" or not selected or selected == name  # 다른 서비스를 가리키는 전역 값이 이 서비스의 키를 엉뚱한 주소로 보내지 않게
@@ -123,16 +125,16 @@ def resolve_provider(name: str | None, model: str | None, need_model: bool = Tru
     if g_base or s_base:
         provider = replace(provider, base_url=normalize_base_url(g_base or s_base, "TRACTUS_LLM_BASE_URL" if g_base else f"{pre}_BASE_URL"))
     elif not provider.base_url:
-        raise LLMError(f"서비스 주소가 필요합니다 (AI 서비스: {name}). TRACTUS_LLM_BASE_URL로 지정하세요")
+        raise LLMError(t("서비스 주소가 필요합니다 (AI 서비스: {name}). TRACTUS_LLM_BASE_URL로 지정하세요", name=name))
     loopback = is_loopback(provider.base_url)
     if local_only() and not loopback:  # 이름이 아니라 호스트로 본다: 직접 입력 주소가 로컬 전용 모드를 우회하지 못하게
-        raise LLMError(f"로컬 전용 모드(TRACTUS_LOCAL_ONLY)에서는 외부 AI 서비스({name})를 쓸 수 없습니다", code="llm_local_only")
+        raise LLMError(t("로컬 전용 모드(TRACTUS_LOCAL_ONLY)에서는 외부 AI 서비스({name})를 쓸 수 없습니다", name=name), code="llm_local_only")
     if provider.api_key_env and not os.environ.get(provider.api_key_env) and not (name == "custom" and loopback):
-        raise LLMError(f"{provider.api_key_env}가 없습니다. .env.local에 넣거나 환경변수로 지정하세요")
+        raise LLMError(t("{var}가 없습니다. .env.local에 넣거나 환경변수로 지정하세요", var=provider.api_key_env))
     g_model, s_model = env("TRACTUS_LLM_MODEL", "MODEL")
     model = model or g_model or s_model or provider.default_model
     if not model and need_model:
-        raise LLMError(f"기본 AI 모델이 없습니다 (AI 서비스: {name}). --model 또는 TRACTUS_LLM_MODEL로 AI 모델 ID를 지정하세요")
+        raise LLMError(t("기본 AI 모델이 없습니다 (AI 서비스: {name}). --model 또는 TRACTUS_LLM_MODEL로 AI 모델 ID를 지정하세요", name=name))
     return provider, model or ""
 
 
@@ -192,8 +194,8 @@ def map_error(e: Exception, provider: Provider) -> LLMError | None:
     host = host_of(provider.base_url)
     key = os.environ.get(provider.api_key_env or "", "")
     if isinstance(e, openai.APIConnectionError):  # 시간 초과(APITimeoutError)·거절·DNS 포함
-        what = "시간이 너무 오래 걸렸습니다" if isinstance(e, openai.APITimeoutError) else "연결하지 못했습니다"
-        return LLMError(f"{host}에 {what}", code="llm_conn")
+        timed_out = isinstance(e, openai.APITimeoutError)
+        return LLMError(t("{host}에 시간이 너무 오래 걸렸습니다", host=host) if timed_out else t("{host}에 연결하지 못했습니다", host=host), code="llm_conn")
     status = getattr(e, "status_code", None)
     body = _safe(_hint(e), key)
     detail = f"{host} HTTP {status}: {body}" if status and body else f"{host} HTTP {status}"
@@ -238,11 +240,11 @@ def _within(seconds: float, fn, provider: Provider):
         except BaseException as e:  # noqa: BLE001 — 호출 스레드에서 다시 던진다
             box["error"] = e
 
-    t = threading.Thread(target=run, daemon=True)
-    t.start()
-    t.join(seconds)
-    if t.is_alive():
-        raise LLMError(f"{host_of(provider.base_url)}에 시간이 너무 오래 걸렸습니다", code="llm_conn")
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise LLMError(t("{host}에 시간이 너무 오래 걸렸습니다", host=host_of(provider.base_url)), code="llm_conn")
     if "error" in box:
         raise box["error"]
     return box["value"]
@@ -255,7 +257,7 @@ def check_connection(provider: Provider, model: str) -> dict:
     # ponytail: OpenAI 본가의 새 모델은 max_tokens를 거절한다. 그쪽만 max_completion_tokens (호환 서버는 max_tokens)
     limit = "max_completion_tokens" if provider.name == "openai" else "max_tokens"
     t0 = time.perf_counter()
-    req = lambda: client.chat.completions.create(model=model, messages=[{"role": "user", "content": "OK라고만 답하세요."}], **{limit: TEST_MAX_TOKENS}, **_temperature(provider))  # noqa: E731
+    req = lambda: client.chat.completions.create(model=model, messages=[{"role": "user", "content": "OK라고만 답하세요."}], **{limit: TEST_MAX_TOKENS}, **_temperature(provider))  # noqa: E731  # i18n-ok: AI 프롬프트
     resp = _within(TEST_TIMEOUT_S, lambda: _call(provider, req), provider)
     empty = not (resp.choices and (resp.choices[0].message.content or "").strip())
     return {"ok": True, "provider": provider.name, "model": model, "host": host_of(provider.base_url), "latency_ms": round((time.perf_counter() - t0) * 1000), "empty": empty}
@@ -306,7 +308,7 @@ def complete_json(
 ) -> T:
     """구조화 응답을 받아 검증한다. 스키마·validate 실패 시 오류를 알려 주고 1회 재요청한다."""
     spec = strict_schema(schema)
-    system = f"{system}\n\n반드시 아래 JSON Schema를 따르는 JSON 객체 하나만 출력한다. 설명이나 코드 펜스를 붙이지 않는다.\n{json.dumps(spec, ensure_ascii=False)}"
+    system = f"{system}\n\n반드시 아래 JSON Schema를 따르는 JSON 객체 하나만 출력한다. 설명이나 코드 펜스를 붙이지 않는다.\n{json.dumps(spec, ensure_ascii=False)}"  # i18n-ok: AI 프롬프트
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     extra = {"response_format": {"type": "json_schema", "json_schema": {"name": schema.__name__, "strict": True, "schema": spec}}} if provider.json_schema else {}
 
@@ -314,7 +316,7 @@ def complete_json(
     for _ in range(2):
         resp = _call(provider, lambda: client.chat.completions.create(model=model, messages=messages, **_temperature(provider), **extra))
         if not resp.choices:  # 안전 필터 차단 등으로 choices가 비는 공급자가 있다
-            error = "빈 응답 (choices 없음)"
+            error = t("빈 응답 (choices 없음)")
             continue
         text = resp.choices[0].message.content or ""
         try:
@@ -327,9 +329,9 @@ def complete_json(
             messages = [
                 *messages,
                 {"role": "assistant", "content": text},
-                {"role": "user", "content": f"응답이 검증에 실패했습니다:\n{error}\n스키마와 조건에 맞는 JSON만 다시 출력하세요."},
+                {"role": "user", "content": f"응답이 검증에 실패했습니다:\n{error}\n스키마와 조건에 맞는 JSON만 다시 출력하세요."},  # i18n-ok: AI 프롬프트
             ]
-    raise LLMError(f"{provider.name}/{model} 응답이 2회 연속 검증에 실패했습니다: {error}", code="llm_invalid")
+    raise LLMError(t("{name}/{model} 응답이 2회 연속 검증에 실패했습니다: {error}", name=provider.name, model=model, error=error), code="llm_invalid")
 
 
 def stream_chat(client, provider: Provider, model: str, messages: list[dict]) -> Iterator[str]:

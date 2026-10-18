@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
+from tractus.i18n import t
 from tractus.paths import REPO_ROOT, build_hint, in_repo, tool_bin  # noqa: F401 — REPO_ROOT는 테스트가 diarize에서 가져온다
 
 SR = 16000
@@ -181,9 +182,9 @@ def fluid_hint(models_dir: Path) -> str:
     binary, path = fluid_bin(), models_dir / FLUID_DIR
     lines = []
     if not _executable(binary):
-        lines.append(f"  헬퍼: {build_hint('diar_helper')}" + ("  (Swift 6.2 이상, 다른 위치면 TRACTUS_DIAR_BIN)" if in_repo() else ""))
+        lines.append("  " + t("헬퍼: {hint}", hint=build_hint("diar_helper")) + ("  " + t("(Swift 6.2 이상, 다른 위치면 TRACTUS_DIAR_BIN)") if in_repo() else ""))
     if not _fluid_models_ok(path):
-        lines.append(f"  모델 받기: tractus models download fluid  (직접: {binary} download --models {path})")
+        lines.append("  " + t("모델 받기: tractus models download fluid  (직접: {cmd})", cmd=f"{binary} download --models {path}"))
     return "\n".join(lines)
 
 
@@ -215,7 +216,7 @@ def _fluid_turns(raw) -> list[list]:
     try:
         turns = sorted([float(s), float(e), str(k)] for s, e, k in raw)
     except (TypeError, ValueError) as e:
-        raise RuntimeError(f"tractus-diar 결과 형식이 잘못됐습니다: {e}") from None
+        raise RuntimeError(t("tractus-diar 결과 형식이 잘못됐습니다: {error}", error=e)) from None
     return [t for t in turns if t[1] > t[0]]
 
 
@@ -237,11 +238,11 @@ class FluidDiarizer:
             try:
                 p = subprocess.run(cmd, capture_output=True, text=True, timeout=fluid_timeout(len(pcm) / SR))
             except subprocess.TimeoutExpired as e:
-                raise RuntimeError(f"tractus-diar 시간 초과 ({e.timeout:.0f}초)") from None
+                raise RuntimeError(t("tractus-diar 시간 초과 ({seconds}초)", seconds=f"{e.timeout:.0f}")) from None
         result, error = _parse_events(p.stdout)
         if p.returncode or result is None:
-            detail = error or p.stderr.strip()[-500:] or "결과 없음"
-            raise RuntimeError(f"tractus-diar 실패 (종료 코드 {p.returncode}): {detail}")
+            detail = error or p.stderr.strip()[-500:] or t("결과 없음")
+            raise RuntimeError(t("tractus-diar 실패 (종료 코드 {code}): {detail}", code=p.returncode, detail=detail))
         turns = _fluid_turns(result.get("turns") or [])
         model, _, revision = str(result.get("model") or FLUID_REPO).partition("@")
         self.info = {"engine": FLUID, "model": model, "revision": revision or None, "params": fluid_params(max_speakers)}

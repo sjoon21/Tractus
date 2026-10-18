@@ -1,6 +1,7 @@
 //! 목소리 프로필 (Phase 7.1, docs/desktop.md §2.7). 등록·삭제·제안 거절은 코어 `tractus voices`·`speakers dismiss`가 하고
 //! 앱은 인수만 만든다. 벡터는 코어가 $TRACTUS_HOME/voices.json(0600)에만 두고, 앱은 이름·개수·날짜만 받는다.
 
+use crate::i18n::{t, tv};
 use super::{blocking, is_meeting_id, is_tagged, meetings, run_tractus, stdout_json, AppState};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -33,7 +34,9 @@ struct RawPerson {
     created_at: String,
 }
 
-const READ_FAILED: &str = "참석자 목소리 프로필을 읽지 못했습니다";
+fn read_failed() -> String {
+    t("참석자 목소리 프로필을 읽지 못했습니다")
+}
 
 /// `tractus voices list --json` 마지막 줄: {"people": [...], "reenroll": bool} (docs/desktop.md §2.7). 목록 그대로도 받는다.
 /// samples는 개수 또는 목록(길이만 센다), 읽지 못하는 항목은 건너뛴다
@@ -43,13 +46,13 @@ fn parse_list(out: &str) -> Result<VoiceList, String> {
         .rev()
         .find(|l| !l.trim().is_empty())
         .and_then(|l| serde_json::from_str(l).ok())
-        .ok_or(READ_FAILED)?;
+        .ok_or_else(read_failed)?;
     let needs_reenroll = v.get("reenroll").and_then(Value::as_bool).unwrap_or(false);
     let model_present = v.get("model_present").and_then(Value::as_bool).unwrap_or(true);
     let items = match &v {
         Value::Array(a) => a.clone(),
         Value::Object(o) => o.get("people").and_then(Value::as_array).cloned().unwrap_or_default(),
-        _ => return Err(READ_FAILED.into()),
+        _ => return Err(read_failed()),
     };
     let people = items
         .into_iter()
@@ -69,11 +72,11 @@ fn parse_list(out: &str) -> Result<VoiceList, String> {
 /// `--name=` 꼴로 붙인다: "-박" 같은 이름을 옵션으로 읽지 않게
 fn enroll_args(id: &str, label: &str, name: &str, consent: bool) -> Result<Vec<String>, String> {
     if !consent {
-        return Err("목소리를 등록하려면 본인이거나 녹음·등록에 동의를 받은 사람이어야 합니다".into());
+        return Err(t("목소리를 등록하려면 본인이거나 녹음·등록에 동의를 받은 사람이어야 합니다"));
     }
     let name = name.trim();
     if !is_meeting_id(id) || !is_tagged(label, 'S') || name.is_empty() || name.contains(['\n', '\r']) {
-        return Err("목소리를 등록할 수 없습니다 (잘못된 요청)".into());
+        return Err(t("목소리를 등록할 수 없습니다 (잘못된 요청)"));
     }
     Ok(vec!["voices".into(), "enroll".into(), id.into(), label.into(), format!("--name={name}"), "--consent".into()])
 }
@@ -81,7 +84,7 @@ fn enroll_args(id: &str, label: &str, name: &str, consent: bool) -> Result<Vec<S
 /// `tractus voices forget -- <id>`. 앱은 이름이 아니라 ID(ULID)로만 지운다 (같은 이름을 잘못 지우지 않게)
 fn forget_args(person: &str) -> Result<Vec<String>, String> {
     if !is_meeting_id(person) {
-        return Err(format!("잘못된 사람 ID: {person}"));
+        return Err(tv("잘못된 사람 ID: {person}", &[("person", person.to_string())]));
     }
     Ok(["voices", "forget", "--", person].map(String::from).to_vec())
 }
@@ -89,7 +92,7 @@ fn forget_args(person: &str) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub async fn voices_list(state: State<'_, AppState>) -> Result<VoiceList, String> {
     let s = state.settings();
-    blocking(move || parse_list(&run_tractus(&s, &["voices".into(), "list".into(), "--json".into()], None, READ_FAILED)?)).await
+    blocking(move || parse_list(&run_tractus(&s, &["voices".into(), "list".into(), "--json".into()], None, &read_failed())?)).await
 }
 
 #[derive(Serialize)]
@@ -106,7 +109,7 @@ pub async fn voices_enroll(state: State<'_, AppState>, meeting: String, label: S
     let guard = super::BusyGuard::new(&state.busy, &meeting);
     blocking(move || {
         let _guard = guard;
-        let samples = stdout_json(&run_tractus(&s, &args, None, "목소리를 등록하지 못했습니다")?)?["samples"].as_u64().unwrap_or(0);
+        let samples = stdout_json(&run_tractus(&s, &args, None, &t("목소리를 등록하지 못했습니다"))?)?["samples"].as_u64().unwrap_or(0);
         Ok(EnrollResult { samples, meeting: meetings::load(&s.home(), &meeting)? })
     })
     .await
@@ -117,7 +120,7 @@ pub async fn voices_enroll(state: State<'_, AppState>, meeting: String, label: S
 pub async fn voices_forget(state: State<'_, AppState>, id: String) -> Result<u64, String> {
     let s = state.settings();
     let args = forget_args(&id)?;
-    blocking(move || Ok(stdout_json(&run_tractus(&s, &args, None, "목소리를 지우지 못했습니다")?)?["forgotten"].as_u64().unwrap_or(0))).await
+    blocking(move || Ok(stdout_json(&run_tractus(&s, &args, None, &t("목소리를 지우지 못했습니다"))?)?["forgotten"].as_u64().unwrap_or(0))).await
 }
 
 #[cfg(test)]

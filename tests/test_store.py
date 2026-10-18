@@ -308,3 +308,15 @@ def test_find_meeting_dir_errors_read_as_sentences(tmp_path):
 
     with pytest.raises(LookupError, match="^‘없는회의’에 해당하는 노트가 없습니다"):
         find_meeting_dir(tmp_path, "없는회의")
+
+
+def test_label_like_names_are_refused_in_both_languages():
+    # 이름 없는 참석자 표시(`참석자 2`, 영어 화면 `Speaker 2`)나 라벨(`S2`)을 이름으로 등록하면 다른 참석자와 헷갈린다
+    import pytest
+
+    from tractus.store import _clean_name
+
+    for bad in ("S2", "참석자 2", "참석자2", "Speaker 2", "speaker2"):
+        with pytest.raises(ValueError):
+            _clean_name(bad)
+    assert _clean_name("Speakerman") == "Speakerman"

@@ -18,7 +18,7 @@ from tractus.store import MEMOS_FILE, SCHEMA_VERSION, _write_atomic, is_sample, 
 
 DATA = Path(__file__).with_name("sample_note.json")
 SAMPLE_KEY = "sample"
-MAKER = "예시"  # 요약·완성된 노트의 provider·model 자리 (AI를 부르지 않았다)
+MAKER = "예시"  # i18n-ok: 노트 데이터(예시 노트, 다음 단계). 요약·완성된 노트의 provider·model 자리 (AI를 부르지 않았다)
 LOCK = ".sample.lock"  # meetings/ 안: 두 번 빨리 눌러 두 프로세스가 돌아도 예시 노트는 하나
 
 

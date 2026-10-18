@@ -15,6 +15,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - 코드 식별자(`meeting_id`, `meetings/`, `--meeting`), CLI 명령·옵션, JSON 키, 이벤트·단계 키, MCP 출력, 개발 문서는 기술 용어를 그대로 쓴다.
 - 제목이 없는 녹음의 기본 제목은 `녹음 HH:MM`이다(`cli._source_from_recording`).
 - **화면 문구는 `t("한국어 문구")`(`app/src/i18n.ts`)로 쓰고 영어를 `app/src/en/*.ts`에 더한다**(WORDS.md §7, docs/desktop.md §3.8). 한국어 문구가 키라 한국어를 고치면 사전의 키도 고친다. `t()`를 템플릿 문자열에 넣지 않고, 변수는 `{이름}` 자리표시자, 개수는 `n`(영어 복수형). `app/src/i18n.test.ts`가 빠진 번역과 `t()` 밖에 남은 한국어를 잡는다(언어와 상관없는 데이터는 줄 끝 `i18n-ok`).
+- **Rust·코어도 같은 규칙이다**: Rust는 `i18n::t()`/`tv()` + `app/src-tauri/src/en.json`, 코어는 `tractus.i18n.t()` + `src/tractus/i18n_en.json`(앱이 넘기는 `TRACTUS_LANG=en`일 때만 영어). 검사는 Rust `i18n.rs` 테스트와 `tests/test_i18n.py`. MCP 출력·`store.stamp()`·노트 폴더 파일·AI 프롬프트는 옮기지 않는다(`i18n-ok`).
 
 ## ASR 모델 (Phase 0 확정, 2026-10-02)
 
