@@ -599,8 +599,6 @@ export const recMode = (v: unknown): RecMode => (v === "hybrid" ? "hybrid" : "in
 /** 녹음 방식 → tractus-rec record 추가 인수 (docs/desktop.md §1). */
 export const recFlags = (mode: RecMode): string[] => (mode === "hybrid" ? ["--echo-cancel"] : ["--no-system"]);
 
-/** 설정을 고치지 않고 녹음 방식만 바꾼 사본. */
-export const withRecMode = <T extends { rec_mode: string }>(settings: T, mode: RecMode): T => ({ ...settings, rec_mode: mode });
 
 /** 녹음을 계속하면서 알리는 경고 중 헬퍼 메시지에 설명을 덧붙이는 것 */
 const WARNING_NOTE: Record<string, string> = {

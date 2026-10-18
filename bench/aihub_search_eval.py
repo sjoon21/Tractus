@@ -10,6 +10,7 @@
     uv run python bench/aihub_search_eval.py /tmp/aihub-home
 """
 
+import os
 import shutil
 import sys
 import tempfile
@@ -41,6 +42,8 @@ def main():
 
     work = Path(tempfile.mkdtemp())  # 원본 홈의 색인을 건드리지 않게 복사본에서 색인
     shutil.copytree(home / "meetings", work / "meetings", ignore=shutil.ignore_patterns("audio.opus"))
+    # AI Hub 전사는 원격으로 보내지 않는다: TRACTUS_EMBED=upstage가 켜져 있어도 이 Mac의 임베딩 모델만 쓴다 (CLAUDE.md)
+    os.environ["TRACTUS_EMBED"] = "local"
     idx = Index(work, embedder=load_embedder(ROOT / "models"))
     idx.sync()
     types = ["ALL", "term", "rare_word", "fragment"]

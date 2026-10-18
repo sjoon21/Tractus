@@ -44,7 +44,6 @@ import {
   JOB_ERROR,
   statusLine,
   WARNING_TEXT,
-  withRecMode,
   type Segment,
 } from "./lib";
 
@@ -345,13 +344,6 @@ describe("녹음 방식", () => {
     expect(recMode(undefined)).toBe("in_person");
     expect(recMode("video")).toBe("in_person");
     expect(REC_MODES[0].mode).toBe("in_person"); // 스위치 첫 칸 = 기본값
-  });
-  test("설정은 녹음 방식만 바꾼 사본으로 저장한다", () => {
-    const s = { home: "/h", rec_mode: "in_person", fake_recorder: true };
-    const next = withRecMode(s, "hybrid");
-    expect(next).toEqual({ home: "/h", rec_mode: "hybrid", fake_recorder: true });
-    expect(s.rec_mode).toBe("in_person");
-    expect(recMode(next.rec_mode)).toBe("hybrid");
   });
   test("헤드폰을 쓰라는 안내가 없다", () => {
     for (const m of REC_MODES) expect(m.note).not.toMatch(/헤드폰|이어폰/);

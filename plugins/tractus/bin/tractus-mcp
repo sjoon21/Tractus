@@ -36,4 +36,7 @@ export TRACTUS_HOME="$(expand "${home:-~/Tractus}")"
 models="${TRACTUS_MODELS_DIR:-$(conf models_dir)}"
 [ -n "$models" ] && export TRACTUS_MODELS_DIR="$(expand "$models")"
 
+# Claude Code는 플러그인 MCP를 지금 연 프로젝트 폴더에서 띄운다. 코어는 작업 폴더의 .env도 읽으므로,
+# 남의 저장소의 .env가 검색어를 다른 서버로 보내거나 키를 받게 하지 않도록 데이터 폴더(없으면 /)에서 띄운다
+cd "$TRACTUS_HOME" 2>/dev/null || cd /
 exec "$TRACTUS" mcp

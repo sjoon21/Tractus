@@ -211,3 +211,34 @@ def test_save_summary_drops_speaker_label_owners(home):
          "action_items": [{"task": "QA", "owner": "S2", "due": None, "segment_ids": ["s0004"]}]}
     assert not call(build_server(home, None), "save_summary", {"meeting_id": RELEASE, "summary": s, "author": "claude-code"}).is_error
     assert json.loads((d / "summary.json").read_text(encoding="utf-8"))["action_items"][0]["owner"] is None
+
+
+def test_paths_outside_this_data_folder_are_refused(home, tmp_path_factory):
+    # 다른 홈(예: AI Hub 전사가 든 개발용 홈)의 노트를 경로로 읽거나 거기에 요약을 쓰지 않는다
+    other = tmp_path_factory.mktemp("other")
+    shutil.copytree(EVAL / "meetings", other / "meetings")
+    outside = next((other / "meetings").iterdir())
+    server = build_server(home, None)
+    r = call(server, "get_transcript", {"meeting_id": str(outside)})
+    assert r.is_error and "데이터 폴더 밖" in "".join(c.text for c in r.content)
+    inside = next((home / "meetings").iterdir())
+    assert "[s0001" in text(call(server, "get_transcript", {"meeting_id": str(inside)}))  # 이 홈 안의 경로는 된다
+
+
+def test_a_failed_query_embedding_only_pauses_smart_search(home, monkeypatch):
+    from tractus.index import Index
+
+    from test_index import FakeEmbedder
+
+    emb = FakeEmbedder()
+    idx = Index(home, embedder=emb)
+    idx.sync()
+    real = emb.embed
+    emb.embed = lambda texts, is_query=False: (_ for _ in ()).throw(RuntimeError("429"))
+    assert idx.search("예산").vector_used is False  # 이번에는 키워드로
+    assert idx.embedder is emb  # 꺼 버리지 않는다
+    emb.embed = real
+    assert idx.search("예산").vector_used is False  # 잠시(60초) 쉬는 중
+    idx._vector_off_until = 0  # 시간이 지나면
+    assert idx.search("예산").vector_used is True
+    idx.close()

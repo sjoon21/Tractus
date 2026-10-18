@@ -26,11 +26,7 @@ pub fn merge_after_record(raw: Option<&str>, value: &str) -> Result<String, Stri
 /// 설정 화면의 `녹음을 끝내면`과 끝낼 때 묻는 창의 `다음부터 묻지 않기`가 바로 저장한다
 #[tauri::command]
 pub fn set_after_record(state: State<'_, AppState>, value: String) -> Result<(), String> {
-    let raw = merge_after_record(std::fs::read_to_string(&state.config_path).ok().as_deref(), &value)?;
-    if let Some(dir) = state.config_path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
+    crate::patch_settings(&state.config_path, |raw| merge_after_record(raw, &value))?;
     state.settings.lock().unwrap().after_record = value;
     Ok(())
 }

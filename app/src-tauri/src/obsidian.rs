@@ -19,11 +19,7 @@ pub fn merge_obsidian(raw: Option<&str>, vault: &str, audio: bool) -> Result<Str
 
 #[tauri::command]
 pub fn set_obsidian(state: State<'_, AppState>, vault: String, audio: bool) -> Result<(), String> {
-    let raw = merge_obsidian(std::fs::read_to_string(&state.config_path).ok().as_deref(), &vault, audio)?;
-    if let Some(dir) = state.config_path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
+    crate::patch_settings(&state.config_path, |raw| merge_obsidian(raw, &vault, audio))?;
     let mut s = state.settings.lock().unwrap();
     s.obsidian_vault = vault;
     s.obsidian_audio = audio;

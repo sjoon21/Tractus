@@ -388,12 +388,12 @@ fn with_profile(v: &mut Value, provider: &str, base_url: &str, model: &str) {
 /// 설정 파일을 읽어 (예전 AI 서비스 설정은 옮기고) 고친 뒤 쓴다. 파일이 없거나 깨졌으면 고친 항목만 쓴다:
 /// 환경변수에서 온 home 같은 기본값이 파일에 굳지 않게 (merge_rec_mode와 같은 방식)
 fn patch_file(state: &AppState, edit: impl FnOnce(&mut Value)) -> Result<(), String> {
-    let mut v = fs::read_to_string(&state.config_path).ok().and_then(|r| serde_json::from_str::<Value>(&r).ok()).filter(Value::is_object).unwrap_or_else(|| serde_json::json!({}));
-    migrate_llm(&mut v);
-    edit(&mut v);
-    let raw = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
-    fs::create_dir_all(dir(state)?).map_err(|e| e.to_string())?;
-    fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))
+    crate::patch_settings(&state.config_path, |raw| {
+        let mut v = raw.and_then(|r| serde_json::from_str::<Value>(r).ok()).filter(Value::is_object).unwrap_or_else(|| serde_json::json!({}));
+        migrate_llm(&mut v);
+        edit(&mut v);
+        serde_json::to_string_pretty(&v).map_err(|e| e.to_string())
+    })
 }
 
 /// 한 서비스의 주소·AI 모델을 저장한다
