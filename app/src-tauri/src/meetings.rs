@@ -310,24 +310,49 @@ fn recorded_state(t: &Transcript) -> Option<String> {
     (kind_of(t) == "recording" && t.state.as_deref() == Some("recorded")).then(|| "recorded".to_string())
 }
 
+/// 목록 캐시: transcript.json 경로 → (수정 시각, 크기, 그때 만든 목록 항목). 앱은 창을 다시 볼 때마다 목록을 읽는데,
+/// 노트 하나가 대화·단어 시각까지 1–2 MB라 1,000개면 매번 2초 넘게 걸렸다(점검 2026-10-18). 바뀐 노트만 다시 읽는다
+type ListCache = std::collections::HashMap<PathBuf, (std::time::SystemTime, u64, MeetingInfo)>;
+static LIST_CACHE: std::sync::Mutex<Option<ListCache>> = std::sync::Mutex::new(None);
+
+/// 캐시에서 꺼낸 항목의, 다른 파일에 달린 값(요약이 있는지, 보관 중인 원본 크기)은 매번 다시 본다 (가벼운 stat)
+fn refresh_dynamic(dir: &Path, mut m: MeetingInfo) -> MeetingInfo {
+    m.has_summary = crate::summaries::any_summary(dir);
+    m.tracks_bytes = m.state.as_ref().map(|_| dir_bytes(&dir.join("tracks")));
+    m
+}
+
 /// $TRACTUS_HOME/meetings/*/transcript.json, 최신순. 손상된 회의 하나 때문에 목록 전체가 실패하지 않게 건너뛴다.
 pub fn list(home: &Path) -> Vec<MeetingInfo> {
     let Ok(entries) = fs::read_dir(home.join("meetings")) else { return vec![] };
+    let mut guard = LIST_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let old = guard.take().unwrap_or_default();
+    let mut fresh = ListCache::with_capacity(old.len());
     let mut out: Vec<MeetingInfo> = entries
         .flatten()
         .filter_map(|e| {
             let dir = e.path();
-            match read_json::<Transcript>(&dir.join("transcript.json")) {
-                Ok(t) => Some(info(&dir, &t)),
+            let file = dir.join("transcript.json");
+            let meta = fs::metadata(&file).ok()?; // 없으면 전사 중인 폴더다
+            let sig = (meta.modified().ok()?, meta.len());
+            if let Some((m, n, hit)) = old.get(&file).filter(|(m, n, _)| (*m, *n) == sig) {
+                fresh.insert(file, (*m, *n, hit.clone()));
+                return Some(refresh_dynamic(&dir, hit.clone()));
+            }
+            match read_json::<Transcript>(&file) {
+                Ok(t) => {
+                    let m = info(&dir, &t);
+                    fresh.insert(file, (sig.0, sig.1, m.clone()));
+                    Some(m)
+                }
                 Err(err) => {
-                    if dir.join("transcript.json").exists() {
-                        eprintln!("회의 건너뜀: {err}");
-                    }
-                    None // transcript.json이 없으면 전사 중인 폴더다
+                    eprintln!("회의 건너뜀: {err}");
+                    None
                 }
             }
         })
         .collect();
+    *guard = Some(fresh); // 사라진 노트는 캐시에서도 빠진다
     // ponytail: created_at 문자열 비교. 오프셋이 섞이면(+09:00/Z) 순서가 어긋날 수 있다. 그때 chrono로 파싱
     out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     out
@@ -518,6 +543,27 @@ mod tests {
         assert!(d.audio_path.unwrap().ends_with("audio.ogg"));
         assert!(load(&home, "../x").is_err());
         assert!(load(&home, "01NOPE").is_err());
+    }
+
+    #[test]
+    fn list_cache_rereads_only_changed_notes_and_follows_summaries_and_deletes() {
+        let home = temp_home("listcache");
+        let write = |id: &str, title: &str| {
+            let dir = home.join(format!("meetings/2026-10-02_x_{id}"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("transcript.json"), format!(r#"{{"meeting_id":"{id}","title":"{title}","created_at":"2026-10-02T14:00:00+09:00","segments":[]}}"#)).unwrap();
+            dir
+        };
+        let a = write("01A", "처음");
+        write("01B", "둘째");
+        let titles = |h: &Path| { let mut v: Vec<String> = list(h).into_iter().map(|m| m.title).collect(); v.sort(); v };
+        assert_eq!(titles(&home), ["둘째", "처음"]);
+        write("01A", "바뀐 제목"); // 크기가 달라져 다시 읽는다
+        assert_eq!(titles(&home), ["둘째", "바뀐 제목"]);
+        fs::write(a.join("summary.json"), "{}").unwrap(); // transcript는 그대로, 요약만 생김
+        assert!(list(&home).iter().find(|m| m.id == "01A").unwrap().has_summary);
+        fs::remove_dir_all(home.join("meetings/2026-10-02_x_01B")).unwrap();
+        assert_eq!(titles(&home), ["바뀐 제목"]);
     }
 
     #[test]

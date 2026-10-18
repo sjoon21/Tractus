@@ -58,7 +58,7 @@ agy mcp add --env TRACTUS_HOME=$HOME/Tractus --env TRACTUS_MODELS_DIR=$HOME/Trac
 | `search_meetings` | 하이브리드 검색, 날짜·노트·태그·폴더 필터, 세그먼트별 인용 표기 |
 | `list_meetings` | 기간별 노트 목록 |
 | `get_transcript` | 전사 본문, 고친 내용 반영 (페이지 단위) |
-| `get_summary` / `list_action_items` | 요약(`template`으로 유형 지정), 할 일(기본 요약만) |
+| `get_summary` / `list_action_items` | 요약(`template`으로 유형 지정), 할 일(기본 요약만, 최근 것부터 `limit`개, 빠진 수는 `omitted`) |
 | `save_summary` | 에이전트가 쓴 요약을 검증해서 저장 (유일한 쓰기 도구) |
 
 예: `claude -p "지난 분기 GPU 서버 구매 결정이 어떻게 바뀌었는지 내 노트에서 찾아서 근거와 함께 알려줘"`

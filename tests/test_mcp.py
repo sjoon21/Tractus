@@ -242,3 +242,31 @@ def test_a_failed_query_embedding_only_pauses_smart_search(home, monkeypatch):
     idx._vector_off_until = 0  # 시간이 지나면
     assert idx.search("예산").vector_used is True
     idx.close()
+
+
+def test_listing_tools_reuse_unchanged_notes_but_follow_edits(home, monkeypatch):
+    # 오래 떠 있는 서버는 바뀐 노트만 다시 읽는다 (노트 1,000개에서 목록이 매번 7초 걸렸다)
+    from tractus import mcp_server
+
+    srv = build_server(home, None)
+    first = structured(call(srv, "list_meetings"))["meetings"]
+    todos = structured(call(srv, "list_action_items"))["items"]
+    reads = []
+    real = mcp_server._load
+    monkeypatch.setattr(mcp_server, "_load", lambda p: reads.append(p) or real(p))
+    assert structured(call(srv, "list_meetings"))["meetings"] == first
+    assert structured(call(srv, "list_action_items"))["items"] == todos and reads == []
+    (d,) = [p for p in (home / "meetings").iterdir() if RELEASE in p.name]
+    s = json.loads((d / "summary.json").read_text(encoding="utf-8"))
+    s["action_items"] = s["action_items"][:1]
+    (d / "summary.json").write_text(json.dumps(s, ensure_ascii=False), encoding="utf-8")
+    after = structured(call(srv, "list_action_items"))["items"]
+    assert len([i for i in after if i["meeting_id"] == RELEASE]) == 1 and {p.parent for p in reads} == {d}
+
+
+def test_action_items_limit_keeps_the_newest(home):
+    srv = build_server(home, None)
+    every = structured(call(srv, "list_action_items"))
+    assert every["omitted"] == 0 and len(every["items"]) > 2
+    two = structured(call(srv, "list_action_items", {"limit": 2}))
+    assert two["items"] == every["items"][-2:] and two["omitted"] == len(every["items"]) - 2

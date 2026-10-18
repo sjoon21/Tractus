@@ -209,8 +209,8 @@ export function App() {
     setCreating(true);
     try {
       const { meeting_id } = await api.noteNew();
-      await refresh();
-      openMeeting(meeting_id);
+      openMeeting(meeting_id); // 노트 화면은 스스로 읽는다: 목록 새로 읽기를 기다리지 않고 바로 연다 (노트가 많으면 목록이 느리다)
+      void refresh();
     } catch (e) {
       notify({ text: errText(e), detail: errDetail(e), error: true });
     } finally {
@@ -670,8 +670,8 @@ export function App() {
     sampleBusy.current = true;
     try {
       const id = await api.noteSample();
-      await refresh();
       openMeeting(id);
+      void refresh();
     } catch (e) {
       notify({ text: `예시 노트를 열지 못했습니다: ${errText(e)}`, error: true });
     } finally {

@@ -118,6 +118,7 @@ class ActionItemOut(BaseModel):
 class ActionItems(BaseModel):
     items: list[ActionItemOut]
     meetings_without_summary: list[str] = Field(description="요약이 없어 할 일을 모르는 회의")
+    omitted: int = Field(0, description="limit 때문에 빠진 (더 오래된) 할 일 수. 기간을 좁혀 다시 부른다")
 
 
 class Status(BaseModel):
@@ -142,9 +143,28 @@ def _load(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _sig(path: Path) -> tuple[int, int] | None:
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return st.st_mtime_ns, st.st_size
+
+
 def build_server(home: Path, embedder) -> MCPServer:
     meetings_dir = home / "meetings"
     state: dict = {}
+    memo: dict[str, tuple] = {}  # ponytail: 지운 노트의 항목이 서버가 끝날 때까지 남는다(항목당 수백 바이트)
+
+    def cached(key: str, files: tuple[Path, ...], make):
+        """파일들의 stat이 지난번과 같으면 그때 결과를 쓴다: stdio 서버는 오래 떠 있고, 노트 1,000개 목록이 매번 7초씩 걸렸다."""
+        sigs = tuple(_sig(f) for f in files)
+        hit = memo.get(key)
+        if hit and hit[0] == sigs:
+            return hit[1]
+        val = make()
+        memo[key] = (sigs, val)
+        return val
 
     def index() -> Index:
         if "index" not in state:
@@ -245,18 +265,24 @@ def build_server(home: Path, embedder) -> MCPServer:
         allowed = only(tag, folder, favorite)
         names = {f["id"]: f["name"] for f in organize.load_folders(home)}
         out = []
+        def row(p: Path) -> dict | None:
+            t = _load(p)
+            if is_sample(t):  # 예시 노트(온보딩, 가상 회의)는 에이전트에게 보이지 않는다
+                return None
+            return {"meta": organize.meta_of(t), "meeting_id": t["meeting_id"], "title": str(t.get("title") or ""), "date": str(t.get("created_at") or "")[:10],
+                    "duration_sec": float((t.get("audio") or {}).get("duration_sec") or 0.0), "kind": t.get("kind") or "recording", "segments": len(t["segments"]),
+                    "state": "recorded" if is_recorded(t) else None}
+
         for p in sorted(meetings_dir.glob("*/transcript.json")):
             try:  # 손상된 회의 하나 때문에 목록 전체가 실패하지 않게 건너뛴다
-                t = _load(p)
-                if is_sample(t):  # 예시 노트(온보딩, 가상 회의)는 에이전트에게 보이지 않는다
+                r = cached(f"row:{p}", (p,), lambda: row(p))
+                if r is None:
                     continue
-                date = str(t.get("created_at") or "")[:10]
-                meta = organize.meta_of(t)
+                meta = r["meta"]
                 fid = meta["folder"] if meta["folder"] in names else None
-                if in_range(date, date_from, date_to) and (allowed is None or t["meeting_id"] in allowed):
-                    out.append(MeetingInfo(favorite=meta["favorite"], tags=meta["tags"], folder=names.get(fid), folder_id=fid, meeting_id=t["meeting_id"], title=str(t.get("title") or ""), date=date,
-                                           duration_sec=float((t.get("audio") or {}).get("duration_sec") or 0.0), kind=t.get("kind") or "recording", segments=len(t["segments"]), state="recorded" if is_recorded(t) else None,
-                                           has_summary=has_any_summary(p.parent)))
+                if in_range(r["date"], date_from, date_to) and (allowed is None or r["meeting_id"] in allowed):
+                    out.append(MeetingInfo(favorite=meta["favorite"], tags=meta["tags"], folder=names.get(fid), folder_id=fid, meeting_id=r["meeting_id"], title=r["title"], date=r["date"],
+                                           duration_sec=r["duration_sec"], kind=r["kind"], segments=r["segments"], state=r["state"], has_summary=has_any_summary(p.parent)))
             except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
                 log.warning("list_meetings: %s 건너뜀: %s", p.parent.name, e)
         out.sort(key=lambda m: (m.date, m.meeting_id))
@@ -305,30 +331,44 @@ def build_server(home: Path, embedder) -> MCPServer:
         return path.read_text(encoding="utf-8")
 
     @server.tool(annotations=READ_ONLY)
-    async def list_action_items(meeting_id: Annotated[str | None, Field(description="한 회의만 볼 때")] = None, date_from: Date = None, date_to: Date = None) -> ActionItems:
-        """요약이 있는 회의들의 할 일(담당자·기한·근거). 요약이 없는 회의는 따로 알려 준다."""
+    async def list_action_items(
+        meeting_id: Annotated[str | None, Field(description="한 회의만 볼 때")] = None, date_from: Date = None, date_to: Date = None,
+        limit: Annotated[int, Field(ge=1, le=1000, description="최근 할 일부터 이만큼")] = 200,
+    ) -> ActionItems:
+        """요약이 있는 회의들의 할 일(담당자·기한·근거). 요약이 없는 회의는 따로 알려 준다. 할 일이 limit보다 많으면 최근 것만 주고 omitted에 빠진 수를 적는다."""
         dirs = [find(meeting_id)] if meeting_id else sorted(p.parent for p in meetings_dir.glob("*/transcript.json"))
+
+        def note_items(d: Path) -> tuple[dict, list[ActionItemOut] | None]:
+            t = _load(d / "transcript.json")
+            head = {"meeting_id": t["meeting_id"], "date": str(t.get("created_at") or "")[:10], "sample": is_sample(t)}
+            if not (d / "summary.json").exists():
+                return head, None
+            title = str(t.get("title") or "")
+            seg = {s["id"]: s for s in [*t["segments"], *memo_segments(t)]}
+            out = []
+            for a in _load(d / "summary.json").get("action_items", []):
+                found = [seg[i] for i in a["segment_ids"] if i in seg]
+                first = min([x for x in found if x.get("source") != "memo"] or found, key=lambda s: s["start"], default={"start": 0.0})  # 전사 근거가 있으면 그 시각, 메모 줄뿐이면 '메모 n번째 줄'
+                out.append(ActionItemOut(meeting_id=t["meeting_id"], title=title, date=head["date"], task=a["task"], owner=a.get("owner"),
+                                         due=a.get("due"), segment_ids=a["segment_ids"], cite=_cite(title, stamp(first))))
+            return head, out
+
         items, missing = [], []
         for d in dirs:
             try:  # 손상된 summary.json 하나 때문에 전체가 실패하지 않게 건너뛴다
-                t = _load(d / "transcript.json")
-                if is_sample(t) and not meeting_id:  # 예시 노트의 가상 할 일을 에이전트에게 사실로 주지 않는다 (ID로 직접 물으면 준다)
+                head, found = cached(f"todo:{d}", (d / "transcript.json", d / "summary.json"), lambda: note_items(d))
+                if head["sample"] and not meeting_id:  # 예시 노트의 가상 할 일을 에이전트에게 사실로 주지 않는다 (ID로 직접 물으면 준다)
                     continue
-                date = str(t.get("created_at") or "")[:10]
-                if not in_range(date, date_from, date_to):
+                if not in_range(head["date"], date_from, date_to):
                     continue
-                if not (d / "summary.json").exists():
-                    missing.append(t["meeting_id"])
-                    continue
-                seg = {s["id"]: s for s in [*t["segments"], *memo_segments(t)]}
-                for a in _load(d / "summary.json").get("action_items", []):
-                    found = [seg[i] for i in a["segment_ids"] if i in seg]
-                    first = min([x for x in found if x.get("source") != "memo"] or found, key=lambda s: s["start"], default={"start": 0.0})  # 전사 근거가 있으면 그 시각, 메모 줄뿐이면 '메모 n번째 줄'
-                    items.append(ActionItemOut(meeting_id=t["meeting_id"], title=str(t.get("title") or ""), date=date, task=a["task"], owner=a.get("owner"),
-                                               due=a.get("due"), segment_ids=a["segment_ids"], cite=_cite(str(t.get("title") or ""), stamp(first))))
+                if found is None:
+                    missing.append(head["meeting_id"])
+                else:
+                    items.extend(found)
             except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
                 log.warning("list_action_items: %s 건너뜀: %s", d.name, e)
-        return ActionItems(items=items, meetings_without_summary=missing)
+        items.sort(key=lambda a: a.date)  # 안정 정렬: 같은 날은 폴더 순서 그대로
+        return ActionItems(items=items[-limit:], meetings_without_summary=missing, omitted=max(0, len(items) - limit))
 
     @server.tool(annotations=WRITES_SUMMARY)
     async def save_summary(
