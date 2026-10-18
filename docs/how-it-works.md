@@ -1,5 +1,7 @@
 # 동작 방식
 
+**한국어** · [English](en/how-it-works.md)
+
 노트는 이 Mac의 폴더에 파일로 남고, 변환·참석자 구분·검색은 이 Mac 안에서 돕니다. 요약과 AI 질문을 요청할 때만 필요한 텍스트가 선택한 AI 서비스로 나갑니다. 설계 결정과 변경 이력의 원본은 [ARCHITECTURE.md](../ARCHITECTURE.md)입니다.
 
 ## 구성
