@@ -2,6 +2,7 @@
 // 요약 방법 입력은 여러 줄이라 Enter는 줄바꿈이고 ⌘Enter가 보낸다. 이름 칸에서는 Enter가 보낸다. 글자 조합(IME) 중에는 어떤 키도 가로채지 않는다.
 // 입력 검사는 summaries.checkCustom (코어와 같은 한도·문장). 화면에 올릴 때만 렌더한다(마운트 = 열림).
 import { useEffect, useId, useRef, useState } from "react";
+import { t } from "./i18n";
 import { isImeKey } from "./lib";
 import { checkCustom, customSpec, MAX_NAME, promptCounter, type SummarySpec } from "./summaries";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import { checkClass } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
 
-export const EXAMPLE_PROMPT = "예: 고객이 말한 불만을 유형별로 모아서, 유형마다 어떤 대화에서 나왔는지 정리해 줘";
+export const EXAMPLE_PROMPT = t("예: 고객이 말한 불만을 유형별로 모아서, 유형마다 어떤 대화에서 나왔는지 정리해 줘");
 
 export function CustomSummaryDialog({ onCancel, onSubmit }: { onCancel: () => void; onSubmit: (spec: SummarySpec) => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -56,15 +57,15 @@ export function CustomSummaryDialog({ onCancel, onSubmit }: { onCancel: () => vo
       <div className={cn(DIALOG_BODY, "gap-3")}>
         <div className="flex flex-col gap-1">
           <h2 id="custom-summary-title" className={DIALOG_TITLE}>
-            직접 프롬프트로 요약
+            {t("직접 프롬프트로 요약")}
           </h2>
           <p id={ids.hint} className={DIALOG_TEXT}>
-            원하는 요약 방법을 적으면 AI가 그대로 정리합니다. 항목마다 근거가 된 대화가 함께 표시됩니다.
+            {t("원하는 요약 방법을 적으면 AI가 그대로 정리합니다. 항목마다 근거가 된 대화가 함께 표시됩니다.")}
           </p>
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-[13px] font-medium" htmlFor={ids.prompt}>
-            요약 방법
+            {t("요약 방법")}
           </label>
           <Textarea
             id={ids.prompt}
@@ -89,12 +90,12 @@ export function CustomSummaryDialog({ onCancel, onSubmit }: { onCancel: () => vo
         </div>
         <label className="flex cursor-pointer items-start gap-2 text-[13px]">
           <input type="checkbox" className={cn(checkClass, "mt-0.5")} checked={save} onChange={(e) => setSave(e.target.checked)} />
-          <span>템플릿으로 저장 — 다음에도 이 요약 유형으로 고를 수 있습니다</span>
+          <span>{t("템플릿으로 저장 — 다음에도 이 요약 유형으로 고를 수 있습니다")}</span>
         </label>
         {save && (
           <div className="flex flex-col gap-1.5">
             <label className="text-[13px] font-medium" htmlFor={ids.name}>
-              이름 ({MAX_NAME}자까지)
+              {t("이름 ({n}자까지)", { n: MAX_NAME })}
             </label>
             <Input
               id={ids.name}
@@ -115,10 +116,10 @@ export function CustomSummaryDialog({ onCancel, onSubmit }: { onCancel: () => vo
       </div>
       <div className={DIALOG_FOOTER}>
         <Button variant="outline" onClick={onCancel}>
-          취소
+          {t("취소")}
         </Button>
         <Button aria-disabled={!check.ok} title="⌘Enter" onClick={submit}>
-          요약 만들기
+          {t("요약 만들기")}
         </Button>
       </div>
     </dialog>

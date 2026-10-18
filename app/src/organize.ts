@@ -1,6 +1,7 @@
 // 노트 정리: 즐겨찾기·태그·폴더·순서 (docs/desktop.md §2.12). 순수 함수만 둔다 (organize.test.ts).
 // 코어(src/tractus/organize.py)와 같은 규칙을 쓴다: 태그·폴더 이름은 NFC로 합쳐 대소문자 구분 없이 비교하고, 제목 순서는 로케일에 따르지 않는다.
 import type { MeetingInfo } from "./api";
+import { t } from "./i18n";
 
 // ── 한도 (코어와 같다) ──
 export const MAX_TAGS = 20;
@@ -8,14 +9,14 @@ export const MAX_TAG = 30;
 export const MAX_FOLDER_NAME = 40;
 export const MAX_DEPTH = 3;
 
-export const TAG_LONG = `태그는 ${MAX_TAG}자까지 쓸 수 있습니다.`;
-export const TAGS_MANY = `태그는 ${MAX_TAGS}개까지 붙일 수 있습니다.`;
-export const FOLDER_EMPTY = "폴더 이름을 입력하세요.";
-export const FOLDER_LONG = `폴더 이름은 ${MAX_FOLDER_NAME}자까지 쓸 수 있습니다.`;
-export const FOLDER_SLASH = "폴더 이름에 /는 쓸 수 없습니다.";
-export const FOLDER_RESERVED = "‘none’은 폴더 이름으로 쓸 수 없습니다."; // 인수 `none`은 폴더 없음 (코어)
-export const FOLDER_DUP = "같은 위치에 이름이 같은 폴더가 있습니다.";
-export const FOLDER_DEPTH = `폴더는 ${MAX_DEPTH}단계까지 만들 수 있습니다.`;
+export const TAG_LONG = t("태그는 {n}자까지 쓸 수 있습니다.", { n: MAX_TAG });
+export const TAGS_MANY = t("태그는 {n}개까지 붙일 수 있습니다.", { n: MAX_TAGS });
+export const FOLDER_EMPTY = t("폴더 이름을 입력하세요.");
+export const FOLDER_LONG = t("폴더 이름은 {n}자까지 쓸 수 있습니다.", { n: MAX_FOLDER_NAME });
+export const FOLDER_SLASH = t("폴더 이름에 /는 쓸 수 없습니다.");
+export const FOLDER_RESERVED = t("‘none’은 폴더 이름으로 쓸 수 없습니다."); // 인수 `none`은 폴더 없음 (코어)
+export const FOLDER_DUP = t("같은 위치에 이름이 같은 폴더가 있습니다.");
+export const FOLDER_DEPTH = t("폴더는 {n}단계까지 만들 수 있습니다.", { n: MAX_DEPTH });
 
 export interface Folder {
   id: string;
@@ -63,10 +64,10 @@ export type SortKey = "updated" | "created" | "title" | "duration";
 export type SortOrder = "asc" | "desc";
 
 export const SORTS: { key: SortKey; label: string }[] = [
-  { key: "updated", label: "최근 수정 순" },
-  { key: "created", label: "만든 순" },
-  { key: "title", label: "제목 순" },
-  { key: "duration", label: "길이 순" },
+  { key: "updated", label: t("최근 수정 순") },
+  { key: "created", label: t("만든 순") },
+  { key: "title", label: t("제목 순") },
+  { key: "duration", label: t("길이 순") },
 ];
 
 /** 기준을 바꿀 때 처음 쓰는 방향: 시각·길이는 큰 것부터, 제목은 가나다 순 */
@@ -333,7 +334,7 @@ export function groupForList<T extends OrganisedNote>(sorted: readonly T[], sort
   if (sort === "title" || sort === "duration") return sorted.length ? [{ day: null, items: [...sorted] }] : [];
   const groups: ListGroup<T>[] = [];
   for (const item of sorted) {
-    const day = (sort === "updated" ? updatedAt(item) : item.created_at).slice(0, 10) || "날짜 없음";
+    const day = (sort === "updated" ? updatedAt(item) : item.created_at).slice(0, 10) || t("날짜 없음");
     const last = groups[groups.length - 1];
     if (last?.day === day) last.items.push(item);
     else groups.push({ day, items: [item] });

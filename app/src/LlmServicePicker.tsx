@@ -7,6 +7,7 @@ import { cn } from "@/components/ui/utils";
 import { Popover } from "./Popover";
 import { ProviderLogo } from "@/components/ui/provider-logo";
 import { api } from "./api";
+import { t } from "./i18n";
 import { PROVIDERS } from "./ask";
 import { KEY_CHANGED, pickService, readChoice, showServicePicker, writeChoice, type LlmFeature } from "./llmKey";
 
@@ -62,7 +63,7 @@ export function LlmServicePicker({ services, disabled, className }: { services: 
           "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-45 aria-expanded:bg-accent aria-expanded:text-foreground",
           className,
         )}
-        aria-label={`AI 서비스: ${label(now)}`}
+        aria-label={t("AI 서비스: {name}", { name: label(now) })}
         aria-haspopup="menu"
         aria-expanded={!!anchor}
         disabled={disabled}
@@ -73,7 +74,7 @@ export function LlmServicePicker({ services, disabled, className }: { services: 
         <ChevronDown className="size-3.5 shrink-0 opacity-60" aria-hidden />
       </button>
       {anchor && (
-        <Popover anchor={anchor} label="AI 서비스" align="start" onClose={() => setAnchor(null)}>
+        <Popover anchor={anchor} label={t("AI 서비스")} align="start" onClose={() => setAnchor(null)}>
           {(close) => (
             <div className={cn(MENU, "border-0 p-0 shadow-none")} role="none">
               {services.registered.map((p, i) => (

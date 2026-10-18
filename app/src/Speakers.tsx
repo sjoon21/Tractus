@@ -1,8 +1,9 @@
 // 화자 표시·편집 (docs/desktop.md §2.1). 편집은 전부 코어(`tractus speakers`)가 하고 앱은 고친 회의를 다시 받는다.
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { FIX_MODELS, OK, type Decision } from "./caps";
 import { GateHint } from "./GatedButton";
+import { t } from "./i18n";
 import { fmtTime, renameRequest, SPEAKER_INKS, suggestionText, VOICE_MODEL_MISSING, voiceModelReady, type Segment, type SpeakerStat } from "./lib";
 import { useCapabilities } from "./useCapabilities";
 import { Button } from "@/components/ui/button";
@@ -67,13 +68,13 @@ export const SpeakerChip = memo(function SpeakerChip({
   turnStart: boolean;
   onOpen: (seg: Segment, anchor: HTMLElement) => void;
 }) {
-  const name = display ?? "알 수 없음";
+  const name = display ?? t("알 수 없음");
   return (
     <button
       className={`spk-chip ${turnStart ? "is-turn" : "is-cont"} ${seg.speaker ? "" : "is-unknown"}`}
       onClick={(e) => onOpen(seg, e.currentTarget)}
       aria-haspopup="dialog"
-      aria-label={`${fmtTime(seg.start)} 대화의 참석자: ${name} — 바꾸기`}
+      aria-label={t("{time} 대화의 참석자: {name} — 바꾸기", { time: fmtTime(seg.start), name })}
       title={turnStart ? undefined : name}
     >
       <span className="spk-dot" aria-hidden />
@@ -87,7 +88,7 @@ export const SpeakerChip = memo(function SpeakerChip({
  * keydown보다 먼저 와서 조합 플래그만으로는 못 거른다 → isComposing·keyCode 229로 본다). Esc·폼 밖으로 초점 이탈은 취소.
  * 기억하기는 동의 확인을 한 번 더 받는다(생체정보). 확인 전에는 제출하지 않는다.
  */
-export const ATTENDEE_PICKS = "일정 참석자";
+export const ATTENDEE_PICKS = t("일정 참석자");
 
 /** 고를 수 있는 일정 참석자: 이미 다른 참석자에게 붙인 이름은 뺀다 */
 export function unusedNames(attendees: string[], stats: Pick<SpeakerStat, "named" | "display">[]): string[] {
@@ -125,7 +126,7 @@ export function RenameForm({
     <div
       className="spk-rename-form"
       role="group"
-      aria-label={`${display} 이름 바꾸기`}
+      aria-label={t("{name} 이름 바꾸기", { name: display })}
       // WebKit은 클릭으로 체크박스에 초점을 주지 않는다 → 입력란이 초점을 잃어 취소되지 않게 누르기만 막는다(체크는 click으로 바뀐다)
       onMouseDown={(e) => e.target !== input.current && e.preventDefault()}
       onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && onCancel()}
@@ -141,7 +142,7 @@ export function RenameForm({
         }
       }}
     >
-      <input ref={input} className="spk-rename" defaultValue={initial} placeholder={display} aria-label={`${display} 이름`} autoFocus onFocus={(e) => e.currentTarget.select()} />
+      <input ref={input} className="spk-rename" defaultValue={initial} placeholder={display} aria-label={t("{name} 이름", { name: display })} autoFocus onFocus={(e) => e.currentTarget.select()} />
       {picks.length > 0 && (
         <div className="flex flex-wrap gap-1" role="group" aria-label={ATTENDEE_PICKS}>
           {picks.map((n) => (
@@ -162,7 +163,7 @@ export function RenameForm({
             setError(null);
           }}
         />
-        이 참석자 목소리 등록 (다음 녹음에서 자동 인식)
+        {t("이 참석자 목소리 등록 (다음 녹음에서 자동 인식)")}
       </label>
       <GateHint gate={voicesGate} className="spk-check-note" />
       {modelReady && remember && (
@@ -176,8 +177,8 @@ export function RenameForm({
             }}
           />
           <span>
-            본인이거나 녹음·등록에 동의를 받은 사람입니다
-            <small>목소리는 생체정보입니다. 이 Mac에만 저장하고 설정에서 지울 수 있습니다</small>
+            {t("본인이거나 녹음·등록에 동의를 받은 사람입니다")}
+            <small>{t("목소리는 생체정보입니다. 이 Mac에만 저장하고 설정에서 지울 수 있습니다")}</small>
           </span>
         </label>
       )}
@@ -232,16 +233,17 @@ export function SpeakersBar({
   const by = (label: string) => stats.find((s) => s.label === label);
   const from = merge && by(merge.from);
   const into = merge && by(merge.into);
+  const mergeVars = from && into ? { fromName: from.display, intoName: into.display, n: from.segments } : undefined;
 
   return (
     <section className="speakers" aria-labelledby="speakers-title">
       <div className="speakers-head">
         <h2 id="speakers-title">
-          참석자 {stats.length}명 <span className="text-subtle-foreground">(자동 감지)</span>
+          {t("참석자 {n}명", { n: stats.length })} <span className="text-subtle-foreground">{t("(자동 감지)")}</span>
         </h2>
         {only && (
           <Button variant="ghost" size="sm" className="h-6" onClick={() => onFilter(null)}>
-            전체 보기
+            {t("전체 보기")}
           </Button>
         )}
       </div>
@@ -296,7 +298,7 @@ export function SpeakersBar({
               <button
                 className="speaker-filter"
                 aria-pressed={only === s.label}
-                title={`${s.display}만 보기 · 두 번 눌러 이름 바꾸기 · 다른 참석자에 끌어 놓아 동일 인물로 합치기`}
+                title={t("{name}만 보기 · 두 번 눌러 이름 바꾸기 · 다른 참석자에 끌어 놓아 동일 인물로 합치기", { name: s.display })}
                 onClick={() => onFilter(only === s.label ? null : s.label)}
                 onDoubleClick={() => !busy && onStartRename(s.label)}
               >
@@ -306,19 +308,19 @@ export function SpeakersBar({
               </button>
             )}
             {s.suggested && renaming !== s.label && (
-              <span className="spk-suggest" role="group" aria-label={`${s.display} 목소리 제안: ${suggestionText(s.suggested)}`}>
+              <span className="spk-suggest" role="group" aria-label={t("{name} 목소리 제안: {suggestion}", { name: s.display, suggestion: suggestionText(s.suggested) })}>
                 <span className="spk-suggest-text tnum" aria-hidden>
                   {suggestionText(s.suggested)}
                 </span>
-                <button disabled={busy} onClick={() => onConfirm(s.label, s.suggested!.name.trim())} aria-label={`${s.display}을(를) ${s.suggested.name.trim()} 님으로 지정`}>
-                  맞음
+                <button disabled={busy} onClick={() => onConfirm(s.label, s.suggested!.name.trim())} aria-label={t("{speaker}을(를) {name} 님으로 지정", { speaker: s.display, name: s.suggested.name.trim() })}>
+                  {t("맞음")}
                 </button>
-                <button disabled={busy} onClick={() => onDismiss(s.label)} aria-label={`${s.suggested.name.trim()} 님이 아닙니다`}>
-                  다름
+                <button disabled={busy} onClick={() => onDismiss(s.label)} aria-label={t("{name} 님이 아닙니다", { name: s.suggested.name.trim() })}>
+                  {t("다름")}
                 </button>
               </span>
             )}
-            <button className="speaker-more" aria-label={`참석자 편집 — ${s.display}`} aria-haspopup="dialog" disabled={busy} onClick={(e) => onMenu(s.label, e.currentTarget)}>
+            <button className="speaker-more" aria-label={t("참석자 편집 — {name}", { name: s.display })} aria-haspopup="dialog" disabled={busy} onClick={(e) => onMenu(s.label, e.currentTarget)}>
               <MoreIcon />
             </button>
           </li>
@@ -326,17 +328,20 @@ export function SpeakersBar({
       </ul>
 
       {from && into && (
-        <div className="speakers-confirm" role="alertdialog" aria-label="동일 인물로 합치기">
+        <div className="speakers-confirm" role="alertdialog" aria-label={t("동일 인물로 합치기")}>
           <p>
-            <b style={spkStyle(from.slot)}>{from.display}</b>와(과) <b style={spkStyle(into.slot)}>{into.display}</b>을(를) 동일 인물로 합칩니다. {from.display}의 대화 {from.segments}개가{" "}
-            {into.display}(으)로 옮겨집니다.
-            {!into.named && from.named && ` 이름 ‘${from.display}’도 함께 옮깁니다.`} 되돌리려면 대화마다 참석자를 다시 골라야 합니다.
+            {withNames(
+              !into.named && from.named
+                ? t("{from}와(과) {into}을(를) 동일 인물로 합칩니다. {fromName}의 대화 {n}개가 {intoName}(으)로 옮겨집니다. 이름 ‘{fromName}’도 함께 옮깁니다. 되돌리려면 대화마다 참석자를 다시 골라야 합니다.", mergeVars)
+                : t("{from}와(과) {into}을(를) 동일 인물로 합칩니다. {fromName}의 대화 {n}개가 {intoName}(으)로 옮겨집니다. 되돌리려면 대화마다 참석자를 다시 골라야 합니다.", mergeVars),
+              { from: <b style={spkStyle(from.slot)}>{from.display}</b>, into: <b style={spkStyle(into.slot)}>{into.display}</b> },
+            )}
           </p>
           <Button size="sm" onClick={onMerge} disabled={busy} autoFocus>
-            동일 인물로 합치기
+            {t("동일 인물로 합치기")}
           </Button>
           <Button variant="ghost" size="sm" onClick={onCancelMerge}>
-            취소
+            {t("취소")}
           </Button>
         </div>
       )}
@@ -397,13 +402,13 @@ export function SpeakerMenu({
       popover="auto"
       className="spk-menu"
       role="dialog"
-      aria-label="참석자 편집"
+      aria-label={t("참석자 편집")}
       onToggle={(e) => e.newState === "closed" && onClose()}
       onKeyDown={(e) => e.key === "Escape" && target.anchor.focus()}
     >
       {target.kind === "seg" ? (
         <>
-          <p className="spk-menu-title tnum">{fmtTime(target.seg.start)} 대화의 참석자</p>
+          <p className="spk-menu-title tnum">{t("{time} 대화의 참석자", { time: fmtTime(target.seg.start) })}</p>
           <div className="spk-menu-group">
             {stats.map((s) => (
               <button key={s.label} style={spkStyle(s.slot)} aria-pressed={s.label === label} disabled={busy} onClick={() => done(s.label === label ? undefined : () => onSet(target.seg.id, s.label))}>
@@ -415,7 +420,7 @@ export function SpeakerMenu({
               <span className="spk-plus" aria-hidden>
                 +
               </span>
-              새 참석자
+              {t("새 참석자")}
             </button>
           </div>
           {current &&
@@ -428,11 +433,11 @@ export function SpeakerMenu({
                   onSubmit={(name, remember) => done(() => onRename(current.label, name, remember))}
                   onCancel={() => setRenaming(false)}
                 />
-                <span className="spk-menu-hint">Enter로 저장 · Esc 취소</span>
+                <span className="spk-menu-hint">{t("Enter로 저장 · Esc 취소")}</span>
               </div>
             ) : (
               <button className="spk-menu-action" disabled={busy} onClick={() => setRenaming(true)}>
-                ‘{current.display}’ 이름 바꾸기…
+                {t("‘{name}’ 이름 바꾸기…", { name: current.display })}
               </button>
             ))}
         </>
@@ -442,12 +447,12 @@ export function SpeakerMenu({
             <p className="spk-menu-title" style={spkStyle(current.slot)}>
               <span className="spk-dot" aria-hidden />
               {current.display}
-              <span className="tnum"> · 대화 {current.segments}개</span>
+              <span className="tnum"> · {t("대화 {n}개", { n: current.segments })}</span>
             </p>
             <button className="spk-menu-action" disabled={busy} onClick={() => done(() => onStartRename(current.label))}>
-              이름 바꾸기…
+              {t("이름 바꾸기…")}
             </button>
-            {stats.length > 1 && <p className="spk-menu-sub">동일 인물로 합치기</p>}
+            {stats.length > 1 && <p className="spk-menu-sub">{t("동일 인물로 합치기")}</p>}
             <div className="spk-menu-group">
               {stats
                 .filter((s) => s.label !== current.label)
@@ -463,6 +468,11 @@ export function SpeakerMenu({
       )}
     </div>
   );
+}
+
+/** 번역한 문장의 `{이름}` 자리에 요소를 넣는다 (합치기 확인 문장의 색 있는 이름) */
+function withNames(text: string, parts: Record<string, ReactNode>): ReactNode {
+  return text.split(/(\{\w+\})/).map((p, i) => <Fragment key={i}>{parts[p.slice(1, -1)] ?? p}</Fragment>);
 }
 
 const MoreIcon = () => (

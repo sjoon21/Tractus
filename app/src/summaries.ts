@@ -1,11 +1,12 @@
 // 요약 유형과 한 노트의 여러 요약 (docs/desktop.md §2.13). 화면이 쓰는 순수 로직: 파일 → 화면 모델, 순서, 복사 마크다운, 유형 고르기, 직접 요약 입력 검사.
 // 렌더링은 SummariesPanel.tsx, 대기열은 summaryQueue.ts. 옛 요약(summary.json의 결정 사항·할 일·주제)은 `legacy`로 그대로 두고 화면·복사·인쇄가 옛 경로를 쓴다.
+import { t } from "./i18n";
 import { evidenceLabel, summaryMarkdown, type SummaryLike } from "./lib";
 
 /** 기본 요약(summary.json)의 key와 이름 */
 export const DEFAULT_KEY = "meeting";
-export const DEFAULT_NAME = "회의록"; // words-ok: 회의록은 요약 유형(문서)의 이름이다
-export const CUSTOM_NAME = "직접 요약";
+export const DEFAULT_NAME = t("회의록"); // words-ok: 회의록은 요약 유형(문서)의 이름이다
+export const CUSTOM_NAME = t("직접 요약");
 export const MAX_PROMPT = 4000;
 export const MAX_NAME = 40;
 export const MAX_DESC = 100;
@@ -154,7 +155,7 @@ export function docMarkdown(doc: SummaryDoc, starts: Map<string, number>, memoLi
     const mark = s === "checklist" ? "- [ ] " : s === "numbered" ? `${n}. ` : "- ";
     return `${mark}${it.text}${who ? ` — ${who}` : ""}${at(it.segment_ids)}`;
   };
-  const parts = doc.overview.trim() ? [["## 요약", "", doc.overview, ""]] : [];
+  const parts = doc.overview.trim() ? [["## " + t("요약"), "", doc.overview, ""]] : [];
   for (const s of doc.sections) if (s.items.length) parts.push([`## ${s.heading}`, "", ...s.items.map((it, i) => line(s.style, i + 1, it)), ""]);
   return parts.flat().join("\n");
 }
@@ -203,9 +204,9 @@ export function defaultPick(docs: SummaryDoc[], templates: TemplateInfo[]): stri
 
 /** 단추 글자: 요약 유형 선택 상태 */
 export function pickLabel(picked: string[], templates: TemplateInfo[]): string {
-  const known = templates.filter((t) => picked.includes(t.id));
-  if (known.length === 0) return "요약 유형 고르기";
-  return known.length === 1 ? `요약 유형: ${known[0].name}` : `요약 유형: ${known.length}개 선택`;
+  const known = templates.filter((x) => picked.includes(x.id));
+  if (known.length === 0) return t("요약 유형 고르기");
+  return known.length === 1 ? t("요약 유형: {name}", { name: known[0].name }) : t("요약 유형: {n}개 선택", { n: known.length });
 }
 
 /** '다시 만들기': 같은 유형이 있으면 그 유형으로, 지운 유형이거나 직접 요약이면 저장해 둔 요약 방법으로(직접 요약은 같은 key를 덮어쓴다). 방법을 모르면 null */
@@ -232,10 +233,10 @@ export interface CustomCheck {
   name: string | null;
 }
 
-export const PROMPT_EMPTY = "요약 방법을 입력하세요.";
-export const PROMPT_LONG = `요약 방법은 ${MAX_PROMPT.toLocaleString("en-US")}자까지 쓸 수 있습니다.`;
-export const NAME_EMPTY = "이름을 입력하세요.";
-export const NAME_LONG = `이름은 ${MAX_NAME}자까지 쓸 수 있습니다.`;
+export const PROMPT_EMPTY = t("요약 방법을 입력하세요.");
+export const PROMPT_LONG = t("요약 방법은 {n}자까지 쓸 수 있습니다.", { n: MAX_PROMPT.toLocaleString("en-US") });
+export const NAME_EMPTY = t("이름을 입력하세요.");
+export const NAME_LONG = t("이름은 {n}자까지 쓸 수 있습니다.", { n: MAX_NAME });
 
 const squash = (s: string) => s.split(/\s+/).filter(Boolean).join(" ");
 
@@ -278,10 +279,10 @@ export function checkTemplate(d: TemplateDraft): TemplateCheck {
   const count = (s: string) => [...s].length;
   const name = squash(d.name);
   const nameErr = !name ? NAME_EMPTY : count(name) > MAX_NAME ? NAME_LONG : null;
-  const descErr = count(squash(d.description)) > MAX_DESC ? `설명은 ${MAX_DESC}자까지 쓸 수 있습니다.` : null;
+  const descErr = count(squash(d.description)) > MAX_DESC ? t("설명은 {n}자까지 쓸 수 있습니다.", { n: MAX_DESC }) : null;
   const prompt = checkCustom({ prompt: d.prompt, save: false, name: "" }).prompt;
   return { ok: !nameErr && !descErr && !prompt, name: nameErr, description: descErr, prompt };
 }
 
 /** '복사해서 만들기': 기본 유형을 고칠 수 있는 내 유형 초안으로 */
-export const copyDraft = (t: TemplateInfo): TemplateDraft => ({ name: `${[...t.name].slice(0, MAX_NAME - 5).join("")} (복사)`, description: t.description, prompt: t.prompt });
+export const copyDraft = (tpl: TemplateInfo): TemplateDraft => ({ name: t("{name} (복사)", { name: [...tpl.name].slice(0, MAX_NAME - 5).join("") }), description: tpl.description, prompt: tpl.prompt });

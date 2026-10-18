@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, errDetail, errText, type SearchResponse } from "./api";
 import { showSearchNotice } from "./caps";
 import { ErrorDetail } from "./ErrorDetail";
+import { t } from "./i18n";
 import { GateHint } from "./GatedButton";
 import { useCapabilities } from "./useCapabilities";
 import { dayParts, highlight } from "./lib";
@@ -29,7 +30,7 @@ export function SearchView({ query, onOpen, memoIds }: { query: string; onOpen: 
     <section className="flex h-full flex-col overflow-y-auto" aria-labelledby="search-title">
       <PageHeader title={<span id="search-title">“{query}”</span>} />
       <PageBody wide className="gap-4">
-        {!res && !error && <p className="m-0 text-[13px] text-muted-foreground">찾는 중… (첫 검색은 스마트 검색을 준비하느라 조금 걸립니다)</p>}
+        {!res && !error && <p className="m-0 text-[13px] text-muted-foreground">{t("찾는 중… (첫 검색은 스마트 검색을 준비하느라 조금 걸립니다)")}</p>}
         {error && (
           <div className="text-[13px] text-destructive" role="alert">
             {error.text}
@@ -39,7 +40,7 @@ export function SearchView({ query, onOpen, memoIds }: { query: string; onOpen: 
         {res && (
           <>
             <p className="m-0 text-xs text-muted-foreground">
-              결과 {res.hits.length}건 · {res.vector_used ? "스마트 검색" : "단어 일치로만 찾았습니다 (스마트 검색 준비 안 됨)"}
+              {t("결과 {n}건", { n: res.hits.length })} · {res.vector_used ? t("스마트 검색") : t("단어 일치로만 찾았습니다 (스마트 검색 준비 안 됨)")}
             </p>
             {showSearchNotice(res.vector_used, smart) && <GateHint gate={smart} />}
             <ol className="m-0 flex list-none flex-col gap-3 p-0">
@@ -50,10 +51,10 @@ export function SearchView({ query, onOpen, memoIds }: { query: string; onOpen: 
                   <li key={`${h.meeting_id}-${i}`} className="overflow-hidden rounded-lg border border-border bg-card">
                     <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
                       <span className="text-[13px] font-semibold">{h.title}</span>
-                      {memo && <Badge>메모</Badge>}
-                      {!h.matched.includes("keyword") && <Badge variant="outline">{h.matched.includes("partial") ? "일부 일치" : "비슷한 뜻"}</Badge>}
+                      {memo && <Badge>{t("메모")}</Badge>}
+                      {!h.matched.includes("keyword") && <Badge variant="outline">{h.matched.includes("partial") ? t("일부 일치") : t("비슷한 뜻")}</Badge>}
                       <span className="ml-auto text-xs text-subtle-foreground tabular-nums">
-                        {d.month} {d.day}일 {d.weekday}
+                        {t("{month} {day}일 {weekday}", { month: d.month, day: d.day, weekday: d.weekday })}
                       </span>
                     </header>
                     <ul className="m-0 list-none p-1">
@@ -65,7 +66,7 @@ export function SearchView({ query, onOpen, memoIds }: { query: string; onOpen: 
                             <button className="grid w-full grid-cols-[5.5rem_minmax(0,1fr)] gap-2 rounded-md px-3 py-2 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/40" onClick={() => onOpen(h.meeting_id, v.seek)}>
                               <time className="pt-0.5 text-xs text-subtle-foreground tabular-nums">{v.label}</time>
                               <span className="text-[14px] leading-relaxed">
-                                {v.tagged && <Badge variant="memo" className="mr-1.5">메모</Badge>}
+                                {v.tagged && <Badge variant="memo" className="mr-1.5">{t("메모")}</Badge>}
                                 {highlight(s.text, query).map((p, j) => (p.hit ? <mark key={j} className="rounded-[3px] bg-memo-wash px-0.5 text-foreground">{p.text}</mark> : <span key={j}>{p.text}</span>))}
                               </span>
                             </button>
@@ -77,7 +78,7 @@ export function SearchView({ query, onOpen, memoIds }: { query: string; onOpen: 
                 );
               })}
             </ol>
-            {res.hits.length === 0 && <p className="m-0 py-12 text-center text-[13px] text-muted-foreground">맞는 대화가 없습니다. 다른 단어로 찾아보세요.</p>}
+            {res.hits.length === 0 && <p className="m-0 py-12 text-center text-[13px] text-muted-foreground">{t("맞는 대화가 없습니다. 다른 단어로 찾아보세요.")}</p>}
           </>
         )}
       </PageBody>

@@ -2,16 +2,17 @@
 import { useEffect, useState } from "react";
 import type { MeetingInfo } from "./api";
 import { ONBOARD_MODELS } from "./caps";
+import { t } from "./i18n";
 
-export const ONBOARD_TITLE = "Tractus 시작하기";
-export const ONBOARD_CLOSE = "닫기";
-export const SAMPLE_BADGE = "예시";
-export const HELP_SECTION = "도움말";
-export const HELP_REPLAY = "처음 사용 안내";
-export const HELP_REPLAY_HINT = "시작하기 목록과 기능 안내를 처음부터 다시 보여 줍니다.";
-export const HELP_REPLAY_BUTTON = "다시 보기";
-export const HELP_TIPS = "기능 안내";
-export const HELP_TIPS_HINT = "기능을 처음 쓸 때 옆에 짧은 안내를 띄웁니다.";
+export const ONBOARD_TITLE = t("Tractus 시작하기");
+export const ONBOARD_CLOSE = t("닫기");
+export const SAMPLE_BADGE = t("예시");
+export const HELP_SECTION = t("도움말");
+export const HELP_REPLAY = t("처음 사용 안내");
+export const HELP_REPLAY_HINT = t("시작하기 목록과 기능 안내를 처음부터 다시 보여 줍니다.");
+export const HELP_REPLAY_BUTTON = t("다시 보기");
+export const HELP_TIPS = t("기능 안내");
+export const HELP_TIPS_HINT = t("기능을 처음 쓸 때 옆에 짧은 안내를 띄웁니다.");
 
 export type StepId = "models" | "sample" | "record" | "enhance";
 export interface Step {
@@ -76,9 +77,9 @@ export function onboardSteps(s: OnboardState, notes: MeetingInfo[], convertOk: b
   const recorded = notes.some((n) => n.kind !== "memo" && !n.sample);
   return [
     { id: "models", ...ONBOARD_MODELS, done: convertOk },
-    { id: "sample", label: "예시 노트 둘러보기", hint: "녹음 없이 대화 내용·요약·완성된 노트를 미리 봅니다.", action: "예시 노트 열기", done: s.sampleOpened },
-    { id: "record", label: "첫 녹음", hint: "녹음하며 짧게 메모해 두세요. 끝나면 이 Mac에서 텍스트로 바꿉니다.", action: "녹음 시작", done: recorded },
-    { id: "enhance", label: "완성된 노트 보기", hint: "메모 탭에서 내 메모에 대화 내용의 세부가 붙은 노트를 봅니다.", action: "예시 노트에서 보기", done: s.enhancedSeen },
+    { id: "sample", label: t("예시 노트 둘러보기"), hint: t("녹음 없이 대화 내용·요약·완성된 노트를 미리 봅니다."), action: t("예시 노트 열기"), done: s.sampleOpened },
+    { id: "record", label: t("첫 녹음"), hint: t("녹음하며 짧게 메모해 두세요. 끝나면 이 Mac에서 텍스트로 바꿉니다."), action: t("녹음 시작"), done: recorded },
+    { id: "enhance", label: t("완성된 노트 보기"), hint: t("메모 탭에서 내 메모에 대화 내용의 세부가 붙은 노트를 봅니다."), action: t("예시 노트에서 보기"), done: s.enhancedSeen },
   ];
 }
 

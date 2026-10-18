@@ -1,5 +1,6 @@
 // 회의 질의 (docs/roadmap.md §3 6.3): `tractus ask --progress-json` 이벤트 → 화면 상태, 인용 파싱, 대화 기록, 전송 안내.
 // 화면과 무관한 순수 로직. 전부 ask.test.ts에서 검사한다.
+import { t } from "./i18n";
 import { exitMessage, exitSentence, fmtTime, isMemoLineId, JOB_ERROR, warningText } from "./lib";
 
 /** sources 이벤트 항목: 프롬프트에 넣은 근거 세그먼트 */
@@ -132,13 +133,13 @@ export function citeTarget(
  * 인용 칩 글자. 녹음은 시각(`5:31`), 전체 범위에서는 날짜도(`10/2 5:31`).
  * 메모는 시각이 없다: 줄을 알면 `3번째 줄`, 모르면 `메모`. 전체 범위에서는 날짜도(`10/13 3번째 줄`) (WORDS.md §4.5)
  */
-export function citeLabel(t: number, o: { date?: string; memo?: boolean; line?: number; tagged?: boolean } = {}): string {
+export function citeLabel(sec: number, o: { date?: string; memo?: boolean; line?: number; tagged?: boolean } = {}): string {
   const m = /^\d{4}-(\d{2})-(\d{2})/.exec(o.date ?? "");
   const day = m ? `${Number(m[1])}/${Number(m[2])} ` : "";
-  if (!o.memo) return `${day}${fmtTime(t)}`;
+  if (!o.memo) return `${day}${fmtTime(sec)}`;
   // tagged: 녹음 노트의 메모 줄. 같은 노트의 시각 칩과 섞여 보이므로 `메모`를 앞에 붙인다 (메모 노트는 모두 메모라 붙이지 않는다)
-  const where = o.line ? `${o.line}번째 줄` : "메모";
-  return `${day}${o.tagged && o.line ? `메모 ${where}` : where}`;
+  const where = !o.line ? t("메모") : o.tagged ? t("메모 {n}번째 줄", { n: o.line }) : t("{n}번째 줄", { n: o.line });
+  return `${day}${where}`;
 }
 
 /** 녹음 노트에 사용자가 적은 메모의 줄인가 (`source: "memo"` 또는 `m0003`). 칩 글자에 `메모`를 붙이는 쪽 */
@@ -176,7 +177,7 @@ export const historyFromEntries = (entries: { question: string; answer: string }
 
 /** 화면의 턴 중 답을 끝낸 것만 기록으로 */
 export const turnsHistory = (turns: { question: string; state: AskState }[]): ChatMessage[] =>
-  historyFromEntries(turns.filter((t) => t.state.phase === "done").map((t) => ({ question: t.question, answer: t.state.answer })));
+  historyFromEntries(turns.filter((x) => x.state.phase === "done").map((x) => ({ question: x.question, answer: x.state.answer })));
 
 // ── 전송 안내: 어디로 무엇이 가는지 보내기 전에 알린다 (코어 llm.PROVIDERS와 같은 표) ──
 
@@ -201,8 +202,8 @@ export const PROVIDERS: Record<string, ProviderInfo> = {
   openai: { label: "OpenAI", model: null, url: "https://api.openai.com/v1" },
   claude: { label: "Claude", model: "claude-sonnet-5-5", url: "https://api.anthropic.com/v1" },
   gemini: { label: "Gemini", model: "gemini-flash-latest", url: "https://generativelanguage.googleapis.com/v1beta/openai" },
-  custom: { label: "직접 입력", model: null, url: null },
-  "gemma-local": { label: "이 Mac의 AI", model: "gemma4:31b", url: "http://localhost:11434/v1", local: true },
+  custom: { label: t("직접 입력"), model: null, url: null },
+  "gemma-local": { label: t("이 Mac의 AI"), model: "gemma4:31b", url: "http://localhost:11434/v1", local: true },
 };
 
 /** `host` 또는 `host:포트` (대괄호 IPv6 포함)가 이 Mac인가: 정확히 localhost / 127.0.0.1 / ::1 */
@@ -212,15 +213,17 @@ export function isLoopbackHost(host: string): boolean {
 }
 
 export function sendNotice(c: LlmConfig): { text: string; warn: boolean } {
-  if (!c.provider) return { text: "AI 서비스가 설정되지 않았습니다. 설정에서 API 키를 등록하세요", warn: true };
+  if (!c.provider) return { text: t("AI 서비스가 설정되지 않았습니다. 설정에서 API 키를 등록하세요"), warn: true };
   const p = PROVIDERS[c.provider];
-  if (!p) return { text: `알 수 없는 AI 서비스입니다: ${c.provider}`, warn: true };
+  if (!p) return { text: t("알 수 없는 AI 서비스입니다: {provider}", { provider: c.provider }), warn: true };
   const host = c.host ?? (p.url ? new URL(p.url).host : null);
   const local = host !== null ? isLoopbackHost(host) : !!p.local; // 주소가 있으면 주소로 본다 (이 Mac의 AI라도 환경변수 주소가 원격이면 원격)
-  if (c.local_only && !local) return { text: `로컬 전용 모드라 외부 AI 서비스(${p.label})로 보내지 않습니다`, warn: true };
+  if (c.local_only && !local) return { text: t("로컬 전용 모드라 외부 AI 서비스({service})로 보내지 않습니다", { service: p.label }), warn: true };
   const model = c.model || p.model;
-  if (!model) return { text: `설정에서 ${p.label}의 AI 모델을 지정하세요`, warn: true };
+  if (!model) return { text: t("설정에서 {service}의 AI 모델을 지정하세요", { service: p.label }), warn: true };
   return local
-    ? { text: `질문과 관련 대화 일부를 이 Mac의 AI(${model})가 처리합니다`, warn: false }
-    : { text: `질문과 관련 대화 일부가 ${p.label}(${model})로 전송됩니다${host ? `. 보내는 곳: ${host}` : ""}`, warn: false };
+    ? { text: t("질문과 관련 대화 일부를 이 Mac의 AI({model})가 처리합니다", { model }), warn: false }
+    : host
+      ? { text: t("질문과 관련 대화 일부가 {service}({model})로 전송됩니다. 보내는 곳: {host}", { service: p.label, model, host }), warn: false }
+      : { text: t("질문과 관련 대화 일부가 {service}({model})로 전송됩니다", { service: p.label, model }), warn: false };
 }

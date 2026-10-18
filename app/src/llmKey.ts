@@ -1,6 +1,7 @@
 // AI 서비스 설정: 서비스·주소·AI 모델·API 키 (docs/desktop.md §2.14). 키는 Rust(llm_key.rs)만 읽고, 화면은 등록 여부만 안다.
 import { isLoopbackHost, PROVIDERS } from "./ask";
 import { errorView, JOB_ERROR } from "./lib";
+import { t } from "./i18n";
 
 /** 설정 화면에서 고를 수 있는 서비스 (Rust llm_key::PROVIDERS와 같은 순서·이름) */
 export const LLM_CHOICES = ["upstage", "openai", "claude", "gemini", "custom"] as const;
@@ -13,15 +14,15 @@ export const KEY_MAX = 200;
 /** 저장 전 안내용 검사 (Rust llm_key::validate와 같은 규칙, 거기서 한 번 더 막는다). 문제가 없으면 null */
 export function keyProblem(raw: string): string | null {
   const key = raw.trim();
-  if (!key) return "API 키를 입력하세요.";
+  if (!key) return t("API 키를 입력하세요.");
   const len = [...key].length;
-  if (len < KEY_MIN || len > KEY_MAX) return `API 키는 ${KEY_MIN}자에서 ${KEY_MAX}자 사이여야 합니다.`;
-  if (/[\s\p{Cc}]/u.test(key)) return "API 키 중간에 공백이나 줄바꿈이 있습니다. 키만 그대로 붙여 넣으세요.";
-  if (!/^[\x21-\x7e]+$/.test(key)) return "API 키에 영문·숫자·기호가 아닌 글자가 있습니다. 키만 그대로 붙여 넣으세요.";
+  if (len < KEY_MIN || len > KEY_MAX) return t("API 키는 {min}자에서 {max}자 사이여야 합니다.", { min: KEY_MIN, max: KEY_MAX });
+  if (/[\s\p{Cc}]/u.test(key)) return t("API 키 중간에 공백이나 줄바꿈이 있습니다. 키만 그대로 붙여 넣으세요.");
+  if (!/^[\x21-\x7e]+$/.test(key)) return t("API 키에 영문·숫자·기호가 아닌 글자가 있습니다. 키만 그대로 붙여 넣으세요.");
   return null;
 }
 
-export const keyStatusText = (saved: boolean | null): string => (saved === null ? "확인 중…" : saved ? "키가 등록되어 있습니다" : "등록된 키가 없습니다");
+export const keyStatusText = (saved: boolean | null): string => (saved === null ? t("확인 중…") : saved ? t("키가 등록되어 있습니다") : t("등록된 키가 없습니다"));
 
 /** 코어가 AI 서비스 설정이 없다고 알리는 오류 코드: 이 앱에서는 키를 등록하면 풀린다 */
 export const KEY_ERROR_CODE = "llm_config";
@@ -30,8 +31,8 @@ export const KEY_ERROR_CODE = "llm_config";
 export const SETTINGS_FIX_CODES: readonly string[] = [KEY_ERROR_CODE, "llm_auth", "llm_model"];
 
 const KEY_MISSING = {
-  summarize: "AI 키가 없어 요약할 수 없습니다. 설정에서 API 키를 등록하세요.",
-  ask: "AI 키가 없어 답변할 수 없습니다. 설정에서 API 키를 등록하세요.",
+  summarize: t("AI 키가 없어 요약할 수 없습니다. 설정에서 API 키를 등록하세요."),
+  ask: t("AI 키가 없어 답변할 수 없습니다. 설정에서 API 키를 등록하세요."),
 } as const;
 
 /** 요약·질문 실패 문장. `settings`가 true면 화면이 `설정 열기`를 함께 보인다 */
@@ -57,8 +58,8 @@ export const defaultBaseUrl = (provider: string): string => PROVIDERS[provider]?
 /** 서비스 기본 AI 모델 (없으면 직접 입력해야 한다) */
 export const defaultModel = (provider: string): string => PROVIDERS[provider]?.model ?? "";
 
-export const URL_BAD = "서비스 주소는 http:// 또는 https://로 시작하는 올바른 주소여야 합니다.";
-export const URL_CREDENTIALS = "서비스 주소에 사용자 이름이나 비밀번호를 넣을 수 없습니다. API 키는 따로 입력하세요.";
+export const URL_BAD = t("서비스 주소는 http:// 또는 https://로 시작하는 올바른 주소여야 합니다.");
+export const URL_CREDENTIALS = t("서비스 주소에 사용자 이름이나 비밀번호를 넣을 수 없습니다. API 키는 따로 입력하세요.");
 
 /** 입력한 주소 → 정리한 주소(끝의 `/` 없음, 빈 값은 빈 값). 올바르지 않으면 문장. Rust llm_key::normalize_base_url과 같은 규칙 */
 export function normalizeBaseUrl(raw: string): { url: string } | { problem: string } {
@@ -85,16 +86,16 @@ export function isLoopbackUrl(url: string): boolean {
   }
 }
 
-export const HTTP_WARNING = "https가 아닌 주소입니다. 키와 대화 내용이 암호화되지 않은 채 전송됩니다.";
+export const HTTP_WARNING = t("https가 아닌 주소입니다. 키와 대화 내용이 암호화되지 않은 채 전송됩니다.");
 
 /** 막지는 않지만 알릴 것: 이 Mac이 아닌데 https가 아니다 (이 Mac 주소의 http는 경고하지 않는다) */
 export function baseUrlWarning(url: string): string | null {
   return /^http:\/\//i.test(url) && !isLoopbackUrl(url) ? HTTP_WARNING : null;
 }
 
-export const URL_REQUIRED = "서비스 주소를 입력하세요.";
-export const MODEL_REQUIRED = "AI 모델 이름을 입력하세요.";
-export const MODEL_BAD = "AI 모델 이름에는 공백이나 줄바꿈을 넣을 수 없고 200자까지 쓸 수 있습니다.";
+export const URL_REQUIRED = t("서비스 주소를 입력하세요.");
+export const MODEL_REQUIRED = t("AI 모델 이름을 입력하세요.");
+export const MODEL_BAD = t("AI 모델 이름에는 공백이나 줄바꿈을 넣을 수 없고 200자까지 쓸 수 있습니다.");
 
 export interface LlmForm {
   provider: string;
@@ -104,7 +105,7 @@ export interface LlmForm {
 
 /** 저장·테스트 전 검사. 문제가 없으면 null. 기본 AI 모델이 없는 서비스(OpenAI·직접 입력)는 모델 이름이 필요하고 (`needModel`이 false면 묻지 않는다: AI 모델 목록은 이름 없이 불러온다), 직접 입력은 주소도 필요하다 */
 export function formProblem(f: LlmForm, needModel = true): string | null {
-  if (!isLlmChoice(f.provider)) return `알 수 없는 AI 서비스입니다: ${f.provider}`;
+  if (!isLlmChoice(f.provider)) return t("알 수 없는 AI 서비스입니다: {name}", { name: f.provider });
   const url = normalizeBaseUrl(f.baseUrl);
   if ("problem" in url) return url.problem;
   if (f.provider === "custom" && !url.url) return URL_REQUIRED;
@@ -129,11 +130,11 @@ export const toForm = (provider: string, storedBase: string, storedModel: string
 export const keyReady = (provider: string, baseUrl: string, saved: boolean): boolean => saved || (provider === "custom" && isLoopbackUrl(baseUrl));
 
 export const PROVIDER_NOTE: Record<LlmChoice, string> = {
-  upstage: "키는 console.upstage.ai에서 받을 수 있습니다.",
-  openai: "키는 platform.openai.com에서 받을 수 있습니다.",
-  claude: "키는 console.anthropic.com에서 받을 수 있습니다.",
-  gemini: "키는 aistudio.google.com에서 받을 수 있습니다.",
-  custom: "OpenAI 호환 서비스(OpenRouter, Ollama 등)의 주소와 키를 입력합니다.",
+  upstage: t("키는 console.upstage.ai에서 받을 수 있습니다."),
+  openai: t("키는 platform.openai.com에서 받을 수 있습니다."),
+  claude: t("키는 console.anthropic.com에서 받을 수 있습니다."),
+  gemini: t("키는 aistudio.google.com에서 받을 수 있습니다."),
+  custom: t("OpenAI 호환 서비스(OpenRouter, Ollama 등)의 주소와 키를 입력합니다."),
 };
 
 /** 서비스가 돌려준 AI 모델 이름에서 대화용이 아닌 것(검색용·음성·이미지·영상)을 뺀다. 다 빠지면 그대로 둔다. 제안 목록일 뿐이라 이름으로 어림한다 */
@@ -143,12 +144,12 @@ export const chatModels = (ids: readonly string[]): string[] => {
   return chat.length > 0 ? chat : [...ids];
 };
 
-export const PRIVACY_NOTE = "요약·질문할 때 노트 내용이 선택한 AI 서비스로 전송됩니다. 키는 이 Mac에만 저장됩니다.";
-export const ENV_OVERRIDE_NOTE = "셸이나 .env의 설정이 이 화면보다 먼저 적용되고 있습니다.";
-export const TEST_HINT = "연결 테스트는 입력한 내용을 먼저 저장합니다.";
+export const PRIVACY_NOTE = t("요약·질문할 때 노트 내용이 선택한 AI 서비스로 전송됩니다. 키는 이 Mac에만 저장됩니다.");
+export const ENV_OVERRIDE_NOTE = t("셸이나 .env의 설정이 이 화면보다 먼저 적용되고 있습니다.");
+export const TEST_HINT = t("연결 테스트는 입력한 내용을 먼저 저장합니다.");
 
 /** 연결 테스트 결과 한 줄. 응답이 비어 와도 연결은 된 것이다 */
-export const testOkText = (r: { host: string | null; latency_ms: number | null; empty?: boolean }): string => `${r.empty ? "응답을 받았습니다" : "연결되었습니다"}${r.host ? ` (${r.host}${r.latency_ms !== null ? `, ${r.latency_ms}ms` : ""})` : ""}`;
+export const testOkText = (r: { host: string | null; latency_ms: number | null; empty?: boolean }): string => (r.empty ? t("응답을 받았습니다") : t("연결되었습니다")) + `${r.host ? ` (${r.host}${r.latency_ms !== null ? `, ${r.latency_ms}ms` : ""})` : ""}`;
 
 // ── 요약·질문마다 AI 서비스 고르기 ──
 
@@ -181,15 +182,15 @@ export const showServicePicker = (registered: readonly string[], fixed: boolean)
 // ── 스마트 검색 방식 (Upstage 선택) ──
 
 export type EmbeddingChoice = "local" | "upstage";
-export const EMBED_LABEL = "스마트 검색 방식";
-export const EMBED_OPTIONS: Record<EmbeddingChoice, string> = { local: "이 Mac(기본)", upstage: "Upstage solar-embedding-2" };
-export const EMBED_LOCAL_ONLY = "로컬 전용 모드라 Upstage로 보내지 않고 단어 일치로만 찾습니다.";
-export const EMBED_NO_KEY = "Upstage API 키를 등록하면 고를 수 있습니다.";
-export const EMBED_NOTE = "기본은 이 Mac에서 처리합니다. Upstage를 고르면 노트 내용과 검색어가 전송됩니다.";
+export const EMBED_LABEL = t("스마트 검색 방식");
+export const EMBED_OPTIONS: Record<EmbeddingChoice, string> = { local: t("이 Mac(기본)"), upstage: "Upstage solar-embedding-2" };
+export const EMBED_LOCAL_ONLY = t("로컬 전용 모드라 Upstage로 보내지 않고 단어 일치로만 찾습니다.");
+export const EMBED_NO_KEY = t("Upstage API 키를 등록하면 고를 수 있습니다.");
+export const EMBED_NOTE = t("기본은 이 Mac에서 처리합니다. Upstage를 고르면 노트 내용과 검색어가 전송됩니다.");
 export const EMBED_CONFIRM = {
-  title: "스마트 검색을 Upstage로 바꿀까요?",
-  body: "노트 내용과 검색어가 Upstage로 전송됩니다. Upstage의 데이터 보관 정책은 확인하지 못했습니다. 검색 정보를 새로 만드는 동안에는 단어 일치로만 찾습니다.",
-  cancel: "취소",
-  confirm: "Upstage로 바꾸기",
+  title: t("스마트 검색을 Upstage로 바꿀까요?"),
+  body: t("노트 내용과 검색어가 Upstage로 전송됩니다. Upstage의 데이터 보관 정책은 확인하지 못했습니다. 검색 정보를 새로 만드는 동안에는 단어 일치로만 찾습니다."),
+  cancel: t("취소"),
+  confirm: t("Upstage로 바꾸기"),
 } as const;
-export const EMBED_SAVED: Record<EmbeddingChoice, string> = { local: "스마트 검색을 이 Mac에서 처리합니다.", upstage: "스마트 검색을 Upstage로 처리합니다." };
+export const EMBED_SAVED: Record<EmbeddingChoice, string> = { local: t("스마트 검색을 이 Mac에서 처리합니다."), upstage: t("스마트 검색을 Upstage로 처리합니다.") };

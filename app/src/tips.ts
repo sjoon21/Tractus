@@ -1,19 +1,20 @@
 // 기능을 처음 마주칠 때 한 번씩 뜨는 안내 (온보딩 ③, WORDS.md §4.25). 한 번에 하나만 보인다.
 // 본 안내는 이 Mac의 브라우저 저장소에만 기억한다 (개인 편의 설정: 없거나 막혀 있어도 앱은 그대로 돈다).
 import { useEffect, useState } from "react";
+import { t } from "./i18n";
 
 /** 안내 ID → 문장. 화면의 `data-tip="<ID>"` 요소 옆에 뜬다 */
 export const TIPS = {
-  ask: "모든 노트에 대해 물어볼 수 있습니다. 답에 붙은 시각을 누르면 그 자리를 엽니다.",
-  calendar: "곧 시작하는 일정입니다. 누르면 일정 제목과 참석자 이름으로 녹음합니다.",
-  transcript: "시각을 누르면 그 자리부터 재생하고, 문장을 누르면 고칠 수 있습니다.",
-  speakers: "참석자 이름을 눌러 정하세요. 목소리를 등록하면 다음 녹음부터 알아봅니다.",
-  export: "Markdown·Word·PDF로 내보내거나 Obsidian 볼트로 보낼 수 있습니다.",
-  enhance: "녹음하며 적은 메모를 뼈대로, 대화 내용에서 찾은 세부를 붙여 노트를 완성합니다.",
+  ask: t("모든 노트에 대해 물어볼 수 있습니다. 답에 붙은 시각을 누르면 그 자리를 엽니다."),
+  calendar: t("곧 시작하는 일정입니다. 누르면 일정 제목과 참석자 이름으로 녹음합니다."),
+  transcript: t("시각을 누르면 그 자리부터 재생하고, 문장을 누르면 고칠 수 있습니다."),
+  speakers: t("참석자 이름을 눌러 정하세요. 목소리를 등록하면 다음 녹음부터 알아봅니다."),
+  export: t("Markdown·Word·PDF로 내보내거나 Obsidian 볼트로 보낼 수 있습니다."),
+  enhance: t("녹음하며 적은 메모를 뼈대로, 대화 내용에서 찾은 세부를 붙여 노트를 완성합니다."),
 } as const;
 export type TipId = keyof typeof TIPS;
-export const TIP_OK = "알겠습니다";
-export const TIP_OFF = "안내 끄기";
+export const TIP_OK = t("알겠습니다");
+export const TIP_OFF = t("안내 끄기");
 
 const KEY = "tractus.tips";
 export interface TipState {

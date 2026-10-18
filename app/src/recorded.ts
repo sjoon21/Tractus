@@ -1,6 +1,7 @@
 // 변환 전 노트(녹음만 있고 아직 텍스트로 변환하지 않은 노트, transcript.json `state: "recorded"`)의 순수 로직: 목록 판정, 변환 상태 화면 모델, 문구.
 // 화면은 MeetingView.tsx·ConvertPanel.tsx·NoteRow.tsx·App.tsx. recorded.test.ts에서 검사한다. 문구는 WORDS.md §4.18.
 import type { Decision } from "./caps";
+import { locale, t } from "./i18n";
 import { errorView, fmtTime, JOB_ERROR, STAGE_LABEL, type JobState } from "./lib";
 import type { RailTab } from "./rail";
 
@@ -47,14 +48,14 @@ export function convertPanelView(job: JobState, slot: ConvertControls["slot"], w
   return { phase: "idle" };
 }
 
-const STAGE_FALLBACK_TEXT = "변환 준비 중…";
+const STAGE_FALLBACK_TEXT = t("변환 준비 중…");
 
 /** 변환을 줄에 올릴 수 있는가: 변환 중이거나 기다리는 중이면 또 올리지 않는다 */
 export const canQueueConvert = (slot: ConvertControls["slot"], job: JobState): boolean => slot === null && !job.running;
 
 /** 노트 머리의 통계 줄. 변환 전에는 대화 개수가 없다: `12:34 · 녹음 중 메모 2개` */
 export function recordedStats(durationSec: number, memos: number): string {
-  return `${fmtTime(durationSec)}${memos > 0 ? ` · 녹음 중 메모 ${memos}개` : ""}`;
+  return fmtTime(durationSec) + (memos > 0 ? " · " + t("녹음 중 메모 {n}개", { n: memos }) : "");
 }
 
 /** 오른쪽 패널 탭에 보일 안내: 변환 전에는 요약·AI 질문이 읽을 글이 없다. 메모 탭은 쓸 수 있다 (null) */
@@ -66,7 +67,7 @@ export const deleteBlockedWhileConverting = (slot: ConvertControls["slot"]): str
 const MB = 1024 ** 2;
 const KEPT_BIG = 1024 ** 3;
 const KEPT_STALE_MS = 7 * 24 * 3600 * 1000;
-const mbText = (bytes: number) => `${Math.max(1, Math.round(bytes / MB)).toLocaleString("ko-KR")} MB`;
+const mbText = (bytes: number) => `${Math.max(1, Math.round(bytes / MB)).toLocaleString(locale())} MB`;
 
 /** 사이드바 배지 `title`: 보관 중인 원본 녹음의 크기. 없으면(0·모름) undefined */
 export const keptTitle = (bytes?: number): string | undefined => (bytes ? KEPT_TITLE(mbText(bytes)) : undefined);
@@ -80,34 +81,35 @@ export function keptNotice(bytes: number | undefined, createdAt: string, now: nu
 
 // ── 문구 (WORDS.md §4.18) ──
 
-export const RECORDED_BADGE = "변환 전";
-export const ROW_RUNNING = "변환 중…";
-export const ROW_QUEUED = "변환 대기";
-export const CONVERT_LABEL = "텍스트로 변환";
-export const CONVERT_RETRY = "다시 변환";
-export const CONVERT_EMPTY_TITLE = "아직 텍스트로 변환하지 않았습니다";
-export const CONVERT_EMPTY_BODY = "녹음은 저장되어 있어 아래 플레이어로 들어 볼 수 있습니다. 준비가 되면 텍스트로 변환하세요. 변환하기 전에도 메모를 쓰고 제목·태그·폴더를 정리할 수 있습니다.";
-export const KEPT_LINE = (size: string) => `원본 녹음 ${size}를 보관 중입니다. 텍스트로 변환하면 지워집니다.`;
-export const KEPT_WARN = "변환하지 않으면 용량을 계속 차지합니다.";
-export const KEPT_TITLE = (size: string) => `원본 녹음 ${size} 보관 중`;
-export const CONVERT_FIRST = "먼저 텍스트로 변환하세요";
-export const CONVERT_FAILED_TITLE = "텍스트 변환 실패";
+export const RECORDED_BADGE = t("변환 전");
+export const ROW_RUNNING = t("변환 중…");
+export const ROW_QUEUED = t("변환 대기");
+export const CONVERT_LABEL = t("텍스트로 변환");
+export const CONVERT_RETRY = t("다시 변환");
+export const CONVERT_EMPTY_TITLE = t("아직 텍스트로 변환하지 않았습니다");
+export const CONVERT_EMPTY_BODY = t("녹음은 저장되어 있어 아래 플레이어로 들어 볼 수 있습니다. 준비가 되면 텍스트로 변환하세요. 변환하기 전에도 메모를 쓰고 제목·태그·폴더를 정리할 수 있습니다.");
+export const KEPT_LINE = (size: string) => t("원본 녹음 {size}를 보관 중입니다. 텍스트로 변환하면 지워집니다.", { size });
+export const KEPT_WARN = t("변환하지 않으면 용량을 계속 차지합니다.");
+export const KEPT_TITLE = (size: string) => t("원본 녹음 {size} 보관 중", { size });
+export const CONVERT_FIRST = t("먼저 텍스트로 변환하세요");
+export const CONVERT_FAILED_TITLE = t("텍스트 변환 실패");
 /** 변환 전 노트를 변환하는 중에 새 녹음을 시작할 때 (알림) */
-export const CONVERT_PAUSED = "녹음하는 동안 변환을 멈춥니다. 녹음이 끝나면 이어서 변환합니다.";
-export const WAIT_RECORDING = "녹음이 끝나면 변환을 시작합니다";
-export const WAIT_OTHER = "앞선 변환이 끝나면 시작합니다";
-export const DELETE_BLOCKED = "변환이 끝난 뒤에 삭제할 수 있습니다";
-export const CONVERT_ALL = (n: number) => `변환 전 노트 모두 변환 (${n})`;
-export const CONVERT_ALL_TITLE = "변환 전 노트를 차례로 텍스트로 변환합니다. 하나가 실패해도 나머지는 계속합니다";
-export const CONVERT_ROW = "텍스트로 변환";
-export const SAVE_NOTE = "노트로 저장";
-export const SAVE_NOTE_TITLE = "변환하지 않고 노트로 저장합니다. 나중에 노트에서 텍스트로 변환할 수 있습니다";
-export const SAVING = "저장 중…";
-export const SAVE_FAILED_TITLE = "녹음 저장 실패";
-export const SAVE_DONE_TITLE = "녹음 저장 완료";
-export const SAVE_RETRY = "다시 저장";
-export const noteLabel = (title: string) => `‘${title.trim() || "제목 없음"}’`;
-export const CONVERTED = (title: string) => `${noteLabel(title)} 노트를 텍스트로 변환했습니다`;
-export const CONVERT_FAIL = (title: string, why: string) => `${noteLabel(title)} 노트를 텍스트로 변환하지 못했습니다${why}`;
+export const CONVERT_PAUSED = t("녹음하는 동안 변환을 멈춥니다. 녹음이 끝나면 이어서 변환합니다.");
+export const WAIT_RECORDING = t("녹음이 끝나면 변환을 시작합니다");
+export const WAIT_OTHER = t("앞선 변환이 끝나면 시작합니다");
+export const DELETE_BLOCKED = t("변환이 끝난 뒤에 삭제할 수 있습니다");
+export const CONVERT_ALL = (n: number) => t("변환 전 노트 모두 변환 ({n})", { n });
+export const CONVERT_ALL_TITLE = t("변환 전 노트를 차례로 텍스트로 변환합니다. 하나가 실패해도 나머지는 계속합니다");
+export const CONVERT_ROW = t("텍스트로 변환");
+export const SAVE_NOTE = t("노트로 저장");
+export const SAVE_NOTE_TITLE = t("변환하지 않고 노트로 저장합니다. 나중에 노트에서 텍스트로 변환할 수 있습니다");
+export const SAVING = t("저장 중…");
+export const SAVE_FAILED_TITLE = t("녹음 저장 실패");
+export const SAVE_DONE_TITLE = t("녹음 저장 완료");
+export const SAVE_RETRY = t("다시 저장");
+const titleOf = (title: string) => title.trim() || t("제목 없음");
+export const noteLabel = (title: string) => t("‘{title}’", { title: titleOf(title) });
+export const CONVERTED = (title: string) => t("‘{title}’ 노트를 텍스트로 변환했습니다", { title: titleOf(title) });
+export const CONVERT_FAIL = (title: string, why: string) => t("‘{title}’ 노트를 텍스트로 변환하지 못했습니다{why}", { title: titleOf(title), why });
 /** 모두 변환 진행 줄: `2 / 3 · ‘제목’` */
-export const CONVERT_ALL_LINE = (n: number, total: number, title: string) => `${n} / ${total} · ${noteLabel(title)}`;
+export const CONVERT_ALL_LINE = (n: number, total: number, title: string) => t("{n} / {total} · ‘{title}’", { n, total, title: titleOf(title) });

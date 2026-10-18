@@ -1,13 +1,14 @@
 // 녹음 일시정지·계속의 문구와 사이드바 녹음 단추 글자 (WORDS.md §4.18). 순수 로직은 pause.test.ts에서 검사한다.
 // 일시정지는 소리 받기만 멈춘다: 녹음 프로그램은 계속 떠 있고(macOS 마이크 사용 표시는 켜진 채), 일시정지한 시간은 녹음에 들어가지 않는다.
+import { t } from "./i18n";
 import { fmtTime, type RecPhase } from "./lib";
 
-export const PAUSE_LABEL = "일시정지";
-export const RESUME_LABEL = "계속";
-export const PAUSE_TITLE = "소리 받기를 잠시 멈춥니다. 멈춘 시간은 녹음에 들어가지 않습니다";
-export const RESUME_TITLE = "녹음을 이어서 합니다";
-export const PAUSED_NOTE = "일시정지 중입니다. 멈춘 시간은 녹음에 들어가지 않습니다. 마이크 사용 표시는 녹음을 끝낼 때까지 켜져 있습니다.";
-export const PAUSED_STATUS = (seconds: number) => `일시정지됨 ${fmtTime(seconds)}`;
+export const PAUSE_LABEL = t("일시정지");
+export const RESUME_LABEL = t("계속");
+export const PAUSE_TITLE = t("소리 받기를 잠시 멈춥니다. 멈춘 시간은 녹음에 들어가지 않습니다");
+export const RESUME_TITLE = t("녹음을 이어서 합니다");
+export const PAUSED_NOTE = t("일시정지 중입니다. 멈춘 시간은 녹음에 들어가지 않습니다. 마이크 사용 표시는 녹음을 끝낼 때까지 켜져 있습니다.");
+export const PAUSED_STATUS = (seconds: number) => t("일시정지됨 {time}", { time: fmtTime(seconds) });
 
 export interface RecButton {
   /** 단추의 큰 글자 */
@@ -22,13 +23,13 @@ export interface RecButton {
  * 사이드바 녹음 단추의 글자. 녹음 중 `녹음 중 12:34`, 일시정지 `일시정지됨 12:34`, 끝낸 녹음을 어떻게 할지 묻는 중 `녹음 끝남`, 노트로 저장하는 중 `저장 중…`, 변환 중 `변환 중…`, 변환을 기다리는 중 `변환 대기 중…`.
  */
 export function recButton(o: { phase: RecPhase; t: number; saving: boolean; converting: boolean; waiting: boolean; asking?: boolean }): RecButton {
-  if (o.phase === "paused") return { text: "일시정지됨", time: fmtTime(o.t), live: false };
-  if (o.phase === "recording" || o.phase === "starting" || o.phase === "stopping") return { text: "녹음 중", time: fmtTime(o.t), live: true };
-  if (o.asking) return { text: "녹음 끝남", time: null, live: false };
-  if (o.saving) return { text: "저장 중…", time: null, live: false };
-  if (o.converting) return { text: "변환 중…", time: null, live: false };
-  if (o.waiting) return { text: "변환 대기 중…", time: null, live: false };
-  return { text: "녹음 시작", time: null, live: false };
+  if (o.phase === "paused") return { text: t("일시정지됨"), time: fmtTime(o.t), live: false };
+  if (o.phase === "recording" || o.phase === "starting" || o.phase === "stopping") return { text: t("녹음 중"), time: fmtTime(o.t), live: true };
+  if (o.asking) return { text: t("녹음 끝남"), time: null, live: false };
+  if (o.saving) return { text: t("저장 중…"), time: null, live: false };
+  if (o.converting) return { text: t("변환 중…"), time: null, live: false };
+  if (o.waiting) return { text: t("변환 대기 중…"), time: null, live: false };
+  return { text: t("녹음 시작"), time: null, live: false };
 }
 
 /** 화면 시계의 기준: 마지막으로 헬퍼가 알린 녹음 시각(초, 일시정지한 시간을 뺀다)과 그 순간의 화면 시계(ms) */

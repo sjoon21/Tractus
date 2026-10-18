@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errDetail, errText, type MeetingDetail } from "./api";
 import type { Notify } from "./App";
 import { editQueue } from "./editQueue";
+import { t } from "./i18n";
 import { isImeKey, type Segment } from "./lib";
 import { checkTitle, citedRange, createAutosave, registerMemo, SAVE_STATUS, TITLE_MAX, type Autosave, type SaveState } from "./memo";
 import { EDIT_BLOCKED } from "./remove";
@@ -117,8 +118,8 @@ export function MemoEditor({
           variant === "rail" ? "min-h-[50vh] text-[14px] leading-6" : "min-h-[55vh] text-[15px] leading-7",
         )}
         value={text}
-        placeholder="여기에 메모를 쓰세요. 쓰는 대로 자동으로 저장됩니다"
-        aria-label="메모 내용"
+        placeholder={t("여기에 메모를 쓰세요. 쓰는 대로 자동으로 저장됩니다")}
+        aria-label={t("메모 내용")}
         aria-keyshortcuts="Meta+S"
         readOnly={!!locked}
         onChange={(e) => {
@@ -178,8 +179,8 @@ export function TitleEditor({ title, onSave, onReject }: { title: string; onSave
   if (draft === null)
     return (
       <h1 className={TITLE}>
-        <button className="group inline-flex max-w-full cursor-text items-center gap-1.5 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40" onClick={start} title="제목 수정" aria-label={`제목 수정: ${title || "제목 없음"}`}>
-          <span className="[overflow-wrap:anywhere]">{title || "제목 없음"}</span>
+        <button className="group inline-flex max-w-full cursor-text items-center gap-1.5 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40" onClick={start} title={t("제목 수정")} aria-label={t("제목 수정: {title}", { title: title || t("제목 없음") })}>
+          <span className="[overflow-wrap:anywhere]">{title || t("제목 없음")}</span>
           <span className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:bg-accent group-hover:opacity-100 group-focus-visible:opacity-100" aria-hidden>
             <Pencil className="size-3.5" />
           </span>
@@ -195,7 +196,7 @@ export function TitleEditor({ title, onSave, onReject }: { title: string; onSave
           value={draft}
           maxLength={TITLE_MAX + 40} // 붙여 넣은 긴 글을 잘라 버리지 않고 문장으로 알린다
           autoFocus
-          aria-label="노트 제목 (Enter 저장, Esc 취소)"
+          aria-label={t("노트 제목 (Enter 저장, Esc 취소)")}
           aria-invalid={!!error}
           onChange={(e) => {
             setDraft(e.target.value);

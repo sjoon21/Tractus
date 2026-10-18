@@ -7,6 +7,7 @@ import { api, errText, useJob, type JobState } from "./api";
 import type { Notify } from "./App";
 import { ENHANCE_HINT, ENHANCE_LABEL, ENHANCED_KEY, enhancedView, EXTRA_TITLE, findEnhanced, memoTabShowing, NO_MEMO_NOTICE, REDO_LABEL, RUNNING_TEXT, staleNotice, VIEW_DONE, VIEW_MINE } from "./enhanced";
 import { ErrorDetail } from "./ErrorDetail";
+import { t } from "./i18n";
 import { fmtTime } from "./lib";
 import { LlmServicePicker, useLlmServices } from "./LlmServicePicker";
 import { llmErrorView } from "./llmKey";
@@ -21,7 +22,7 @@ import { markOnboard } from "./onboarding";
 import { SparklesIcon } from "@/components/ui/sparkles-icon";
 import { cn } from "@/components/ui/utils";
 
-const NO_DETAIL = "대화에서 관련 내용을 찾지 못했습니다"; // 코어 summaries.NO_DETAIL과 같은 문장 (내보낸 문서와 화면이 같게)
+const NO_DETAIL = t("대화에서 관련 내용을 찾지 못했습니다"); // 코어 summaries.NO_DETAIL과 같은 문장 (내보낸 문서와 화면이 같게)
 
 export function EnhancedNote(p: {
   id: string;
@@ -100,7 +101,7 @@ export function EnhancedNote(p: {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         {doc && (
-          <div className="grid grid-cols-2 gap-0.5 rounded-md bg-secondary p-0.5" role="radiogroup" aria-label="메모 보기">
+          <div className="grid grid-cols-2 gap-0.5 rounded-md bg-secondary p-0.5" role="radiogroup" aria-label={t("메모 보기")}>
             {(["mine", "done"] as const).map((v) => (
               <button
                 key={v}
@@ -173,7 +174,7 @@ function Done({ doc, stale, chip, onSeek }: { doc: SummaryDoc; stale: string | n
               <div className="flex items-baseline gap-2 border-l-2 border-memo pl-3">
                 <span className="min-w-0 flex-1 text-[14px] font-semibold leading-6 text-foreground">{s.heading}</span>
                 {s.at !== undefined && (
-                  <button type="button" className={CHIP} onClick={() => onSeek(s.at!)} title={`${fmtTime(s.at)} 위치로 이동`}>
+                  <button type="button" className={CHIP} onClick={() => onSeek(s.at!)} title={t("{time} 위치로 이동", { time: fmtTime(s.at) })}>
                     {fmtTime(s.at)}
                   </button>
                 )}

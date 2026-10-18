@@ -5,6 +5,7 @@ mod attach;
 mod calendar;
 mod deferred;
 mod llm_key;
+mod locale;
 mod mcp;
 mod media;
 mod meetings;
@@ -1279,6 +1280,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             get_settings,
+            locale::system_lang,
             paths::update_available,
             save_settings,
             set_rec_mode,

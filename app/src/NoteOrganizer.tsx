@@ -1,6 +1,7 @@
 // 노트 머리의 정리 줄: ★ 즐겨찾기, 폴더 고르기, 태그 (docs/desktop.md §2.12). 상태는 사이드바와 같은 곳(useOrganize)에 있어 어느 쪽에서 바꿔도 같이 바뀐다.
 import { useEffect, useId, useRef, useState } from "react";
 import { FolderPicker } from "./FolderPicker";
+import { t } from "./i18n";
 import { isImeKey } from "./lib";
 import { addTags, folderPath, removeTag, suggestTags } from "./organize";
 import { useOrganize } from "./useOrganize";
@@ -26,9 +27,9 @@ export function NoteOrganizer({ id }: { id: string }) {
         <button
           type="button"
           className={cn(PILL, "aria-pressed:text-memo")}
-          aria-label="즐겨찾기"
+          aria-label={t("즐겨찾기")}
           aria-pressed={meta.favorite}
-          title={meta.favorite ? "즐겨찾기에서 뺍니다" : "즐겨찾기에 추가합니다"}
+          title={meta.favorite ? t("즐겨찾기에서 뺍니다") : t("즐겨찾기에 추가합니다")}
           onClick={() => void org.setFavorite(id, !meta.favorite)}
         >
           <Star aria-hidden className={meta.favorite ? "fill-memo" : ""} />
@@ -38,12 +39,12 @@ export function NoteOrganizer({ id }: { id: string }) {
           className={PILL}
           aria-haspopup="menu"
           aria-expanded={!!picking}
-          aria-label={path ? `폴더: ${path} — 바꾸기` : "폴더 고르기 (지금은 폴더 없음)"}
-          title="노트를 넣을 폴더 고르기"
+          aria-label={path ? t("폴더: {path} — 바꾸기", { path }) : t("폴더 고르기 (지금은 폴더 없음)")}
+          title={t("노트를 넣을 폴더 고르기")}
           onClick={(e) => setPicking((p) => (p ? null : e.currentTarget))}
         >
           <Folder aria-hidden />
-          <span className="max-w-[14rem] truncate">{path || "폴더 없음"}</span>
+          <span className="max-w-[14rem] truncate">{path || t("폴더 없음")}</span>
         </button>
         {picking && (
           <FolderPicker
@@ -100,12 +101,12 @@ function TagEditor({ id }: { id: string }) {
   };
 
   return (
-    <div className="relative flex min-w-0 flex-wrap items-center gap-0.5" role="group" aria-label="태그">
+    <div className="relative flex min-w-0 flex-wrap items-center gap-0.5" role="group" aria-label={t("태그")}>
       <ul className="m-0 flex list-none flex-wrap gap-1 p-0">
-        {tags.map((t) => (
-          <li key={t} className="inline-flex h-6 items-center gap-0.5 rounded-md bg-secondary pr-0.5 pl-2 text-xs text-secondary-foreground">
-            <span className="before:text-subtle-foreground before:content-['#']">{t}</span>
-            <button type="button" className="grid size-5 place-items-center rounded-[4px] text-subtle-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={`태그 ${t} 빼기`} title="태그 빼기" onClick={() => void org.setTags(id, removeTag(tags, t))}>
+        {tags.map((tag) => (
+          <li key={tag} className="inline-flex h-6 items-center gap-0.5 rounded-md bg-secondary pr-0.5 pl-2 text-xs text-secondary-foreground">
+            <span className="before:text-subtle-foreground before:content-['#']">{tag}</span>
+            <button type="button" className="grid size-5 place-items-center rounded-[4px] text-subtle-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={t("태그 {tag} 빼기", { tag })} title={t("태그 빼기")} onClick={() => void org.setTags(id, removeTag(tags, tag))}>
               <X className="size-3" aria-hidden />
             </button>
           </li>
@@ -117,8 +118,8 @@ function TagEditor({ id }: { id: string }) {
           ref={input}
           className={cn("h-6 rounded-md bg-transparent pr-1.5 pl-6 text-xs outline-none transition-[width,background-color] placeholder:text-subtle-foreground hover:bg-accent focus:w-52 focus:bg-accent", tags.length ? "w-24" : "w-52")}
           value={draft}
-          placeholder={tags.length ? "태그 추가" : "태그 추가 (Enter 또는 쉼표)"}
-          aria-label="태그 추가 (Enter 또는 쉼표로 더하고, 비어 있을 때 Backspace로 마지막 태그를 뺍니다)"
+          placeholder={tags.length ? t("태그 추가") : t("태그 추가 (Enter 또는 쉼표)")}
+          aria-label={t("태그 추가 (Enter 또는 쉼표로 더하고, 비어 있을 때 Backspace로 마지막 태그를 뺍니다)")}
           aria-invalid={!!error}
           aria-describedby={error ? `${list}-error` : undefined}
           role="combobox"
@@ -169,7 +170,7 @@ function TagEditor({ id }: { id: string }) {
           }}
         />
         {suggestions.length > 0 && (
-          <ul id={list} className="absolute top-full left-0 z-30 m-0 mt-1 flex min-w-40 list-none flex-col rounded-lg border border-border bg-popover p-1 text-[13px] shadow-pop" role="listbox" aria-label="이미 쓴 태그">
+          <ul id={list} className="absolute top-full left-0 z-30 m-0 mt-1 flex min-w-40 list-none flex-col rounded-lg border border-border bg-popover p-1 text-[13px] shadow-pop" role="listbox" aria-label={t("이미 쓴 태그")}>
             {suggestions.map((s, i) => (
               <li
                 key={s}

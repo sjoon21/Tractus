@@ -2,6 +2,7 @@
 // 코어 `tractus models list|download|remove`의 JSON을 쓴다. 코어가 주는 키가 조금 달라도 읽도록 느슨하게 받는다.
 import type { CapId, ModelState } from "./caps";
 import { CAP_NAME, trackOf } from "./caps";
+import { t } from "./i18n";
 
 export type ModelLevel = "required" | "recommended" | "optional";
 
@@ -41,8 +42,8 @@ export interface ModelsList {
   unregistered?: { name: string; bytes: number }[];
 }
 
-export const LEVEL_LABEL: Record<ModelLevel, string> = { required: "필수", recommended: "권장", optional: "선택" };
-export const ONE_OF_LABEL = "필수 (둘 중 하나)";
+export const LEVEL_LABEL: Record<ModelLevel, string> = { required: t("필수"), recommended: t("권장"), optional: t("선택") };
+export const ONE_OF_LABEL = t("필수 (둘 중 하나)");
 /** 구분 칸 글자: 변환 엔진처럼 둘 중 하나만 있으면 되는 필수 모델은 `필수 (둘 중 하나)` */
 export const levelLabel = (m: Pick<ModelRow, "level" | "level_note">): string => (m.level === "required" && m.level_note === "one_of" ? ONE_OF_LABEL : LEVEL_LABEL[m.level]);
 
@@ -51,9 +52,9 @@ export function engineSummary(models: Pick<ModelRow, "level" | "level_note" | "i
   const group = models.filter((m) => m.level === "required" && m.level_note === "one_of");
   if (group.length === 0) return null;
   const ok = group.some((m) => m.installed);
-  return { ok, text: ok ? "변환 엔진: 설치됨" : "변환 엔진: 없음 — 둘 중 하나를 설치하세요" };
+  return { ok, text: ok ? t("변환 엔진: 설치됨") : t("변환 엔진: 없음 — 둘 중 하나를 설치하세요") };
 }
-export const STATE_LABEL: Record<ModelState, string> = { installed: "설치됨", missing: "없음", partial: "일부만 받음", corrupt: "손상" };
+export const STATE_LABEL: Record<ModelState, string> = { installed: t("설치됨"), missing: t("없음"), partial: t("일부만 받음"), corrupt: t("손상") };
 
 /** 용량 표시: 맥 Finder처럼 1000 단위 (1.3 MB, 2.3 GB) */
 export function fmtBytes(n: number | null | undefined): string {
@@ -66,9 +67,9 @@ export function fmtBytes(n: number | null | undefined): string {
 
 // ── 모델 소개 (WORDS.md §4.15 `모델 화면`) ──
 
-export const MODEL_DETAIL_LABEL = "자세히";
+export const MODEL_DETAIL_LABEL = t("자세히");
 /** 버전 줄의 전체 값을 화면 읽기 도우미에게 알려 주는 말 (보이는 글자는 앞 8자) */
-export const MODEL_FULL_REVISION_LABEL = "전체 버전";
+export const MODEL_FULL_REVISION_LABEL = t("전체 버전");
 const REVISION_SHOWN = 8;
 
 const filled = (v: string | null | undefined): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
@@ -89,17 +90,17 @@ export interface DetailRow {
 export function modelDetailRows(m: ModelRow): DetailRow[] {
   const rev = filled(m.revision);
   const rows: (DetailRow | null)[] = [
-    pick("모델 이름", m.model_name),
-    pick("만든 곳", m.publisher),
-    pick("변환한 곳", m.converted_by),
-    pick("내려받는 곳", m.source),
-    rev ? { label: "버전", value: rev.slice(0, REVISION_SHOWN), title: rev } : null,
-    pick("라이선스", m.license),
-    pick("지원 언어", m.languages),
-    pick("규모", m.params),
+    pick(t("모델 이름"), m.model_name),
+    pick(t("만든 곳"), m.publisher),
+    pick(t("변환한 곳"), m.converted_by),
+    pick(t("내려받는 곳"), m.source),
+    rev ? { label: t("버전"), value: rev.slice(0, REVISION_SHOWN), title: rev } : null,
+    pick(t("라이선스"), m.license),
+    pick(t("지원 언어"), m.languages),
+    pick(t("규모"), m.params),
   ];
   const found = rows.filter((r): r is DetailRow => r !== null);
-  return found.length === 0 ? [] : [...found, { label: "크기", value: fmtBytes(m.size_bytes) }];
+  return found.length === 0 ? [] : [...found, { label: t("크기"), value: fmtBytes(m.size_bytes) }];
 }
 
 function pick(label: string, value: string | null | undefined): DetailRow | null {
@@ -112,9 +113,9 @@ function pick(label: string, value: string | null | undefined): DetailRow | null
 export type Preset = "required" | "standard" | "lite";
 
 export const PRESETS: { id: Preset; label: string; note: string }[] = [
-  { id: "standard", label: "표준 구성 설치", note: "변환 엔진 1.7B와 참석자 구분·단어 싱크·스마트 검색·목소리 등록. 메모리 16 GB 이상 권장" },
-  { id: "lite", label: "저사양 구성 설치", note: "작은 변환 엔진 0.6B와 참석자 구분. 실시간 텍스트 변환도 쓸 수 있습니다" },
-  { id: "required", label: "필수만 설치", note: "텍스트 변환만 됩니다. 나머지 기능은 나중에 하나씩 설치하세요" },
+  { id: "standard", label: t("표준 구성 설치"), note: t("변환 엔진 1.7B와 참석자 구분·단어 싱크·스마트 검색·목소리 등록. 메모리 16 GB 이상 권장") },
+  { id: "lite", label: t("저사양 구성 설치"), note: t("작은 변환 엔진 0.6B와 참석자 구분. 실시간 텍스트 변환도 쓸 수 있습니다") },
+  { id: "required", label: t("필수만 설치"), note: t("텍스트 변환만 됩니다. 나머지 기능은 나중에 하나씩 설치하세요") },
 ];
 
 const STANDARD_EXTRA = ["asr-std", "diarizer", "aligner", "embedding", "voices"];
@@ -163,22 +164,22 @@ export const DISK_MARGIN = 1.1;
 export function diskShort(plan: PlanItem[], free: number | null | undefined): string | null {
   const need = planSize(plan);
   if (free === null || free === undefined || need === 0 || free >= need * DISK_MARGIN) return null;
-  return `디스크 여유 공간이 부족합니다 (필요 ${fmtBytes(need * DISK_MARGIN)}, 여유 ${fmtBytes(free)}). 공간을 비운 뒤 설치하세요.`;
+  return t("디스크 여유 공간이 부족합니다 (필요 {need}, 여유 {free}). 공간을 비운 뒤 설치하세요.", { need: fmtBytes(need * DISK_MARGIN), free: fmtBytes(free) });
 }
 
-export const installLabel = (state: ModelState): string => (state === "partial" ? "이어 받기" : state === "corrupt" ? "다시 받기" : "받기");
+export const installLabel = (state: ModelState): string => (state === "partial" ? t("이어 받기") : state === "corrupt" ? t("다시 받기") : t("받기"));
 
 /** 기능 칩 글자 (CapId가 아닌 값은 그대로) */
 export const capChip = (id: string): string => CAP_NAME[id as CapId] ?? id;
 
 /** 지우기 확인 대화상자 (WORDS.md §4.14). 지우면 못 쓰게 되는 기능을 말한다 */
 export function removeDialog(m: Pick<ModelRow, "name" | "installed_bytes" | "needed_by">): { title: string; body: string; cancel: string; confirm: string } {
-  const lost = m.needed_by.length > 0 ? ` ${m.needed_by.map(capChip).join(", ")} 기능을 다시 설치할 때까지 쓸 수 없습니다.` : "";
+  const lost = m.needed_by.length > 0 ? " " + t("{features} 기능을 다시 설치할 때까지 쓸 수 없습니다.", { features: m.needed_by.map(capChip).join(", ") }) : "";
   return {
-    title: `‘${m.name}’을(를) 삭제할까요?`,
-    body: `이 Mac에서 ${fmtBytes(m.installed_bytes)}를 비웁니다. 언제든 다시 받을 수 있습니다.${lost}`,
-    cancel: "취소",
-    confirm: "삭제",
+    title: t("‘{name}’을(를) 삭제할까요?", { name: m.name }),
+    body: t("이 Mac에서 {size}를 비웁니다. 언제든 다시 받을 수 있습니다.", { size: fmtBytes(m.installed_bytes) }) + lost,
+    cancel: t("취소"),
+    confirm: t("삭제"),
   };
 }
 
@@ -193,16 +194,20 @@ export function unregisteredSummary(list: Pick<ModelsList, "unregistered"> | nul
   return { count: rows.length, bytes: rows.reduce((n, u) => n + (Number.isFinite(u.bytes) && u.bytes > 0 ? u.bytes : 0), 0), names: rows.map((u) => u.name) };
 }
 
-export const pruneLabel = (s: { count: number; bytes: number }): string => `사용하지 않는 폴더 ${s.count}개 (${fmtBytes(s.bytes)}) 정리`;
+export const pruneLabel = (s: { count: number; bytes: number }): string => t("사용하지 않는 폴더 {n}개 ({size}) 정리", { n: s.count, size: fmtBytes(s.bytes) });
 
 export const pruneDialog = (s: { count: number; bytes: number; names: string[] }): FolderDialog => ({
-  title: "사용하지 않는 폴더를 정리할까요?",
-  body: `모델 폴더 안에 모델 목록에 없는 폴더가 ${s.count}개(${fmtBytes(s.bytes)}) 있습니다: ${s.names.join(", ")}. 지운 폴더는 되돌릴 수 없으니 이름을 확인하세요. 모델 폴더 밖은 건드리지 않습니다.`,
-  cancel: "취소",
-  confirm: "정리",
+  title: t("사용하지 않는 폴더를 정리할까요?"),
+  body: t("모델 폴더 안에 모델 목록에 없는 폴더가 {n}개({size}) 있습니다: {names}. 지운 폴더는 되돌릴 수 없으니 이름을 확인하세요. 모델 폴더 밖은 건드리지 않습니다.", {
+    n: s.count,
+    size: fmtBytes(s.bytes),
+    names: s.names.join(", "),
+  }),
+  cancel: t("취소"),
+  confirm: t("정리"),
 });
 
-export const pruneDone = (n: number, bytes: number): string => `${n}개를 정리했습니다 (${fmtBytes(bytes)} 확보).`;
+export const pruneDone = (n: number, bytes: number): string => t("{n}개를 정리했습니다 ({size} 확보).", { n, size: fmtBytes(bytes) });
 
 /** 옮길 모델이 있는가 (일부만 받은 것도 옮긴다) */
 export const movable = (models: Pick<ModelRow, "state" | "installed_bytes">[]): { count: number; bytes: number } => {
@@ -211,13 +216,17 @@ export const movable = (models: Pick<ModelRow, "state" | "installed_bytes">[]): 
 };
 
 export const moveDialog = (dest: string, m: { count: number; bytes: number }): FolderDialog => ({
-  title: "모델 폴더를 바꿀까요?",
-  body: `설치된 모델 ${m.count}개(${fmtBytes(m.bytes)})를 ‘${dest}’로 옮깁니다. 같은 디스크면 금방 끝나고, 외장 디스크처럼 다른 디스크면 시간이 걸립니다. 옮기는 동안 앱을 닫지 마세요.`,
-  cancel: "취소",
-  confirm: "옮기기",
+  title: t("모델 폴더를 바꿀까요?"),
+  body: t("설치된 모델 {n}개({size})를 ‘{dest}’로 옮깁니다. 같은 디스크면 금방 끝나고, 외장 디스크처럼 다른 디스크면 시간이 걸립니다. 옮기는 동안 앱을 닫지 마세요.", {
+    n: m.count,
+    size: fmtBytes(m.bytes),
+    dest,
+  }),
+  cancel: t("취소"),
+  confirm: t("옮기기"),
 });
 
-export const moveDone = (n: number): string => (n > 0 ? `모델 ${n}개를 옮겼습니다.` : "모델 폴더를 바꿨습니다.");
+export const moveDone = (n: number): string => (n > 0 ? t("모델 {n}개를 옮겼습니다.", { n }) : t("모델 폴더를 바꿨습니다."));
 
 // ── 받기 진행 ──
 
@@ -358,27 +367,27 @@ export function overallFraction(s: DownloadState): number | null {
 export function progressLine(s: DownloadState): string {
   const cur = s.plan.find((p) => p.id === s.model);
   const idx = Math.min(s.plan.length, s.finished.length + (cur && !s.finished.includes(cur.id) ? 1 : 0));
-  const name = cur?.name ?? "모델";
   const bytes = s.total > 0 ? ` ${fmtBytes(s.done)} / ${fmtBytes(s.total)}` : "";
   const nth = s.plan.length > 1 ? ` (${idx}/${s.plan.length})` : "";
-  return s.cancelling ? "멈추는 중…" : `${name} 받는 중…${bytes}${nth}`;
+  const line = cur ? t("{name} 받는 중…", { name: cur.name }) : t("모델 받는 중…");
+  return s.cancelling ? t("멈추는 중…") : `${line}${bytes}${nth}`;
 }
 
 // ── 오류 문장 (WORDS.md §4.14). 코드가 없거나 모르면 기본 문장 + 자세히 ──
 
-export const DOWNLOAD_FAILED = "모델을 받지 못했습니다";
-export const DOWNLOAD_STOPPED = "받기를 멈췄습니다. 다시 받으면 멈춘 곳부터 이어서 받습니다.";
-export const DOWNLOAD_DONE = "모델을 받았습니다";
+export const DOWNLOAD_FAILED = t("모델을 받지 못했습니다");
+export const DOWNLOAD_STOPPED = t("받기를 멈췄습니다. 다시 받으면 멈춘 곳부터 이어서 받습니다.");
+export const DOWNLOAD_DONE = t("모델을 받았습니다");
 
 export const MODEL_ERROR: Record<string, string> = {
-  no_network: "인터넷에 연결하지 못해 받지 못했습니다. 연결을 확인하고 다시 받으면 멈춘 곳부터 이어서 받습니다.",
-  disk_full: "디스크 여유 공간이 부족해 받지 못했습니다. 공간을 비운 뒤 다시 받으세요.",
-  auth: "내려받는 곳이 접근을 거절했습니다. 네트워크 환경(프록시·로그인)을 확인하고 잠시 뒤 다시 시도하세요.",
-  hash_mismatch: "내려받은 파일이 올바르지 않습니다. 다시 받으세요.",
-  helper_missing: "9명 이상 구분 도구(tractus-diar)가 없어 받지 못했습니다. 저장소의 recorder/diar 폴더에서 swift build -c release로 먼저 만드세요.",
-  busy: "다른 모델을 받는 중입니다. 끝난 뒤에 다시 시도하세요.",
-  corrupt: "받아 둔 파일이 손상되어 있습니다. 삭제한 뒤 다시 받으세요.",
-  unsafe_path: "모델 위치 밖의 폴더라 지우지 않았습니다. 모델 위치를 확인하세요.",
+  no_network: t("인터넷에 연결하지 못해 받지 못했습니다. 연결을 확인하고 다시 받으면 멈춘 곳부터 이어서 받습니다."),
+  disk_full: t("디스크 여유 공간이 부족해 받지 못했습니다. 공간을 비운 뒤 다시 받으세요."),
+  auth: t("내려받는 곳이 접근을 거절했습니다. 네트워크 환경(프록시·로그인)을 확인하고 잠시 뒤 다시 시도하세요."),
+  hash_mismatch: t("내려받은 파일이 올바르지 않습니다. 다시 받으세요."),
+  helper_missing: t("9명 이상 구분 도구(tractus-diar)가 없어 받지 못했습니다. 저장소의 recorder/diar 폴더에서 swift build -c release로 먼저 만드세요."),
+  busy: t("다른 모델을 받는 중입니다. 끝난 뒤에 다시 시도하세요."),
+  corrupt: t("받아 둔 파일이 손상되어 있습니다. 삭제한 뒤 다시 받으세요."),
+  unsafe_path: t("모델 위치 밖의 폴더라 지우지 않았습니다. 모델 위치를 확인하세요."),
 };
 
 /** 오류 → 화면 문장과 자세히 (앱이 시작하지 못한 오류 `app`은 첫 줄이 문장이다) */

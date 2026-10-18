@@ -1,5 +1,7 @@
 // 양쪽 사이드 패널 접기·펼치기 (왼쪽 노트 목록, 오른쪽 패널). 화면과 무관한 순수 로직: panels.test.ts, docs/desktop.md §3.2.
 
+import { t } from "./i18n";
+
 export type Side = "left" | "right";
 /** true = 접힘. 둘 다 펼친 것이 기본이다 */
 export interface PanelState {
@@ -15,21 +17,21 @@ export const NARROW_PX = 960;
 
 /** 문구 (WORDS.md §4.17) */
 export const PANEL_TEXT = {
-  left: { collapse: "노트 목록 접기", expand: "노트 목록 펼치기", controls: "sidebar-body", toggleId: "panel-toggle-left", key: "⌘B", shortcut: "Meta+B" },
-  right: { collapse: "오른쪽 패널 접기", expand: "오른쪽 패널 펼치기", controls: "rail-body", toggleId: "panel-toggle-right", key: "⌥⌘B", shortcut: "Alt+Meta+B" },
+  left: { collapse: t("노트 목록 접기"), expand: t("노트 목록 펼치기"), controls: "sidebar-body", toggleId: "panel-toggle-left", key: "⌘B", shortcut: "Meta+B" },
+  right: { collapse: t("오른쪽 패널 접기"), expand: t("오른쪽 패널 펼치기"), controls: "rail-body", toggleId: "panel-toggle-right", key: "⌥⌘B", shortcut: "Alt+Meta+B" },
 } as const;
 
 /** 단추 이름(`aria-label`)과 `title`. 단축키는 title에만 덧붙인다 (aria-keyshortcuts가 따로 알린다) */
 export const toggleLabel = (side: Side, collapsed: boolean): { label: string; title: string } => {
-  const t = PANEL_TEXT[side];
-  const label = collapsed ? t.expand : t.collapse;
-  return { label, title: `${label} (${t.key})` };
+  const p = PANEL_TEXT[side];
+  const label = collapsed ? p.expand : p.collapse;
+  return { label, title: `${label} (${p.key})` };
 };
 
 /** 접힌 왼쪽 띠의 녹음 단추 이름 */
-export const RAIL_REC_LABEL = { idle: "녹음 시작", live: "녹음 중", asking: "녹음 끝남", converting: "변환 중…" } as const;
+export const RAIL_REC_LABEL = { idle: t("녹음 시작"), live: t("녹음 중"), asking: t("녹음 끝남"), converting: t("변환 중…") } as const;
 /** 접힌 띠의 배지: 목록에서만 보이는 '변환 대기 중인 녹음'이 있음을 알린다 */
-export const railPendingLabel = (n: number): string => `변환 대기 중인 녹음 ${n}개`;
+export const railPendingLabel = (n: number): string => t("변환 대기 중인 녹음 {n}개", { n });
 /** 접힌 띠의 단추 상태: 파일 가져오기도 변환이다 */
 export const railRecState = (s: { recording: boolean; busy: boolean; asking?: boolean }): keyof typeof RAIL_REC_LABEL => (s.recording ? "live" : s.asking ? "asking" : s.busy ? "converting" : "idle");
 

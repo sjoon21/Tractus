@@ -6,6 +6,7 @@ import type { Notify } from "./App";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CustomSummaryDialog } from "./CustomSummaryDialog";
 import { ErrorDetail } from "./ErrorDetail";
+import { t } from "./i18n";
 import { LlmServicePicker, useLlmServices } from "./LlmServicePicker";
 import { STAGE_LABEL } from "./lib";
 import { llmErrorView } from "./llmKey";
@@ -160,7 +161,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
   };
   const made = new Set(docs.map((d) => d.key));
   const mine = templates.filter((t) => !t.builtin);
-  const stage = STAGE_LABEL[job.job.stage ?? ""] ?? "시작하는 중…";
+  const stage = STAGE_LABEL[job.job.stage ?? ""] ?? t("시작하는 중…");
   const busy = running || p.blocked;
 
   const remove = async (d: SummaryDoc) => {
@@ -195,7 +196,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
             aria-haspopup="true"
             aria-expanded={menuOpen}
             aria-controls={menuOpen ? menuId : undefined}
-            title="어떤 형태로 요약할지 고릅니다. 여러 개를 고르면 한 번에 만듭니다"
+            title={t("어떤 형태로 요약할지 고릅니다. 여러 개를 고르면 한 번에 만듭니다")}
             onClick={() => setMenuOpen((o) => !o)}
           >
             {pickLabel(pick, templates)}
@@ -205,7 +206,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
               id={menuId}
               className={cn(MENU, "absolute inset-x-0 top-full z-30 mt-1 max-h-[min(70vh,34rem)] gap-0.5 overflow-y-auto")}
               role="group"
-              aria-label="요약 유형 고르기"
+              aria-label={t("요약 유형 고르기")}
               onKeyDown={(e) => {
                 if (e.key !== "Escape") return;
                 e.preventDefault();
@@ -213,17 +214,17 @@ export function SummariesPanel(p: SummariesPanelProps) {
                 menuButton.current?.focus();
               }}
             >
-              <p className="m-0 px-2 pt-1 pb-0.5 text-xs leading-snug text-muted-foreground">여러 개를 고르면 차례로 한 번에 만듭니다. 이미 만든 유형은 다시 만들어 덮어씁니다.</p>
+              <p className="m-0 px-2 pt-1 pb-0.5 text-xs leading-snug text-muted-foreground">{t("여러 개를 고르면 차례로 한 번에 만듭니다. 이미 만든 유형은 다시 만들어 덮어씁니다.")}</p>
               {templatesFailed && (
                 <p className="m-0 flex items-center gap-1 px-2 py-1 text-xs text-destructive" role="alert">
-                  요약 유형을 읽지 못했습니다.
+                  {t("요약 유형을 읽지 못했습니다.")}
                   <Button variant="link" size="sm" className="h-auto text-xs" onClick={loadTemplates}>
-                    다시 시도
+                    {t("다시 시도")}
                   </Button>
                 </p>
               )}
-              <PickGroup title="기본 유형" items={templates.filter((t) => t.builtin)} pick={pick} made={made} disabled={running} onToggle={(tid) => setPicked(togglePick(pick, tid))} />
-              {mine.length > 0 && <PickGroup title="내 유형" items={mine} pick={pick} made={made} disabled={running} onToggle={(tid) => setPicked(togglePick(pick, tid))} />}
+              <PickGroup title={t("기본 유형")} items={templates.filter((x) => x.builtin)} pick={pick} made={made} disabled={running} onToggle={(tid) => setPicked(togglePick(pick, tid))} />
+              {mine.length > 0 && <PickGroup title={t("내 유형")} items={mine} pick={pick} made={made} disabled={running} onToggle={(tid) => setPicked(togglePick(pick, tid))} />}
               <hr className="my-1 border-border" />
               <button
                 type="button"
@@ -235,7 +236,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
                 }}
               >
                 <PencilLine aria-hidden />
-                직접 프롬프트로 요약…
+                {t("직접 프롬프트로 요약…")}
               </button>
             </div>
           )}
@@ -246,13 +247,13 @@ export function SummariesPanel(p: SummariesPanelProps) {
           size="sm"
           className="ml-auto"
           disabled={busy || specs.length === 0}
-          title={p.blocked && !running ? "저장이 끝난 뒤에 요약할 수 있습니다" : undefined}
+          title={p.blocked && !running ? t("저장이 끝난 뒤에 요약할 수 있습니다") : undefined}
           onClick={() => {
             setMenuOpen(false);
             void start(specs);
           }}
         >
-          {running ? stage : specs.length > 1 ? `요약 만들기 (${specs.length})` : "요약 만들기"}
+          {running ? stage : specs.length > 1 ? t("요약 만들기 ({n})", { n: specs.length }) : t("요약 만들기")}
         </Button>
         </div>
       </div>
@@ -267,7 +268,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
 
       {ordered.length > 0 && (
         <div className="flex items-center gap-2">
-          <div className="flex min-w-0 flex-wrap gap-0.5 rounded-lg bg-foreground/[0.06] p-0.5" role="tablist" aria-label="만든 요약" onKeyDown={(e) => tabKey(e, ordered, selected, setSelectedKey)}>
+          <div className="flex min-w-0 flex-wrap gap-0.5 rounded-lg bg-foreground/[0.06] p-0.5" role="tablist" aria-label={t("만든 요약")} onKeyDown={(e) => tabKey(e, ordered, selected, setSelectedKey)}>
             {ordered.map((d, i) => (
               <button
                 key={d.key}
@@ -290,12 +291,12 @@ export function SummariesPanel(p: SummariesPanelProps) {
                 variant="ghost"
                 size="icon-sm"
                 className="text-inherit hover:text-foreground"
-                aria-label="요약 복사"
-                title="요약 복사 (마크다운)"
+                aria-label={t("요약 복사")}
+                title={t("요약 복사 (마크다운)")}
                 onClick={() =>
                   navigator.clipboard.writeText(docMarkdown(selected, p.starts, p.memoLines)).then(
-                    () => notify({ text: "요약을 마크다운으로 복사했습니다" }),
-                    (e) => notify({ text: `복사하지 못했습니다: ${errText(e)}`, error: true }),
+                    () => notify({ text: t("요약을 마크다운으로 복사했습니다") }),
+                    (e) => notify({ text: t("복사하지 못했습니다: {error}", { error: errText(e) }), error: true }),
                   )
                 }
               >
@@ -305,14 +306,14 @@ export function SummariesPanel(p: SummariesPanelProps) {
                 variant="ghost"
                 size="icon-sm"
                 className="text-inherit hover:text-foreground"
-                aria-label="다시 만들기"
-                title={rerunSpec(selected, templates) ? "다시 만들기" : "요약 방법을 알 수 없어 다시 만들 수 없습니다"}
+                aria-label={t("다시 만들기")}
+                title={rerunSpec(selected, templates) ? t("다시 만들기") : t("요약 방법을 알 수 없어 다시 만들 수 없습니다")}
                 disabled={busy || !rerunSpec(selected, templates)}
                 onClick={() => rerun(selected)}
               >
                 <RotateCw />
               </Button>
-              <Button variant="ghost" size="icon-sm" className="text-inherit hover:text-destructive" aria-label="삭제" title="삭제" disabled={busy} onClick={() => setAsking(selected)}>
+              <Button variant="ghost" size="icon-sm" className="text-inherit hover:text-destructive" aria-label={t("삭제")} title={t("삭제")} disabled={busy} onClick={() => setAsking(selected)}>
                 <Trash2 />
               </Button>
             </div>
@@ -324,10 +325,10 @@ export function SummariesPanel(p: SummariesPanelProps) {
         <div id="summary-doc" role="tabpanel" aria-labelledby={`sumtab-${selected.key}`} className="flex flex-col gap-6">
           {p.editSeq > (seqByKey[selected.key] ?? 0) && (
             <div className="flex flex-col items-start gap-1 rounded-md bg-memo-wash px-3 py-2 text-xs leading-5" role="status">
-              <p className="m-0">{staleSentence(p.editKinds.current.slice(seqByKey[selected.key] ?? 0))}. 이 요약에는 아직 반영되지 않았습니다.</p>
+              <p className="m-0">{t("{sentence}. 이 요약에는 아직 반영되지 않았습니다.", { sentence: staleSentence(p.editKinds.current.slice(seqByKey[selected.key] ?? 0)) })}</p>
               {rerunSpec(selected, templates) && (
                 <Button variant="link" size="sm" className="text-xs font-semibold text-memo hover:text-memo" disabled={busy} onClick={() => rerun(selected)}>
-                  {running ? stage : "요약 다시 만들기"}
+                  {running ? stage : t("요약 다시 만들기")}
                 </Button>
               )}
             </div>
@@ -337,7 +338,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
       ) : (
         loaded && (
           <p className="m-0 max-w-[34ch] text-[13px] leading-relaxed text-muted-foreground">
-            {p.memoNote ? "아직 요약이 없습니다. 요약 유형을 고르고 ‘요약 만들기’를 누르면 근거가 된 줄과 함께 정리합니다." : "아직 요약이 없습니다. 요약 유형을 고르고 ‘요약 만들기’를 누르면 근거 대화와 함께 정리합니다."}
+            {p.memoNote ? t("아직 요약이 없습니다. 요약 유형을 고르고 ‘요약 만들기’를 누르면 근거가 된 줄과 함께 정리합니다.") : t("아직 요약이 없습니다. 요약 유형을 고르고 ‘요약 만들기’를 누르면 근거 대화와 함께 정리합니다.")}
           </p>
         )
       )}
@@ -353,10 +354,10 @@ export function SummariesPanel(p: SummariesPanelProps) {
       )}
       {asking && (
         <ConfirmDialog
-          title={`‘${asking.name}’ 요약을 삭제할까요?`}
-          body="노트와 대화 내용은 그대로 남습니다. 요약은 언제든 다시 만들 수 있습니다."
-          cancelLabel="취소"
-          confirmLabel="삭제"
+          title={t("‘{name}’ 요약을 삭제할까요?", { name: asking.name })}
+          body={t("노트와 대화 내용은 그대로 남습니다. 요약은 언제든 다시 만들 수 있습니다.")}
+          cancelLabel={t("취소")}
+          confirmLabel={t("삭제")}
           busy={deleting}
           onCancel={() => setAsking(null)}
           onConfirm={() => void remove(asking)}
@@ -374,15 +375,15 @@ export function PickGroup({ title, items, pick, made, disabled, onToggle }: { ti
   return (
     <fieldset className={PICK_GROUP}>
       <legend>{title}</legend>
-      {items.map((t) => (
-        <label key={t.id} className="flex cursor-pointer items-start gap-2.5 rounded-[5px] px-2 py-1.5 focus-within:bg-accent hover:bg-accent">
-          <input type="checkbox" className={cn(checkClass, "mt-0.5")} checked={pick.includes(t.id)} disabled={disabled} onChange={() => onToggle(t.id)} />
+      {items.map((tpl) => (
+        <label key={tpl.id} className="flex cursor-pointer items-start gap-2.5 rounded-[5px] px-2 py-1.5 focus-within:bg-accent hover:bg-accent">
+          <input type="checkbox" className={cn(checkClass, "mt-0.5")} checked={pick.includes(tpl.id)} disabled={disabled} onChange={() => onToggle(tpl.id)} />
           <span className="pick-text">
             <span className="pick-name">
-              {t.name}
-              {made.has(t.id) && <em>만들어짐</em>}
+              {tpl.name}
+              {made.has(tpl.id) && <em>{t("만들어짐")}</em>}
             </span>
-            {t.description && <small>{t.description}</small>}
+            {tpl.description && <small>{tpl.description}</small>}
           </span>
         </label>
       ))}
@@ -407,7 +408,7 @@ function SummaryFailure({ job, label }: { job: Pick<JobState, "error" | "errorCo
   const e = llmErrorView("summarize", job.error, job.errorCode);
   return (
     <div className="text-xs leading-5 text-destructive" role="alert">
-      {label ? `‘${label}’ — ` : ""}
+      {label ? t("‘{label}’ — ", { label }) : ""}
       {e.text}
       {e.settings && <OpenSettings />}
       <ErrorDetail detail={e.detail} />
@@ -491,7 +492,7 @@ export function LegacyBody({ doc, chip }: { doc: SummaryDoc; chip: (ids: string[
 
       {s.decisions.length > 0 && (
         <section>
-          <Heading count={s.decisions.length}>결정 사항</Heading>
+          <Heading count={s.decisions.length}>{t("결정 사항")}</Heading>
           <ol className="rail-list">
             {s.decisions.map((d, i) => (
               <Item key={i} style="numbered" n={i + 1} text={d.text} chip={chip(d.segment_ids)} />
@@ -502,7 +503,7 @@ export function LegacyBody({ doc, chip }: { doc: SummaryDoc; chip: (ids: string[
 
       {s.action_items.length > 0 && (
         <section>
-          <Heading count={s.action_items.length}>할 일</Heading>
+          <Heading count={s.action_items.length}>{t("할 일")}</Heading>
           <ul className="rail-list is-actions">
             {s.action_items.map((a, i) => (
               <Item key={i} style="checklist" n={i + 1} text={a.task} meta={<Meta owner={a.owner} due={a.due} />} chip={chip(a.segment_ids)} />
@@ -513,7 +514,7 @@ export function LegacyBody({ doc, chip }: { doc: SummaryDoc; chip: (ids: string[
 
       {s.topics.length > 0 && (
         <section>
-          <Heading>주제</Heading>
+          <Heading>{t("주제")}</Heading>
           <ul className="topic-list">
             {s.topics.map((tp, i) => (
               <li key={i}>

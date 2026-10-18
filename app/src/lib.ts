@@ -1,5 +1,6 @@
 // 화면과 무관한 순수 로직. 전부 lib.test.ts에서 검사한다.
 import { ASR_FALLBACK_WARNING, MODEL_MISSING_ERROR } from "./caps";
+import { locale, t } from "./i18n";
 
 export interface Segment {
   id: string;
@@ -187,7 +188,7 @@ export function speakerName(label: string | null | undefined, speakers: Speakers
 }
 
 /** 이름 없는 화자 표시. 합치기로 번호가 비어도 다시 매기지 않는다 (내보낸 파일과 같은 이름) */
-export const unnamedSpeaker = (label: string): string => (/^S\d+$/.test(label) ? `참석자 ${Number(label.slice(1))}` : label);
+export const unnamedSpeaker = (label: string): string => (/^S\d+$/.test(label) ? t("참석자 {n}", { n: Number(label.slice(1)) }) : label);
 
 /** 화자 잉크(--spk-0…7) 수. 슬롯 8..15는 같은 잉크에 두 번째 표시(속 빈 점·빗금 막대)를 쓴다 (fluid 화자 분리는 9명 이상) */
 export const SPEAKER_INKS = 8;
@@ -252,7 +253,7 @@ export function suggestionOf(label: string, speakers: Speakers): Suggestion | nu
 }
 
 /** 배지 글: "홍길동 님인가요? (일치율 82%)" */
-export const suggestionText = (s: Suggestion) => `${s.name.trim()} 님인가요? (일치율 ${Math.round(Math.min(1, Math.max(0, s.score)) * 100)}%)`;
+export const suggestionText = (s: Suggestion) => t("{name} 님인가요? (일치율 {pct}%)", { name: s.name.trim(), pct: Math.round(Math.min(1, Math.max(0, s.score)) * 100) });
 
 export type RenameRequest = { name: string; remember: boolean } | { error: string };
 
@@ -260,8 +261,8 @@ export type RenameRequest = { name: string; remember: boolean } | { error: strin
 export function renameRequest(raw: string, remember: boolean, consent: boolean): RenameRequest {
   const name = raw.trim();
   if (!remember) return { name, remember: false };
-  if (!name) return { error: "목소리를 등록하려면 이름을 입력하세요" };
-  if (!consent) return { error: "본인이거나 동의를 받은 사람인지 확인해 주세요" };
+  if (!name) return { error: t("목소리를 등록하려면 이름을 입력하세요") };
+  if (!consent) return { error: t("본인이거나 동의를 받은 사람인지 확인해 주세요") };
   return { name, remember: true };
 }
 
@@ -269,7 +270,7 @@ export function renameRequest(raw: string, remember: boolean, consent: boolean):
 export const voiceModelReady = (list: { model_present?: boolean } | null | undefined): boolean => list?.model_present !== false;
 
 /** 목소리 인식 파일이 없을 때 이름 바꾸기의 '목소리 등록' 체크 아래 문장 (옛 코어에서 점검을 못 읽을 때만. 보통은 caps.ts의 문장, WORDS.md §4.4) */
-export const VOICE_MODEL_MISSING = "목소리 인식에 필요한 파일이 없어 목소리를 등록할 수 없습니다. 이름만 바꿀 수 있습니다.";
+export const VOICE_MODEL_MISSING = t("목소리 인식에 필요한 파일이 없어 목소리를 등록할 수 없습니다. 이름만 바꿀 수 있습니다.");
 
 export type RememberResult<M> =
   | { meeting: M; samples: number }
@@ -315,9 +316,9 @@ export function evidenceStart(segmentIds: string[], starts: Map<string, number>)
 
 /** 근거 표시: 가장 이른 시각(`1:05`)과 메모의 가장 이른 줄(`메모 3번째 줄`)을 쉼표로. 둘 다 없으면 null. 요약 복사·PDF가 쓴다 */
 export function evidenceLabel(segmentIds: string[], starts: Map<string, number>, memoLines?: Map<string, number>): string | null {
-  const t = evidenceStart(segmentIds, starts);
+  const start = evidenceStart(segmentIds, starts);
   const line = Math.min(...segmentIds.flatMap((id) => memoLines?.get(id) ?? []));
-  const parts = [t !== null && fmtTime(t), Number.isFinite(line) && `메모 ${line}번째 줄`].filter(Boolean);
+  const parts = [start !== null && fmtTime(start), Number.isFinite(line) && t("메모 {line}번째 줄", { line })].filter(Boolean);
   return parts.length ? parts.join(", ") : null;
 }
 
@@ -335,18 +336,18 @@ export class DetailedError extends Error {
 export function parseToolResult<T>(result: unknown): T {
   const r = (result ?? {}) as { isError?: boolean; structuredContent?: T; content?: { type: string; text?: string }[] };
   const text = r.content?.find((c) => c.type === "text")?.text;
-  if (r.isError) throw new DetailedError("검색하지 못했습니다", text?.replace(/^Error executing tool \w+: /, "") || null);
+  if (r.isError) throw new DetailedError(t("검색하지 못했습니다"), text?.replace(/^Error executing tool \w+: /, "") || null);
   if (r.structuredContent !== undefined) return r.structuredContent;
-  if (text === undefined) throw new Error("검색 결과를 읽지 못했습니다");
+  if (text === undefined) throw new Error(t("검색 결과를 읽지 못했습니다"));
   return JSON.parse(text) as T;
 }
 
 /** 스마트 검색 상태 줄 (WORDS.md §4.6). MCP status.hint는 에이전트용이라 보이지 않고, 필드로 문장을 고른다 */
 export function statusLine(st: { meetings: number; indexed_chunks: number; vectors: number; vector_search: boolean }): string {
-  const n = `(노트 ${st.meetings}개)`;
-  if (!st.vector_search) return `스마트 검색 엔진(qwen3-embedding-0.6b-8bit)이 변환 엔진 위치에 없어 단어 일치로만 찾습니다 ${n}`;
-  if (st.vectors < st.indexed_chunks) return `일부 노트가 아직 스마트 검색에 포함되지 않았습니다. 터미널에서 tractus index를 실행하세요 ${n}`;
-  return `스마트 검색 준비 완료 ${n}`;
+  const n = st.meetings;
+  if (!st.vector_search) return t("스마트 검색 엔진(qwen3-embedding-0.6b-8bit)이 변환 엔진 위치에 없어 단어 일치로만 찾습니다 (노트 {n}개)", { n });
+  if (st.vectors < st.indexed_chunks) return t("일부 노트가 아직 스마트 검색에 포함되지 않았습니다. 터미널에서 tractus index를 실행하세요 (노트 {n}개)", { n });
+  return t("스마트 검색 준비 완료 (노트 {n}개)", { n });
 }
 
 export interface DayGroup<T> {
@@ -358,7 +359,7 @@ export interface DayGroup<T> {
 export function groupByDay<T extends { created_at: string }>(items: T[]): DayGroup<T>[] {
   const groups: DayGroup<T>[] = [];
   for (const item of items) {
-    const day = item.created_at.slice(0, 10) || "날짜 없음";
+    const day = item.created_at.slice(0, 10) || t("날짜 없음");
     const last = groups[groups.length - 1];
     if (last?.day === day) last.items.push(item);
     else groups.push({ day, items: [item] });
@@ -366,15 +367,14 @@ export function groupByDay<T extends { created_at: string }>(items: T[]): DayGro
   return groups;
 }
 
-const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
-
-/** "2026-10-02" → { month: "2026년 10월", day: "2", weekday: "금" } */
+/** "2026-10-02" → { month: "2026년 10월", day: "2", weekday: "금" } (영어: October 2026, Fri) */
 export function dayParts(day: string): { month: string; day: string; weekday: string } {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
   if (!m) return { month: "", day: day, weekday: "" };
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  const weekday = WEEKDAYS[new Date(Date.UTC(y, mo - 1, d)).getUTCDay()];
-  return { month: `${y}년 ${mo}월`, day: String(d), weekday };
+  const date = new Date(Date.UTC(y, mo - 1, d));
+  const fmt = (o: Intl.DateTimeFormatOptions) => date.toLocaleDateString(locale(), { ...o, timeZone: "UTC" });
+  return { month: fmt({ year: "numeric", month: "long" }), day: String(d), weekday: fmt({ weekday: "short" }) };
 }
 
 /** 질의 단어를 표시용으로 나눈다. <mark>로 감싸려고 쓴다(innerHTML 없이). */
@@ -396,25 +396,25 @@ export function levelFraction(db: number | null | undefined): number {
 
 /** 진행 단계 문구 (WORDS.md §3). 키는 코어 이벤트 키라 바꾸지 않는다 */
 export const STAGE_LABEL: Record<string, string> = {
-  decode: "음성 파일 불러오는 중…",
-  vad: "목소리 구간 분석 중…",
-  diarize: "말하는 사람 구분 중…",
-  voices: "등록된 참석자 확인 중…",
-  encode: "음성 파일 압축 보관 중…",
-  load_model: "변환 엔진 시작하는 중…",
-  transcribe: "음성을 글로 변환하는 중…",
-  align: "단어 싱크 맞추는 중…",
-  index: "스마트 검색 준비 중…",
-  summarize: "핵심 내용 요약 중…",
+  decode: t("음성 파일 불러오는 중…"),
+  vad: t("목소리 구간 분석 중…"),
+  diarize: t("말하는 사람 구분 중…"),
+  voices: t("등록된 참석자 확인 중…"),
+  encode: t("음성 파일 압축 보관 중…"),
+  load_model: t("변환 엔진 시작하는 중…"),
+  transcribe: t("음성을 글로 변환하는 중…"),
+  align: t("단어 싱크 맞추는 중…"),
+  index: t("스마트 검색 준비 중…"),
+  summarize: t("핵심 내용 요약 중…"),
   // 앱 안 상태: 녹음 전사가 파일 가져오기가 끝나길 기다린다 (App.tsx waitDir)
-  wait_import: "앞선 파일 변환이 끝나면 시작합니다",
+  wait_import: t("앞선 파일 변환이 끝나면 시작합니다"),
   // 실시간 자막 (Phase 7.2, `tractus live`)
-  live_load: "실시간 변환 준비 중…",
-  live: "실시간 텍스트 변환",
+  live_load: t("실시간 변환 준비 중…"),
+  live: t("실시간 텍스트 변환"),
 };
 
 /** 모르는 단계 키의 대체 문구 */
-export const STAGE_FALLBACK = "준비 중…";
+export const STAGE_FALLBACK = t("준비 중…");
 
 /** 입력 중일 때는 단축키를 먹지 않는다: 글 입력, 세그먼트 편집(contentEditable), 재생 위치 막대(range, 방향키를 직접 쓴다). */
 export function isTypingTarget(el: EventTarget | null): boolean {
@@ -434,73 +434,73 @@ export const stderrTail = (stderr: string, fallback: string) =>
     .join("\n") || fallback;
 
 /** 프로세스 종료 문장. code null = 신호로 끝남(kill -9, 메모리 부족) → 괄호 없이 문장만 */
-export const exitSentence = (sentence: string, code: number | null) => (code === null ? sentence : `${sentence} (종료 코드 ${code})`);
+export const exitSentence = (sentence: string, code: number | null) => (code === null ? sentence : t("{sentence} (종료 코드 {code})", { sentence, code }));
 
 /** 이벤트 없이 끝난 프로세스: 첫 줄은 앱 문장(…(종료 코드 N)), 다음 줄부터 stderr 끝 (자세히) */
 export const exitMessage = (sentence: string, stderr: string) => [sentence, stderrTail(stderr, "")].filter(Boolean).join("\n");
 
-const JOB_EXIT = "작업이 예기치 않게 끝났습니다";
+const JOB_EXIT = t("작업이 예기치 않게 끝났습니다");
 
 // ── 코어 경고·오류 코드 → 화면 문장 (WORDS.md §4.7). 모르는 코드는 코어 문구 그대로(경고) / 작업별 기본 문장(오류) ──
 
 export const WARNING_TEXT: Record<string, string> = {
-  duplicate: "이미 텍스트로 변환한 파일입니다.",
-  diarizer_missing: "참석자 구분에 필요한 파일이 없어 참석자 구분 없이 변환했습니다.",
-  diarizer_failed: "말하는 사람을 구분하지 못해 참석자 구분 없이 변환했습니다. 노트에서 참석자를 직접 지정할 수 있습니다.",
-  diarizer_cap_failed: "참석자가 많아 정밀하게 구분하지 못했습니다. 최대 8명까지만 구분했습니다.",
-  diarizer_cap: "참석자가 8명을 넘을 수 있지만 최대 8명까지만 구분했습니다.",
-  fluid_missing: "참석자가 8명을 넘을 수 있지만 최대 8명까지만 구분했습니다.",
-  voices_model_missing: "목소리 인식에 필요한 파일이 없어 등록된 참석자를 확인하지 않았습니다.",
-  voices_failed: "등록된 참석자 목소리를 확인하지 못했습니다. 참석자 이름은 노트에서 직접 지정할 수 있습니다.",
-  aligner_missing: "단어 싱크에 필요한 파일이 없어 단어 싱크 없이 저장했습니다.",
+  duplicate: t("이미 텍스트로 변환한 파일입니다."),
+  diarizer_missing: t("참석자 구분에 필요한 파일이 없어 참석자 구분 없이 변환했습니다."),
+  diarizer_failed: t("말하는 사람을 구분하지 못해 참석자 구분 없이 변환했습니다. 노트에서 참석자를 직접 지정할 수 있습니다."),
+  diarizer_cap_failed: t("참석자가 많아 정밀하게 구분하지 못했습니다. 최대 8명까지만 구분했습니다."),
+  diarizer_cap: t("참석자가 8명을 넘을 수 있지만 최대 8명까지만 구분했습니다."),
+  fluid_missing: t("참석자가 8명을 넘을 수 있지만 최대 8명까지만 구분했습니다."),
+  voices_model_missing: t("목소리 인식에 필요한 파일이 없어 등록된 참석자를 확인하지 않았습니다."),
+  voices_failed: t("등록된 참석자 목소리를 확인하지 못했습니다. 참석자 이름은 노트에서 직접 지정할 수 있습니다."),
+  aligner_missing: t("단어 싱크에 필요한 파일이 없어 단어 싱크 없이 저장했습니다."),
   asr_track_fallback: ASR_FALLBACK_WARNING,
-  tracks_missing: "보관한 녹음 원본이 없어 저장된 오디오로 변환했습니다. 음질이 조금 낮을 수 있습니다.",
-  aligner_failed: "단어 싱크를 맞추지 못했습니다. 노트의 ‘단어 싱크 맞추기’로 다시 시도할 수 있습니다.",
-  chat_save_failed: "질문 기록을 저장하지 못했습니다. 답변은 그대로 볼 수 있습니다.",
-  append_remap_failed: "요약이나 질문 기록의 일부를 새 내용에 맞게 옮기지 못했습니다.",
-  live_lagging: "실시간 텍스트 변환이 녹음을 따라가지 못해 일부 구간을 건너뜁니다. 녹음과 녹음 종료 후 변환에는 영향이 없습니다.",
-  system_zero: "상대방 소리(시스템 오디오)가 5초 동안 들리지 않습니다. 시스템 설정 > 개인정보 보호 및 보안 > 화면 및 시스템 오디오 녹음 권한을 확인하세요.",
+  tracks_missing: t("보관한 녹음 원본이 없어 저장된 오디오로 변환했습니다. 음질이 조금 낮을 수 있습니다."),
+  aligner_failed: t("단어 싱크를 맞추지 못했습니다. 노트의 ‘단어 싱크 맞추기’로 다시 시도할 수 있습니다."),
+  chat_save_failed: t("질문 기록을 저장하지 못했습니다. 답변은 그대로 볼 수 있습니다."),
+  append_remap_failed: t("요약이나 질문 기록의 일부를 새 내용에 맞게 옮기지 못했습니다."),
+  live_lagging: t("실시간 텍스트 변환이 녹음을 따라가지 못해 일부 구간을 건너뜁니다. 녹음과 녹음 종료 후 변환에는 영향이 없습니다."),
+  system_zero: t("상대방 소리(시스템 오디오)가 5초 동안 들리지 않습니다. 시스템 설정 > 개인정보 보호 및 보안 > 화면 및 시스템 오디오 녹음 권한을 확인하세요."),
 };
 
 export const ERROR_TEXT: Record<string, string> = {
   model_missing: MODEL_MISSING_ERROR,
-  audio_failed: "음성 파일을 읽지 못했습니다. 소리가 있는 오디오·동영상 파일인지 확인하세요.",
-  ffmpeg_missing: "음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요.",
-  recording_missing: "녹음된 소리가 없습니다. 마이크 권한과 입력 장치를 확인하세요.",
-  note_audio_missing: "이 노트의 녹음 파일을 찾을 수 없습니다.",
-  interrupted: "변환을 중단했습니다. 다시 변환하면 멈춘 곳부터 이어서 진행합니다.",
-  incomplete: "변환이 끝나지 않은 구간이 있습니다. 다시 변환하면 멈춘 곳부터 이어서 진행합니다.",
-  not_recorded: "이미 텍스트로 변환한 노트입니다.",
-  not_converted: "먼저 텍스트로 변환하세요.",
-  align_interrupted: "단어 싱크를 맞추다가 중단했습니다. 대화 내용은 저장했고, 노트의 ‘단어 싱크 맞추기’로 나중에 맞출 수 있습니다.",
-  no_segments: "인식된 대화가 없어 요약할 수 없습니다.",
-  bad_input: "요약 유형이나 요약 방법을 확인해 주세요. 지운 유형이거나 입력이 올바르지 않을 수 있습니다.",
-  llm_config: "AI 서비스 설정이 없거나 잘못되었습니다. 설정에서 API 키를 등록하세요.",
-  llm_local_only: "로컬 전용 모드에서는 외부 AI 서비스를 쓸 수 없습니다.",
-  llm_api: "AI 서비스에서 오류가 났습니다. 잠시 후 다시 시도하세요.",
-  llm_auth: "API 키가 맞지 않거나 사용 권한이 없습니다. 설정에서 키를 확인하세요.",
-  llm_rate: "AI 서비스의 사용량 한도를 넘었거나 요청이 몰렸습니다. 잠시 후 다시 시도하세요.",
-  llm_model: "AI 모델을 찾을 수 없습니다. 설정에서 AI 모델 이름과 서비스 주소를 확인하거나, ‘AI 모델 목록 불러오기’로 쓸 수 있는 이름을 고르세요.",
-  llm_busy: "AI 서비스가 바쁩니다. 잠시 뒤 다시 시도하세요.",
-  llm_context: "대화 내용이 너무 길어 AI가 처리하지 못했습니다. 더 큰 AI 모델을 쓰거나 질문 범위를 줄여 보세요.",
-  llm_conn: "AI 서비스에 연결하지 못했습니다. 인터넷 연결과 서비스 주소를 확인하세요.",
-  llm_invalid: "AI 응답이 형식에 맞지 않았습니다. 다시 시도해 주세요.",
-  live_low_memory: "이 Mac은 메모리가 16 GB 미만이라 실시간 텍스트 변환을 켜지 않습니다. 녹음은 정상 진행되고, 녹음 종료 후 텍스트로 변환합니다.",
-  live_failed: "실시간 텍스트 변환을 계속하지 못했습니다.",
-  append_has_audio: "이미 녹음이 있는 노트에는 녹음을 추가할 수 없습니다.",
-  append_note_missing: "노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.",
+  audio_failed: t("음성 파일을 읽지 못했습니다. 소리가 있는 오디오·동영상 파일인지 확인하세요."),
+  ffmpeg_missing: t("음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요."),
+  recording_missing: t("녹음된 소리가 없습니다. 마이크 권한과 입력 장치를 확인하세요."),
+  note_audio_missing: t("이 노트의 녹음 파일을 찾을 수 없습니다."),
+  interrupted: t("변환을 중단했습니다. 다시 변환하면 멈춘 곳부터 이어서 진행합니다."),
+  incomplete: t("변환이 끝나지 않은 구간이 있습니다. 다시 변환하면 멈춘 곳부터 이어서 진행합니다."),
+  not_recorded: t("이미 텍스트로 변환한 노트입니다."),
+  not_converted: t("먼저 텍스트로 변환하세요."),
+  align_interrupted: t("단어 싱크를 맞추다가 중단했습니다. 대화 내용은 저장했고, 노트의 ‘단어 싱크 맞추기’로 나중에 맞출 수 있습니다."),
+  no_segments: t("인식된 대화가 없어 요약할 수 없습니다."),
+  bad_input: t("요약 유형이나 요약 방법을 확인해 주세요. 지운 유형이거나 입력이 올바르지 않을 수 있습니다."),
+  llm_config: t("AI 서비스 설정이 없거나 잘못되었습니다. 설정에서 API 키를 등록하세요."),
+  llm_local_only: t("로컬 전용 모드에서는 외부 AI 서비스를 쓸 수 없습니다."),
+  llm_api: t("AI 서비스에서 오류가 났습니다. 잠시 후 다시 시도하세요."),
+  llm_auth: t("API 키가 맞지 않거나 사용 권한이 없습니다. 설정에서 키를 확인하세요."),
+  llm_rate: t("AI 서비스의 사용량 한도를 넘었거나 요청이 몰렸습니다. 잠시 후 다시 시도하세요."),
+  llm_model: t("AI 모델을 찾을 수 없습니다. 설정에서 AI 모델 이름과 서비스 주소를 확인하거나, ‘AI 모델 목록 불러오기’로 쓸 수 있는 이름을 고르세요."),
+  llm_busy: t("AI 서비스가 바쁩니다. 잠시 뒤 다시 시도하세요."),
+  llm_context: t("대화 내용이 너무 길어 AI가 처리하지 못했습니다. 더 큰 AI 모델을 쓰거나 질문 범위를 줄여 보세요."),
+  llm_conn: t("AI 서비스에 연결하지 못했습니다. 인터넷 연결과 서비스 주소를 확인하세요."),
+  llm_invalid: t("AI 응답이 형식에 맞지 않았습니다. 다시 시도해 주세요."),
+  live_low_memory: t("이 Mac은 메모리가 16 GB 미만이라 실시간 텍스트 변환을 켜지 않습니다. 녹음은 정상 진행되고, 녹음 종료 후 텍스트로 변환합니다."),
+  live_failed: t("실시간 텍스트 변환을 계속하지 못했습니다."),
+  append_has_audio: t("이미 녹음이 있는 노트에는 녹음을 추가할 수 없습니다."),
+  append_note_missing: t("노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다."),
 };
 
 /** 코드가 없는 오류의 작업별 기본 문장 */
 export const JOB_ERROR = {
-  transcribe: "텍스트로 변환하지 못했습니다",
-  convert: "텍스트로 변환하지 못했습니다",
-  finish: "녹음을 저장하지 못했습니다",
-  import: "텍스트로 변환하지 못했습니다",
-  summarize: "요약하지 못했습니다",
-  align: "단어 싱크를 맞추지 못했습니다",
-  ask: "답변을 받지 못했습니다",
-  live: "실시간 변환이 일시 중지되었습니다 (녹음은 정상 진행 중)",
+  transcribe: t("텍스트로 변환하지 못했습니다"),
+  convert: t("텍스트로 변환하지 못했습니다"),
+  finish: t("녹음을 저장하지 못했습니다"),
+  import: t("텍스트로 변환하지 못했습니다"),
+  summarize: t("요약하지 못했습니다"),
+  align: t("단어 싱크를 맞추지 못했습니다"),
+  ask: t("답변을 받지 못했습니다"),
+  live: t("실시간 변환이 일시 중지되었습니다 (녹음은 정상 진행 중)"),
 } as const;
 
 /** 앱(Rust invoke 거부)이 만든 오류: 첫 줄이 이미 WORDS.md 문장이라 그대로 보이고, 둘째 줄부터(OS 오류 문구 등)는 접힌 '자세히'로 간다 (예: 실행 파일 경로를 확인하세요) */
@@ -520,7 +520,7 @@ export function errorView(message: string | null, code: string | null | undefine
   const mapped = code ? ERROR_TEXT[code] : undefined;
   if (mapped) return { text: mapped, detail: message || null };
   const [first, ...rest] = (message ?? "").split("\n");
-  if (first === fallback || first === JOB_EXIT || /\(종료 코드 \d+\)$/.test(first)) return { text: first, detail: rest.join("\n") || null };
+  if (first === fallback || first === JOB_EXIT || /\((?:종료 코드|exit code) \d+\)$/.test(first)) return { text: first, detail: rest.join("\n") || null }; // i18n-ok: exitSentence의 두 언어 꼴
   return { text: fallback, detail: message || null };
 }
 
@@ -589,8 +589,8 @@ export type RecEvent =
 export type RecMode = "in_person" | "hybrid";
 
 export const REC_MODES: { mode: RecMode; label: string; note: string }[] = [
-  { mode: "in_person", label: "대면 녹음", note: "마이크 하나로 방 안의 모든 사람을 녹음합니다. 노트북을 테이블 가운데에 두세요." },
-  { mode: "hybrid", label: "화상·하이브리드", note: "상대방 소리(시스템 오디오)와 내 마이크를 함께 녹음합니다. 스피커로 들어도 에코를 제거합니다." },
+  { mode: "in_person", label: t("대면 녹음"), note: t("마이크 하나로 방 안의 모든 사람을 녹음합니다. 노트북을 테이블 가운데에 두세요.") },
+  { mode: "hybrid", label: t("화상·하이브리드"), note: t("상대방 소리(시스템 오디오)와 내 마이크를 함께 녹음합니다. 스피커로 들어도 에코를 제거합니다.") },
 ];
 
 /** 설정 파일의 값 → 녹음 방식. 모르는 값이면 대면 회의. */
@@ -602,7 +602,7 @@ export const recFlags = (mode: RecMode): string[] => (mode === "hybrid" ? ["--ec
 
 /** 녹음을 계속하면서 알리는 경고 중 헬퍼 메시지에 설명을 덧붙이는 것 */
 const WARNING_NOTE: Record<string, string> = {
-  echo_cancel_failed: "에코 제거 없이 녹음을 계속합니다. 스피커 소리가 마이크에 섞여 같은 말이 두 번 기록될 수 있습니다.",
+  echo_cancel_failed: t("에코 제거 없이 녹음을 계속합니다. 스피커 소리가 마이크에 섞여 같은 말이 두 번 기록될 수 있습니다."),
 };
 
 /** 경고 → 화면 문장: 코드 문장(WARNING_TEXT) > 헬퍼 메시지 + 설명(WARNING_NOTE) > 코어 메시지 그대로 */
@@ -652,7 +652,7 @@ export function recReduce(s: RecState, ev: RecEvent): RecState {
       return { ...s, phase: "error", error: ev.message };
     case "exit":
       if (s.phase === "stopped" || s.phase === "error") return s;
-      return { ...s, phase: "error", error: stderrTail(ev.stderr, exitSentence("녹음이 예기치 않게 끝났습니다", ev.code)) };
+      return { ...s, phase: "error", error: stderrTail(ev.stderr, exitSentence(t("녹음이 예기치 않게 끝났습니다"), ev.code)) };
   }
 }
 
@@ -715,7 +715,7 @@ export function liveReduce(s: LiveState, ev: LiveEvent): LiveState {
     case "exit": {
       // 확정되지 않은 partial은 버린다
       const ok = ev.code === 0 && s.done;
-      const fallback = exitSentence("실시간 변환이 예기치 않게 끝났습니다", ev.code);
+      const fallback = exitSentence(t("실시간 변환이 예기치 않게 끝났습니다"), ev.code);
       return { ...s, status: ok ? "stopped" : "failed", partial: null, error: ok ? s.error : (s.error ?? stderrTail(ev.stderr, fallback)) };
     }
     default:
@@ -846,20 +846,22 @@ export function isImportable(path: string): boolean {
 
 /** `tractus export --format`. bundle은 회의 폴더 묶음(zip) */
 export const EXPORT_FORMATS: { format: string; ext: string; label: string; note: string }[] = [
-  { format: "txt", ext: "txt", label: "텍스트", note: "[시각] 참석자: 대화 내용" },
-  { format: "md", ext: "md", label: "Markdown", note: "대화 내용 + 요약" },
-  { format: "srt", ext: "srt", label: "SRT 자막", note: "영상 편집기" },
-  { format: "vtt", ext: "vtt", label: "WebVTT 자막", note: "브라우저·Obsidian" },
+  { format: "txt", ext: "txt", label: t("텍스트"), note: t("[시각] 참석자: 대화 내용") },
+  { format: "md", ext: "md", label: "Markdown", note: t("대화 내용 + 요약") },
+  { format: "srt", ext: "srt", label: t("SRT 자막"), note: t("영상 편집기") },
+  { format: "vtt", ext: "vtt", label: t("WebVTT 자막"), note: t("브라우저·Obsidian") },
   { format: "csv", ext: "csv", label: "CSV", note: "Excel" },
   { format: "docx", ext: "docx", label: "Word", note: "Word·Pages" },
-  { format: "bundle", ext: "zip", label: "전체 백업 (ZIP)", note: "오디오 원본 + 대화 내용 + 요약" },
+  { format: "bundle", ext: "zip", label: t("전체 백업 (ZIP)"), note: t("오디오 원본 + 대화 내용 + 요약") },
 ];
 
 /** 저장 대화상자 기본 이름: <날짜>_<제목>.<확장자>. 파일 이름에 못 쓰는 문자는 공백으로. */
 export function exportFilename(createdAt: string, title: string, ext: string): string {
-  const day = /^\d{4}-\d{2}-\d{2}/.exec(createdAt)?.[0] ?? "노트";
-  const clean = title.replace(/[/\\:*?"<>|\x00-\x1f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
-  return `${day}_${clean || "제목 없음"}.${ext}`;
+  const day = /^\d{4}-\d{2}-\d{2}/.exec(createdAt)?.[0] ?? t("노트");
+  // \x22는 따옴표다: i18n.test.ts의 문자열 찾기가 정규식 속 따옴표를 문자열 시작으로 읽지 않게
+  const clean = title.replace(/[/\\:*?\x22<>|\x00-\x1f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+  const name = clean || t("제목 없음");
+  return `${day}_${name}.${ext}`;
 }
 
 export interface SummaryLike {
@@ -877,9 +879,9 @@ export function summaryMarkdown(s: SummaryLike, starts: Map<string, number>, mem
   };
   const section = (title: string, lines: string[]) => (lines.length ? [`## ${title}`, "", ...lines, ""] : []);
   return [
-    ...section("요약", [s.summary]),
-    ...section("결정 사항", s.decisions.map((d) => `- ${d.text}${at(d.segment_ids)}`)),
-    ...section("할 일", s.action_items.map((a) => `- [ ] ${a.task}${a.owner || a.due ? ` — ${[a.owner, a.due].filter(Boolean).join(", ")}` : ""}${at(a.segment_ids)}`)),
-    ...section("주제", s.topics.map((t) => `- ${t.title}${at(t.segment_ids)}`)),
+    ...section(t("요약"), [s.summary]),
+    ...section(t("결정 사항"), s.decisions.map((d) => `- ${d.text}${at(d.segment_ids)}`)),
+    ...section(t("할 일"), s.action_items.map((a) => `- [ ] ${a.task}${a.owner || a.due ? ` — ${[a.owner, a.due].filter(Boolean).join(", ")}` : ""}${at(a.segment_ids)}`)),
+    ...section(t("주제"), s.topics.map((t) => `- ${t.title}${at(t.segment_ids)}`)),
   ].join("\n");
 }

@@ -260,6 +260,7 @@ Tractus는 노트·메모 앱이고, 녹음은 노트를 만드는 한 가지 �
 | 설정 상태 버튼 | `스마트 검색 상태` |
 | 수정 뒤 검색 정보 갱신 실패 토스트 | `스마트 검색 정보를 갱신하지 못했습니다` + `자세히`. 성공하면 아무것도 보이지 않는다 (문장을 고치고 60초 뒤 앱이 한가할 때 조용히 돈다. 앞선 갱신이 끝난 뒤 5분 안에는 다시 돌지 않는다) |
 | 설정 상태 줄 (앱이 필드로 만든다, `status.hint`는 보이지 않는다) | 벡터 검색 켜짐이고 벡터 ≥ 색인: `스마트 검색 준비 완료 (노트 {N}개)` / 벡터 부족: `일부 노트가 아직 스마트 검색에 포함되지 않았습니다. 터미널에서 tractus index를 실행하세요 (노트 {N}개)` / 벡터 검색 꺼짐: `스마트 검색 엔진(qwen3-embedding-0.6b-8bit)이 변환 엔진 위치에 없어 단어 일치로만 찾습니다 (노트 {N}개)` |
+| 화면 (테마·언어) | 구역 `화면`. 행 `테마`: `시스템 설정` / `라이트` / `다크`. 행 `언어`: `시스템 설정` / `한국어` / `English`, 안내 `바꾸면 앱 화면을 다시 엽니다.` (고르면 바로 저장하고 화면을 다시 연다) |
 | 경로 필드 | `데이터 위치`. 실행 파일 경로(`자동`/`직접 지정`)는 §4.19. 변환 엔진 위치는 모델 화면에서 바꾼다(§4.19) |
 | 개발용 녹음 | `테스트용 모의 녹음 (가상 신호) — 마이크 권한 없이 녹음 과정을 시험합니다` |
 | 실시간 변환 설정 | `녹음 중 실시간 텍스트 변환 (미리보기) — 말하는 동안 내용을 바로 보여 줍니다. 녹음 종료 후 고품질 텍스트로 정돈되며, 실시간 변환 내용은 저장하지 않습니다. 녹음하는 동안 메모리를 약 2 GB 더 씁니다 (메모리 16 GB 미만 Mac에서는 켜지지 않습니다). 다음 녹음부터 적용됩니다.` |
@@ -1135,3 +1136,49 @@ T='회의|전사|세그먼트|화자|청크|벡터|임베딩|색인|(?<!AI )모�
 ### 2026-10-15 (업데이트, 앱)
 
 1. **업데이트 어휘는 `업데이트`·`새 버전`·`지금 버전`이고 자동 설치는 없다.** 시작 약 10초 뒤와 `업데이트 확인` 단추에서만 확인하고, `업데이트 설치`를 누른 뒤에만 받아 설치하며, `다시 열기`를 누를 때까지 지금 앱이 돈다. 미리 만든 앱(번들)에서만 확인하고, 저장소에서 만든 앱은 `scripts/update.sh` 한 줄만 보인다(§4.21). `버전 확인`·`재시작`·`자동 업데이트`는 쓰지 않는다.
+
+## 7. 영어 화면 (English UI)
+
+화면 언어는 `시스템 설정`(macOS 언어가 한국어면 한국어, 아니면 영어)·`한국어`·`English`다(설정 > 화면 > 언어). 한국어 문구가 원본이자 키이고, 영어는 `app/src/en/*.ts` 사전에 둔다: 코드는 `t("노트 {n}개", { n })`로 쓴다(`app/src/i18n.ts`). 한국어 문구를 고치면 사전의 키도 고친다. `app/src/i18n.test.ts`가 빠진 번역·쓰이지 않는 번역·자리표시자·`t()` 밖에 남은 한국어를 잡는다(언어와 상관없는 데이터는 줄 끝 `i18n-ok`).
+
+### 7.1 문체
+
+- **Sentence case.** 단추·메뉴·제목 모두 첫 글자만 대문자다(`Move to Trash`처럼 고유한 이름·macOS 메뉴 이름만 예외). `Save`, `Open settings`, `Transcribe now`.
+- **짧고 담백하게.** `Please`, 느낌표, `Oops`를 쓰지 않는다. 한국어 문장이 길어도 영어는 뜻만 옮긴다. 줄임표는 `…`(한 글자) 그대로.
+- 따옴표는 `“{title}”`(곧은 따옴표 `"` 아님). 한국어의 `‘…’`도 영어에서는 `“…”`다.
+- 개수는 복수형을 맞춘다: 사전 값을 `["{n} note", "{n} notes"]`처럼 배열로 쓰면 `n`이 1일 때 앞의 것이다.
+- 시각·날짜는 `locale()`(`en-US`)로 만든다. `toLocaleDateString("ko-KR")`을 직접 쓰지 않는다.
+- 단축키 표기는 macOS 그대로(`⌘J`, `Esc`, `Enter`).
+
+### 7.2 용어
+
+| 한국어 (§2) | English | 쓰지 않는 말 |
+| --- | --- | --- |
+| 노트 | note | meeting (앱의 대상으로는), record |
+| 메모 (직접 쓴 노트·메모 탭) / `새 메모` | memo / `New memo` | text note, document |
+| 녹음 중 메모 / 북마크 | memo during recording / bookmark | |
+| 대화 내용 | transcript | |
+| 대화 (개수) / `{N}번째 줄` | line (`42 lines`) / `line {N}` | segment, utterance |
+| 텍스트로 변환 / 변환 중… / 변환 전 | Transcribe / Transcribing… / Not transcribed | convert |
+| 참석자 / 참석자 1 / 알 수 없음 | speaker / Speaker 1 / Unknown | participant, attendee (캘린더 일정의 참석자는 `attendees`) |
+| 말하는 사람 구분 | speaker detection | diarization |
+| 단어 싱크 | word sync | alignment, timestamps |
+| 자주 쓰는 단어 | custom vocabulary | glossary, hotwords |
+| 스마트 검색 / 단어 일치 / 비슷한 뜻 | smart search / word match / similar meaning | index, embeddings, vector |
+| 노트 완성 / 완성된 노트 | enhance / enhanced note | |
+| 요약 / 요약 유형 / 내 유형 / 요약 방법 | summary / summary type / my types / instructions | template (설정 섹션 `Summary templates` 외에는), prompt |
+| AI 어시스턴트 / AI 질문 / 질문 기록 | AI assistant / Ask AI / question history | chat |
+| 참고한 대화 / 근거 대화 없음 | cited lines / no supporting lines | sources, citations |
+| AI 서비스 / 서비스 주소 / AI 모델 / 연결 테스트 | AI service / service URL / AI model / Test connection | provider, endpoint, LLM |
+| 이 Mac의 AI | AI on this Mac | local model |
+| 변환 엔진 / 모델 (모델 화면) | transcription engine / model | weights |
+| 시작 점검 | setup check | onboarding, diagnostics |
+| 실시간 텍스트 변환 (미리보기) | live transcription (preview) | live captions |
+| 목소리 등록 / 참석자 목소리 프로필 | register voice / speaker voice profiles | voiceprint, embedding |
+| 즐겨찾기 / 태그 / 폴더 / 순서 | favorites / tags / folders / sort order | pin, star, label |
+| 삭제 / 휴지통으로 이동 | Delete / Move to Trash | erase, remove permanently |
+| 일시정지 / 계속 / 일시정지됨 | Pause / Resume / Paused | stop (끝내기와 겹친다) |
+| 전체 백업 (ZIP) | Full backup (ZIP) | bundle |
+| 자세히 | Details | log, stderr |
+| 시스템 설정 (테마·언어 선택지) / `시스템 설정 열기` | System / `Open System Settings` | |
+| 침묵 구간 건너뛰기 / 목소리 선명하게 | Skip silence / Clear voice | |

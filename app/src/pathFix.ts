@@ -2,6 +2,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { api, type Settings } from "./api";
 import type { FixKind } from "./caps";
+import { t } from "./i18n";
 import { fixPatch, HOME_MOVED, needsFolder, needsPick } from "./paths";
 
 export const pickPath = async (directory: boolean): Promise<string | null> => {
@@ -20,5 +21,5 @@ export async function runPathFix(kind: FixKind): Promise<string | null> {
   const patch = fixPatch(kind, picked);
   if (!patch) return null;
   await patchSettings(patch);
-  return kind === "pick-home" ? HOME_MOVED : "저장했습니다.";
+  return kind === "pick-home" ? HOME_MOVED : t("저장했습니다.");
 }

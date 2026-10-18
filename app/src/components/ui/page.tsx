@@ -1,9 +1,10 @@
 import { ChevronLeft } from "lucide-react";
 import type { ReactNode } from "react";
+import { t } from "@/i18n";
 import { cn } from "./utils";
 
 /** 설정·모델·검색 같은 화면의 머리: 뒤로 단추 + 제목 + 오른쪽 동작. 위 52px은 창 끌기 자리 */
-export function PageHeader({ title, onBack, backLabel = "뒤로", actions, children }: { title: ReactNode; onBack?: () => void; backLabel?: string; actions?: ReactNode; children?: ReactNode }) {
+export function PageHeader({ title, onBack, backLabel = t("뒤로"), actions, children }: { title: ReactNode; onBack?: () => void; backLabel?: string; actions?: ReactNode; children?: ReactNode }) {
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-background/85 backdrop-blur-md">
       <div data-tauri-drag-region className="flex h-[52px] items-center gap-2 px-4">
