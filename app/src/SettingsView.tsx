@@ -15,7 +15,7 @@ import { GateHint } from "./GatedButton";
 import { useCapabilities } from "./useCapabilities";
 import { BinField } from "./BinField";
 import { onIndexed } from "./indexer";
-import { recMode, statusLine, withRecMode } from "./lib";
+import { statusLine } from "./lib";
 import { LlmKeySection } from "./LlmKeySettings";
 import { ObsidianSection } from "./ObsidianSettings";
 import { CalendarSection } from "./CalendarSettings";
@@ -100,10 +100,8 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack }: { onSaved: ()
     e.preventDefault();
     if (!s) return;
     try {
-      // 녹음 방식은 사이드바에서 바꾼다. 이 화면을 연 뒤 바뀌었을 수 있으니 저장된 값을 유지한다
-      const latest = await api.getSettings();
-      // `녹음을 끝내면`도 마찬가지다: 이 화면을 연 뒤 묻는 창에서 바뀌었을 수 있다
-      await api.saveSettings({ ...withRecMode(s, recMode(latest.rec_mode)), after_record: latest.after_record });
+      // 코어(save_settings)가 이 화면이 고치는 칸만 저장한다: 녹음 방식·정렬처럼 다른 곳에서 바로 저장하는 값은 되돌리지 않는다
+      await api.saveSettings(s);
       setBase(s);
       setMsg("저장했습니다.");
       setMsgDetail(null);

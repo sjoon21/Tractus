@@ -412,19 +412,41 @@ fn get_settings(state: State<'_, AppState>) -> Settings {
     state.settings()
 }
 
-#[tauri::command]
-fn save_settings(app: AppHandle, state: State<'_, AppState>, tray: State<'_, tray::TrayState>, settings: Settings) -> Result<(), String> {
-    if let Some(dir) = state.config_path.parent() {
+/// settings.json을 쓰는 곳은 모두 이것을 거친다: 한 번에 하나만(읽고 합치고 쓰는 사이에 다른 저장이 끼어 바뀐 값을 잃지 않게),
+/// 임시 파일에 쓴 뒤 이름을 바꾼다(쓰다 꺼져도 깨진 파일이 남지 않는다. 깨지면 Settings::load가 기본값으로 돌아가 데이터 폴더가 바뀐다).
+/// merge는 지금 파일 내용(없으면 None)을 받아 새 내용을 돌려준다
+static SETTINGS_FILE: Mutex<()> = Mutex::new(());
+
+pub(crate) fn patch_settings(path: &Path, merge: impl FnOnce(Option<&str>) -> Result<String, String>) -> Result<(), String> {
+    let _held = SETTINGS_FILE.lock().unwrap_or_else(|e| e.into_inner());
+    let raw = merge(std::fs::read_to_string(path).ok().as_deref())?;
+    if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let mut settings = settings.for_save();
-    // AI 서비스·스마트 검색 방식 선택은 llm_key.rs의 명령이 따로 저장한다: 오래된 화면 값이 덮어쓰지 못하게 지금 값을 지킨다
-    let cur = state.settings();
-    (settings.llm_default, settings.llm_profiles, settings.embedding_provider, settings.config_dir) = (cur.llm_default, cur.llm_profiles, cur.embedding_provider, cur.config_dir);
-    (settings.obsidian_vault, settings.obsidian_audio) = (cur.obsidian_vault, cur.obsidian_audio); // obsidian.rs set_obsidian이 바로 저장한다
-    (settings.calendar_enabled, settings.calendar_hidden) = (cur.calendar_enabled, cur.calendar_hidden); // calendar.rs도 바로 저장한다
+    let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
+    let written = std::fs::File::create(&tmp).and_then(|mut f| {
+        f.write_all(raw.as_bytes())?;
+        f.sync_all()
+    });
+    written.and_then(|_| std::fs::rename(&tmp, path)).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("설정을 저장할 수 없습니다\n{e}")
+    })
+}
+
+/// 설정 화면의 저장: 화면이 고치는 칸(데이터 위치·실행 파일·모의 녹음·실시간 텍스트 변환)과 모델 폴더만 바꾼다.
+/// 나머지(정렬·시작 점검·녹음 방식·AI 서비스·Obsidian·캘린더…)는 각자 바로 저장하므로, 화면을 연 뒤 바뀐 값을 옛 화면 값이 되돌리지 않게 지금 값을 쓴다
+fn apply_form(mut cur: Settings, form: Settings) -> Settings {
+    (cur.home, cur.models_dir, cur.tractus_bin, cur.rec_bin) = (form.home, form.models_dir, form.tractus_bin, form.rec_bin);
+    (cur.fake_recorder, cur.live_captions) = (form.fake_recorder, form.live_captions);
+    cur.for_save()
+}
+
+#[tauri::command]
+fn save_settings(app: AppHandle, state: State<'_, AppState>, tray: State<'_, tray::TrayState>, settings: Settings) -> Result<(), String> {
+    let settings = apply_form(state.settings(), settings);
     let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
+    patch_settings(&state.config_path, |_| Ok(raw))?;
     state.mcp.set_spawn(settings.mcp_spawn());
     *state.settings.lock().unwrap() = settings.clone();
     tray.apply(&app, &settings); // 메뉴 막대 아이콘 설정은 다시 시작하지 않아도 바로 적용된다
@@ -444,11 +466,7 @@ fn merge_rec_mode(raw: Option<&str>, mode: &str) -> Result<String, String> {
 
 #[tauri::command]
 fn set_rec_mode(state: State<'_, AppState>, mode: String) -> Result<(), String> {
-    let raw = merge_rec_mode(std::fs::read_to_string(&state.config_path).ok().as_deref(), &mode)?;
-    if let Some(dir) = state.config_path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
+    patch_settings(&state.config_path, |raw| merge_rec_mode(raw, &mode))?;
     state.settings.lock().unwrap().rec_mode = mode;
     Ok(())
 }
@@ -462,11 +480,7 @@ fn merge_flag(raw: Option<&str>, key: &str, value: bool) -> Result<String, Strin
 
 #[tauri::command]
 fn set_checkup_done(state: State<'_, AppState>, done: bool) -> Result<(), String> {
-    let raw = merge_flag(std::fs::read_to_string(&state.config_path).ok().as_deref(), "checkup_done", done)?;
-    if let Some(dir) = state.config_path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
+    patch_settings(&state.config_path, |raw| merge_flag(raw, "checkup_done", done))?;
     state.settings.lock().unwrap().checkup_done = done;
     Ok(())
 }
@@ -2032,5 +2046,33 @@ mod tests {
         assert!(!raw.contains("stale") && raw.contains(r#""tractus_bin":"""#));
         // 아직 없는 경로를 직접 입력하면 저장은 한다 (다음 실행 때 load가 자동으로 되돌린다)
         assert_eq!(Settings { tractus_bin: "/typed/not/yet".into(), ..Default::default() }.for_save().tractus_bin, "/typed/not/yet");
+    }
+
+    #[test]
+    fn the_settings_form_saves_only_its_own_keys() {
+        // 설정 화면을 연 뒤 사이드바에서 바꾼 정렬·시작 점검을 옛 화면 값이 되돌리지 않는다
+        let cur = Settings { list_sort: "title".into(), checkup_done: true, home: "/old".into(), ..Settings::default() };
+        let form = Settings { list_sort: "updated".into(), checkup_done: false, home: "/new".into(), live_captions: true, ..Settings::default() };
+        let out = apply_form(cur, form);
+        assert_eq!((out.home.as_str(), out.live_captions), ("/new", true));
+        assert_eq!((out.list_sort.as_str(), out.checkup_done), ("title", true));
+    }
+
+    #[test]
+    fn settings_writes_are_atomic_and_never_lose_a_concurrent_key() {
+        let dir = std::env::temp_dir().join(format!("tractus-settings-{}", std::process::id()));
+        let path = dir.join("settings.json");
+        let _ = std::fs::remove_dir_all(&dir);
+        let threads: Vec<_> = (0..8)
+            .map(|n| {
+                let path = path.clone();
+                std::thread::spawn(move || patch_settings(&path, |raw| merge_flag(raw, &format!("k{n}"), true)).unwrap())
+            })
+            .collect();
+        threads.into_iter().for_each(|t| t.join().unwrap());
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!((0..8).all(|n| v[format!("k{n}")] == true), "{v}");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1); // 임시 파일이 남지 않는다
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

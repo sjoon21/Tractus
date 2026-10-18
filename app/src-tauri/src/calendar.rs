@@ -36,11 +36,7 @@ pub fn merge_calendar(raw: Option<&str>, enabled: bool, hidden: &[String]) -> Re
 }
 
 fn save(state: &AppState, enabled: bool, hidden: Vec<String>) -> Result<(), String> {
-    let raw = merge_calendar(std::fs::read_to_string(&state.config_path).ok().as_deref(), enabled, &hidden)?;
-    if let Some(dir) = state.config_path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
+    crate::patch_settings(&state.config_path, |raw| merge_calendar(raw, enabled, &hidden))?;
     let mut s = state.settings.lock().unwrap();
     (s.calendar_enabled, s.calendar_hidden) = (enabled, hidden);
     Ok(())

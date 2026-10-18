@@ -485,13 +485,10 @@ pub fn tray_show_if_hidden(app: AppHandle) {
 /// 설정 화면의 두 스위치. 바로 적용하고 설정 파일의 그 두 키만 바꾼다 (환경변수 기본값이 파일에 굳지 않게)
 #[tauri::command]
 pub fn set_tray_prefs(app: AppHandle, state: State<'_, AppState>, tray: State<'_, TrayState>, tray_enabled: bool, keep_in_tray: bool) -> Result<(), String> {
-    let raw = std::fs::read_to_string(&state.config_path).ok();
-    let raw = crate::merge_flag(raw.as_deref(), "tray_enabled", tray_enabled)?;
-    let raw = crate::merge_flag(Some(&raw), "keep_in_tray", keep_in_tray)?;
-    if let Some(dir) = state.config_path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
+    crate::patch_settings(&state.config_path, |raw| {
+        let raw = crate::merge_flag(raw, "tray_enabled", tray_enabled)?;
+        crate::merge_flag(Some(&raw), "keep_in_tray", keep_in_tray)
+    })?;
     {
         let mut s = state.settings.lock().unwrap();
         s.tray_enabled = tray_enabled;

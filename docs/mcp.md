@@ -15,6 +15,7 @@ Tractus 앱을 설치했다면 이것으로 끝입니다. 플러그인이 `tract
 - **찾는 순서** (`plugins/tractus/bin/tractus-mcp`): `tractus`는 `TRACTUS_BIN` → 앱 설정의 직접 지정 경로 → `/Applications/Tractus.app`·`~/Applications/Tractus.app` 안 → `~/.local/bin`·`/opt/homebrew/bin` → PATH. 데이터 폴더는 `TRACTUS_HOME` → 앱 설정의 데이터 폴더 → `~/Tractus`. 모델 폴더는 `TRACTUS_MODELS_DIR` → 앱 설정 → 코어 기본값.
 - **직접 지정:** 자동으로 못 찾으면 `/plugin` › Installed › tractus › Configure options에서 `tractus executable`·`Tractus data folder`를 고르거나, 설치할 때 `--config tractus_bin=/path --config tractus_home=/path`를 줍니다.
 - **들어 있는 것:** MCP 서버 `tractus`(도구 이름 `mcp__plugin_tractus_tractus__search_meetings` 등), 스킬 `meetings`(과거 회의 질문에 검색하고 `(노트 제목, 시각)`으로 인용), `/tractus:recap [기간]`(결정·할 일·미결 회고).
+- 서버는 데이터 폴더에서 실행되고(열어 둔 프로젝트의 `.env`를 읽지 않음), 노트는 ID나 이 데이터 폴더 안의 경로로만 찾습니다.
 - 노트 색인은 앱이 합니다(앱을 한 번 열면 됨). 앱 없이 저장소에서 쓰면 `uv run tractus index`를 먼저 돌립니다.
 - 스마트 검색을 Upstage로 고른 경우 플러그인은 Upstage 키를 받지 않으므로 키워드 검색으로 찾습니다(키를 MCP에 넘기지 않는다는 원칙).
 

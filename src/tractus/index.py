@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import sqlite3
+import time
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -300,7 +301,11 @@ class Index:
         self._ensure_schema()
         return self.sync()
 
+    VECTOR_RETRY_S = 60  # 질의 임베딩이 실패하면(429·연결 끊김 등) 이 동안 키워드로만 찾고 다시 시도한다
+
     def _vectors_current(self) -> bool:
+        if time.monotonic() < getattr(self, "_vector_off_until", 0.0):
+            return False
         return self.embedder is not None and self._table("chunks_vec") and self._meta("embedding_model") == self.embedder.model_id
 
     def _embed(self, texts: list[str], report: SyncReport) -> np.ndarray | None:
@@ -470,8 +475,8 @@ class Index:
         try:
             q = self.embedder.embed([query], is_query=True)[0].astype(np.float32).tobytes()
         except Exception as e:  # noqa: BLE001 — 모델 문제로 키워드 검색까지 막지 않는다
-            log.warning("질의 임베딩 실패, 키워드 검색만 함: %s", e)
-            self.embedder = None
+            log.warning("질의 임베딩 실패, %d초 동안 키워드 검색만 함: %s", self.VECTOR_RETRY_S, e)
+            self._vector_off_until = time.monotonic() + self.VECTOR_RETRY_S  # 상주 검색 프로세스가 한 번의 실패로 스마트 검색을 영영 끄지 않게
             return None
         cond, cargs = self._filters(date_from, date_to, meeting_id, "meeting_date", "meeting_id")
         sql = f"SELECT chunk_id, distance FROM chunks_vec WHERE embedding MATCH ? AND k = ?{cond} ORDER BY distance"

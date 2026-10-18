@@ -82,3 +82,17 @@ def test_both_skills_are_in_the_repo():
     for name in ("meetings", "recap"):
         text = (PLUGIN / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
         assert text.startswith("---\n") and f"name: {name}" in text and "description:" in text
+
+
+def test_launcher_starts_the_server_in_the_data_folder_not_the_project(tmp_path):
+    # 남의 저장소 폴더에서 띄워도 그 .env를 읽지 않게 데이터 폴더에서 실행한다
+    bin_ = tmp_path / "x" / "tractus"
+    bin_.parent.mkdir(parents=True)
+    bin_.write_text('#!/bin/bash\npwd -P\n')
+    bin_.chmod(0o755)
+    data = tmp_path / "Notes"
+    data.mkdir()
+    project = tmp_path / "evil-repo"
+    project.mkdir()
+    r = subprocess.run([str(LAUNCHER)], cwd=project, env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin", "TRACTUS_BIN": str(bin_), "TRACTUS_HOME": str(data)}, capture_output=True, text=True, timeout=10)
+    assert r.stdout.strip() == str(data.resolve())

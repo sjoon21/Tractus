@@ -148,6 +148,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 
 ## 경로 규칙 (앱 `app/src-tauri/src/paths.rs`)
 
+- **`settings.json`은 `patch_settings`(lib.rs)로만 쓴다**: 한 번에 하나, 임시 파일 → 이름 바꾸기. 새 설정 키는 그 키만 바꾸는 `merge_*`를 만들어 넘긴다. 설정 화면의 `save_settings`는 화면이 고치는 칸(데이터 위치·실행 파일·모의 녹음·실시간 텍스트 변환)과 `models_dir`만 바꾼다.
 - 설정의 `tractus_bin`·`rec_bin`·`models_dir`이 비어 있으면 `자동`이다. 저장하는 것은 사용자가 입력한 값뿐이다: 자동으로 찾은 경로를 `settings.json`에 쓰지 않는다(`Settings::for_save`).
 - 찾는 순서는 직접 지정(파일이 있을 때) → 환경변수 → 앱 번들 안 → 컴파일 때 저장소 → 알려진 설치 위치다. 하위 프로세스를 띄우는 곳은 모두 `Settings::tractus_path`·`rec_path`를 쓴다. `s.tractus_bin`을 직접 실행하지 않는다.
 - 데이터 폴더를 바꿔도 노트를 옮기지 않는다(원본 보호). 모델 폴더를 옮길 때는 옮긴 **뒤에** 설정을 바꾼다.
@@ -188,6 +189,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - **`plugins/tractus/`가 플러그인이고 저장소 루트 `.claude-plugin/marketplace.json`이 마켓플레이스다.** 플러그인 폴더에는 앱 소스를 넣지 않는다(설치하면 그 폴더만 복사된다). MCP는 `bin/tractus-mcp`가 띄운다: stdout에 아무것도 찍지 않는다(MCP 통로), 경로를 찾는 순서를 바꾸면 `tests/test_plugin.py`와 docs/mcp.md를 함께 고친다. 키를 MCP에 넘기지 않는다(앱의 Upstage 옵트인 예외는 플러그인에 없다).
 - 릴리스할 때 `plugins/tractus/.claude-plugin/plugin.json`의 `version`을 앱 버전과 맞춘다(버전이 같으면 사용자에게 업데이트가 가지 않는다). 매니페스트를 바꾸면 `claude plugin validate . --strict`와 `claude plugin validate plugins/tractus --strict`를 돌린다.
 - 플러그인을 실제 세션으로 시험할 때는 가상 회의 홈(tests/fixtures/eval을 복사해 색인)만 쓴다: `.mcp.json`의 `TRACTUS_HOME`을 그 홈으로 바꾼 복사본을 `claude --plugin-dir`로 띄운다. 실제 노트·AI Hub 홈을 연결하지 않는다.
+- 실행기는 `cd "$TRACTUS_HOME"`(없으면 `/`) 뒤에 서버를 띄운다: 코어가 작업 폴더의 `.env`를 읽으므로, Claude Code가 연 프로젝트의 `.env`가 끼어들지 않게. MCP 도구는 노트 경로를 이 데이터 폴더 안만 받는다.
 - MCP `cite`는 사람이 읽는 `[노트 제목 시각]`이다. 에이전트가 정확한 자리를 다룰 때는 결과의 `meeting_id`·세그먼트 `id`를 쓴다.
 
 ## 메뉴 막대 아이콘 (v3.24)

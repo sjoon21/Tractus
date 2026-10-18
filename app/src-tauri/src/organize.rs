@@ -268,11 +268,7 @@ pub fn merge_list_prefs(raw: Option<&str>, sort: &str, order: &str) -> Result<St
 
 #[tauri::command]
 pub fn set_list_prefs(state: State<'_, AppState>, sort: String, order: String) -> Result<(), String> {
-    let raw = merge_list_prefs(fs::read_to_string(&state.config_path).ok().as_deref(), &sort, &order)?;
-    if let Some(dir) = state.config_path.parent() {
-        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    fs::write(&state.config_path, raw).map_err(|e| format!("설정을 저장할 수 없습니다\n{e}"))?;
+    crate::patch_settings(&state.config_path, |raw| merge_list_prefs(raw, &sort, &order))?;
     let mut s = state.settings.lock().unwrap();
     s.list_sort = sort;
     s.list_order = order;
