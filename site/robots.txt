@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://sjoon21.github.io/Tractus/sitemap.xml

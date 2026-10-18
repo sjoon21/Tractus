@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tractus — Local AI meeting notes for Mac with on-device transcription</title>
+<meta name="description" content="Tractus is a free, open-source meeting notes app for Mac. It transcribes Korean and English recordings on your Mac (Apple Silicon, MLX), detects speakers, summarizes, searches, and gives Claude Code memory of your meetings. Audio never leaves your device.">
+<link rel="canonical" href="https://sjoon21.github.io/Tractus/">
+<link rel="alternate" hreflang="en" href="https://sjoon21.github.io/Tractus/">
+<link rel="alternate" hreflang="ko" href="https://sjoon21.github.io/Tractus/ko/">
+<link rel="alternate" hreflang="x-default" href="https://sjoon21.github.io/Tractus/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Tractus">
+<meta property="og:title" content="Tractus — Local AI meeting notes for Mac">
+<meta property="og:description" content="On-device transcription, speaker detection, summaries and search for your meetings. Audio stays on your Mac.">
+<meta property="og:url" content="https://sjoon21.github.io/Tractus/">
+<meta property="og:image" content="https://sjoon21.github.io/Tractus/assets/og.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="ko_KR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#fbfbfa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141415" media="(prefers-color-scheme: dark)">
+<!-- google-site-verification: Search Console 소유 확인 태그를 여기에 넣는다 -->
+<link rel="icon" href="assets/icon.png">
+<link rel="stylesheet" href="style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Tractus",
+  "description": "Local-first AI meeting notes app for macOS: on-device Korean and English transcription, speaker detection, summaries, search and MCP memory for AI agents.",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "macOS 14.4 or later (Apple Silicon)",
+  "softwareVersion": "0.4.0",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "downloadUrl": "https://github.com/sjoon21/Tractus/releases/latest",
+  "url": "https://sjoon21.github.io/Tractus/",
+  "sameAs": ["https://github.com/sjoon21/Tractus"],
+  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+  "inLanguage": ["en", "ko"],
+  "image": "https://sjoon21.github.io/Tractus/assets/og.png"
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    { "@type": "Question", "name": "Is Tractus free?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Tractus is free and open source under the Apache 2.0 license. Recording, transcription, speaker detection, search and export work without any account or API key. Summaries and Ask AI use an AI service you choose (Upstage, OpenAI, Claude, Gemini or any OpenAI-compatible API, including one on your Mac)." } },
+    { "@type": "Question", "name": "Does my audio leave my Mac?", "acceptedAnswer": { "@type": "Answer", "text": "No. Speech recognition, speaker detection and smart search run on your Mac with Apple MLX. Only the text needed for a summary or an AI answer is sent, and only to the AI service you pick." } },
+    { "@type": "Question", "name": "Which Macs does Tractus run on?", "acceptedAnswer": { "@type": "Answer", "text": "Apple Silicon Macs (M1 or later) on macOS 14.4 or later. 16 GB of memory is recommended; 8 GB works with the lite models." } },
+    { "@type": "Question", "name": "Which languages does it transcribe?", "acceptedAnswer": { "@type": "Answer", "text": "Tractus detects the language automatically and is tuned for Korean and English meetings, including Korean speech mixed with English technical terms. The app itself is available in English and Korean." } },
+    { "@type": "Question", "name": "Can I use it as a local alternative to Otter or Granola?", "acceptedAnswer": { "@type": "Answer", "text": "Tractus covers the same core workflow — record, transcribe, summarize, search — but runs the transcription on your Mac instead of a cloud service, and keeps every note as plain files you own." } }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="wrap top">
+  <a class="brand" href="./"><img src="assets/icon.png" alt="" width="28" height="28">Tractus</a>
+  <nav aria-label="Main">
+    <a href="#features">Features</a>
+    <a href="benchmark/">Benchmark</a>
+    <a href="https://github.com/sjoon21/Tractus">GitHub</a>
+    <a href="ko/" hreflang="ko" lang="ko">한국어</a>
+  </nav>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <p class="eyebrow"><span class="dot" aria-hidden="true"></span>Free and open source · macOS · Apple Silicon</p>
+    <h1>Meeting notes that never leave your Mac.</h1>
+    <p class="lede">Tractus records your meetings, transcribes them on-device in Korean and English, tells speakers apart, and turns them into summaries you can search, cite — and ask Claude Code about.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/sjoon21/Tractus/releases/latest">Download for Mac</a>
+      <a class="btn" href="https://github.com/sjoon21/Tractus">View on GitHub</a>
+      <span class="note">v0.4.0 · macOS 14.4+ · Apache 2.0</span>
+    </div>
+    <figure class="demo">
+      <video src="assets/demo-en.mp4" poster="assets/demo-en.jpg" autoplay muted loop playsinline preload="metadata" width="960" height="600" aria-label="Demo: a rough memo becomes an enhanced note backed by the transcript, then Claude Code answers a question about the meeting with citations"></video>
+    </figure>
+    <p class="caption">Rough memo → enhanced note with details from the transcript → ask Claude Code about the meeting (sample data).</p>
+  </div>
+
+  <section class="wrap" aria-labelledby="why">
+    <p class="kicker">Why Tractus</p>
+    <h2 id="why">Private by default. Accurate where it counts.</h2>
+    <ol class="why">
+      <li><span class="n">01</span><h3>Everything heavy runs locally</h3><p>Recording, speech recognition, speaker detection and smart search run on your Mac with Apple MLX. No audio is uploaded, and none of it needs an account or API key.</p></li>
+      <li><span class="n">02</span><h3>Every claim points back to the audio</h3><p>Each summary item, to-do and AI answer links to the moment in the recording it came from. Click to listen.</p></li>
+      <li><span class="n">03</span><h3>Plain files you own</h3><p>Notes live in a folder as audio, JSON and Markdown. Export to TXT, Markdown, SRT, VTT, CSV, DOCX or PDF, or send a note to Obsidian.</p></li>
+      <li><span class="n">04</span><h3>Meeting memory for AI agents</h3><p>A built-in MCP server and a one-line Claude Code plugin let your agent search your meetings and answer with citations like <code>[Weekly dev sync 00:02:11]</code>.</p></li>
+    </ol>
+  </section>
+
+  <section class="wrap" id="features" aria-labelledby="features-title">
+    <p class="kicker">Features</p>
+    <h2 id="features-title">From recording to a note you can trust</h2>
+    <p class="sub">Record in person or on video calls, then read, fix and reuse what was said.</p>
+
+    <div class="feature">
+      <div class="text">
+        <h3>On-device transcription with speakers</h3>
+        <p>Qwen3-ASR transcribes Korean and English on your Mac with automatic language detection. Speakers are detected and can be named once — Tractus suggests the name in later recordings.</p>
+        <ul>
+          <li>Words from a note's title and memos guide recognition of your domain terms</li>
+          <li>Fix a misheard term once and add it to your custom vocabulary</li>
+          <li>Word sync highlights the spoken word during playback</li>
+        </ul>
+      </div>
+      <figure><picture><source media="(prefers-color-scheme: dark)" srcset="assets/en/note-dark.png"><img src="assets/en/note-light.png" alt="A note in Tractus: transcript grouped by speaker next to a summary with timestamps" width="2220" height="1455" loading="lazy"></picture></figure>
+    </div>
+
+    <div class="feature flip">
+      <div class="text">
+        <h3>Summaries and Ask AI with sources</h3>
+        <p>Meeting notes, brief, to-dos, lecture, interview or your own instructions. Ask one note or all of them — every answer cites the lines it's based on.</p>
+        <ul>
+          <li>Enhanced notes: your rough memos, filled in from the transcript</li>
+          <li>Use Upstage, OpenAI, Claude, Gemini or a model on your Mac</li>
+        </ul>
+      </div>
+      <figure><picture><source media="(prefers-color-scheme: dark)" srcset="assets/en/ask-dark.png"><img src="assets/en/ask-light.png" alt="Ask AI in Tractus: an answer with citations to moments in the meeting" width="2220" height="1455" loading="lazy"></picture></figure>
+    </div>
+
+    <div class="feature">
+      <div class="text">
+        <h3>Write, organize, find</h3>
+        <p>Memos with checklists and formatting, favorites, tags and folders, and smart search that matches words and similar meanings across every note (⌘K).</p>
+        <ul>
+          <li>Calendar events on Home: record with the event title and attendee names</li>
+          <li>Light and dark mode, English and Korean UI, in-app updates</li>
+        </ul>
+      </div>
+      <figure><picture><source media="(prefers-color-scheme: dark)" srcset="assets/en/home-dark.png"><img src="assets/en/home-light.png" alt="Tractus home: quick actions, an upcoming calendar event and recent notes" width="2220" height="1455" loading="lazy"></picture></figure>
+    </div>
+  </section>
+
+  <section class="wrap" aria-labelledby="accuracy">
+    <p class="kicker">Measured, not guessed</p>
+    <h2 id="accuracy">36% fewer errors than Whisper on Korean meetings</h2>
+    <p class="sub">We benchmarked on-device models on real Korean meetings (5.2 hours), code-switched speech and English meetings on an M3 Mac. Lower is better.</p>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Model</th><th>Korean meetings (CER)</th><th>Korean + English (MER)</th><th>English meetings (WER)</th><th>1 hour of audio</th></tr></thead>
+        <tbody>
+          <tr class="win"><td>Qwen3-ASR-1.7B (Tractus default)</td><td>9.49</td><td>24.1</td><td>9.50</td><td>8.2 min</td></tr>
+          <tr><td>Qwen3-ASR-0.6B (lite)</td><td>11.47</td><td>26.1</td><td>10.14</td><td>3.3 min</td></tr>
+          <tr><td>Whisper-large-v3-turbo</td><td>14.92</td><td>26.6</td><td>14.28</td><td>6.0 min</td></tr>
+          <tr><td>Nemotron 3.5 ASR 0.6B</td><td>10.93</td><td>45.1</td><td>14.13</td><td>7.6 min</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lower">AI Hub meeting speech, HiKE and AMI, MLX 8-bit, Apple M3 16 GB. <a href="benchmark/">Read the full benchmark →</a></p>
+  </section>
+
+  <section class="wrap split" aria-labelledby="agents">
+    <div>
+      <p class="kicker">For Claude Code</p>
+      <h2 id="agents">Ask your agent what was decided</h2>
+      <p class="sub">Install the plugin and Claude Code can search your meetings, read transcripts and to-dos, and cite the exact moment. Your notes stay on your Mac; only what Claude reads is sent to Claude.</p>
+    </div>
+    <pre><span class="c"># in Claude Code</span>
+<span class="p">/plugin</span> install tractus --marketplace sjoon21/Tractus
+
+<span class="p">&gt;</span> When did we decide to ship the release?
+The release moved to October 22 — a week later than
+planned, because of the payment API issue and too
+little QA time. [Weekly dev sync 00:02:11]</pre>
+  </section>
+
+  <section class="wrap faq" aria-labelledby="faq">
+    <p class="kicker">FAQ</p>
+    <h2 id="faq">Questions</h2>
+    <details><summary>Is Tractus free?</summary><p>Yes. Tractus is free and open source under the Apache 2.0 license. Recording, transcription, speaker detection, search and export work without any account or API key. Summaries and Ask AI use an AI service you choose (Upstage, OpenAI, Claude, Gemini or any OpenAI-compatible API, including one on your Mac).</p></details>
+    <details><summary>Does my audio leave my Mac?</summary><p>No. Speech recognition, speaker detection and smart search run on your Mac with Apple MLX. Only the text needed for a summary or an AI answer is sent, and only to the AI service you pick.</p></details>
+    <details><summary>Which Macs does Tractus run on?</summary><p>Apple Silicon Macs (M1 or later) on macOS 14.4 or later. 16 GB of memory is recommended; 8 GB works with the lite models. You also need ffmpeg (<code>brew install ffmpeg</code>).</p></details>
+    <details><summary>Which languages does it transcribe?</summary><p>Tractus detects the language automatically and is tuned for Korean and English meetings, including Korean speech mixed with English technical terms. The app itself is available in English and Korean.</p></details>
+    <details><summary>Can I use it as a local alternative to Otter or Granola?</summary><p>Tractus covers the same core workflow — record, transcribe, summarize, search — but runs the transcription on your Mac instead of a cloud service, and keeps every note as plain files you own.</p></details>
+    <details><summary>Is it signed by Apple?</summary><p>Not yet. On first launch, if macOS says the developer can't be verified, open System Settings › Privacy &amp; Security and click Open Anyway. See the <a href="https://github.com/sjoon21/Tractus/blob/main/docs/en/setup.md">setup guide</a>.</p></details>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Tractus · Apache 2.0</span>
+    <a href="https://github.com/sjoon21/Tractus">GitHub</a>
+    <a href="https://github.com/sjoon21/Tractus/releases/latest">Releases</a>
+    <a href="https://github.com/sjoon21/Tractus/blob/main/docs/en/usage.md">Usage</a>
+    <a href="https://github.com/sjoon21/Tractus/blob/main/docs/en/mcp.md">Agents (MCP)</a>
+    <a href="benchmark/">Benchmark</a>
+    <a href="ko/" hreflang="ko" lang="ko">한국어</a>
+  </div>
+</footer>
+</body>
+</html>

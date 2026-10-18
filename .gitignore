@@ -64,3 +64,4 @@ bench/results/*.log
 
 # 내부 조사·검토 메모 (저장소에 포함하지 않음): 시험 스크립트와 결과, 배포 구조 검토 등
 docs/internal/
+_site/
