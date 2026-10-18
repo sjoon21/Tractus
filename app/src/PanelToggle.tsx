@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { PanelLeft, PanelRight } from "lucide-react";
 import { isImeKey } from "./lib";
 import { flushMemos } from "./memo";
-import { canCollapse, choose, EXPANDED, initialPanels, PANEL_TEXT, panelKey, readPanels, restore, revealFor, toggleLabel, writePanels, type PanelChoice, type PanelIntent, type PanelState, type Side } from "./panels";
+import { canCollapse, choose, clampWidth, DEFAULT_WIDTHS, EXPANDED, initialPanels, PANEL_TEXT, PANEL_WIDTH, panelKey, readPanels, restore, restoreWidths, revealFor, toggleLabel, widthByKey, WIDTH_LABEL, WIDTHS_KEY, writePanels, type PanelChoice, type PanelIntent, type PanelState, type PanelWidths, type Side } from "./panels";
 
 export interface PanelsApi {
   state: PanelState;
@@ -13,9 +13,21 @@ export interface PanelsApi {
   reveal: (intent: PanelIntent) => void;
   /** 노트 화면이 떠 있는 동안 부른다(돌려주는 함수로 해제). 오른쪽 패널이 없는 화면에서는 ⌥⌘B가 아무것도 하지 않게 한다 */
   registerRight: () => () => void;
+  /** 패널 폭(px). CSS 변수 --sidebar-w·--rail로 그린다 */
+  widths: PanelWidths;
+  /** 폭을 바꾼다 (범위·가운데 최소 폭 안으로). save면 이 Mac에 기억한다 (끌기가 끝날 때) */
+  setWidth: (side: Side, px: number, save?: boolean) => void;
 }
 
-const NOOP_API: PanelsApi = { state: EXPANDED, toggle: async () => {}, reveal() {}, registerRight: () => () => {} };
+const NOOP_API: PanelsApi = { state: EXPANDED, toggle: async () => {}, reveal() {}, registerRight: () => () => {}, widths: DEFAULT_WIDTHS, setWidth() {} };
+
+const readWidths = (): PanelWidths => {
+  try {
+    return restoreWidths(localStorage.getItem(WIDTHS_KEY));
+  } catch {
+    return DEFAULT_WIDTHS;
+  }
+};
 export const PanelsContext = createContext<PanelsApi>(NOOP_API);
 export const usePanels = (): PanelsApi => useContext(PanelsContext);
 
@@ -61,6 +73,35 @@ export function PanelsProvider({ children }: { children: ReactNode }) {
     return () => void (rightCount.current -= 1);
   }, []);
 
+  const [widths, setWidths] = useState<PanelWidths>(readWidths);
+  const widthsRef = useRef(widths);
+  const setWidth = useCallback((side: Side, px: number, save = false) => {
+    const cur = widthsRef.current;
+    const next = { ...cur, [side]: clampWidth(side, px, cur[side === "left" ? "right" : "left"], window.innerWidth) };
+    widthsRef.current = next;
+    setWidths(next);
+    if (save) {
+      try {
+        localStorage.setItem(WIDTHS_KEY, JSON.stringify(next));
+      } catch {
+        // 저장하지 못하면 이번 실행에서만 유지된다
+      }
+    }
+  }, []);
+  // 그리는 폭: 정한 폭을 지금 창에 맞춘다. 창을 줄였다 다시 키우면 정한 폭으로 돌아온다 (정한 폭은 그대로)
+  useEffect(() => {
+    const paint = () => {
+      const w = window.innerWidth;
+      const left = clampWidth("left", widths.left, PANEL_WIDTH.right.min, w);
+      const root = document.documentElement.style;
+      root.setProperty("--sidebar-w", `${left}px`);
+      root.setProperty("--rail", `${clampWidth("right", widths.right, left, w)}px`);
+    };
+    paint();
+    window.addEventListener("resize", paint);
+    return () => window.removeEventListener("resize", paint);
+  }, [widths]);
+
   // ⌘B 왼쪽, ⌥⌘B 오른쪽. 글을 쓰는 중에도 된다(⌘B는 이 앱에서 굵게 쓰기가 아니다). 키를 누르고 있어도 한 번만
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -73,7 +114,7 @@ export function PanelsProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggle]);
 
-  const api = useMemo<PanelsApi>(() => ({ state, toggle, reveal, registerRight }), [state, toggle, reveal, registerRight]);
+  const api = useMemo<PanelsApi>(() => ({ state, toggle, reveal, registerRight, widths, setWidth }), [state, toggle, reveal, registerRight, widths, setWidth]);
   return <PanelsContext.Provider value={api}>{children}</PanelsContext.Provider>;
 }
 
@@ -89,3 +130,48 @@ export function PanelToggle({ side }: { side: Side }) {
     </button>
   );
 }
+
+/**
+ * 패널 경계의 폭 조절 손잡이 (role=separator). 끌거나, 초점을 두고 ←/→(한 번에 16px)·Home·End, 두 번 누르면 기본 폭.
+ * 왼쪽 패널은 창 왼쪽 끝에서, 오른쪽 패널은 창 오른쪽 끝에서 잰다. 놓을 때 이 Mac에 기억한다
+ */
+export function PanelResizer({ side, className }: { side: Side; className?: string }) {
+  const { widths, setWidth } = usePanels();
+  const px = widths[side];
+  const fromPointer = (x: number) => (side === "left" ? x : window.innerWidth - x);
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={WIDTH_LABEL[side]}
+      title={WIDTH_LABEL[side]}
+      aria-valuenow={px}
+      aria-valuemin={PANEL_WIDTH[side].min}
+      aria-valuemax={PANEL_WIDTH[side].max}
+      tabIndex={0}
+      className={`group absolute inset-y-0 z-20 w-2 cursor-col-resize outline-none ${side === "left" ? "-right-1" : "-left-1"} ${className ?? ""}`}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) setWidth(side, fromPointer(e.clientX));
+      }}
+      onPointerUp={(e) => {
+        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+        e.currentTarget.releasePointerCapture(e.pointerId);
+        setWidth(side, fromPointer(e.clientX), true);
+      }}
+      onDoubleClick={() => setWidth(side, PANEL_WIDTH[side].def, true)}
+      onKeyDown={(e) => {
+        const next = widthByKey(side, e.key, px);
+        if (next === null) return;
+        e.preventDefault(); // 재생 단축키(←/→)로 다시 쓰지 않게
+        setWidth(side, next, true);
+      }}
+    >
+      <span aria-hidden className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-ring/60 group-focus-visible:bg-ring group-active:bg-ring" />
+    </div>
+  );
+}
+

@@ -123,3 +123,44 @@ export function panelKey(e: { code: string; metaKey: boolean; ctrlKey: boolean; 
   if (e.code !== "KeyB" || !e.metaKey || e.ctrlKey || e.shiftKey) return null;
   return e.altKey ? "right" : "left";
 }
+
+// ── 폭 조절 (v3.49): 경계를 끌거나 손잡이에 초점을 두고 ←/→. 두 번 누르면 기본 폭 ──
+
+/** 패널마다 최소·최대·기본 폭(px). 기본은 theme.css의 --sidebar-w·--rail과 같다 */
+export const PANEL_WIDTH = { left: { min: 200, max: 400, def: 260 }, right: { min: 280, max: 560, def: 340 } } as const;
+/** 가운데(대화 내용)가 이보다 좁아지지 않게 한다 */
+export const CENTER_MIN_PX = 420;
+/** 손잡이에 초점이 있을 때 ←/→ 한 번에 바뀌는 폭 */
+export const WIDTH_STEP_PX = 16;
+export const WIDTHS_KEY = "tractus.panelWidths.v1";
+export type PanelWidths = Record<Side, number>;
+export const DEFAULT_WIDTHS: PanelWidths = { left: PANEL_WIDTH.left.def, right: PANEL_WIDTH.right.def };
+
+/** 그 패널의 최소·최대 사이로, 그리고 다른 패널과 함께 가운데를 CENTER_MIN_PX보다 좁히지 않게 (그래도 최소보다 작아지지는 않는다) */
+export function clampWidth(side: Side, px: number, other: number, windowW: number): number {
+  const { min, max } = PANEL_WIDTH[side];
+  const room = Number.isFinite(windowW) ? windowW - other - CENTER_MIN_PX : max;
+  return Math.round(Math.max(min, Math.min(px, max, room)));
+}
+
+/** 저장한 폭. 없거나 깨졌으면 기본값, 범위 밖이면 범위 안으로 */
+export function restoreWidths(raw: string | null | undefined): PanelWidths {
+  try {
+    const v = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    const pick = (side: Side) => (typeof v[side] === "number" && Number.isFinite(v[side]) ? Math.min(PANEL_WIDTH[side].max, Math.max(PANEL_WIDTH[side].min, v[side] as number)) : PANEL_WIDTH[side].def);
+    return { left: pick("left"), right: pick("right") };
+  } catch {
+    return DEFAULT_WIDTHS;
+  }
+}
+
+/** 손잡이의 ←/→: 화살표 방향으로 경계가 움직인다 (왼쪽 패널은 →가 넓히고, 오른쪽 패널은 ←가 넓힌다). 그 밖의 키는 null */
+export function widthByKey(side: Side, key: string, px: number): number | null {
+  if (key === "Home") return PANEL_WIDTH[side].min;
+  if (key === "End") return PANEL_WIDTH[side].max;
+  if (key !== "ArrowLeft" && key !== "ArrowRight") return null;
+  const grow = (key === "ArrowRight") === (side === "left");
+  return px + (grow ? WIDTH_STEP_PX : -WIDTH_STEP_PX);
+}
+
+export const WIDTH_LABEL: Record<Side, string> = { left: t("노트 목록 폭 조절"), right: t("오른쪽 패널 폭 조절") };
