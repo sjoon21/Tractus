@@ -71,9 +71,9 @@ def test_transcribe_creates_meeting_layout(env, fake_asr):
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_주간회의_[0-9A-Z]{26}", d.name)
     assert sorted(p.name for p in d.iterdir()) == ["audio.ogg", "transcript.json", "transcript.md", "transcript.vtt"]
     t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
-    assert t["asr"]["model"] == cli.MODELS[cli.Track.lite] and t["asr"]["hotwords"] == ["WTO", "김철수"]
+    assert t["asr"]["model"] == cli.MODELS[cli.Track.lite] and t["asr"]["hotwords"] == ["김철수", "WTO"]  # --term이 자주 쓰는 단어보다 앞 (asr.HOTWORDS_MAX)
     assert [s["text"] for s in t["segments"]] == ["청크0", "청크1", "청크2"]
-    assert fake_asr.calls[0] == {"samples": 2 * SR, "language": None, "hotwords": ["WTO", "김철수"]}
+    assert fake_asr.calls[0] == {"samples": 2 * SR, "language": None, "hotwords": ["김철수", "WTO"]}
 
 
 def test_interrupted_run_resumes_remaining_chunks(env, fake_asr):

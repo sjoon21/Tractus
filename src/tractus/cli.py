@@ -469,7 +469,8 @@ def _new_job(
         save_event(d, source.event)
 
     ev = source.event or load_event(d)  # 나중에 변환(--into)은 노트 폴더의 일정을 읽는다
-    hotwords = list(dict.fromkeys(load_glossary(home_dir() / "glossary.md") + terms + (ev["attendees"] if ev else [])))  # 참석자 이름은 이 노트의 변환에만
+    # 이 노트에 가까운 것부터: 참석자 이름(이 노트의 변환에만) → 명령의 --term → 자주 쓰는 단어. 앞의 asr.HOTWORDS_MAX개만 쓴다
+    hotwords = list(dict.fromkeys((ev["attendees"] if ev else []) + terms + load_glossary(home_dir() / "glossary.md")))
     job = Job(
         dir=d, meeting_id=meeting_id, sha256=digest, source=source.name, title=title,
         created_at=created_at, duration_sec=round(len(pcm) / SR, 2),

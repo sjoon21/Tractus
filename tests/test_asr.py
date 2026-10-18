@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from tractus.asr import Transcriber, collapse_repeats, has_loop, max_tokens_for
+from tractus.asr import HOTWORDS_MAX, LOOP_RETRY_TEMPERATURE, Transcriber, collapse_repeats, echoes_hotwords, has_loop, max_tokens_for
 
 
 def test_max_tokens_scales_with_duration():
@@ -36,7 +36,12 @@ class FakeModel:
 
     def generate(self, audio, **kwargs):
         self.calls.append(kwargs)
-        return self.outputs[kwargs.get("language")]
+        key = kwargs.get("language")
+        if kwargs.get("temperature") and ("t", key) in self.outputs:
+            return self.outputs[("t", key)]
+        if kwargs.get("hotwords") is None and ("nohw", key) in self.outputs:
+            return self.outputs[("nohw", key)]
+        return self.outputs[key]
 
 
 LOOP = "조사를 하며 " * 20
@@ -57,14 +62,60 @@ def test_fixed_language_loop_retries_with_auto_detect():
     assert seg.text == "Thank you all" and seg.lang == "en" and seg.repaired
 
 
-def test_loop_without_retry_option_is_collapsed():
+def test_loop_is_retried_once_with_temperature_then_collapsed():
     model = FakeModel({None: FakeOut("준비해 " + LOOP)})
     seg = Transcriber(model).transcribe(AUDIO, language=None)
-    assert len(model.calls) == 1
+    assert [c.get("temperature") for c in model.calls] == [None, LOOP_RETRY_TEMPERATURE]
     assert seg.text == "준비해 조사를 하며" and seg.repaired
+
+
+def test_loop_retry_with_temperature_can_recover_the_sentence():
+    model = FakeModel({None: FakeOut("준비해 " + LOOP), ("t", None): FakeOut("준비해서 조사를 하며 정리했습니다")})
+    seg = Transcriber(model).transcribe(AUDIO, language=None)
+    assert seg.text == "준비해서 조사를 하며 정리했습니다" and seg.repaired
+
+
+def test_hotwords_are_capped_and_skipped_on_short_chunks():
+    model = FakeModel({None: FakeOut("짧은 말")})
+    words = [f"단어{i}" for i in range(HOTWORDS_MAX + 10)]
+    Transcriber(model).transcribe(AUDIO, hotwords=words)
+    Transcriber(model).transcribe([0.0] * 8000, hotwords=words)  # 0.5초
+    assert len(model.calls[0]["hotwords"]) == HOTWORDS_MAX and model.calls[0]["hotwords"][0] == "단어0"
+    assert model.calls[1]["hotwords"] is None
+
+
+def test_output_that_echoes_the_hotword_list_is_redone_without_hotwords():
+    hw = ["Kubernetes", "Project Atlas", "김민수", "p95"]
+    model = FakeModel({None: FakeOut("Kubernetes, Project Atlas, 김민수, p95"), ("nohw", None): FakeOut("네 감사합니다")})
+    seg = Transcriber(model).transcribe(AUDIO, hotwords=hw)
+    assert [c["hotwords"] for c in model.calls] == [hw, None]
+    assert seg.text == "네 감사합니다" and seg.repaired
+
+
+def test_echo_detection_needs_several_terms_covering_most_of_the_text():
+    hw = ["Kubernetes", "Project Atlas", "김민수"]
+    assert echoes_hotwords("Kubernetes, Project Atlas, 김민수", hw)
+    assert not echoes_hotwords("김민수 님이 Kubernetes 클러스터를 Project Atlas 일정에 맞춰 올리기로 했습니다", hw)  # 정상 문장 속 용어
+    assert not echoes_hotwords("Kubernetes Kubernetes", hw)
 
 
 def test_hitting_token_cap_counts_as_loop():
     model = FakeModel({None: FakeOut("abcdefgh", generation_tokens=max_tokens_for(10.0))})
     seg = Transcriber(model).transcribe(AUDIO, language=None)
     assert seg.repaired
+
+
+def test_short_chunk_detected_as_chinese_is_redone_in_korean():
+    short = [0.0] * 16000 * 2
+    model = FakeModel({None: FakeOut("对，嗯，对。", language=["Chinese"]), "Korean": FakeOut("네 음 네")})
+    seg = Transcriber(model).transcribe(short)
+    assert [c["language"] for c in model.calls] == [None, "Korean"]
+    assert seg.text == "네 음 네" and seg.lang == "ko" and seg.repaired
+
+
+def test_long_chunks_and_other_languages_are_left_alone():
+    model = FakeModel({None: FakeOut("我们开始开会吧", language=["Chinese"])})
+    assert Transcriber(model).transcribe(AUDIO).text == "我们开始开会吧"  # 10초: 정말 중국어일 수 있다
+    model = FakeModel({None: FakeOut("Ja, genau.", language=["German"])})
+    assert Transcriber(model).transcribe([0.0] * 16000 * 2).text == "Ja, genau."
+
