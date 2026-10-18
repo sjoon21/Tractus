@@ -1004,7 +1004,7 @@ macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음�
 세 겹이다. 문구는 WORDS.md §4.25, 상태는 이 Mac의 브라우저 저장소(`tractus.onboarding`·`tractus.tips`, 막혀 있으면 이번 실행만 기억)다.
 
 1. **홈 `Tractus 시작하기` 목록** (`onboarding.ts`·`OnboardingCard.tsx`): 변환 모델 받기(caps `convert`) → 예시 노트 둘러보기(예시 노트를 열면 표시) → 첫 녹음(예시가 아닌 녹음 노트가 있으면) → 완성된 노트 보기(완성된 노트 화면을 보면 표시). 다 하거나 `닫기`를 누르면 사라진다.
-2. **예시 노트**: `note_sample` 명령(`tractus note sample`) → 목록을 다시 읽고 연다. 노트 목록에 `예시` 표시(`MeetingInfo.sample`, 예시일 때만 싣는다).
+2. **예시 노트**: `note_sample` 명령(`tractus note sample`) → 먼저 열고 목록은 뒤에 다시 읽는다(v3.42). 노트 목록에 `예시` 표시(`MeetingInfo.sample`, 예시일 때만 싣는다).
 3. **기능 안내** (`tips.ts`·`CoachMark.tsx`): 화면의 `data-tip="<ID>"`(또는 선택자) 요소 옆에 한 번씩 뜬다. **한 번에 하나**이고 보이는 자리만 차례를 잡는다(숨은 탭 안의 단추가 다른 안내를 막지 않게). 초점을 빼앗지 않고 Esc로 닫힌다. 홈의 안내(AI 어시스턴트·일정 카드)는 시작하기 목록이 사라진 뒤에 뜬다.
 
 설정 `도움말`: `다시 보기`(목록·안내를 처음부터), `기능 안내` 스위치.
