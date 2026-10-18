@@ -219,4 +219,5 @@ export default {
   "볼륨": "Volume",
   "요약을 메모에 붙였습니다": "Added the summary to your memo",
   "메모에 붙이지 못했습니다: {error}": "Couldn’t add it to your memo: {error}",
+  "자주 쓰는 단어에 추가할까요? — {term} (다음 녹음부터 더 정확하게 인식합니다)": "Add to custom vocabulary? — {term} (recognized more accurately from your next recording)",
 } satisfies Dict;

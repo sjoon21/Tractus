@@ -243,7 +243,7 @@ stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없
 
 ### 2.3 `tractus glossary add <용어> [<용어>…]`
 
-`$TRACTUS_HOME/glossary.md`에 `- 용어` 줄로 덧붙인다(없으면 머리말 `# 자주 쓰는 단어`와 안내 한 줄로 만든다). 앞뒤 공백을 지우고, 빈 값과 이미 있는 용어(대소문자 구분)는 건너뛴다. stdout: `{"added":N}`. 용어가 `-`로 시작할 수 있으므로 앱은 `tractus glossary add -- <용어>…`처럼 `--`를 앞에 둔다. 다음 전사부터 hotwords로 들어간다.
+`$TRACTUS_HOME/glossary.md`에 `- 용어` 줄로 덧붙인다(없으면 머리말 `# 자주 쓰는 단어`와 안내 한 줄로 만든다). 앱은 찾아 바꾸기의 `바꾼 말을 자주 쓰는 단어에 추가`와, 대화 한 줄을 직접 고쳤을 때의 제안(v3.53, `vocab.termFromEdit`: 바뀐 낱말 1~2개, 자모로 비교해 소리가 비슷함, 동사·어미로 끝나지 않음, 숫자만 바뀐 것 제외, 한 번 물은 낱말은 그 화면에서 다시 묻지 않음)에서 부른다. 앞뒤 공백을 지우고, 빈 값과 이미 있는 용어(대소문자 구분)는 건너뛴다. stdout: `{"added":N}`. 용어가 `-`로 시작할 수 있으므로 앱은 `tractus glossary add -- <용어>…`처럼 `--`를 앞에 둔다. 다음 전사부터 hotwords로 들어간다.
 
 ### 2.4 `tractus export <회의> --format <형식> --out <경로> [--force]`
 
@@ -861,7 +861,7 @@ tractus transcribe --into <노트> [--track …] [--language …] [--term …] [
 
 - 앱이 녹음을 시작할 때 녹음 폴더에 `event.json` `{"title", "start", "end", "calendar", "attendees": ["이름"]}`을 쓴다. 코어는 `calendar_event.load_event`로 검사해 읽고(제목 1~200자, ISO 8601 시각, 참석자 한 줄 80자 이하·중복 제거·50명까지, 깨졌으면 없는 것), 노트 폴더로 옮긴다(`memos.json`처럼, 이미 있으면 그대로). transcript.json은 바뀌지 않는다.
 - **제목:** `transcribe --recording`·`recording finish`의 기본 제목이 `녹음 HH:MM` 대신 일정 제목이다(`--title`이 이긴다).
-- **hotwords:** 참석자 이름을 그 노트의 변환에만 더한다(자주 쓰는 단어 다음, `--term`과 같다). `transcribe --into`는 노트 폴더의 `event.json`을 읽는다. `glossary.md`에는 쓰지 않는다.
+- **hotwords:** 참석자 이름을 그 노트의 변환에만 더한다(v3.51부터 맨 앞, 그다음 `--term` → 자주 쓰는 단어 → 노트의 제목·메모에서 고른 낱말(v3.53, `asr.note_terms`), 앞의 50개). `transcribe --into`는 노트 폴더의 `event.json`을 읽는다. `glossary.md`에는 쓰지 않는다.
 - **읽는 곳:** Obsidian frontmatter `attendees`, 내보내기 ZIP, 앱의 노트 상세 `attendees`(참석자 이름 고르기).
 
 ### 2.20 예시 노트: `tractus note sample` (v3.39)

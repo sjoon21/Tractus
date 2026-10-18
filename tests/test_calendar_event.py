@@ -38,7 +38,8 @@ def test_direct_transcribe_takes_the_event_title_and_attendee_hotwords(env, fake
     (d,) = notes_in(home)
     t = read_transcript(d)
     assert t["title"] == "주간 개발" and d.name.startswith("2026-10-02_주간_개발_")
-    assert t["asr"]["hotwords"] == ["김민수", "이지은", "WTO"]  # 이 노트만의 참석자가 자주 쓰는 단어(WTO)보다 앞 (asr.HOTWORDS_MAX)
+    hw = t["asr"]["hotwords"]
+    assert hw[:3] == ["김민수", "이지은", "WTO"] and hw[3:5] == ["주간", "개발"]  # 참석자 → 자주 쓰는 단어(WTO) → 노트 제목·메모의 낱말 (asr.note_terms)
     assert load_event(d) == EVENT
     assert "김민수" not in (home / "glossary.md").read_text(encoding="utf-8")  # 자주 쓰는 단어 목록에는 넣지 않는다
 
@@ -50,7 +51,7 @@ def test_saved_then_converted_note_keeps_the_event_for_hotwords(env, fake_asr, t
     t = read_transcript(d)
     assert t["title"] == "주간 개발" and load_event(d) == EVENT
     assert convert(t["meeting_id"], "--track", "lite").exit_code == 0
-    assert read_transcript(d)["asr"]["hotwords"] == ["김민수", "이지은", "WTO"]
+    assert read_transcript(d)["asr"]["hotwords"][:5] == ["김민수", "이지은", "WTO", "주간", "개발"]
 
 
 def test_a_broken_event_file_is_ignored(env, fake_asr, tmp_path):
