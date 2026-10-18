@@ -13,6 +13,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from tractus.i18n import t
 from tractus.store import _write_atomic, meeting_dir_name, memo_lines, new_ulid, one_line, save_transcript, SCHEMA_VERSION
 
 MAX_TITLE = 120
@@ -24,12 +25,12 @@ PAIR_BUDGET = 100_000
 SIMILAR = 0.5  # 크기가 다른 교체에서 같은 줄을 고친 것으로 보는 닮은 정도 (difflib ratio)
 _CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")  # \t(\x09)와 \n(\x0a)만 남긴다
 
-TITLE_EMPTY = "제목을 입력하세요."
-TITLE_LONG = f"제목은 {MAX_TITLE}자까지 쓸 수 있습니다."
-BODY_LONG = f"메모는 {MAX_BODY:,}자까지 쓸 수 있습니다."
-LINES_LONG = f"메모는 {MAX_LINES:,}줄까지 쓸 수 있습니다."
-MEMO_EDIT_HERE = "메모의 내용은 메모 화면에서 직접 고칩니다."
-NO_AUDIO_ALIGN = "녹음이 없는 노트라 단어 싱크를 맞출 수 없습니다."
+TITLE_EMPTY = t("제목을 입력하세요.")
+TITLE_LONG = t("제목은 {n}자까지 쓸 수 있습니다.", n=MAX_TITLE)
+BODY_LONG = t("메모는 {n}자까지 쓸 수 있습니다.", n=f"{MAX_BODY:,}")
+LINES_LONG = t("메모는 {n}줄까지 쓸 수 있습니다.", n=f"{MAX_LINES:,}")
+MEMO_EDIT_HERE = t("메모의 내용은 메모 화면에서 직접 고칩니다.")
+NO_AUDIO_ALIGN = t("녹음이 없는 노트라 단어 싱크를 맞출 수 없습니다.")
 
 
 def clean_title(raw: str) -> str:
@@ -111,7 +112,7 @@ def new_memo(title: str, body: str, now: datetime, meeting_id: str) -> dict:
 def create_memo(meetings: Path, title: str | None, body: str = "", now: datetime | None = None) -> tuple[Path, dict]:
     """meetings/<날짜>_<제목>_<ULID>/에 메모를 만든다. 제목이 없으면 '메모 HH:MM'. 잘못된 제목·본문은 ValueError."""
     now = now or datetime.now().astimezone()
-    title = clean_title(title) if title and title.strip() else f"메모 {now:%H:%M}"
+    title = clean_title(title) if title and title.strip() else f"메모 {now:%H:%M}"  # i18n-ok: 노트 데이터(다음 단계)
     body = clean_body(body)
     t = new_memo(title, body, now, new_ulid())  # 줄 수 검사(ValueError)는 폴더를 만들기 전에 끝난다
     d = meetings / meeting_dir_name(now.date().isoformat(), title, t["meeting_id"])

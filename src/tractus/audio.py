@@ -7,6 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
+from tractus.i18n import t
+
 SR = 16000
 
 
@@ -20,13 +22,13 @@ class FFmpegMissing(FFmpegError):
 
 def require_ffmpeg() -> None:
     if shutil.which("ffmpeg") is None:
-        raise FFmpegMissing("음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요.")
+        raise FFmpegMissing(t("음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요."))
 
 
 def _run(args: list[str], capture: bool = False) -> bytes:
     proc = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", *args], capture_output=True)
     if proc.returncode != 0:
-        raise FFmpegError(proc.stderr.decode(errors="replace").strip() or f"ffmpeg 실패 (exit {proc.returncode})")
+        raise FFmpegError(proc.stderr.decode(errors="replace").strip() or t("ffmpeg 실패 (exit {code})", code=proc.returncode))
     return proc.stdout if capture else b""
 
 
@@ -45,11 +47,11 @@ def decode(paths: Path | list[Path]) -> np.ndarray:
         raw = _run([*_inputs(paths), "-vn", "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"], capture=True)  # -vn: 동영상(mp4·mov)은 소리만
     except FFmpegError as e:
         if "does not contain any stream" in str(e):
-            raise FFmpegError(f"소리가 없는 파일입니다. 소리 없는 동영상인지 확인하세요: {', '.join(p.name for p in paths)}") from e
+            raise FFmpegError(t("소리가 없는 파일입니다. 소리 없는 동영상인지 확인하세요: {files}", files=", ".join(p.name for p in paths))) from e
         raise
     audio = np.frombuffer(raw, dtype=np.float32)
     if audio.size == 0:
-        raise FFmpegError(f"녹음된 소리가 없습니다: {', '.join(p.name for p in paths)}")
+        raise FFmpegError(t("녹음된 소리가 없습니다: {files}", files=", ".join(p.name for p in paths)))
     return audio
 
 

@@ -20,6 +20,8 @@ from pathlib import Path
 
 import numpy as np
 
+from tractus.i18n import t
+
 REC_SR = 48000  # tractus-rec 트랙 (recorder/Sources/RecorderKit/Wav.swift)
 SR = 16000  # VAD·ASR
 FACTOR = REC_SR // SR
@@ -64,13 +66,13 @@ def _data_offset(head: bytes) -> int | None:
     if len(head) < 12:
         return None
     if head[:4] != b"RIFF" or head[8:12] != b"WAVE":
-        raise ValueError("WAV 파일이 아닙니다")
+        raise ValueError(t("WAV 파일이 아닙니다"))
     pos, fmt_ok = 12, False
     while pos + 8 <= len(head):
         cid, size = head[pos:pos + 4], struct.unpack("<I", head[pos + 4:pos + 8])[0]
         if cid == b"data":
             if not fmt_ok:
-                raise ValueError("WAV fmt 청크가 data보다 뒤에 있습니다")
+                raise ValueError(t("WAV fmt 청크가 data보다 뒤에 있습니다"))
             return pos + 8
         if cid == b"fmt ":
             if pos + 24 > len(head):
@@ -78,7 +80,7 @@ def _data_offset(head: bytes) -> int | None:
             fmt, ch, sr = struct.unpack("<HHI", head[pos + 8:pos + 16])
             bits = struct.unpack("<H", head[pos + 22:pos + 24])[0]
             if (fmt, ch, sr, bits) != (1, 1, REC_SR, 16):
-                raise ValueError(f"48 kHz mono 16-bit PCM WAV가 아닙니다 (형식 {fmt}, {ch}채널, {sr} Hz, {bits}비트)")
+                raise ValueError(t("48 kHz mono 16-bit PCM WAV가 아닙니다 (형식 {fmt}, {ch}채널, {sr} Hz, {bits}비트)", fmt=fmt, ch=ch, sr=sr, bits=bits))
             fmt_ok = True
         pos += 8 + size + (size & 1)
     return None
@@ -426,7 +428,7 @@ class Live:
             self.speakers.feed(y)
         except Exception as e:  # noqa: BLE001 — 화자 라벨은 선택 기능이다. 실패하면 화자 없이 계속
             self.speakers = None
-            self.warn("diarizer_failed", f"실시간 화자 구분에 실패해 화자 없이 계속합니다: {e}")
+            self.warn("diarizer_failed", t("실시간 화자 구분에 실패해 화자 없이 계속합니다: {error}", error=e))
 
     def _speaker(self, cut: Cut) -> str | None:
         return self.speakers.label(cut.start / SR, cut.end / SR) if self.speakers is not None else None
@@ -469,7 +471,7 @@ class Live:
     def _warn_lagging(self) -> None:
         if not self.lagging:
             self.lagging = True
-            self.warn("live_lagging", "실시간 텍스트 변환이 녹음을 따라가지 못해 일부 구간을 건너뜁니다. 녹음과 녹음 종료 후 변환에는 영향이 없습니다")
+            self.warn("live_lagging", t("실시간 텍스트 변환이 녹음을 따라가지 못해 일부 구간을 건너뜁니다. 녹음과 녹음 종료 후 변환에는 영향이 없습니다"))
 
     def _skip_ahead(self) -> None:
         self._warn_lagging()
@@ -506,7 +508,7 @@ def find_tracks(rec_dir: Path, stop: threading.Event, wait_s: float = WAIT_S) ->
         stop.wait(0.05)
     found = [p for p in (rec_dir / "mic.wav", rec_dir / "system.wav") if p.exists()]
     if not found:
-        raise LiveError(f"녹음 파일을 찾지 못했습니다 (recording.json, mic.wav): {rec_dir}")
+        raise LiveError(t("녹음 파일을 찾지 못했습니다 (recording.json, mic.wav): {path}", path=rec_dir))
     return found
 
 
@@ -544,7 +546,7 @@ def load_models(vad_dir: Path, asr_dir: Path, diar_dir: Path | None, hotwords: l
 
 def _load_speakers(diar_dir: Path, warn) -> SpeakerTrack | None:
     if not (diar_dir / "model.safetensors").exists() or not (diar_dir / "config.json").exists():
-        warn("diarizer_missing", f"화자 분리 모델이 없어 실시간 자막에 화자를 표시하지 않습니다: {diar_dir}")
+        warn("diarizer_missing", t("화자 분리 모델이 없어 실시간 자막에 화자를 표시하지 않습니다: {path}", path=diar_dir))
         return None
     try:
         from mlx_audio.vad import load
@@ -553,7 +555,7 @@ def _load_speakers(diar_dir: Path, warn) -> SpeakerTrack | None:
         model.set_streaming_config("low")
         return SpeakerTrack(model, model.init_streaming_state())
     except Exception as e:  # noqa: BLE001 — 화자 라벨은 선택 기능이다
-        warn("diarizer_failed", f"실시간 화자 구분 모델을 올리지 못해 화자 없이 자막을 냅니다: {e}")
+        warn("diarizer_failed", t("실시간 화자 구분 모델을 올리지 못해 화자 없이 자막을 냅니다: {error}", error=e))
         return None
 
 

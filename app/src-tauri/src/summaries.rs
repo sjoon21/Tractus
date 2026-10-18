@@ -2,6 +2,7 @@
 //! `templates`, `summaries`)가 하고 앱은 인수·stdin JSON만 만든다. 요약 목록은 파일(summary.json, summaries/<key>.json)을 느슨하게 읽는다.
 //! 앱은 모든 key·ID를 모양으로 검증한 뒤 인수에 넣는다 (경로 조작·옵션 주입 방지).
 
+use crate::i18n::{t, tv};
 use super::{blocking, cancel_index, hold, is_meeting_id, meetings, release, run_tractus, stdout_json, AppState, BusyGuard};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -49,10 +50,10 @@ pub struct CustomSummary {
 fn check_prompt(prompt: &str) -> Result<String, String> {
     let prompt = prompt.trim();
     if prompt.is_empty() {
-        return Err("요약 방법을 입력하세요.".into());
+        return Err(t("요약 방법을 입력하세요."));
     }
     if prompt.chars().count() > MAX_PROMPT {
-        return Err("요약 방법은 4,000자까지 쓸 수 있습니다.".into());
+        return Err(t("요약 방법은 4,000자까지 쓸 수 있습니다."));
     }
     Ok(prompt.to_string())
 }
@@ -60,10 +61,10 @@ fn check_prompt(prompt: &str) -> Result<String, String> {
 fn check_name(name: &str) -> Result<String, String> {
     let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
     if name.is_empty() {
-        return Err("이름을 입력하세요.".into());
+        return Err(t("이름을 입력하세요."));
     }
     if name.chars().count() > MAX_NAME {
-        return Err("이름은 40자까지 쓸 수 있습니다.".into());
+        return Err(t("이름은 40자까지 쓸 수 있습니다."));
     }
     Ok(name)
 }
@@ -71,13 +72,13 @@ fn check_name(name: &str) -> Result<String, String> {
 /// `tractus summarize <노트> --progress-json [--template <ID> | --custom]`. 유형을 주지 않으면 기본(회의록)
 pub fn summarize_args(id: &str, template: Option<&str>, custom: bool) -> Result<Vec<String>, String> {
     if !is_meeting_id(id) {
-        return Err(format!("잘못된 노트 ID: {id}"));
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
     }
     let mut args: Vec<String> = ["summarize", id, "--progress-json"].map(String::from).to_vec();
     match (template, custom) {
-        (Some(_), true) => return Err("요약 유형과 직접 입력은 함께 쓸 수 없습니다.".into()),
+        (Some(_), true) => return Err(t("요약 유형과 직접 입력은 함께 쓸 수 없습니다.")),
         (Some(t), false) if is_template_id(t) => args.extend(["--template".into(), t.into()]),
-        (Some(_), false) => return Err("요약 유형을 찾을 수 없습니다.".into()),
+        (Some(_), false) => return Err(t("요약 유형을 찾을 수 없습니다.")),
         (None, true) => args.push("--custom".into()),
         (None, false) => {}
     }
@@ -92,7 +93,7 @@ pub fn custom_input(c: &CustomSummary) -> Result<String, String> {
         body.insert("save_as".into(), json!(check_name(name)?));
     } else if let Some(key) = &c.key {
         if !key.strip_prefix("c-").is_some_and(is_hex8) {
-            return Err("요약을 찾을 수 없습니다.".into());
+            return Err(t("요약을 찾을 수 없습니다."));
         }
         body.insert("key".into(), json!(key));
     }
@@ -105,12 +106,12 @@ pub fn save_template_args(id: Option<&str>, name: &str, description: &str, promp
     let name = check_name(name)?;
     let description = description.split_whitespace().collect::<Vec<_>>().join(" ");
     if description.chars().count() > MAX_DESC {
-        return Err("설명은 100자까지 쓸 수 있습니다.".into());
+        return Err(t("설명은 100자까지 쓸 수 있습니다."));
     }
     let mut args: Vec<String> = vec!["templates".into(), "save".into(), format!("--name={name}"), format!("--description={description}")];
     if let Some(id) = id {
         if !is_user_template_id(id) {
-            return Err("요약 유형을 찾을 수 없습니다.".into());
+            return Err(t("요약 유형을 찾을 수 없습니다."));
         }
         args.extend(["--id".into(), id.into()]);
     }
@@ -130,7 +131,7 @@ pub struct TemplateInfo {
 
 /// `templates list --json`의 마지막 줄 {"templates": [...]} 또는 `templates save`의 객체 하나. 읽지 못하는 항목은 건너뛴다
 fn parse_templates(out: &str) -> Result<Vec<TemplateInfo>, String> {
-    let v = stdout_json(out).map_err(|_| "요약 유형을 읽지 못했습니다".to_string())?;
+    let v = stdout_json(out).map_err(|_| t("요약 유형을 읽지 못했습니다"))?;
     let items = v.get("templates").and_then(Value::as_array).cloned().unwrap_or_else(|| vec![v.clone()]);
     Ok(items.into_iter().filter_map(|t| serde_json::from_value::<TemplateInfo>(t).ok()).filter(|t| !t.id.is_empty()).collect())
 }
@@ -171,7 +172,7 @@ pub fn read_docs(dir: &Path) -> Vec<Value> {
 #[tauri::command]
 pub async fn templates_list(state: State<'_, AppState>) -> Result<Vec<TemplateInfo>, String> {
     let s = state.settings();
-    blocking(move || parse_templates(&run_tractus(&s, &["templates".into(), "list".into(), "--json".into()], None, "요약 유형을 읽지 못했습니다")?)).await
+    blocking(move || parse_templates(&run_tractus(&s, &["templates".into(), "list".into(), "--json".into()], None, &t("요약 유형을 읽지 못했습니다"))?)).await
 }
 
 /// 내 요약 유형 만들기(id 없음)·고치기. 저장한 유형을 돌려준다
@@ -180,8 +181,8 @@ pub async fn templates_save(state: State<'_, AppState>, id: Option<String>, name
     let s = state.settings();
     let (args, input) = save_template_args(id.as_deref(), &name, &description, &prompt)?;
     blocking(move || {
-        let out = run_tractus(&s, &args, Some(&input), "요약 유형을 저장하지 못했습니다")?;
-        parse_templates(&out)?.into_iter().next().ok_or_else(|| "요약 유형을 읽지 못했습니다".to_string())
+        let out = run_tractus(&s, &args, Some(&input), &t("요약 유형을 저장하지 못했습니다"))?;
+        parse_templates(&out)?.into_iter().next().ok_or_else(|| t("요약 유형을 읽지 못했습니다"))
     })
     .await
 }
@@ -189,10 +190,10 @@ pub async fn templates_save(state: State<'_, AppState>, id: Option<String>, name
 #[tauri::command]
 pub async fn templates_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
     if !is_user_template_id(&id) {
-        return Err("기본 요약 유형은 고치거나 삭제할 수 없습니다.".into());
+        return Err(t("기본 요약 유형은 고치거나 삭제할 수 없습니다."));
     }
     let s = state.settings();
-    blocking(move || run_tractus(&s, &["templates".into(), "delete".into(), id], None, "요약 유형을 삭제하지 못했습니다").map(|_| ())).await
+    blocking(move || run_tractus(&s, &["templates".into(), "delete".into(), id], None, &t("요약 유형을 삭제하지 못했습니다")).map(|_| ())).await
 }
 
 /// 노트의 요약 전부 (원본 JSON + key)
@@ -205,14 +206,14 @@ pub async fn summaries_list(state: State<'_, AppState>, id: String) -> Result<Ve
 #[tauri::command]
 pub async fn summaries_delete(state: State<'_, AppState>, id: String, key: String) -> Result<(), String> {
     if !is_meeting_id(&id) || !is_summary_key(&key) {
-        return Err("요약을 찾을 수 없습니다.".into());
+        return Err(t("요약을 찾을 수 없습니다."));
     }
     let s = state.settings();
     let args: Vec<String> = ["summaries", &id, "delete", &key].map(String::from).to_vec();
     let guard = BusyGuard::new(&state.busy, &id);
     blocking(move || {
         let _guard = guard;
-        run_tractus(&s, &args, None, "요약을 삭제하지 못했습니다").map(|_| ())
+        run_tractus(&s, &args, None, &t("요약을 삭제하지 못했습니다")).map(|_| ())
     })
     .await
 }

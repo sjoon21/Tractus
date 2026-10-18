@@ -1,6 +1,7 @@
 //! macOS 캘린더 (docs/design/calendar.md, docs/desktop.md §3.6). 읽기는 녹음 프로그램 `tractus-rec calendar …`(EventKit)가 하고,
 //! 앱은 설정(`calendar_enabled`·`calendar_hidden`)과 녹음 폴더의 `event.json`만 다룬다.
 
+use crate::i18n::{t, tv};
 use crate::{blocking, procs, AppState, Settings};
 use serde_json::{json, Value};
 use std::path::Path;
@@ -19,15 +20,15 @@ fn run(s: &Settings, args: &[String]) -> Result<Value, String> {
     let rec = s.rec_path();
     let out = Command::new(&rec).arg("calendar").args(args).envs(s.child_env()).stdin(Stdio::null()).output().map_err(|e| procs::cannot_run(&rec.to_string_lossy(), e))?;
     if !out.status.success() {
-        return Err(format!("캘린더를 읽지 못했습니다\n{}", String::from_utf8_lossy(&out.stderr).trim()));
+        return Err(tv("캘린더를 읽지 못했습니다\n{detail}", &[("detail", String::from_utf8_lossy(&out.stderr).trim().to_string())]));
     }
-    String::from_utf8_lossy(&out.stdout).lines().rev().find_map(|l| serde_json::from_str::<Value>(l).ok()).filter(Value::is_object).ok_or_else(|| "캘린더를 읽지 못했습니다".into())
+    String::from_utf8_lossy(&out.stdout).lines().rev().find_map(|l| serde_json::from_str::<Value>(l).ok()).filter(Value::is_object).ok_or_else(|| t("캘린더를 읽지 못했습니다"))
 }
 
 /// 설정 파일의 캘린더 키만 바꾼다 (다른 키는 그대로)
 pub fn merge_calendar(raw: Option<&str>, enabled: bool, hidden: &[String]) -> Result<String, String> {
     if hidden.len() > 200 || hidden.iter().any(|id| id.is_empty() || id.len() > 200 || id.starts_with('-')) {
-        return Err("잘못된 캘린더 ID입니다".into());
+        return Err(t("잘못된 캘린더 ID입니다"));
     }
     let mut v: Value = raw.and_then(|r| serde_json::from_str(r).ok()).filter(Value::is_object).unwrap_or_else(|| json!({}));
     v["calendar_enabled"] = json!(enabled);
@@ -99,7 +100,7 @@ pub fn calendar_privacy() -> Result<(), String> {
 pub fn clean_event(v: &Value) -> Result<Value, String> {
     let text = |k: &str, max: usize| v[k].as_str().map(|x| x.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(max).collect::<String>()).filter(|x| !x.is_empty());
     let (Some(title), Some(start), Some(end)) = (text("title", MAX_TITLE), text("start", 40), text("end", 40)) else {
-        return Err("일정 정보가 올바르지 않습니다".into());
+        return Err(t("일정 정보가 올바르지 않습니다"));
     };
     let mut names: Vec<String> = vec![];
     for n in v["attendees"].as_array().into_iter().flatten().filter_map(Value::as_str) {
@@ -113,7 +114,7 @@ pub fn clean_event(v: &Value) -> Result<Value, String> {
 
 pub fn write_event(rec_dir: &Path, event: &Value) -> Result<(), String> {
     let tmp = rec_dir.join(format!("{EVENT_FILE}.tmp"));
-    std::fs::write(&tmp, event.to_string()).and_then(|_| std::fs::rename(&tmp, rec_dir.join(EVENT_FILE))).map_err(|e| format!("녹음 폴더를 준비하지 못했습니다\n{e}"))
+    std::fs::write(&tmp, event.to_string()).and_then(|_| std::fs::rename(&tmp, rec_dir.join(EVENT_FILE))).map_err(|e| tv("녹음 폴더를 준비하지 못했습니다\n{e}", &[("e", e.to_string())]))
 }
 
 /// 시작하지 못한 녹음 폴더 정리: event.json과 (비어 있으면) 폴더만 지운다

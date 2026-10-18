@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
+from tractus.i18n import t
 from tractus.store import is_sample, memo_segments, seg_text, speaker_name
 
 log = logging.getLogger("tractus.index")
@@ -33,13 +34,13 @@ VECTOR_WEIGHT = 0.3
 
 # ── 한국어 음절 bigram ────────────────────────────────────────────────
 # 리서치 실측(합성 코퍼스): bigram AND 재현율 0.96 / 정밀도 1.00, trigram 0.33, unicode61 원문 0.30.
-_RUN = re.compile(r"[가-힣]+|[0-9]+(?:[.,][0-9]+)*|[a-z]+")
+_RUN = re.compile(r"[가-힣]+|[0-9]+(?:[.,][0-9]+)*|[a-z]+")  # i18n-ok: 토크나이저
 # 완화 질의에서 떼어 내는 조사·어미 (긴 것부터). 형태소 분석기 없이 흔한 것만 다룬다.
-_JOSA = sorted("에서는 으로는 에게서 까지는 이라는 에서 으로 에게 까지 부터 처럼 보다 라는 이라 하고 은 는 이 가 을 를 의 에 도 만 과 와 로".split(), key=len, reverse=True)
+_JOSA = sorted("에서는 으로는 에게서 까지는 이라는 에서 으로 에게 까지 부터 처럼 보다 라는 이라 하고 은 는 이 가 을 를 의 에 도 만 과 와 로".split(), key=len, reverse=True)  # i18n-ok: 조사 목록
 
 
 def _hangul(r: str) -> bool:
-    return "가" <= r[0] <= "힣"
+    return "가" <= r[0] <= "힣"  # i18n-ok: 음절 범위
 
 
 def _bigrams(run: str) -> list[str]:
@@ -156,18 +157,18 @@ def make_chunks(segments: list[dict], speakers: dict | None = None) -> list[dict
     ]
 
 
-def _validate(t) -> str:
+def _validate(tr) -> str:
     """색인 전에 형식을 확인한다. 잘못된 회의 하나가 동기화 전체를 멈추지 않도록 ValueError로 바꾼다."""
-    if not isinstance(t, dict) or not isinstance(t.get("meeting_id"), str) or not t["meeting_id"]:
-        raise ValueError("transcript.json 형식이 아닙니다 (meeting_id 없음)")
-    if not isinstance(t.get("segments"), list):
-        raise ValueError("segments가 목록이 아닙니다")
-    for s in t["segments"]:
+    if not isinstance(tr, dict) or not isinstance(tr.get("meeting_id"), str) or not tr["meeting_id"]:
+        raise ValueError(t("transcript.json 형식이 아닙니다 (meeting_id 없음)"))
+    if not isinstance(tr.get("segments"), list):
+        raise ValueError(t("segments가 목록이 아닙니다"))
+    for s in tr["segments"]:
         if not isinstance(s, dict) or not isinstance(s.get("id"), str) or not isinstance(s.get("start"), (int, float)) or not isinstance(s.get("end"), (int, float)):
-            raise ValueError(f"세그먼트 형식 오류: {str(s)[:80]}")
+            raise ValueError(t("세그먼트 형식 오류: {segment}", segment=str(s)[:80]))
         if not isinstance(s.get("text") or "", str) or not isinstance(s.get("corrected_text") or "", str):
-            raise ValueError(f"세그먼트 텍스트 형식 오류: {s.get('id')}")
-    return t["meeting_id"]
+            raise ValueError(t("세그먼트 텍스트 형식 오류: {id}", id=s.get("id")))
+    return tr["meeting_id"]
 
 
 @dataclass(frozen=True)
@@ -243,7 +244,7 @@ class Index:
         import sqlite_vec
 
         if not hasattr(self.db, "enable_load_extension"):
-            raise RuntimeError("이 Python의 sqlite3는 확장 로딩을 지원하지 않습니다. uv가 설치한 Python으로 실행하세요")
+            raise RuntimeError(t("이 Python의 sqlite3는 확장 로딩을 지원하지 않습니다. uv가 설치한 Python으로 실행하세요"))
         self.db.enable_load_extension(True)
         sqlite_vec.load(self.db)
         self.db.enable_load_extension(False)
@@ -314,7 +315,7 @@ class Index:
             return self.embedder.embed(texts)
         except Exception as e:  # noqa: BLE001
             log.warning("임베딩 실패: %s", e)
-            report.errors.append(f"임베딩 실패 (키워드 색인만 함): {e}")
+            report.errors.append(t("임베딩 실패 (키워드 색인만 함): {error}", error=e))
             self.embedder = None
             return None
 
@@ -376,7 +377,7 @@ class Index:
                     continue
                 mid = _validate(transcript)
                 if mid in seen:
-                    raise ValueError(f"meeting_id {mid}가 다른 폴더와 겹칩니다")
+                    raise ValueError(t("meeting_id {id}가 다른 폴더와 겹칩니다", id=mid))
                 seen.add(mid)
                 old = known.get(mid)
                 sha = _content_sha(tpath)

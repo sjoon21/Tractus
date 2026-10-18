@@ -1,6 +1,7 @@
 //! Obsidian으로 보내기 (docs/design/obsidian-export.md, docs/desktop.md §2.18).
 //! 설정 `obsidian_vault`(비면 아직 안 고름)·`obsidian_audio`와, 노트 하나를 볼트에 쓰는 `obsidian_send`(`tractus obsidian`).
 
+use crate::i18n::{t, tv};
 use crate::{blocking, expand, is_meeting_id, run_tractus, stdout_json, summaries, AppState, BusyGuard};
 use serde_json::{json, Value};
 use std::path::Path;
@@ -9,7 +10,7 @@ use tauri::State;
 /// 설정 파일의 두 키만 바꾼다 (다른 키·환경변수에서 온 기본값은 그대로). 볼트는 비우거나 있는 폴더의 절대 경로
 pub fn merge_obsidian(raw: Option<&str>, vault: &str, audio: bool) -> Result<String, String> {
     if !vault.is_empty() && !(Path::new(vault).is_absolute() && Path::new(vault).is_dir()) {
-        return Err(format!("볼트 폴더를 찾지 못했습니다: {vault}"));
+        return Err(tv("볼트 폴더를 찾지 못했습니다: {vault}", &[("vault", vault.to_string())]));
     }
     let mut v: Value = raw.and_then(|r| serde_json::from_str(r).ok()).filter(Value::is_object).unwrap_or_else(|| json!({}));
     v["obsidian_vault"] = json!(vault);
@@ -29,7 +30,7 @@ pub fn set_obsidian(state: State<'_, AppState>, vault: String, audio: bool) -> R
 /// `tractus obsidian <id> --vault=<볼트> [--summary=K] [--audio] [--force]`. 값은 `=`로 붙인다 (`-`로 시작하는 경로를 옵션으로 읽지 않게)
 fn send_args(id: &str, vault: &Path, summary: Option<&str>, audio: bool, force: bool) -> Result<Vec<String>, String> {
     if !is_meeting_id(id) || !vault.is_absolute() || summary.is_some_and(|k| !summaries::is_summary_key(k)) {
-        return Err(format!("잘못된 보내기: {id} {}", vault.display()));
+        return Err(tv("잘못된 보내기: {id} {path}", &[("id", id.to_string()), ("path", vault.display().to_string())]));
     }
     let mut args = vec!["obsidian".into(), id.into(), format!("--vault={}", vault.display())];
     args.extend(summary.map(|k| format!("--summary={k}")));
@@ -43,13 +44,13 @@ fn send_args(id: &str, vault: &Path, summary: Option<&str>, audio: bool, force: 
 pub async fn obsidian_send(state: State<'_, AppState>, id: String, summary: Option<String>, force: bool) -> Result<Value, String> {
     let s = state.settings();
     if s.obsidian_vault.is_empty() {
-        return Err("Obsidian 볼트를 먼저 고르세요".into());
+        return Err(t("Obsidian 볼트를 먼저 고르세요"));
     }
     let args = send_args(&id, &expand(&s.obsidian_vault), summary.as_deref(), s.obsidian_audio, force)?;
     let guard = BusyGuard::new(&state.busy, &id);
     blocking(move || {
         let _guard = guard;
-        stdout_json(&run_tractus(&s, &args, None, "Obsidian으로 보내지 못했습니다")?)
+        stdout_json(&run_tractus(&s, &args, None, &t("Obsidian으로 보내지 못했습니다"))?)
     })
     .await
 }
@@ -62,12 +63,12 @@ fn percent(path: &str) -> String {
 /// 보낸 파일을 Obsidian에서 연다. 설정한 볼트의 Tractus 폴더 안에 있는 .md만 받는다
 #[tauri::command]
 pub fn obsidian_open(state: State<'_, AppState>, path: String) -> Result<(), String> {
-    let root = expand(&state.settings().obsidian_vault).join("Tractus").canonicalize().map_err(|_| "볼트를 찾지 못했습니다".to_string())?;
-    let p = Path::new(&path).canonicalize().map_err(|_| "보낸 파일을 찾지 못했습니다".to_string())?;
+    let root = expand(&state.settings().obsidian_vault).join("Tractus").canonicalize().map_err(|_| t("볼트를 찾지 못했습니다"))?;
+    let p = Path::new(&path).canonicalize().map_err(|_| t("보낸 파일을 찾지 못했습니다"))?;
     if !p.starts_with(&root) || p.extension().is_none_or(|e| e != "md") {
-        return Err(format!("열 수 없는 파일입니다: {path}"));
+        return Err(tv("열 수 없는 파일입니다: {path}", &[("path", path.to_string())]));
     }
-    tauri_plugin_opener::open_url(format!("obsidian://open?path={}", percent(&p.to_string_lossy())), None::<&str>).map_err(|e| format!("Obsidian을 열지 못했습니다\n{e}"))
+    tauri_plugin_opener::open_url(format!("obsidian://open?path={}", percent(&p.to_string_lossy())), None::<&str>).map_err(|e| tv("Obsidian을 열지 못했습니다\n{e}", &[("e", e.to_string())]))
 }
 
 #[cfg(test)]

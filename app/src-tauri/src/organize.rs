@@ -2,6 +2,7 @@
 //! 노트의 `favorite`·`tags`·`folder`는 meetings.rs가 목록에 실어 보내고, 폴더 목록은 여기서 `$TRACTUS_HOME/folders.json`을 직접 읽는다 (깨졌으면 빈 목록).
 //! 쓰기는 모두 코어(`tractus note meta`, `tractus folders …`)가 한다. 앱은 인수와 stdin JSON만 만든다.
 
+use crate::i18n::{t, tv};
 use super::{blocking, is_meeting_id, run_tractus, stdout_json, AppState, BusyGuard};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -113,7 +114,7 @@ fn clean_tag(raw: &str) -> String {
 /// `tractus note meta <노트>` 인수와 stdin JSON. 화면이 먼저 거르므로 여기는 마지막 방어선이다 (문장은 코어와 같다)
 pub fn note_meta_args(id: &str, p: &MetaPatch) -> Result<(Vec<String>, String), String> {
     if !is_meeting_id(id) {
-        return Err(format!("잘못된 노트 ID: {id}"));
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
     }
     let mut body = serde_json::Map::new();
     if let Some(f) = p.favorite {
@@ -122,24 +123,24 @@ pub fn note_meta_args(id: &str, p: &MetaPatch) -> Result<(Vec<String>, String), 
     if let Some(tags) = &p.tags {
         let tags: Vec<String> = tags.iter().map(|t| clean_tag(t)).filter(|t| !t.is_empty()).collect();
         if tags.iter().any(|t| t.contains(',')) {
-            return Err("태그에 쉼표는 쓸 수 없습니다.".into());
+            return Err(t("태그에 쉼표는 쓸 수 없습니다."));
         }
         if tags.iter().any(|t| t.chars().count() > MAX_TAG) {
-            return Err(format!("태그는 {MAX_TAG}자까지 쓸 수 있습니다."));
+            return Err(tv("태그는 {MAX_TAG}자까지 쓸 수 있습니다.", &[("MAX_TAG", MAX_TAG.to_string())]));
         }
         if tags.len() > MAX_TAGS {
-            return Err(format!("태그는 {MAX_TAGS}개까지 붙일 수 있습니다."));
+            return Err(tv("태그는 {MAX_TAGS}개까지 붙일 수 있습니다.", &[("MAX_TAGS", MAX_TAGS.to_string())]));
         }
         body.insert("tags".into(), json!(tags));
     }
     if let Some(folder) = &p.folder {
         if folder.as_deref().is_some_and(|f| !is_meeting_id(f)) {
-            return Err("폴더를 찾지 못했습니다. 노트 목록을 다시 불러 주세요.".into());
+            return Err(t("폴더를 찾지 못했습니다. 노트 목록을 다시 불러 주세요."));
         }
         body.insert("folder".into(), json!(folder));
     }
     if body.is_empty() {
-        return Err("바꿀 내용이 없습니다".into());
+        return Err(t("바꿀 내용이 없습니다"));
     }
     Ok((["note", "meta", id].map(String::from).to_vec(), Value::Object(body).to_string()))
 }
@@ -160,7 +161,7 @@ pub async fn note_meta(state: State<'_, AppState>, id: String, patch: MetaPatch)
     let guard = BusyGuard::new(&state.busy, &id);
     blocking(move || {
         let _guard = guard;
-        let v = stdout_json(&run_tractus(&s, &args, Some(&input), "노트 정리를 저장하지 못했습니다")?)?;
+        let v = stdout_json(&run_tractus(&s, &args, Some(&input), &t("노트 정리를 저장하지 못했습니다"))?)?;
         Ok(parse_meta(&v))
     })
     .await
@@ -172,16 +173,16 @@ pub async fn note_meta(state: State<'_, AppState>, id: String, patch: MetaPatch)
 fn folder_name(raw: &str) -> Result<String, String> {
     let name = raw.split_whitespace().collect::<Vec<_>>().join(" ");
     if name.is_empty() {
-        return Err("폴더 이름을 입력하세요.".into());
+        return Err(t("폴더 이름을 입력하세요."));
     }
     if name.contains('/') {
-        return Err("폴더 이름에 /는 쓸 수 없습니다.".into());
+        return Err(t("폴더 이름에 /는 쓸 수 없습니다."));
     }
     if name.eq_ignore_ascii_case("none") {
-        return Err("‘none’은 폴더 이름으로 쓸 수 없습니다.".into()); // 인수 `none`은 폴더 없음 (코어)
+        return Err(t("‘none’은 폴더 이름으로 쓸 수 없습니다.")); // 인수 `none`은 폴더 없음 (코어)
     }
     if name.chars().count() > MAX_FOLDER_NAME {
-        return Err(format!("폴더 이름은 {MAX_FOLDER_NAME}자까지 쓸 수 있습니다."));
+        return Err(tv("폴더 이름은 {MAX_FOLDER_NAME}자까지 쓸 수 있습니다.", &[("MAX_FOLDER_NAME", MAX_FOLDER_NAME.to_string())]));
     }
     Ok(name)
 }
@@ -190,7 +191,7 @@ fn folder_id(id: &str) -> Result<&str, String> {
     if is_meeting_id(id) {
         Ok(id)
     } else {
-        Err("폴더를 찾지 못했습니다. 노트 목록을 다시 불러 주세요.".into())
+        Err(t("폴더를 찾지 못했습니다. 노트 목록을 다시 불러 주세요."))
     }
 }
 
@@ -221,12 +222,12 @@ pub fn folders_delete_args(id: &str) -> Result<Vec<String>, String> {
 }
 
 /// 폴더 명령 하나를 돌리고 바뀐 폴더 목록을 돌려준다
-async fn folder_op(state: &State<'_, AppState>, args: Vec<String>, what: &'static str) -> Result<Vec<Folder>, String> {
+async fn folder_op(state: &State<'_, AppState>, args: Vec<String>, what: String) -> Result<Vec<Folder>, String> {
     let s = state.settings();
     let guard = BusyGuard::new(&state.busy, FOLDERS_TARGET);
     blocking(move || {
         let _guard = guard;
-        stdout_json(&run_tractus(&s, &args, None, what)?)?;
+        stdout_json(&run_tractus(&s, &args, None, &what)?)?;
         Ok(load_folders(&s.home()))
     })
     .await
@@ -234,23 +235,23 @@ async fn folder_op(state: &State<'_, AppState>, args: Vec<String>, what: &'stati
 
 #[tauri::command]
 pub async fn folders_create(state: State<'_, AppState>, name: String, parent: Option<String>) -> Result<Vec<Folder>, String> {
-    folder_op(&state, folders_create_args(&name, parent.as_deref())?, "폴더를 만들지 못했습니다").await
+    folder_op(&state, folders_create_args(&name, parent.as_deref())?, t("폴더를 만들지 못했습니다")).await
 }
 
 #[tauri::command]
 pub async fn folders_rename(state: State<'_, AppState>, id: String, name: String) -> Result<Vec<Folder>, String> {
-    folder_op(&state, folders_rename_args(&id, &name)?, "폴더 이름을 바꾸지 못했습니다").await
+    folder_op(&state, folders_rename_args(&id, &name)?, t("폴더 이름을 바꾸지 못했습니다")).await
 }
 
 #[tauri::command]
 pub async fn folders_move(state: State<'_, AppState>, id: String, parent: Option<String>) -> Result<Vec<Folder>, String> {
-    folder_op(&state, folders_move_args(&id, parent.as_deref())?, "폴더를 옮기지 못했습니다").await
+    folder_op(&state, folders_move_args(&id, parent.as_deref())?, t("폴더를 옮기지 못했습니다")).await
 }
 
 /// 폴더를 지운다. 노트는 지우지 않고 상위 폴더로, 하위 폴더는 한 단계 위로 올린다 (코어)
 #[tauri::command]
 pub async fn folders_delete(state: State<'_, AppState>, id: String) -> Result<Vec<Folder>, String> {
-    folder_op(&state, folders_delete_args(&id)?, "폴더를 삭제하지 못했습니다").await
+    folder_op(&state, folders_delete_args(&id)?, t("폴더를 삭제하지 못했습니다")).await
 }
 
 // ── 목록 정렬 설정 ───────────────────────────────────────────────────
@@ -258,7 +259,7 @@ pub async fn folders_delete(state: State<'_, AppState>, id: String) -> Result<Ve
 /// 설정 파일의 list_sort·list_order만 바꾼다 (rec_mode와 같은 방식: 다른 키·기본값을 파일에 굳히지 않는다)
 pub fn merge_list_prefs(raw: Option<&str>, sort: &str, order: &str) -> Result<String, String> {
     if !SORTS.contains(&sort) || !ORDERS.contains(&order) {
-        return Err(format!("알 수 없는 목록 순서: {sort} {order}"));
+        return Err(tv("알 수 없는 목록 순서: {sort} {order}", &[("sort", sort.to_string()), ("order", order.to_string())]));
     }
     let mut v: Value = raw.and_then(|r| serde_json::from_str(r).ok()).filter(Value::is_object).unwrap_or_else(|| json!({}));
     v["list_sort"] = json!(sort);

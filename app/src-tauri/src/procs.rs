@@ -2,6 +2,7 @@
 //! stdout의 JSON Lines 이벤트를 그대로 콜백에 넘기고, 끝나면 {"event":"exit","code":…,"stderr":…}를 하나 더 넘긴다.
 //! 반환하는 Child로 취소(kill)할 수 있다 (질문 멈추기). `Stoppable`은 stop 명령으로 끝내는 상주 프로세스(실시간 자막)다.
 
+use crate::i18n::{t, tv};
 use serde_json::{json, Map, Value};
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
@@ -18,9 +19,9 @@ const STDERR_TAIL: usize = 20;
 pub fn cannot_run(program: &str, e: impl std::fmt::Display) -> String {
     // ponytail: 파일 이름으로 가른다. 녹음 헬퍼 이름을 바꾸면 코어 문장이 나온다
     if Path::new(program).file_name().is_some_and(|n| n.to_string_lossy().starts_with("tractus-rec")) {
-        format!("녹음 프로그램을 실행할 수 없습니다. 설정에서 tractus-rec 실행 파일 경로를 확인하세요 ({program})\n{e}")
+        tv("녹음 프로그램을 실행할 수 없습니다. 설정에서 tractus-rec 실행 파일 경로를 확인하세요 ({program})\n{e}", &[("program", program.to_string()), ("e", e.to_string())])
     } else {
-        format!("Tractus 엔진을 실행할 수 없습니다. 설정에서 tractus 실행 파일 경로를 확인하세요 ({program})\n{e}")
+        tv("Tractus 엔진을 실행할 수 없습니다. 설정에서 tractus 실행 파일 경로를 확인하세요 ({program})\n{e}", &[("program", program.to_string()), ("e", e.to_string())])
     }
 }
 
@@ -83,8 +84,8 @@ pub fn recorder_line(cmd: &str, text: Option<&str>) -> Result<String, String> {
     match (cmd, text) {
         ("bookmark" | "stop" | "pause" | "resume", _) => Ok(format!("{cmd}\n")),
         ("memo", Some(t)) if !t.trim().is_empty() => Ok(format!("memo {}\n", t.split_whitespace().collect::<Vec<_>>().join(" "))),
-        ("memo", _) => Err("메모가 비어 있습니다".into()),
-        _ => Err(format!("알 수 없는 녹음 명령: {cmd}")),
+        ("memo", _) => Err(t("메모가 비어 있습니다")),
+        _ => Err(tv("알 수 없는 녹음 명령: {cmd}", &[("cmd", cmd.to_string())])),
     }
 }
 

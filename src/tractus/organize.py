@@ -19,6 +19,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
+from tractus.i18n import t
 from tractus.store import _write_atomic, edit_transcript, is_memo, is_recorded, new_ulid, note_lock, one_line, read_transcript, render_files
 
 FOLDERS_FILE = "folders.json"
@@ -32,21 +33,21 @@ SORTS = ("created", "updated", "title", "duration")
 ORDERS = ("asc", "desc")
 NO_FOLDER = "none"  # 폴더 필터·이동 인수에서 '폴더 없음'
 
-TAG_LONG = f"태그는 {MAX_TAG}자까지 쓸 수 있습니다."
-TAG_COMMA = "태그에 쉼표는 쓸 수 없습니다."
-TAGS_MANY = f"태그는 {MAX_TAGS}개까지 붙일 수 있습니다."
-FOLDER_EMPTY = "폴더 이름을 입력하세요."
-FOLDER_LONG = f"폴더 이름은 {MAX_FOLDER_NAME}자까지 쓸 수 있습니다."
-FOLDER_SLASH = "폴더 이름에 /는 쓸 수 없습니다."
-FOLDER_RESERVED = f"‘{NO_FOLDER}’은 폴더 이름으로 쓸 수 없습니다."  # 인수 `none`은 폴더 없음이라 같은 이름의 폴더는 이름으로 고를 수 없다 (resolve_folder)
-FOLDER_DUP = "같은 위치에 이름이 같은 폴더가 있습니다."
-FOLDER_DEPTH = f"폴더는 {MAX_DEPTH}단계까지 만들 수 있습니다."
-FOLDER_MISSING = "폴더를 찾지 못했습니다. 노트 목록을 다시 불러 주세요."
-FOLDER_LOOP = "폴더를 자기 안으로 옮길 수 없습니다."
-FOLDER_AMBIGUOUS = "이름이 같은 폴더가 여러 개입니다. 폴더 ID로 지정하세요."
-SORT_BAD = "기준은 created, updated, title, duration 중 하나여야 합니다."  # words-ok: CLI 인수 문구 (앱이 보내지 않는다)
-ORDER_BAD = "순서는 asc 또는 desc여야 합니다."  # words-ok: CLI 인수 문구 (앱이 보내지 않는다)
-META_FORMAT = '입력은 {"favorite": true, "tags": ["…"], "folder": "<폴더 ID>"|null} 형식이어야 합니다'  # words-ok: 앱 계약 오류
+TAG_LONG = t("태그는 {n}자까지 쓸 수 있습니다.", n=MAX_TAG)
+TAG_COMMA = t("태그에 쉼표는 쓸 수 없습니다.")
+TAGS_MANY = t("태그는 {n}개까지 붙일 수 있습니다.", n=MAX_TAGS)
+FOLDER_EMPTY = t("폴더 이름을 입력하세요.")
+FOLDER_LONG = t("폴더 이름은 {n}자까지 쓸 수 있습니다.", n=MAX_FOLDER_NAME)
+FOLDER_SLASH = t("폴더 이름에 /는 쓸 수 없습니다.")
+FOLDER_RESERVED = t("‘{name}’은 폴더 이름으로 쓸 수 없습니다.", name=NO_FOLDER)  # 인수 `none`은 폴더 없음이라 같은 이름의 폴더는 이름으로 고를 수 없다 (resolve_folder)
+FOLDER_DUP = t("같은 위치에 이름이 같은 폴더가 있습니다.")
+FOLDER_DEPTH = t("폴더는 {n}단계까지 만들 수 있습니다.", n=MAX_DEPTH)
+FOLDER_MISSING = t("폴더를 찾지 못했습니다. 노트 목록을 다시 불러 주세요.")
+FOLDER_LOOP = t("폴더를 자기 안으로 옮길 수 없습니다.")
+FOLDER_AMBIGUOUS = t("이름이 같은 폴더가 여러 개입니다. 폴더 ID로 지정하세요.")
+SORT_BAD = t("기준은 created, updated, title, duration 중 하나여야 합니다.")  # words-ok: CLI 인수 문구 (앱이 보내지 않는다)
+ORDER_BAD = t("순서는 asc 또는 desc여야 합니다.")  # words-ok: CLI 인수 문구 (앱이 보내지 않는다)
+META_FORMAT = t('입력은 {"favorite": true, "tags": ["…"], "folder": "<폴더 ID>"|null} 형식이어야 합니다')  # words-ok: 앱 계약 오류
 
 
 def _nfc(s: str) -> str:

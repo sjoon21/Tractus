@@ -4,6 +4,8 @@ import os
 import sys
 from pathlib import Path
 
+from tractus.i18n import t
+
 APP_MODELS = Path("~/Library/Application Support/dev.tractus.app/models")  # 앱 설정 폴더 아래: iCloud 동기화·노트 폴더 밖
 
 
@@ -23,8 +25,8 @@ def models_dir() -> Path:
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _HINTS = {  # 없는 도우미 프로그램: (저장소에서 실행 중일 때 쓸 빌드 명령, 아닐 때의 일반 안내)
-    "recorder": ("cd {repo}/recorder && swift build -c release --product tractus-rec", "앱을 다시 설치하거나 TRACTUS_REC_BIN에 tractus-rec 위치를 지정하세요"),
-    "diar_helper": ("cd {repo}/recorder/diar && swift build -c release", "TRACTUS_DIAR_BIN에 tractus-diar 위치를 지정하세요"),
+    "recorder": ("cd {repo}/recorder && swift build -c release --product tractus-rec", t("앱을 다시 설치하거나 TRACTUS_REC_BIN에 tractus-rec 위치를 지정하세요")),
+    "diar_helper": ("cd {repo}/recorder/diar && swift build -c release", t("TRACTUS_DIAR_BIN에 tractus-diar 위치를 지정하세요")),
 }
 
 

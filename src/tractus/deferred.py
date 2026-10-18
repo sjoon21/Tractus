@@ -16,6 +16,7 @@ from typing import Callable
 
 from tractus import audio
 from tractus.calendar_event import load_event, save_event
+from tractus.i18n import t
 from tractus.store import (
     MEMOS_FILE, RECORDED, SCHEMA_VERSION, SR, Job, _clean_stale_job, _write_atomic, build_transcript, is_memo, is_recorded, meeting_dir_name, new_ulid, note_lock,
     read_transcript, save_transcript,
@@ -25,8 +26,8 @@ MARKER = ".finish.json"  # finish가 끝나기 전의 노트 폴더 표시 (다�
 TRACKS_DIR = "tracks"
 EMPTY_WAV = 44  # 바이트: 빈 WAV 헤더
 _BUILT = ("schema_version", "audio", "asr", "speakers", "diarization", "segments")  # 변환 결과가 덮어쓰는 키
-NOT_RECORDED_CONVERTED = "이미 텍스트로 변환한 노트입니다."
-NOT_RECORDED_MEMO = "녹음이 없는 노트라 텍스트로 변환할 수 없습니다."
+NOT_RECORDED_CONVERTED = t("이미 텍스트로 변환한 노트입니다.")
+NOT_RECORDED_MEMO = t("녹음이 없는 노트라 텍스트로 변환할 수 없습니다.")
 
 
 class RecordingError(ValueError):
@@ -51,7 +52,7 @@ def read_recording(path: Path) -> RecordingInfo:
         tracks = [str(n) for n in rec["tracks"].values()]
         started = datetime.fromisoformat(rec["started_at"]).astimezone()
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
-        raise RecordingError(f"녹음 파일을 찾지 못했습니다 (recording.json): {e}") from e
+        raise RecordingError(t("녹음 파일을 찾지 못했습니다 (recording.json): {error}", error=e)) from e
     marks = [m for m in rec.get("marks") or [] if isinstance(m, dict) and isinstance(m.get("t"), (int, float))]
     return RecordingInfo(tracks, started, marks)
 
@@ -105,7 +106,7 @@ def finish_recording(rec: Path, meetings: Path, title: str | None, stage: Callab
     info = read_recording(_where("recording.json", *dirs) or rec / "recording.json")
     paths = [p for n in info.tracks if (p := _where(n, *dirs)) and p.stat().st_size > EMPTY_WAV]
     if not paths:
-        raise RecordingError(f"{rec}에 녹음된 소리가 없습니다")
+        raise RecordingError(t("{path}에 녹음된 소리가 없습니다", path=rec))
     audio.require_ffmpeg()
     stage("decode")  # 큰 녹음은 해시와 길이 계산에 몇 초 걸린다
     if found:
@@ -116,7 +117,7 @@ def finish_recording(rec: Path, meetings: Path, title: str | None, stage: Callab
         digest = audio.sha256(paths)
         duration = round(len(audio.decode(paths)) / SR, 2)  # ponytail: 길이를 재려고 통째로 디코딩한다 (1시간 약 230MB). 더 길면 ffprobe로 바꾼다
         meeting_id = new_ulid()
-        title = title or (ev["title"] if (ev := load_event(rec)) else f"녹음 {info.started:%H:%M}")
+        title = title or (ev["title"] if (ev := load_event(rec)) else f"녹음 {info.started:%H:%M}")  # i18n-ok: 노트 데이터(다음 단계)
         d = meetings / meeting_dir_name(info.started.date().isoformat(), title, meeting_id)
         d.mkdir(parents=True)
         _write_atomic(d / MARKER, json.dumps({"recording": rec.name, "meeting_id": meeting_id, "title": title, "sha256": digest, "duration_sec": duration}, ensure_ascii=False))
@@ -146,7 +147,7 @@ def check_recorded(t: dict) -> None:
         raise ValueError(NOT_RECORDED_MEMO if is_memo(t) else NOT_RECORDED_CONVERTED)
 
 
-def note_tracks(d: Path, t: dict) -> tuple[list[Path], list[dict], bool]:
+def note_tracks(d: Path, note: dict) -> tuple[list[Path], list[dict], bool]:
     """"변환 전" 노트 d의 변환 입력 → (오디오 파일들, 녹음 중 메모·북마크 중 memos.json에 아직 없는 것, 트랙을 쓰는가).
     tracks/가 있으면 그 트랙(손실 없음), 없거나 비었으면 audio.ogg 하나(False). 둘 다 없으면 RecordingError."""
     tr = d / TRACKS_DIR
@@ -158,9 +159,9 @@ def note_tracks(d: Path, t: dict) -> tuple[list[Path], list[dict], bool]:
     paths = [p for n in names if (p := tr / n).is_file() and p.stat().st_size > EMPTY_WAV]
     if paths:
         return paths, ([] if (d / MEMOS_FILE).is_file() else marks), True
-    ogg = d / str((t.get("audio") or {}).get("file") or "audio.ogg")
+    ogg = d / str((note.get("audio") or {}).get("file") or "audio.ogg")
     if not ogg.is_file():
-        raise RecordingError(f"{d.name}에 녹음 파일이 없습니다")
+        raise RecordingError(t("{name}에 녹음 파일이 없습니다", name=d.name))
     return [ogg], [], False
 
 

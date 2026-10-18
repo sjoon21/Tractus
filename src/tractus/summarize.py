@@ -21,15 +21,15 @@ SYSTEM_PROMPT = """너는 회의록 작성자다. 전사문만 근거로 회의�
 - 모든 주제·결정 사항·할 일에는 근거가 되는 세그먼트 ID(예: s0012)를 segment_ids에 하나 이상 넣는다. 전사에 있는 ID만 쓴다.
 - 전사는 음성 인식 결과라 오인식이 있을 수 있다. 문맥상 명백한 오인식은 바로잡아 쓴다.
 - 결정 사항은 회의에서 합의·확정된 것만, 할 일은 누군가 하기로 한 구체적 행동만 넣는다. 없으면 빈 배열로 둔다.
-- 요약·결정 사항·할 일 문장에 '화자', '세그먼트', '전사', s0012 같은 말을 쓰지 않는다. 이름이 붙은 사람만 이름으로 쓰고, 아니면 '참석자 1'처럼 쓴다."""
+- 요약·결정 사항·할 일 문장에 '화자', '세그먼트', '전사', s0012 같은 말을 쓰지 않는다. 이름이 붙은 사람만 이름으로 쓰고, 아니면 '참석자 1'처럼 쓴다."""  # i18n-ok: AI 프롬프트
 
 
 MEMO_PROMPT = """
-- 이 입력은 회의 전사가 아니라 사용자가 직접 쓴 메모다. 줄 앞에는 세그먼트 ID만 있고 시각·화자 표시는 없다. 담당자는 메모 본문에 이름이 나온 사람만 쓰고, '회의' 대신 '메모'라고 쓴다."""
+- 이 입력은 회의 전사가 아니라 사용자가 직접 쓴 메모다. 줄 앞에는 세그먼트 ID만 있고 시각·화자 표시는 없다. 담당자는 메모 본문에 이름이 나온 사람만 쓰고, '회의' 대신 '메모'라고 쓴다."""  # i18n-ok: AI 프롬프트
 
 
 RECORDING_MEMO_PROMPT = """
-- 입력 끝의 '사용자가 적은 메모'는 사용자가 직접 쓴 글이라 음성 인식 결과가 아니다. 줄 앞에는 m으로 시작하는 ID만 있다. 메모는 사용자가 따로 챙겨 둔 내용이므로 요약·주제·할 일에 빠뜨리지 않고 반영하고, 그 항목의 segment_ids에 해당 메모 줄 ID(예: m0001)를 넣는다. 전사와 겹치면 전사 ID와 메모 ID를 함께 넣는다. 결정 사항은 전사에서 합의·확정된 것이 우선이고, 메모는 '결정'이라고 분명히 적은 것만 넣는다. 메모에 적힌 일은 하기로 한 사람이 분명하지 않아도 할 일(owner null)로 넣을 수 있다."""
+- 입력 끝의 '사용자가 적은 메모'는 사용자가 직접 쓴 글이라 음성 인식 결과가 아니다. 줄 앞에는 m으로 시작하는 ID만 있다. 메모는 사용자가 따로 챙겨 둔 내용이므로 요약·주제·할 일에 빠뜨리지 않고 반영하고, 그 항목의 segment_ids에 해당 메모 줄 ID(예: m0001)를 넣는다. 전사와 겹치면 전사 ID와 메모 ID를 함께 넣는다. 결정 사항은 전사에서 합의·확정된 것이 우선이고, 메모는 '결정'이라고 분명히 적은 것만 넣는다. 메모에 적힌 일은 하기로 한 사람이 분명하지 않아도 할 일(owner null)로 넣을 수 있다."""  # i18n-ok: AI 프롬프트
 
 
 def system_prompt(transcript: dict) -> str:
@@ -41,25 +41,25 @@ class _Strict(BaseModel):
 
 
 class Topic(_Strict):
-    title: str = Field(description="주제 이름")
-    segment_ids: list[str] = Field(description="이 주제를 다룬 세그먼트 ID들")
+    title: str = Field(description="주제 이름")  # i18n-ok: AI 프롬프트
+    segment_ids: list[str] = Field(description="이 주제를 다룬 세그먼트 ID들")  # i18n-ok: AI 프롬프트
 
 
 class Decision(_Strict):
-    text: str = Field(description="결정 내용")
+    text: str = Field(description="결정 내용")  # i18n-ok: AI 프롬프트
     segment_ids: list[str]
 
 
 class ActionItem(_Strict):
-    task: str = Field(description="할 일")
-    owner: str | None = Field(description="담당자. 전사에 없으면 null")
-    due: str | None = Field(description="기한. 전사에 없으면 null")
+    task: str = Field(description="할 일")  # i18n-ok: AI 프롬프트
+    owner: str | None = Field(description="담당자. 전사에 없으면 null")  # i18n-ok: AI 프롬프트
+    due: str | None = Field(description="기한. 전사에 없으면 null")  # i18n-ok: AI 프롬프트
     segment_ids: list[str]
 
 
 class MeetingSummary(_Strict):
-    title: str = Field(description="회의 내용을 나타내는 짧은 제목")
-    summary: str = Field(description="3–6문장 요약")
+    title: str = Field(description="회의 내용을 나타내는 짧은 제목")  # i18n-ok: AI 프롬프트
+    summary: str = Field(description="3–6문장 요약")  # i18n-ok: AI 프롬프트
     topics: list[Topic]
     decisions: list[Decision]
     action_items: list[ActionItem]
@@ -68,16 +68,16 @@ class MeetingSummary(_Strict):
 def build_prompt(transcript: dict) -> str:
     if is_memo(transcript):
         lines = [f"[{s['id']}] {seg_text(s)}" for s in transcript["segments"]]
-        return f"메모 제목: {transcript['title']}\n\n메모:\n" + "\n".join(lines)
+        return f"메모 제목: {transcript['title']}\n\n메모:\n" + "\n".join(lines)  # i18n-ok: AI 프롬프트
 
     def who(s: dict) -> str:
         name = speaker_display(transcript, s.get("speaker"))
         return f" {name}" if name else ""
 
     lines = [f"[{s['id']} {_hms(s['start'])}{who(s)}] {seg_text(s)}" for s in transcript["segments"]]
-    prompt = f"회의 제목(파일 기준): {transcript['title']}\n\n전사:\n" + "\n".join(lines)
+    prompt = f"회의 제목(파일 기준): {transcript['title']}\n\n전사:\n" + "\n".join(lines)  # i18n-ok: AI 프롬프트
     if memo := memo_lines(transcript):  # 사용자가 직접 쓴 메모: 전사와 따로 라벨을 붙이고 시각 없이 ID만
-        prompt += "\n\n사용자가 적은 메모:\n" + "\n".join(f"[{m['id']}] {m['text']}" for m in memo)
+        prompt += "\n\n사용자가 적은 메모:\n" + "\n".join(f"[{m['id']}] {m['text']}" for m in memo)  # i18n-ok: AI 프롬프트
     return prompt
 
 
@@ -87,13 +87,13 @@ def check_segment_ids(summary: MeetingSummary, transcript: dict) -> None:
     items = [*summary.topics, *summary.decisions, *summary.action_items]
     unknown = sorted({i for item in items for i in item.segment_ids} - known)
     if unknown:
-        raise ValueError(f"전사에 없는 segment_ids: {unknown[:20]}")  # words-ok: LLM 재시도·stderr 전용
-    empty = [getattr(item, "title", "") or getattr(item, "text", "") or getattr(item, "task", "") or "(빈 항목)" for item in items if not item.segment_ids]
+        raise ValueError(f"전사에 없는 segment_ids: {unknown[:20]}")  # words-ok: LLM 재시도·stderr 전용  # i18n-ok: AI 프롬프트
+    empty = [getattr(item, "title", "") or getattr(item, "text", "") or getattr(item, "task", "") or "(빈 항목)" for item in items if not item.segment_ids]  # i18n-ok: AI 프롬프트
     if empty:
-        raise ValueError(f"근거 segment_ids가 빈 항목: {empty[:10]}")
+        raise ValueError(f"근거 segment_ids가 빈 항목: {empty[:10]}")  # i18n-ok: AI 프롬프트
 
 
-_NOT_OWNER = re.compile(r"^\s*(S\d+|참석자\s*\d+|speaker[\s_]*\d*|화자\s*\d*|발언자\s*\d*)\s*$|\bs\d{4}\b", re.IGNORECASE)  # "이화자" 같은 이름은 남긴다
+_NOT_OWNER = re.compile(r"^\s*(S\d+|참석자\s*\d+|speaker[\s_]*\d*|화자\s*\d*|발언자\s*\d*)\s*$|\bs\d{4}\b", re.IGNORECASE)  # "이화자" 같은 이름은 남긴다  # i18n-ok: 요약 출력 판별
 
 
 def _suggested_only(transcript: dict | None) -> set[str]:
@@ -132,7 +132,7 @@ def _where(ids: list[str], transcript: dict, rng: bool = False) -> str:
         parts.append(f"{lo}–{hi}" if rng else lo)
     lines = sorted(m["line"] for m in memo_lines(transcript) if m["id"] in ids)
     if lines:
-        parts.append(f"메모 {lines[0]}번째 줄" if lines[0] == lines[-1] else f"메모 {lines[0]}–{lines[-1]}번째 줄")
+        parts.append(f"메모 {lines[0]}번째 줄" if lines[0] == lines[-1] else f"메모 {lines[0]}–{lines[-1]}번째 줄")  # i18n-ok: 노트에 저장되는 summary.md (요약 언어는 다음 PR)
     return f" [{', '.join(parts)}]" if parts else ""
 
 
@@ -149,18 +149,18 @@ def render_summary_md(s: MeetingSummary, transcript: dict, provider: str, model:
         "",
         s.summary,
         "",
-        "## 주제",
+        "## 주제",  # i18n-ok: 노트에 저장되는 summary.md (요약 언어는 다음 PR)
         "",
     ]
     for t in s.topics:
         out += [f"### {t.title}{_where(t.segment_ids, transcript, rng=True)}", ""]
-    out += ["## 결정 사항", ""] + ([f"- {d.text}{_where(d.segment_ids, transcript)}" for d in s.decisions] or ["- 없음"])
-    out += ["", "## 할 일", ""]
+    out += ["## 결정 사항", ""] + ([f"- {d.text}{_where(d.segment_ids, transcript)}" for d in s.decisions] or ["- 없음"])  # i18n-ok: 노트에 저장되는 summary.md (요약 언어는 다음 PR)
+    out += ["", "## 할 일", ""]  # i18n-ok: 노트에 저장되는 summary.md (요약 언어는 다음 PR)
     for a in s.action_items:
         who = ", ".join(x for x in (a.owner, a.due) if x)
         out.append(f"- [ ] {a.task}{' — ' + who if who else ''}{_where(a.segment_ids, transcript)}")
     if not s.action_items:
-        out.append("- 없음")
+        out.append("- 없음")  # i18n-ok: 노트에 저장되는 summary.md (요약 언어는 다음 PR)
     return "\n".join(out) + "\n"
 
 

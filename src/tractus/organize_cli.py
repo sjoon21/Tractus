@@ -7,9 +7,10 @@ import sys
 import typer
 
 from tractus import organize
+from tractus.i18n import t
 from tractus.paths import home_dir
 
-META_SHAPE = '{"favorite": true, "tags": ["…"], "folder": "<폴더 ID>"|null}'
+META_SHAPE = t('{"favorite": true, "tags": ["…"], "folder": "<폴더 ID>"|null}')
 
 
 def _cli():

@@ -12,13 +12,14 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from tractus.i18n import t
 from tractus.notes import derive_lines
 from tractus.store import _clean_stale_job, _write_atomic, build_transcript, is_memo, note_lock, read_transcript, save_transcript
 
 ATTACH_FILE = "attach.json"
 CHAT_FILE = "chat.json"
-HAS_AUDIO = "이미 녹음이 있는 노트에는 녹음을 추가할 수 없습니다."
-REMAP_FAILED = "요약이나 질문 기록의 일부를 새 내용에 맞게 옮기지 못했습니다."
+HAS_AUDIO = t("이미 녹음이 있는 노트에는 녹음을 추가할 수 없습니다.")
+REMAP_FAILED = t("요약이나 질문 기록의 일부를 새 내용에 맞게 옮기지 못했습니다.")
 _OLD_ONLY = ("kind", "body", "seg_seq")  # 메모 노트에만 있던 키
 _BUILT = ("schema_version", "audio", "asr", "speakers", "diarization", "segments")  # 새 변환 결과가 덮어쓰는 키
 _CITE_ID = re.compile(r"([ \t]*)\[((?:[0-9A-Z]{26}#)?)(s\d{4})\]")  # ask.finalize가 답에 쓰는 인용 한 개

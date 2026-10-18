@@ -1012,9 +1012,10 @@ macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음�
 ### 3.8 화면 언어 (v3.44)
 
 - **한국어 문구가 원본이자 키다.** 화면 코드는 `t("노트 {n}개", { n })`(`i18n.ts`)로 쓰고, 영어는 `en/*.ts` 사전(화면 영역마다 파일 하나, `common.ts`는 함께 쓰는 짧은 말)에 둔다. 값이 `["{n} note", "{n} notes"]`면 `n`이 1일 때 앞의 것이다. 문체·용어는 WORDS.md §7.
-- **언어는 시작할 때 한 번 정한다**(`main.tsx`): 고른 값(`tractus.lang`, 이 Mac의 브라우저 저장소, 없으면 `시스템 설정`) → `시스템 설정`이면 Rust `system_lang`(`defaults read -g AppleLanguages` 첫 항목. WKWebView의 `navigator.language`는 번들 지역화를 따라가 macOS 언어와 다를 수 있다) → 한국어(`ko…`)면 한국어, 그 밖은 영어, 못 읽으면 한국어. 영어일 때만 사전을 불러온 뒤 화면 모듈을 불러온다(모듈 상수의 `t()`도 그 언어로 만들어지게). 설정 > 화면 > 언어를 바꾸면 화면을 다시 연다.
-- **이 단계(v3.44)는 화면 코드의 문구만이다.** Rust·코어가 보내는 오류·경고 문장, 메뉴 막대 메뉴, 권한 창 문구, 요약 유형 이름, AI 결과, 예시 노트는 다음 단계에서 옮긴다.
-- **검사**: `i18n.test.ts`가 빠진 번역·쓰이지 않는 번역·두 사전에 겹친 키·자리표시자 불일치·영어 값의 한국어·`t()` 밖에 남은 한국어 문자열/JSX 글자(주석 제외, 언어와 상관없는 데이터는 줄 끝 `i18n-ok`)를 잡는다. 템플릿 문자열 안의 `t()`는 검사가 못 보므로 `t()`를 템플릿 문자열에 넣지 않는다. 미리보기는 `/preview.html?lang=en-US`.
+- **언어는 Rust가 정한다**(`i18n.rs`, v3.45): 고른 값은 `settings.json` `ui_lang`(`system` 기본 | `ko` | `en`, `patch_settings`로만 쓴다) → `system`이면 macOS 첫 선호 언어(`defaults read -g AppleLanguages`. WKWebView의 `navigator.language`는 번들 지역화를 따라가 macOS 언어와 다를 수 있다) → 한국어(`ko…`)면 한국어, 그 밖은 영어, 못 읽으면 한국어. 앱 시작 때 정하고, 화면은 `ui_lang` 명령으로 `{pref, lang}`을 받아 영어일 때만 사전을 불러온 뒤 화면 모듈을 불러온다(모듈 상수의 `t()`도 그 언어로 만들어지게). 설정 > 화면 > 언어(`set_ui_lang`)를 바꾸면 메뉴 막대를 바로 다시 그리고 화면을 다시 연다.
+- **Rust 문장**(오류·메뉴 막대)은 `t()`/`tv()`(`i18n.rs`) + `en.json`. **코어**는 앱이 모든 실행에 싣는 `TRACTUS_LANG`(`child_env`)이 `en`일 때만 영어다(`tractus/i18n.py` + `i18n_en.json`. 셸의 `LANG`은 보지 않는다). 코어가 옮기는 것: 앱·터미널로 가는 오류·경고·`console.print`, 모델·기능 이름과 안내(`models list`·`doctor`), 내보낸 문서(txt·md·srt·vtt·csv·docx·Obsidian, 이름 없는 참석자는 `Speaker N`). 옮기지 않는 것: MCP 출력, `store.stamp()`(앱이 검색 결과에서 읽는다), 노트 폴더 파일(`transcript.md`·`vtt`·`summary.md`), 노트에 저장되는 기본 제목, AI 프롬프트 — 줄 끝 `i18n-ok`. 권한 창 문구는 `locales/{ko,en}.lproj/InfoPlist.strings`(macOS 언어를 따른다).
+- **3단계(다음)**: AI 결과 언어(화면 언어), 요약 유형 이름, 예시 노트, 노트 폴더 파일·기본 제목.
+- **검사**: Rust `i18n.rs` 테스트·`tests/test_i18n.py`(AST)가 같은 규칙(빠진 번역·쓰이지 않는 번역·자리표시자·`t()` 밖 한국어)을 본다. 화면은 `i18n.test.ts`가 빠진 번역·쓰이지 않는 번역·두 사전에 겹친 키·자리표시자 불일치·영어 값의 한국어·`t()` 밖에 남은 한국어 문자열/JSX 글자(주석 제외, 언어와 상관없는 데이터는 줄 끝 `i18n-ok`)를 잡는다. 템플릿 문자열 안의 `t()`는 검사가 못 보므로 `t()`를 템플릿 문자열에 넣지 않는다. 미리보기는 `/preview.html?lang=en-US`.
 
 ## 4. B안 판정 기준 (D안으로 갈지 정할 때)
 

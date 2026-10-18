@@ -13,6 +13,8 @@ from pathlib import Path
 
 import numpy as np
 
+from tractus.i18n import t
+
 SR = 16000
 # 3D-Speaker CAM++ zh_en advanced (192차원, Apache-2.0: modelscope iic/speech_campplus_sv_zh_en_16k-common_advanced)
 MODEL_ID = "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced"
@@ -76,14 +78,14 @@ class VoiceEmbedder:
         meta = self.session.get_modelmeta().custom_metadata_map
         if meta.get("feature_normalize_type") != "global-mean" or meta.get("normalize_samples", "1") != "1" \
                 or int(meta.get("sample_rate", SR)) != SR:
-            raise RuntimeError(f"목소리 인식 파일이 올바르지 않습니다. 다시 받아 주세요: {model_path}")
+            raise RuntimeError(t("목소리 인식 파일이 올바르지 않습니다. 다시 받아 주세요: {path}", path=model_path))
         self.input = self.session.get_inputs()[0].name
 
     def embed(self, pcm: np.ndarray) -> np.ndarray:
         """16kHz mono float32 → L2 정규화한 임베딩."""
         x = fbank(pcm)
         if not len(x):
-            raise ValueError("목소리 구간이 너무 짧습니다")
+            raise ValueError(t("목소리 구간이 너무 짧습니다"))
         return _unit(self.session.run(None, {self.input: x[None]})[0][0])
 
 
@@ -93,7 +95,7 @@ def model_path(models_dir: Path) -> Path:
 
 def model_hint(models_dir: Path) -> str:
     p = model_path(models_dir)
-    return f"{p}\n  tractus models download voices\n  (직접 받기: mkdir -p {p.parent} && curl -L -o {p} {MODEL_URL}  sha256 {MODEL_SHA256})"
+    return f"{p}\n  tractus models download voices\n  " + t("(직접 받기: {cmd})", cmd=f"mkdir -p {p.parent} && curl -L -o {p} {MODEL_URL}  sha256 {MODEL_SHA256}")
 
 
 def model_present(models_dir: Path) -> bool:
@@ -114,7 +116,7 @@ def load_embedder(models_dir: Path) -> VoiceEmbedder | None:
     if not p.is_file():
         return None
     if hashlib.sha256(p.read_bytes()).hexdigest() != MODEL_SHA256:
-        raise RuntimeError(f"목소리 인식 파일이 올바르지 않습니다. 다시 받아 주세요: {p}")
+        raise RuntimeError(t("목소리 인식 파일이 올바르지 않습니다. 다시 받아 주세요: {path}", path=p))
     return VoiceEmbedder(p)
 
 
@@ -173,7 +175,7 @@ def load_profiles(home: Path) -> dict:
         return {"version": VERSION, "model": MODEL_ID, "people": []}
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or not isinstance(data.get("people"), list):
-        raise ValueError(f"목소리 프로필 형식이 아닙니다: {path}")
+        raise ValueError(t("목소리 프로필 형식이 아닙니다: {path}", path=path))
     return data
 
 

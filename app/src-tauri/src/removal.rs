@@ -2,27 +2,34 @@
 //! 대상은 `$TRACTUS_HOME/meetings/<폴더>` 또는 `recordings/<ULID>` 폴더 하나뿐이다. 그 밖의 경로는 건드리지 않는다.
 //! 오류 문자열: 첫 줄은 화면 문장(WORDS.md), 둘째 줄부터는 원래 오류('자세히').
 
+use crate::i18n::{t, tv};
 use crate::meetings;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const BUSY_NOTE: &str = "이 노트를 처리하는 중이라 지금은 삭제할 수 없습니다. 끝난 뒤에 다시 시도하세요.";
-const BUSY_RECORDING: &str = "이 녹음을 사용하는 중이라 지금은 삭제할 수 없습니다. 끝난 뒤에 다시 시도하세요.";
-const NOT_OURS: &str = "Tractus 데이터 폴더가 아니라서 삭제하지 않았습니다.";
+fn busy_note() -> String {
+    t("이 노트를 처리하는 중이라 지금은 삭제할 수 없습니다. 끝난 뒤에 다시 시도하세요.")
+}
+fn busy_recording() -> String {
+    t("이 녹음을 사용하는 중이라 지금은 삭제할 수 없습니다. 끝난 뒤에 다시 시도하세요.")
+}
+fn not_ours() -> String {
+    t("Tractus 데이터 폴더가 아니라서 삭제하지 않았습니다.")
+}
 
 /// `dir`이 `parent` 바로 아래의 진짜 폴더인지 (심볼릭 링크로 바깥을 가리키면 안 된다). 없으면 None
 fn directly_under(parent: &Path, dir: &Path) -> Result<bool, String> {
     let meta = match fs::symlink_metadata(dir) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(format!("폴더를 확인하지 못했습니다\n{}: {e}", dir.display())),
+        Err(e) => return Err(tv("폴더를 확인하지 못했습니다\n{path}: {e}", &[("path", dir.display().to_string()), ("e", e.to_string())])),
     };
     if !meta.is_dir() {
-        return Err(NOT_OURS.into()); // 심볼릭 링크·파일
+        return Err(not_ours()); // 심볼릭 링크·파일
     }
-    let (Ok(real), Ok(base)) = (dir.canonicalize(), parent.canonicalize()) else { return Err(NOT_OURS.into()) };
+    let (Ok(real), Ok(base)) = (dir.canonicalize(), parent.canonicalize()) else { return Err(not_ours()) };
     if real.parent() != Some(base.as_path()) {
-        return Err(NOT_OURS.into());
+        return Err(not_ours());
     }
     Ok(true)
 }
@@ -30,25 +37,25 @@ fn directly_under(parent: &Path, dir: &Path) -> Result<bool, String> {
 /// 노트 폴더를 검사해 돌려준다. 실패: 잘못된 ID, 없음, 변환이 끝나지 않음, 처리 중, 폴더 밖
 pub fn note_dir(home: &Path, id: &str, is_busy: impl Fn(&str) -> bool) -> Result<PathBuf, String> {
     if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric()) {
-        return Err(format!("잘못된 노트 ID: {id}"));
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
     }
     let dir = meetings::find_dir(home, id)?;
     if !directly_under(&home.join("meetings"), &dir)? {
-        return Err("노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.".into());
+        return Err(t("노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다."));
     }
     // 변환이 끝나지 않은 노트(.job.json만 있고 transcript.json이 없는 것)는 이어하기에 쓰므로 옮기지 않는다.
     // transcript.json이 있으면 끝난 노트다: 변환 마지막에 끊겨 .job.json이 남았어도 지울 수 있다 (코어가 transcript.json을 이긴 것으로 본다, docs/desktop.md §2.7.2)
     if dir.join(".job.json").exists() && !dir.join("transcript.json").exists() {
-        return Err("이 노트는 아직 텍스트 변환이 끝나지 않아 삭제할 수 없습니다.".into());
+        return Err(t("이 노트는 아직 텍스트 변환이 끝나지 않아 삭제할 수 없습니다."));
     }
     if is_busy(id) {
-        return Err(BUSY_NOTE.into());
+        return Err(busy_note());
     }
     // 폴더 이름 끝이 같은 다른 폴더가 아니라 이 노트인지 transcript.json으로 확인한다
-    let raw = fs::read_to_string(dir.join("transcript.json")).map_err(|_| "노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.".to_string())?;
+    let raw = fs::read_to_string(dir.join("transcript.json")).map_err(|_| t("노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다."))?;
     let same = serde_json::from_str::<serde_json::Value>(&raw).is_ok_and(|t| t["meeting_id"].as_str() == Some(id));
     if !same {
-        return Err("노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.".into());
+        return Err(t("노트를 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다."));
     }
     Ok(dir)
 }
@@ -56,13 +63,13 @@ pub fn note_dir(home: &Path, id: &str, is_busy: impl Fn(&str) -> bool) -> Result
 /// 변환 전 녹음 폴더를 검사해 돌려준다 (`recordings/<ULID>`). 녹음 중이거나 변환 중이면 거절한다
 pub fn recording_dir(home: &Path, dir: &Path, is_busy: impl Fn(&str) -> bool) -> Result<PathBuf, String> {
     if !meetings::is_recording_dir(home, dir) {
-        return Err(NOT_OURS.into());
+        return Err(not_ours());
     }
     if !directly_under(&home.join("recordings"), dir)? {
-        return Err("녹음을 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다.".into());
+        return Err(t("녹음을 찾을 수 없습니다. 삭제되었거나 옮겨졌을 수 있습니다."));
     }
     if is_busy(&dir.to_string_lossy()) {
-        return Err(BUSY_RECORDING.into());
+        return Err(busy_recording());
     }
     Ok(dir.to_path_buf())
 }
@@ -85,7 +92,7 @@ pub fn to_trash(path: &Path) -> Result<(), String> {
         use ::trash::macos::{DeleteMethod, TrashContextExtMacos};
         ctx.set_delete_method(DeleteMethod::NsFileManager);
     }
-    ctx.delete(path).map_err(|e| format!("휴지통으로 옮기지 못했습니다\n{e}"))
+    ctx.delete(path).map_err(|e| tv("휴지통으로 옮기지 못했습니다\n{e}", &[("e", e.to_string())]))
 }
 
 #[cfg(test)]
@@ -210,11 +217,11 @@ mod tests {
         fs::write(outside.join("transcript.json"), r#"{"meeting_id":"01LINK","segments":[]}"#).unwrap();
         std::os::unix::fs::symlink(&outside, home.join("meetings/2026-10-08_링크_01LINK")).unwrap();
         let (seen, f) = spy();
-        assert_eq!(trash_note(&home, "01LINK", |_| false, f).unwrap_err(), NOT_OURS);
+        assert_eq!(trash_note(&home, "01LINK", |_| false, f).unwrap_err(), not_ours());
         assert!(seen.borrow().is_empty() && outside.join("transcript.json").exists());
         // 녹음 폴더도 같다
         std::os::unix::fs::symlink(&outside, home.join("recordings/01LINKREC")).unwrap();
-        assert_eq!(recording_dir(&home, &home.join("recordings/01LINKREC"), |_| false).unwrap_err(), NOT_OURS);
+        assert_eq!(recording_dir(&home, &home.join("recordings/01LINKREC"), |_| false).unwrap_err(), not_ours());
         let _ = fs::remove_dir_all(&outside);
     }
 
@@ -242,7 +249,7 @@ mod tests {
         let busy_key = rec.to_string_lossy().into_owned();
         assert!(recording_dir(&home, &rec, |k| k == busy_key).unwrap_err().contains("사용하는 중"));
         for bad in [home.join("recordings"), home.join("recordings/.."), home.join("meetings"), home.join("recordings/01REC/.."), PathBuf::from("/"), home.clone()] {
-            assert_eq!(recording_dir(&home, &bad, |_| false).unwrap_err(), NOT_OURS, "{bad:?}");
+            assert_eq!(recording_dir(&home, &bad, |_| false).unwrap_err(), not_ours(), "{bad:?}");
         }
         assert!(recording_dir(&home, &home.join("recordings/01GONE"), |_| false).unwrap_err().contains("찾을 수 없습니다"));
     }

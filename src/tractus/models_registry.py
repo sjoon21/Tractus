@@ -3,7 +3,7 @@
 - 저장소·리비전·폴더 이름은 각 모듈(asr는 이곳, diarize·align·embed·voices)의 상수를 그대로 가져온다. 힌트 문구도 여기서 만든다.
 - `inspect`는 네트워크 없이 파일 존재와 크기만 본다 (파일 목록·크기는 고정한 리비전의 값). 받기가 남긴 완료 표시의 리비전이 다르면 일부만 받은 것으로 본다. 내용 해시는 voices만 확인한다.
 - ASR·VAD는 이 파일이 원본이다 (cli.MODELS·VAD_MODEL이 여기서 가져간다).
-- Qwen 항목의 publisher "Alibaba Qwen 팀"은 소유자가 정한 표기다. 카드에는 HF 조직 "Qwen"만 나오고 Alibaba 소속은 적혀 있지 않다 (Alibaba Cloud API 링크뿐).
+- Qwen 항목의 publisher t("Alibaba Qwen 팀")은 소유자가 정한 표기다. 카드에는 HF 조직 "Qwen"만 나오고 Alibaba 소속은 적혀 있지 않다 (Alibaba Cloud API 링크뿐).
 - 소개 필드(model_name·publisher·converted_by·license·languages·params)는 2026-10-14에 각 모델 카드(HF API·README, 아래 모델 줄 주석)와 NOTICE로 확인한 값이다.
   확인하지 못한 값은 None이다 (추측하지 않는다). source·revision은 내려받는 상수에서 나온다.
 """
@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from tractus import align, diarize, embed, paths, voices
+from tractus.i18n import t
 
 LEVELS = ("required", "recommended", "optional")
 ONE_OF = "one_of"  # level_note: 같은 기능의 필수 모델 여럿 중 하나만 있으면 된다 (`level`은 그대로 required라 옛 소비자는 그대로 읽는다)
@@ -77,7 +78,7 @@ def _hf(id: str, name: str, purpose: str, level: str, group: str, repo: str, rev
     return Model(id, name, purpose, level, group, "hf", local_dir, sum(files.values()), repo=repo, revision=revision, files=files, **info)
 
 
-MLX = "mlx-community (MLX 변환본)"
+MLX = t("mlx-community (MLX 변환본)")
 
 
 _TOK = {"merges.txt": 1671853, "vocab.json": 2776833, "preprocessor_config.json": 330, "chat_template.json": 1161}
@@ -89,58 +90,58 @@ def _qwen_asr(size_cfg: int, weights: int, index: int, extra_cfg: int = 12487, g
 
 
 MODELS: tuple[Model, ...] = (
-    _hf("vad", "목소리 구간 감지", "녹음에서 사람이 말하는 구간을 찾습니다.", "required", "convert",
+    _hf("vad", t("목소리 구간 감지"), t("녹음에서 사람이 말하는 구간을 찾습니다."), "required", "convert",
         "mlx-community/silero-vad-v6", "2ebf4a5e10726a2e78ddd4d70eedfb6f1c33eb06", "silero-vad-v6",
         {"config.json": 463, "model.safetensors": 1237860},
         # 카드 mlx-community/silero-vad-v6: license mit, base_model snakers4/silero-vad, "~309K" 파라미터. 원 저장소 README: Silero Team, MIT. 6000개 넘는 언어 말뭉치로 학습했다고만 적혀 있고 지원 언어 목록은 없어 languages는 None
         model_name="Silero VAD v6", publisher="Silero", converted_by=MLX, license="MIT", params="309K"),
-    _hf("asr-std", "변환 엔진 (표준)", "가장 정확합니다. 메모리 16GB 이상을 권합니다.", "required", "convert",
+    _hf("asr-std", t("변환 엔진 (표준)"), t("가장 정확합니다. 메모리 16GB 이상을 권합니다."), "required", "convert",
         "mlx-community/Qwen3-ASR-1.7B-8bit", "a8379a2e2f9e313c9292cdf1af4055ab56d50d55", "qwen3-asr-1.7b-8bit",
         _qwen_asr(7188, 2463307541, 78968), level_note=ONE_OF,
         # 카드 mlx-community/Qwen3-ASR-1.7B-8bit: Qwen/Qwen3-ASR-1.7B에서 mlx-audio 0.3.1로 변환, apache-2.0. 원본 카드(HF 조직 Qwen): 30개 언어 + 중국어 방언 22개, ko·en 포함
-        model_name="Qwen3-ASR 1.7B (8bit 양자화)", publisher="Alibaba Qwen 팀", converted_by=MLX, license="Apache-2.0", languages="한국어·영어 등 30개 언어와 중국어 방언 22개", params="1.7B"),
-    _hf("asr-lite", "변환 엔진 (가벼운 것)", "메모리를 덜 쓰는 가벼운 엔진입니다. 실시간 텍스트 변환에는 이 엔진이 따로 필요합니다.", "required", "convert",
+        model_name=t("Qwen3-ASR 1.7B (8bit 양자화)"), publisher=t("Alibaba Qwen 팀"), converted_by=MLX, license="Apache-2.0", languages=t("한국어·영어 등 30개 언어와 중국어 방언 22개"), params="1.7B"),
+    _hf("asr-lite", t("변환 엔진 (가벼운 것)"), t("메모리를 덜 쓰는 가벼운 엔진입니다. 실시간 텍스트 변환에는 이 엔진이 따로 필요합니다."), "required", "convert",
         "mlx-community/Qwen3-ASR-0.6B-8bit", "89e96d92ba34aca20b3e29fb10cc284097d1219f", "qwen3-asr-0.6b-8bit",
         _qwen_asr(7187, 1006229426, 71815), level_note=ONE_OF,
         # 카드 mlx-community/Qwen3-ASR-0.6B-8bit: Qwen/Qwen3-ASR-0.6B에서 변환, apache-2.0. 언어는 1.7B와 같은 원본 카드 표
-        model_name="Qwen3-ASR 0.6B (8bit 양자화)", publisher="Alibaba Qwen 팀", converted_by=MLX, license="Apache-2.0", languages="한국어·영어 등 30개 언어와 중국어 방언 22개", params="0.6B"),
-    _hf("diarizer", "참석자 구분", "누가 말했는지 나눕니다. 8명까지 구분합니다.", "recommended", "speakers",
+        model_name=t("Qwen3-ASR 0.6B (8bit 양자화)"), publisher=t("Alibaba Qwen 팀"), converted_by=MLX, license="Apache-2.0", languages=t("한국어·영어 등 30개 언어와 중국어 방언 22개"), params="0.6B"),
+    _hf("diarizer", t("참석자 구분"), t("누가 말했는지 나눕니다. 8명까지 구분합니다."), "recommended", "speakers",
         diarize.MODEL_REPO, diarize.MODEL_REVISION, diarize.MODEL_DIR,
         {"config.json": 1521, "model.safetensors": 198632220},
         # 카드 mlx-community/Nemotron-3-Diarization: nvidia/Nemotron-3-Diarization에서 변환, openmdw-1.1, 최대 8명. NVIDIA 카드: "Number of model parameters: 100M". 지원 언어 표기는 없다 (학습 데이터만 적혀 있어 None)
         model_name="Nemotron 3 Diarization", publisher="NVIDIA", converted_by=MLX, license="OpenMDW-1.1", params="100M"),
-    _hf("aligner", "단어 싱크", "단어마다 재생 시각을 맞춰, 듣는 곳의 단어를 강조합니다.", "optional", "words",
+    _hf("aligner", t("단어 싱크"), t("단어마다 재생 시각을 맞춰, 듣는 곳의 단어를 강조합니다."), "optional", "words",
         align.MODEL_REPO, align.MODEL_REVISION, align.MODEL_DIR,
         {**_TOK, "config.json": 6940, "model.safetensors": 1271924386, "model.safetensors.index.json": 79108,
          "generation_config.json": 115, "tokenizer_config.json": 12666},
         # 카드 mlx-community/Qwen3-ForcedAligner-0.6B-8bit: Qwen/Qwen3-ForcedAligner-0.6B에서 변환, apache-2.0. 원본 카드: 11개 언어(ko·en 포함), 최대 5분
-        model_name="Qwen3-ForcedAligner 0.6B (8bit 양자화)", publisher="Alibaba Qwen 팀", converted_by=MLX, license="Apache-2.0", languages="한국어·영어 등 11개 언어", params="0.6B"),
-    _hf("embedding", "스마트 검색", "단어가 달라도 비슷한 뜻의 대화를 찾습니다.", "optional", "search",
+        model_name=t("Qwen3-ForcedAligner 0.6B (8bit 양자화)"), publisher=t("Alibaba Qwen 팀"), converted_by=MLX, license="Apache-2.0", languages=t("한국어·영어 등 11개 언어"), params="0.6B"),
+    _hf("embedding", t("스마트 검색"), t("단어가 달라도 비슷한 뜻의 대화를 찾습니다."), "optional", "search",
         embed.MODEL_REPO, embed.MODEL_REVISION, embed.MODEL_DIR,
         {"added_tokens.json": 707, "config.json": 857, "merges.txt": 1671853, "model.safetensors": 633152041, "special_tokens_map.json": 613,
          "tokenizer.json": 11423705, "tokenizer_config.json": 5404, "vocab.json": 2776833},
         # 카드 mlx-community/Qwen3-Embedding-0.6B-8bit (2026-10-15 HF API 확인): Qwen/Qwen3-Embedding-0.6B에서 mlx-embeddings로 변환, apache-2.0, config quantization bits 8·group 64.
         # 원본 카드(HF 조직 Qwen): "Supported Languages: 100+", "Number of Parameters: 0.6B". 변환본 카드에는 언어·파라미터 수가 없어 원본 값을 쓴다
-        model_name="Qwen3-Embedding 0.6B (8bit 양자화)", publisher="Alibaba Qwen 팀", converted_by=MLX, license="Apache-2.0", languages="100개 이상의 언어", params="0.6B"),
-    Model("voices", "참석자 목소리 프로필", "등록한 참석자의 목소리를 알아보고 이름을 제안합니다.", "optional", "speakers", "url", voices.MODEL_DIR,
+        model_name=t("Qwen3-Embedding 0.6B (8bit 양자화)"), publisher=t("Alibaba Qwen 팀"), converted_by=MLX, license="Apache-2.0", languages=t("100개 이상의 언어"), params="0.6B"),
+    Model("voices", t("참석자 목소리 프로필"), t("등록한 참석자의 목소리를 알아보고 이름을 제안합니다."), "optional", "speakers", "url", voices.MODEL_DIR,
           28281164, files={voices.MODEL_FILE: 28281164}, url=voices.MODEL_URL, sha256=voices.MODEL_SHA256,
           # ModelScope iic/speech_campplus_sv_zh_en_16k-common_advanced: 3D-Speaker(alibaba-damo-academy), Apache License 2.0, 언어 cn·en. ONNX는 k2-fsa/sherpa-onnx 릴리스(speaker-recongition-models)가 올린 것. 파라미터 수는 카드에 없다
-          model_name="3D-Speaker CAM++ (중국어·영어, 16kHz)", publisher="3D-Speaker (Alibaba DAMO)", converted_by="k2-fsa sherpa-onnx (ONNX 변환본)", license="Apache-2.0", languages="중국어·영어"),
-    Model("fluid", "참석자 구분 (9명 이상)", "9명 이상이 말한 노트에서 참석자를 더 정확히 나눕니다. 따로 빌드한 도우미 프로그램이 필요합니다.",
+          model_name=t("3D-Speaker CAM++ (중국어·영어, 16kHz)"), publisher="3D-Speaker (Alibaba DAMO)", converted_by=t("k2-fsa sherpa-onnx (ONNX 변환본)"), license="Apache-2.0", languages=t("중국어·영어")),
+    Model("fluid", t("참석자 구분 (9명 이상)"), t("9명 이상이 말한 노트에서 참석자를 더 정확히 나눕니다. 따로 빌드한 도우미 프로그램이 필요합니다."),
           "optional", "speakers", "helper", diarize.FLUID_DIR, 21_800_000, repo=diarize.FLUID_REPO,
           # 카드 FluidInference/speaker-diarization-coreml: base_model pyannote/speaker-diarization-community-1, 이 범위(Community-1 산출물)는 CC-BY-4.0 (NOTICE.md). 리비전은 FluidAudio v0.17.5가 내려받는 HEAD라 고정하지 않는다 (None)
-          model_name="pyannote speaker-diarization community-1 (Core ML)", publisher="pyannote", converted_by="FluidInference (Core ML 변환본)", license="CC-BY-4.0"),
+          model_name="pyannote speaker-diarization community-1 (Core ML)", publisher="pyannote", converted_by=t("FluidInference (Core ML 변환본)"), license="CC-BY-4.0"),
 )
 
 CAPABILITIES: tuple[Capability, ...] = (
-    Capability("record", "녹음", tools=("recorder",)),
-    Capability("convert", "텍스트로 변환", models=(("vad",), ("asr-std", "asr-lite")), tools=("ffmpeg",)),
-    Capability("diarize", "참석자 구분", models=(("diarizer",),)),
-    Capability("diarize-many", "참석자 구분 (9명 이상)", models=(("fluid",),)),
-    Capability("align", "단어 싱크", models=(("aligner",),), tools=("ffmpeg",)),  # 노트 오디오를 디코딩한다
-    Capability("smart-search", "스마트 검색", models=(("embedding",),)),
-    Capability("live", "실시간 텍스트 변환", models=(("vad",), ("asr-lite",)), tools=("recorder",), min_memory=STANDARD_MIN_MEMORY),  # cli live_low_memory와 같은 기준
-    Capability("voices", "참석자 목소리 인식", models=(("voices",),), tools=("ffmpeg",)),
+    Capability("record", t("녹음"), tools=("recorder",)),
+    Capability("convert", t("텍스트로 변환"), models=(("vad",), ("asr-std", "asr-lite")), tools=("ffmpeg",)),
+    Capability("diarize", t("참석자 구분"), models=(("diarizer",),)),
+    Capability("diarize-many", t("참석자 구분 (9명 이상)"), models=(("fluid",),)),
+    Capability("align", t("단어 싱크"), models=(("aligner",),), tools=("ffmpeg",)),  # 노트 오디오를 디코딩한다
+    Capability("smart-search", t("스마트 검색"), models=(("embedding",),)),
+    Capability("live", t("실시간 텍스트 변환"), models=(("vad",), ("asr-lite",)), tools=("recorder",), min_memory=STANDARD_MIN_MEMORY),  # cli live_low_memory와 같은 기준
+    Capability("voices", t("참석자 목소리 인식"), models=(("voices",),), tools=("ffmpeg",)),
 )
 
 _BY_ID = {m.id: m for m in MODELS}
@@ -181,7 +182,7 @@ def preset_ids(preset: str, memory: int | None = None, helper: bool = False) -> 
     elif preset == "all":
         ids = {m.id for m in MODELS if helper or m.id != "fluid"}
     else:
-        raise ValueError(f"알 수 없는 프리셋: {preset} ({', '.join(PRESETS)})")
+        raise ValueError(t("알 수 없는 프리셋: {preset} ({choices})", preset=preset, choices=", ".join(PRESETS)))
     return [m.id for m in MODELS if m.id in ids]
 
 
@@ -189,7 +190,7 @@ def resolve_ids(ids: list[str], preset: str | None, memory: int | None = None, h
     """명령줄의 모델 ID와 프리셋 → 중복 없는 ID (등록 순서). 모르는 ID는 ValueError."""
     for i in ids:
         if not ID_RE.fullmatch(i) or i not in _BY_ID:
-            raise ValueError(f"알 수 없는 모델: {i} ({', '.join(_BY_ID)})")  # words-ok: 명령줄 인수 오류 (앱은 검증한 ID만 넘긴다)
+            raise ValueError(t("알 수 없는 모델: {id} ({choices})", id=i, choices=", ".join(_BY_ID)))  # words-ok: 명령줄 인수 오류 (앱은 검증한 ID만 넘긴다)
     wanted = set(ids) | (set(preset_ids(preset, memory, helper)) if preset else set())
     return [m.id for m in MODELS if m.id in wanted]
 
@@ -308,7 +309,7 @@ def capability_status(states: dict[str, str], tools: dict[str, bool], memory: in
 
 def fix_command(item: str) -> str:
     if item == "memory":
-        return "메모리 16GB 이상인 Mac에서만 켤 수 있습니다"
+        return t("메모리 16GB 이상인 Mac에서만 켤 수 있습니다")
     return build_hint(item) or f"tractus models download {item}"
 
 
@@ -320,9 +321,9 @@ def install_hint(m: Model | str, root: Path) -> str:
     path = root / m.local_dir
     lines = [f"  tractus models download {m.id}"]
     if m.kind == "hf":
-        lines.append(f"  (직접 받기: hf download {m.repo} --revision {m.revision} --local-dir {path})")
+        lines.append("  " + t("(직접 받기: {cmd})", cmd=f"hf download {m.repo} --revision {m.revision} --local-dir {path}"))
     elif m.kind == "url":
-        lines.append(f"  (직접 받기: mkdir -p {path} && curl -L -o {path / next(iter(m.files))} {m.url}  sha256 {m.sha256})")
+        lines.append("  " + t("(직접 받기: {cmd})", cmd=f"mkdir -p {path} && curl -L -o {path / next(iter(m.files))} {m.url}  sha256 {m.sha256}"))
     else:
-        lines.append(f"  (도우미 프로그램: {build_hint('diar_helper')})")
+        lines.append("  " + t("(도우미 프로그램: {cmd})", cmd=build_hint("diar_helper")))
     return "\n".join(lines)

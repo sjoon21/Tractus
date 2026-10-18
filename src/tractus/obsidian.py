@@ -13,7 +13,8 @@ from pathlib import Path
 
 from tractus.export import _rows, pick_summary
 from tractus.organize import load_folders, meta_of
-from tractus.store import NOT_CONVERTED_NOTE, _hms, _meta_lines, _write_atomic, _yaml_scalar, is_memo, is_recorded, memo_lines, seg_text
+from tractus.i18n import t
+from tractus.store import _hms, _meta_lines, _write_atomic, _yaml_scalar, is_memo, is_recorded, memo_lines, seg_text
 from tractus.summaries import list_summaries, read_markdown
 from tractus.calendar_event import load_event
 from tractus.enhance import KEY as ENHANCED
@@ -21,15 +22,15 @@ from tractus.enhance import KEY as ENHANCED
 ROOT = "Tractus"
 MANIFEST = ".tractus.json"
 ATTACHMENTS = "attachments"
-INSIDE_HOME = "데이터 폴더 안에는 보낼 수 없습니다. 다른 볼트를 고르세요."
-NO_VAULT = "볼트 폴더를 찾지 못했습니다. 설정에서 다시 고르세요."
+INSIDE_HOME = t("데이터 폴더 안에는 보낼 수 없습니다. 다른 볼트를 고르세요.")
+NO_VAULT = t("볼트 폴더를 찾지 못했습니다. 설정에서 다시 고르세요.")
 _BAD_NAME = re.compile(r'[/\\:*?"<>|\x00-\x1f\x7f]')
 
 
 def safe_name(s: str, limit: int = 80) -> str:
     """파일·폴더 이름: 못 쓰는 글자는 공백으로, 앞의 점은 뺀다 (숨김 파일이 되지 않게)."""
     s = " ".join(_BAD_NAME.sub(" ", s).split()).lstrip(". ")[:limit].strip()
-    return s or "제목 없음"
+    return s or t("제목 없음")
 
 
 def folder_parts(home: Path, t: dict) -> list[str]:
@@ -51,42 +52,42 @@ def _body_of(md: str | None) -> list[str]:
     return [("#" + x) if re.match(r"#{1,5} ", x) else x for x in md.rstrip("\n").split("\n")]
 
 
-def render(d: Path, t: dict, home: Path, summary: str | None = None, audio: str | None = None) -> str:
+def render(d: Path, note: dict, home: Path, summary: str | None = None, audio: str | None = None) -> str:
     """볼트에 쓸 Markdown. summary: 넣을 요약 key (None이나 노트 완성이면 기본 요약). audio: 붙일 첨부 파일 이름."""
-    names = [v["name"].strip() for v in (t.get("speakers") or {}).values() if isinstance(v, dict) and isinstance(v.get("name"), str) and v["name"].strip()]
-    parts = folder_parts(home, t)
-    recording = not is_memo(t)
+    names = [v["name"].strip() for v in (note.get("speakers") or {}).values() if isinstance(v, dict) and isinstance(v.get("name"), str) and v["name"].strip()]
+    parts = folder_parts(home, note)
+    recording = not is_memo(note)
     head = [
         "---",
-        f"tractus_id: {t['meeting_id']}",
-        f"title: {_yaml_scalar(t['title'])}",
-        f"created: {t['created_at']}",
-        *([f"duration: {_hms(t['audio']['duration_sec'])}"] if recording and isinstance(t.get("audio"), dict) else []),
+        f"tractus_id: {note['meeting_id']}",
+        f"title: {_yaml_scalar(note['title'])}",
+        f"created: {note['created_at']}",
+        *([f"duration: {_hms(note['audio']['duration_sec'])}"] if recording and isinstance(note.get("audio"), dict) else []),
         *([f"participants: [{', '.join(_yaml_scalar(x) for x in names)}]"] if names else []),
         *([f"attendees: [{', '.join(_yaml_scalar(x) for x in ev['attendees'])}]"] if (ev := load_event(d)) and ev["attendees"] else []),  # 캘린더 일정의 참석자
-        *_meta_lines(t, parts[-1] if parts else None),
+        *_meta_lines(note, parts[-1] if parts else None),
         "---",
         "",
-        f"# {t['title']}",
+        f"# {note['title']}",
         "",
     ]
     out = head + ([f"![[{audio}]]", ""] if audio else [])
     if not recording:  # 메모 노트: 본문이 곧 노트다
-        out += [x for p in (seg_text(s) for s in t["segments"]) if p for x in (p, "")]
+        out += [x for p in (seg_text(s) for s in note["segments"]) if p for x in (p, "")]
     elif enhanced := _body_of(read_markdown(d, ENHANCED)):
-        out += ["## 완성된 노트", "", *enhanced, ""]
-    elif memo := memo_lines(t):
-        out += ["## 내 메모", "", *(m["text"] for m in memo), ""]
+        out += [f"## {t('완성된 노트')}", "", *enhanced, ""]
+    elif memo := memo_lines(note):
+        out += [f"## {t('내 메모')}", "", *(m["text"] for m in memo), ""]
     key = pick_summary(d, None if summary in (None, ENHANCED) else summary)
     if key == ENHANCED:  # 요약이 노트 완성 하나뿐이다
         key = None
     if key and (body := _body_of(read_markdown(d, key))):
         name = next((x["name"] for x in list_summaries(d) if x["key"] == key), key)
-        out += [f"## 요약 · {name}", "", *body, ""]
-    if recording and is_recorded(t):
-        out += [NOT_CONVERTED_NOTE, ""]
-    elif recording and (rows := _rows(t)):
-        out += ["> [!note]- 대화 내용", *(f"> [{_hms(s['start'])}] {f'**{who}**: ' if who else ''}{text}" for s, who, text in rows), ""]
+        out += [f"## {t('요약 · {name}', name=name)}", "", *body, ""]
+    if recording and is_recorded(note):
+        out += [t("아직 텍스트로 변환하지 않았습니다."), ""]
+    elif recording and (rows := _rows(note)):
+        out += [f"> [!note]- {t('대화 내용')}", *(f"> [{_hms(s['start'])}] {f'**{who}**: ' if who else ''}{text}" for s, who, text in rows), ""]
     return "\n".join(out).rstrip("\n") + "\n"
 
 
@@ -135,7 +136,7 @@ def _free(root: Path, parts: list[str], stem: str, mid: str, mine: Path | None) 
         p = folder / (f"{stem}.md" if n == 1 else f"{stem} ({n}).md")
         if not p.exists() or _same(p, mine) or _claims(p, mid):
             return p
-    raise ValueError("같은 이름의 파일이 너무 많습니다")
+    raise ValueError(t("같은 이름의 파일이 너무 많습니다"))
 
 
 def send(d: Path, t: dict, home: Path, vault: Path, summary: str | None = None, with_audio: bool = False, force: bool = False) -> dict:
