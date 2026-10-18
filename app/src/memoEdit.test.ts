@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { appendBlock, checkAtClick, continueList, toggleCheck, wrapSelection } from "./memoEdit";
 
 const at = (s: string) => s.indexOf("|");
-const cut = (s: string) => s.replace("|", "");
+const cut = (s: string) => s.replaceAll("|", ""); // "|"는 캐럿 자리 표시
 
 describe("목록 이어 쓰기 (Enter)", () => {
   test("글머리·체크박스·번호를 다음 줄에 잇는다 (체크박스는 빈 칸, 번호는 +1)", () => {
