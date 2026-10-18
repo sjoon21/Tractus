@@ -236,7 +236,7 @@
 - **모델이 없거나 실패하면** 화자 없이 전사하고 알린다(`warning` 이벤트 + stderr). 임베딩 모델이 없을 때와 같은 방식이다.
 - **엔진 교체 비용:** `Diarizer.diarize(pcm) → [(시작 초, 끝 초, "S1"), …]` 하나만 맞추면 된다. 두 번째 엔진 FluidAudio community-1은 v3.15에서 9명 이상 회의용으로 붙였다(§2.4.1).
 - **탈락:** Sortformer v1(CC-BY-NC), v2.1(4명 상한), pyannote 원본(게이트, torch), sherpa-onnx CAM++(AI Hub confusion 7.4%, 17명 세션에서 화자 수 폭주).
-- **미검증:** ① 실제 대면 회의(마이크 1개) 녹음. ② 청크가 짧아질 때 ASR CER 변화. ③ 같은 TTS 엔진 음성끼리는 한 화자로 합쳐진다(macOS Grandpa·Grandma). 가상 음성은 순위 근거로 쓰지 않는다.
+- **미검증:** ① 실제 대면 회의(마이크 1개) 녹음. ② (v3.47.1에서 확인: 화자 경계 분할로 청크가 짧아져도 CER +0.10%p) ③ 같은 TTS 엔진 음성끼리는 한 화자로 합쳐진다(macOS Grandpa·Grandma). 가상 음성은 순위 근거로 쓰지 않는다.
 - 엔진·파라미터를 바꾸면 AI Hub(로컬, 지표만)와 가상 음성 **둘 다**에서 DER·confusion을 다시 잰다.
 
 #### 2.4.1 9명 이상 — FluidAudio community-1 (2026-10-07, v3.15)
