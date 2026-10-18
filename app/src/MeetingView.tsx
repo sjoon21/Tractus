@@ -49,7 +49,7 @@ import { citeLabel } from "./ask";
 import { AskPanel } from "./AskPanel";
 import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
-import { locale, t } from "./i18n";
+import { clock, getLang, locale, t } from "./i18n";
 import { indexer } from "./indexer";
 import { printDoc } from "./print";
 import { EDIT_BLOCKED, type DeleteTarget } from "./remove";
@@ -692,7 +692,7 @@ export function MeetingView({
           <p className="m-0 flex min-w-0 items-center gap-2 truncate text-xs text-muted-foreground tabular-nums" data-tauri-drag-region>
             {created?.toLocaleDateString(locale(), { year: "numeric", month: "long", day: "numeric", weekday: "short" })}
             {created && " · "}
-            {created?.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })}
+            {created && (getLang() === "en" ? clock(created.getHours(), created.getMinutes()) : created.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }))}
             {recorded && <Badge variant="memo">{RECORDED_BADGE}</Badge>}
           </p>
           <div className="ml-auto flex shrink-0 items-center gap-0.5">

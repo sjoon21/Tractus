@@ -2,6 +2,14 @@
 import { chromium } from "playwright-core";
 import { startCast } from "./screencast.mjs";
 const OUT = process.argv[2];
+const EN = process.argv[3] === "en"; // en: 영어 화면 + 영어 가짜 데이터 (preview.html?lang=en)
+const L = EN
+  ? { home: "Recent notes", note: "Q3 budget planning", memo: "Memo", enhance: /Enhance/,
+      c1: "A recording, turned into text on this Mac", c2: "Rough memos jotted while recording",
+      c3: "Enhance — your memos become the outline, filled in from the transcript" }
+  : { home: "최근 노트", note: "3분기 예산 계획 회의", memo: "메모", enhance: /노트 완성/,
+      c1: "이 Mac에서 텍스트로 바꾼 녹음 노트", c2: "녹음하며 대충 적은 메모",
+      c3: "노트 완성 — 메모를 뼈대로 대화 내용의 세부를 붙입니다" };
 const b = await chromium.launch({ channel: "chrome", headless: true, args: ["--window-size=1280,800"] });
 const ctx = await b.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: "light" });
 await ctx.addInitScript(() => {
@@ -21,8 +29,8 @@ await ctx.addInitScript(() => {
   });
 });
 const p = await ctx.newPage();
-await p.goto("http://localhost:1420/preview.html");
-await p.getByRole("heading", { name: "최근 노트" }).waitFor();  // 홈이 다 그려진 뒤에 녹화를 시작한다
+await p.goto(`http://localhost:1420/preview.html${EN ? "?lang=en" : ""}`);
+await p.getByRole("heading", { name: L.home }).waitFor();  // 홈이 다 그려진 뒤에 녹화를 시작한다
 await p.waitForTimeout(1200);
 const stop = await startCast(p, OUT);
 const caption = (t) => p.evaluate((t) => { const c = document.getElementById("demo-caption"); c.textContent = t; c.style.opacity = t ? "1" : "0"; }, t);
@@ -33,18 +41,18 @@ const moveTo = async (loc, steps = 25) => {
 };
 await p.mouse.move(640, 420);
 await p.waitForTimeout(700);
-const note = p.getByText("3분기 예산 계획 회의").first();
+const note = p.getByText(L.note).first();
 await moveTo(note); await note.click(); await p.waitForTimeout(400);
-await caption("이 Mac에서 텍스트로 바꾼 녹음 노트"); await p.waitForTimeout(1100);
+await caption(L.c1); await p.waitForTimeout(1100);
 await p.mouse.move(900, 600, { steps: 15 });
 await p.mouse.wheel(0, 260); await p.waitForTimeout(900);
 await p.mouse.wheel(0, -260); await p.waitForTimeout(500);
-const memoTab = p.getByRole("tab", { name: "메모" });
+const memoTab = p.getByRole("tab", { name: L.memo });
 await moveTo(memoTab); await memoTab.click();
-await caption("녹음하며 대충 적은 메모"); await p.waitForTimeout(1600);
-const btn = p.getByRole("button", { name: /노트 완성/ }).first();
+await caption(L.c2); await p.waitForTimeout(1600);
+const btn = p.getByRole("button", { name: L.enhance }).first();
 await moveTo(btn); await p.waitForTimeout(300); await btn.click();
-await caption("노트 완성 — 메모를 뼈대로 대화 내용의 세부를 붙입니다"); await p.waitForTimeout(2600);
+await caption(L.c3); await p.waitForTimeout(2600);
 await p.mouse.move(1150, 700, { steps: 20 });
 await p.waitForTimeout(2600);
 console.log("frames:", await stop());

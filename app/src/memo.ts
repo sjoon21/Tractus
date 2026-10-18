@@ -1,5 +1,5 @@
 // 메모 노트(녹음 없이 직접 쓴 글)와 노트 제목 수정의 순수 로직. 화면은 MemoView.tsx·MeetingView.tsx. 전부 memo.test.ts에서 검사한다.
-import { t } from "./i18n";
+import { clock, t } from "./i18n";
 import { EXPORT_FORMATS, fmtTime, isMemoLineId, oneLine, parseHms, segText, type NoteMemo, type Segment } from "./lib";
 
 // ── 제목 ──
@@ -29,7 +29,8 @@ export const isMemo = (m: { kind?: string | null }): boolean => kindOf(m) === "m
 /** 사이드바 줄 아래 칸: 녹음은 길이, 메모는 만든 시각(길이가 없다) */
 export function noteTime(m: { kind?: string | null; duration_sec: number; created_at: string }): string {
   if (!isMemo(m)) return fmtTime(m.duration_sec);
-  return /T(\d{2}:\d{2})/.exec(m.created_at)?.[1] ?? "";
+  const hm = /T(\d{2}):(\d{2})/.exec(m.created_at);
+  return hm ? clock(Number(hm[1]), Number(hm[2])) : "";
 }
 
 /** 내보내기 메뉴 형식. 메모는 시각이 없어 SRT·WebVTT 자막은 없다 (코어도 거절한다). 변환 전 녹음 노트(recorded)도 대화가 없어 자막이 될 수 없다 */

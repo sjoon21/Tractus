@@ -1,7 +1,9 @@
 ---
 id: brief
 name: 핵심 요약
+name_en: Brief
 description: 3~5문장 개요와 핵심 포인트만 짧게 정리합니다
+description_en: A 3–5 sentence overview and the key points
 order: 20
 ---
 짧고 빠르게 읽히는 핵심 요약을 만든다.

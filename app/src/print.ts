@@ -1,6 +1,6 @@
 // PDF 인쇄용 문서 (docs/roadmap.md §3 6.5). 화면 데이터를 인쇄 레이아웃에 맞게 다듬는다 (print.test.ts).
 // 레이아웃은 PrintSheet.tsx + styles.css @media print, 인쇄는 macOS 인쇄 대화상자의 'PDF로 저장'.
-import { t } from "./i18n";
+import { clock, t } from "./i18n";
 import { isMemo, memoLineNumbers } from "./memo";
 import { printSummary, type PrintSummary, type SummaryDoc } from "./summaries";
 import { dayParts, evidenceLabel, fmtTime, segText, speakerName, speakerStats, type NoteMemo, type Segment, type Speakers, type SummaryLike } from "./lib";
@@ -36,7 +36,8 @@ export function printDoc(d: {
   note_memo?: NoteMemo | null;
 }, selected?: SummaryDoc | null): PrintDoc {
   const p = dayParts(d.info.created_at.slice(0, 10));
-  const hm = /T(\d{2}:\d{2})/.exec(d.info.created_at)?.[1];
+  const m = /T(\d{2}):(\d{2})/.exec(d.info.created_at);
+  const hm = m ? clock(Number(m[1]), Number(m[2])) : undefined;
   const memo = isMemo(d.info);
   // 메모는 시각이 없다: 근거 표시도 붙이지 않는다
   const starts = new Map(memo ? [] : d.segments.map((s) => [s.id, s.start]));

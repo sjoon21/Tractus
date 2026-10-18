@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { EN } from "./en";
-import { setLang, t, type Dict } from "./i18n";
+import { clock, setLang, t, type Dict } from "./i18n";
 
 const SRC = __dirname;
 const HANGUL = /[가-힣]/;
@@ -143,4 +143,10 @@ describe("t()", () => {
     expect(t("사전에 없는 말")).toBe("사전에 없는 말");
   });
 
+});
+
+test("시각은 한국어 15:00, 영어 3:00 PM", () => {
+  expect([clock(15, 0), clock(9, 5)]).toEqual(["15:00", "09:05"]);
+  setLang("en");
+  expect([clock(15, 0), clock(0, 30), clock(12, 0), clock(9, 5)]).toEqual(["3:00 PM", "12:30 AM", "12:00 PM", "9:05 AM"]);
 });

@@ -1,7 +1,9 @@
 ---
 id: meeting
 name: 회의록
+name_en: Meeting notes
 description: 주요 안건, 결정 사항, 할 일을 정리합니다
+description_en: Agenda, decisions and to-dos
 order: 10
 ---
 회의록 형식으로 정리한다.

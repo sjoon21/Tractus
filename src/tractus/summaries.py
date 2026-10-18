@@ -16,7 +16,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from tractus.i18n import t
+from tractus.i18n import ai_prompt, t
 from tractus.llm import Provider, complete_json
 from tractus.store import _write_atomic, is_memo, memo_lines
 from tractus.summarize import _NOT_OWNER, _suggested_only, _where, build_prompt
@@ -31,7 +31,7 @@ CUSTOM_KEY_RE = re.compile(r"c-[0-9a-f]{8}")
 BAD_INPUT = t('입력은 {"prompt": "…", "save_as": "…"} 형식이어야 합니다')  # words-ok: 앱 계약 오류
 NO_SUCH_SUMMARY = t("요약을 찾을 수 없습니다.")
 GUIDE_OPEN, GUIDE_CLOSE = "<요약 지침>", "</요약 지침>"  # i18n-ok: AI 프롬프트
-NO_DETAIL = "대화에서 관련 내용을 찾지 못했습니다"  # 노트 완성의 내 메모 줄에 붙일 세부가 없을 때 (그 줄도 문서에 남긴다)  # i18n-ok: 요약 문서 내용 (요약 언어는 다음 PR)
+NO_DETAIL = t("대화에서 관련 내용을 찾지 못했습니다")  # 노트 완성의 내 메모 줄에 붙일 세부가 없을 때 (그 줄도 문서에 남긴다)
 
 SYSTEM_PROMPT = """너는 노트 정리 도우미다. 입력으로 받은 노트(대화 내용 또는 메모)만 근거로 요약한다.
 - 노트에서 쓰인 언어로 작성한다 (한국어면 한국어). 영어 기술 용어는 원문 표기를 살린다.
@@ -114,12 +114,15 @@ def resolve_spec(home: Path, template: str | None, custom_raw: str | None) -> Sp
     return Spec("custom", CUSTOM_NAME, guidance, key or f"c-{secrets.token_hex(4)}")
 
 
+LANG_RULE = "- 노트에서 쓰인 언어로 작성한다 (한국어면 한국어). 영어 기술 용어는 원문 표기를 살린다."  # i18n-ok: AI 프롬프트 (영어 화면이면 i18n.ai_prompt가 바꾼다)
+
+
 def system_prompt(transcript: dict, guidance: str) -> str:
     guide = guidance
     while GUIDE_OPEN in guide or GUIDE_CLOSE in guide:  # 지침이 구분자를 닫고 규칙 영역으로 빠져나가지 못하게. 한 번만 지우면 '</요약 </요약 지침>지침>'이 구분자를 다시 만든다
         guide = guide.replace(GUIDE_OPEN, "").replace(GUIDE_CLOSE, "")
     extra = MEMO_PROMPT if is_memo(transcript) else RECORDING_MEMO_PROMPT if memo_lines(transcript) else ""
-    return f"{SYSTEM_PROMPT}{extra}\n\n{GUIDE_OPEN}\n{guide}\n{GUIDE_CLOSE}"
+    return f"{ai_prompt(SYSTEM_PROMPT, LANG_RULE)}{extra}\n\n{GUIDE_OPEN}\n{guide}\n{GUIDE_CLOSE}"
 
 
 def check_items(s: GenericSummary, transcript: dict) -> None:

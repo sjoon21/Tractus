@@ -1,12 +1,21 @@
 // 디자인 확인용 미리보기 (개발 서버 전용, `pnpm dev` → /preview.html). Tauri 없이 브라우저에서 앱을 띄운다.
 // 모든 invoke를 가짜로 받는다: 노트는 저장소의 가상 회의(tests/fixtures/eval), 모델·점검은 `tractus doctor/models list --json` 출력.
-// 빌드(index.html)에는 들어가지 않는다.
+// 빌드(index.html)에는 들어가지 않는다. `?lang=en`이면 화면도 가짜 데이터도 영어다(README 영어 스크린샷·데모).
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
-import data from "./data/meetings.json";
-import doctor from "./data/doctor.json";
-import models from "./data/models.json";
-import templates from "./data/templates.json";
+import dataKo from "./data/meetings.json";
+import doctorKo from "./data/doctor.json";
+import modelsKo from "./data/models.json";
+import templatesKo from "./data/templates.json";
+import dataEn from "./data/meetings-en.json";
+import doctorEn from "./data/doctor-en.json";
+import modelsEn from "./data/models-en.json";
+import templatesEn from "./data/templates-en.json";
+
+const EN = new URLSearchParams(location.search).get("lang") === "en";
+const [data, doctor, models, templates] = EN ? [dataEn, doctorEn, modelsEn, templatesEn] : [dataKo, doctorKo, modelsKo, templatesKo];
+const Q3 = EN ? "Q3" : "3분기"; // 예시 노트(3분기 예산 회의)를 찾는 제목 조각
+const PEOPLE = EN ? ["Daniel Kim", "Sophie Park", "Ryan Choi", "Hannah Jung"] : ["김지훈", "박소연", "최도윤", "정하은"];
 
 type T = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const notes = Object.values((data as T).meetings) as { t: T; summary: T | null; dir: string }[];
@@ -14,18 +23,20 @@ const notes = Object.values((data as T).meetings) as { t: T; summary: T | null; 
 // 가상 회의에 참석자 라벨을 입힌다 (화면 확인용)
 notes.forEach(({ t }, n) => {
   if (t.speakers) return;
-  t.speakers = { S1: { name: "김지훈" }, S2: { name: null }, S3: { name: "박소연" } };
+  t.speakers = { S1: { name: PEOPLE[0] }, S2: { name: null }, S3: { name: PEOPLE[1] } };
   t.segments.forEach((s: T, i: number) => (s.speaker = ["S1", "S2", "S3"][(i + n) % (i % 4 === 0 ? 2 : 3)]));
 });
 
 // 메모 노트 하나 (글만 있는 노트 확인용)
-const MEMO_BODY = "하늘상사 구매팀 인터뷰 메모\n\n- 지금은 엑셀로 발주를 관리한다\n- 월말 정산 때 이틀씩 야근한다고 함\n- 가격보다 도입 기간이 더 중요\n\n다음 주에 데모 일정 잡기";
+const MEMO_BODY = EN
+  ? "Skyline Trading interview notes\n\n- Orders are tracked in Excel today\n- Two late nights at every month-end close\n- Rollout time matters more than price\n\nSet up a demo next week"
+  : "하늘상사 구매팀 인터뷰 메모\n\n- 지금은 엑셀로 발주를 관리한다\n- 월말 정산 때 이틀씩 야근한다고 함\n- 가격보다 도입 기간이 더 중요\n\n다음 주에 데모 일정 잡기";
 notes.push({
-  dir: "2026-10-14_하늘상사_인터뷰_메모_01N0MEMO000000000000000000",
+  dir: EN ? "2026-10-14_Skyline_Trading_interview_notes_01N0MEMO000000000000000000" : "2026-10-14_하늘상사_인터뷰_메모_01N0MEMO000000000000000000",
   summary: null,
   t: {
     meeting_id: "01N0MEMO000000000000000000",
-    title: "하늘상사 인터뷰 메모",
+    title: EN ? "Skyline Trading interview notes" : "하늘상사 인터뷰 메모",
     created_at: "2026-10-14T15:00:00+09:00",
     kind: "memo",
     body: MEMO_BODY,
@@ -35,7 +46,7 @@ notes.push({
 });
 
 // 새 모양(섹션) 요약과 AI 질문 기록 (오른쪽 패널 확인용)
-const BRIEF = {
+const BRIEF_KO = {
   key: "brief",
   template: "brief",
   template_name: "핵심 요약",
@@ -45,10 +56,25 @@ const BRIEF = {
     { heading: "할 일", style: "checklist", items: [{ text: "야간 scale down 스크립트 적용", segment_ids: ["s0004"], owner: "최도윤", due: "7월 31일" }, { text: "예산안 재무팀 제출", segment_ids: ["s0012"], owner: null, due: "다음 주 화요일" }] }, // words-ok: 미리보기 가짜 데이터 (화면에 ID를 그리지 않는다)
   ],
 };
-const CHAT = [
+const CHAT_KO = [
   { question: "GPU 서버는 어떻게 하기로 했나요?", answer: "3분기에는 H100 서버 구매를 보류하고 [s0008] 클라우드 GPU를 월 800만 원 한도로 쓰기로 했습니다 [s0007, s0008].", citations: [{ meeting_id: "01KWZKT9M0T5YFCND21XGZFT8G", segment_id: "s0007", start: 101.2 }, { meeting_id: "01KWZKT9M0T5YFCND21XGZFT8G", segment_id: "s0008", start: 116.4 }], provider: "upstage", model: "solar-pro2", created_at: "2026-10-15T10:00:00+09:00" }, // words-ok: 미리보기 가짜 데이터 (화면에 ID를 그리지 않는다)
   { question: "채용은 몇 명인가요?", answer: "backend 개발자 두 명만 3분기에 채용합니다 [s0010]. ML 엔지니어 채용은 보류했습니다.", citations: [{ meeting_id: "01KWZKT9M0T5YFCND21XGZFT8G", segment_id: "s0010", start: 140.5 }], provider: "upstage", model: "solar-pro2", created_at: "2026-10-15T10:01:00+09:00" }, // words-ok: 미리보기 가짜 데이터 (화면에 ID를 그리지 않는다)
 ];
+const BRIEF_EN = {
+  key: "brief",
+  template: "brief",
+  template_name: "Brief",
+  overview: "To deal with the Q2 AWS overrun, the dev cluster will scale down at night and the GPU server purchase is on hold.",
+  sections: [
+    { heading: "Key points", style: "bullets", items: [{ text: "AWS costs ran 15% over budget", segment_ids: ["s0002"], owner: null, due: null }, { text: "Cloud GPUs are capped at $8K a month", segment_ids: ["s0008"], owner: null, due: null }] },
+    { heading: "To-dos", style: "checklist", items: [{ text: "Apply the nightly scale-down script", segment_ids: ["s0004"], owner: "Ryan Choi", due: "July 31" }, { text: "Send the budget to finance", segment_ids: ["s0012"], owner: null, due: "Next Tuesday" }] },
+  ],
+};
+const CHAT_EN = [
+  { question: "What did we decide about the GPU server?", answer: "We're holding off on buying the H100 server in Q3 [s0008] and using cloud GPUs capped at $8K a month [s0007, s0008].", citations: [{ meeting_id: "01KWZKT9M0T5YFCND21XGZFT8G", segment_id: "s0007", start: 101.2 }, { meeting_id: "01KWZKT9M0T5YFCND21XGZFT8G", segment_id: "s0008", start: 116.4 }], provider: "upstage", model: "solar-pro2", created_at: "2026-10-15T10:00:00+09:00" },
+  { question: "How many people are we hiring?", answer: "Only two backend developers in Q3 [s0010]. The ML engineer hire is on hold.", citations: [{ meeting_id: "01KWZKT9M0T5YFCND21XGZFT8G", segment_id: "s0010", start: 140.5 }], provider: "upstage", model: "solar-pro2", created_at: "2026-10-15T10:01:00+09:00" },
+];
+const [BRIEF, CHAT] = EN ? [BRIEF_EN, CHAT_EN] : [BRIEF_KO, CHAT_KO];
 
 let sampleId: string | null = null; // note_sample이 고른 노트 (미리보기에서는 3분기 예산 회의를 예시 노트로 쓴다)
 const info = ({ t, summary, dir }: (typeof notes)[number]): T => ({
@@ -61,8 +87,8 @@ const info = ({ t, summary, dir }: (typeof notes)[number]): T => ({
   segments: t.segments.length,
   has_summary: !!summary,
   kind: t.kind === "memo" ? "memo" : "recording",
-  favorite: dir.includes("예산"),
-  tags: dir.includes("API") ? ["성능", "백엔드"] : [],
+  favorite: dir.includes(EN ? "budget" : "예산"),
+  tags: dir.includes("API") ? (EN ? ["performance", "backend"] : ["성능", "백엔드"]) : [],
   folder: null,
   ...(t.meeting_id === sampleId ? { sample: true } : {}),
 });
@@ -77,7 +103,7 @@ const detail = (id: string): T => {
     body: n.t.kind === "memo" ? (n.t.body ?? "") : null,
     note_memo: n.t.memo ?? null,
     audio_path: null,
-    attendees: n.t.title?.includes("3분기") ? ["김지훈", "박소연", "최도윤", "정하은"] : [],
+    attendees: n.t.title?.includes(Q3) ? PEOPLE : [],
   };
 };
 
@@ -100,17 +126,20 @@ const fakeRecording = () => {
     rec({ event: "started", dir: "/tmp/preview-rec", tracks: ["mic"], started_at: new Date().toISOString() });
     rec({ event: "level", t: 83.4, mic: -18, system: null });
     rec({ event: "mark", t: 42, kind: "bookmark", text: null });
-    rec({ event: "mark", t: 61, kind: "memo", text: "예산 숫자 다시 확인" });
+    rec({ event: "mark", t: 61, kind: "memo", text: EN ? "double-check budget numbers" : "예산 숫자 다시 확인" });
   }, 50);
   return "/tmp/preview-rec";
 };
 
 // 노트 완성 (첫 노트): 메모 탭 글 + 누르면 완성된 노트를 만든다
 const FIRST = notes[0].t;
-FIRST.memo = { body: "AWS 비용 줄일 방법\n\nGPU 서버 살지?\n\n채용 몇 명", lines: [
+FIRST.memo = EN
+  ? { body: "ways to cut AWS cost\n\nbuy GPU server?\n\nhow many hires", lines: [
+    { id: "m0001", line: 1, text: "ways to cut AWS cost" }, { id: "m0002", line: 3, text: "buy GPU server?" }, { id: "m0003", line: 5, text: "how many hires" }], seq: 3 }
+  : { body: "AWS 비용 줄일 방법\n\nGPU 서버 살지?\n\n채용 몇 명", lines: [
   { id: "m0001", line: 1, text: "AWS 비용 줄일 방법" }, { id: "m0002", line: 3, text: "GPU 서버 살지?" }, { id: "m0003", line: 5, text: "채용 몇 명" }], seq: 3 };
 const it = (text: string, ids: string[], owner: string | null = null, due: string | null = null) => ({ text, segment_ids: ids, owner, due });
-const ENHANCED = {
+const ENHANCED_KO = {
   key: "enhanced", kind: "enhanced", template: "enhanced", template_name: "노트 완성", title: "3분기 예산 계획", overview: "",
   sections: [
     { heading: "AWS 비용 줄일 방법", part: "memo", source: "m0001", style: "bullets", items: [
@@ -128,6 +157,25 @@ const ENHANCED = {
       it("개발 클러스터 야간 scale down 적용", ["s0004"], "최도윤", "7월 31일"), it("backend 채용 공고 게시", ["s0011"], "정하은", "이번 주 금요일")] },
   ],
 };
+const ENHANCED_EN = {
+  key: "enhanced", kind: "enhanced", template: "enhanced", template_name: "Enhanced note", title: "Q3 budget planning", overview: "",
+  sections: [
+    { heading: "ways to cut AWS cost", part: "memo", source: "m0001", style: "bullets", items: [
+      it("Q2 AWS costs averaged $42K a month, 15% over budget", ["s0002"]),
+      it("Scaling the dev EKS cluster to zero at night would save about $6K a month", ["s0003"]),
+      it("The nightly scale-down goes in by July 31", ["s0004", "s0005"])] },
+    { heading: "buy GPU server?", part: "memo", source: "m0002", style: "bullets", items: [
+      it("The quote for a server with two H100s was $98K each", ["s0006"]),
+      it("Purchase is on hold in Q3; cloud GPUs are capped at $8K a month", ["s0008"])] },
+    { heading: "how many hires", part: "memo", source: "m0003", style: "bullets", items: [
+      it("Only two backend developers in the second half; the ML engineer hire is on hold", ["s0009", "s0010"])] },
+    { heading: "Bookmark 1:56", part: "memo", source: "r0001", at: 116, style: "bullets", items: [it("Everyone agreed to hold off on the GPU purchase", ["s0008"])] },
+    { heading: "Q3 total budget", part: "extra", source: null, style: "bullets", items: [it("$510K for infrastructure, $120K for hiring", ["s0012"])] },
+    { heading: "To-dos", part: "todos", source: null, style: "checklist", items: [
+      it("Apply the nightly scale-down on the dev cluster", ["s0004"], "Ryan Choi", "July 31"), it("Post the backend job openings", ["s0011"], "Hannah Jung", "This Friday")] },
+  ],
+};
+const ENHANCED = EN ? ENHANCED_EN : ENHANCED_KO;
 const made = new Set<string>();
 const fakeSummary = (a: T) => {
   const job = (payload: T) => void emit("job", { job: a.job, kind: "summarize", ...payload });
@@ -144,9 +192,9 @@ const handlers: Record<string, (a: T) => unknown> = {
   rec_start: fakeRecording,
   summary_start: fakeSummary,
   list_meetings: () => notes.map(info),
-  note_sample: () => (sampleId = notes.find((n) => n.t.title.includes("3분기"))?.t.meeting_id ?? notes[0].t.meeting_id),
+  note_sample: () => (sampleId = notes.find((n) => n.t.title.includes(Q3))?.t.meeting_id ?? notes[0].t.meeting_id),
   list_recordings: () => [],
-  list_folders: () => [{ id: "f1", name: "고객사", parent: null, order: 0, created_at: "2026-10-01T09:00:00+09:00" }],
+  list_folders: () => [{ id: "f1", name: EN ? "Customers" : "고객사", parent: null, order: 0, created_at: "2026-10-01T09:00:00+09:00" }],
   load_meeting: (a) => detail(a.id),
   summaries_list: (a) => {
     const n = notes.find((x) => x.t.meeting_id === a.id);
@@ -157,9 +205,9 @@ const handlers: Record<string, (a: T) => unknown> = {
   get_settings: () => settings,
   calendar_next: () => {
     const start = new Date(Date.now() + 6 * 60_000);
-    return [{ id: "e1", title: "주간 인프라 점검", start: start.toISOString(), end: new Date(start.getTime() + 3_600_000).toISOString(), calendar: "회사", attendees: ["김지훈", "박소연", "최도윤", "정하은"] }];
+    return [{ id: "e1", title: EN ? "Weekly infra check" : "주간 인프라 점검", start: start.toISOString(), end: new Date(start.getTime() + 3_600_000).toISOString(), calendar: EN ? "Work" : "회사", attendees: PEOPLE }];
   },
-  calendar_status: () => ({ enabled: true, access: "granted", hidden: ["c3"], calendars: [{ id: "c1", title: "회사", source: "Google" }, { id: "c2", title: "팀 일정", source: "Google" }, { id: "c3", title: "대한민국 공휴일", source: "구독" }] }),
+  calendar_status: () => (EN ? { enabled: true, access: "granted", hidden: ["c3"], calendars: [{ id: "c1", title: "Work", source: "Google" }, { id: "c2", title: "Team", source: "Google" }, { id: "c3", title: "US Holidays", source: "Subscribed" }] } : { enabled: true, access: "granted", hidden: ["c3"], calendars: [{ id: "c1", title: "회사", source: "Google" }, { id: "c2", title: "팀 일정", source: "Google" }, { id: "c3", title: "대한민국 공휴일", source: "구독" }] }),
   set_obsidian: ({ vault, audio }: T) => void Object.assign(settings, { obsidian_vault: vault, obsidian_audio: audio }),
   obsidian_send: ({ id }: T) => ({ status: "created", path: `/Users/me/Documents/My Vault/Tractus/${id}.md`, audio: null }),
   doctor: () => ({ doctor, core_error: null, tractus_bin: "tractus", tractus_bin_exists: true, rec_bin: "tractus-rec", rec_bin_exists: true, tractus_source: "repo", rec_source: "repo", home: "~/Tractus", home_risk: null }),
@@ -170,7 +218,7 @@ const handlers: Record<string, (a: T) => unknown> = {
   llm_key_status: (a) => ({ saved: a.provider === "upstage" || a.provider === "claude" }),
   voices_list: () => ({ people: [], needs_reenroll: false, model_present: true }),
   update_available: () => false,
-  ui_lang: () => ({ pref: "system", lang: new URLSearchParams(location.search).get("lang") === "en" ? "en" : "ko" }), // ?lang=en으로 영어 화면 확인
+  ui_lang: () => ({ pref: "system", lang: EN ? "en" : "ko" }), // ?lang=en으로 영어 화면 확인
   set_ui_lang: () => null,
   tray_hides_on_close: () => true,
   mcp_call: (a) => ({

@@ -1141,6 +1141,8 @@ T='회의|전사|세그먼트|화자|청크|벡터|임베딩|색인|(?<!AI )모�
 
 화면 언어는 `시스템 설정`(macOS 언어가 한국어면 한국어, 아니면 영어)·`한국어`·`English`다(설정 > 화면 > 언어). 한국어 문구가 원본이자 키이고, 영어는 `app/src/en/*.ts` 사전에 둔다: 코드는 `t("노트 {n}개", { n })`로 쓴다(`app/src/i18n.ts`). 한국어 문구를 고치면 사전의 키도 고친다. `app/src/i18n.test.ts`가 빠진 번역·쓰이지 않는 번역·자리표시자·`t()` 밖에 남은 한국어를 잡는다(언어와 상관없는 데이터는 줄 끝 `i18n-ok`).
 
+Rust 문장은 `app/src-tauri/src/en.json`, 코어 문장·내보낸 문서는 `src/tractus/i18n_en.json`(앱이 넘기는 `TRACTUS_LANG=en`)이고 같은 문체·용어를 쓴다. 노트에 저장되는 문구(기본 제목 `Recording HH:MM`·`Memo HH:MM`, 요약 머리말, 예시 노트)는 만들 때의 화면 언어다. 영어 화면의 AI 요약·노트 완성은 영어로 쓰고, AI 질문은 질문의 언어로 답한다.
+
 ### 7.1 문체
 
 - **Sentence case.** 단추·메뉴·제목 모두 첫 글자만 대문자다(`Move to Trash`처럼 고유한 이름·macOS 메뉴 이름만 예외). `Save`, `Open settings`, `Transcribe now`.

@@ -13,7 +13,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - 앱의 대상은 `노트`다. `회의`는 `대면 회의`처럼 현실의 상황을 말할 때만 쓰고(WORDS.md §2 `노트와 회의`), 화면에 남기면 줄 끝에 `words-ok`를 붙인다. 코드의 `meeting`은 그대로다.
 - 화면에는 `대화 내용`·`텍스트로 변환`·`참석자`·`단어 싱크`·`자주 쓰는 단어`·`스마트 검색`을 쓰고, `전사`·`세그먼트`·`화자`·`색인`·`s0012`·`S1`은 보이지 않는다.
 - 코드 식별자(`meeting_id`, `meetings/`, `--meeting`), CLI 명령·옵션, JSON 키, 이벤트·단계 키, MCP 출력, 개발 문서는 기술 용어를 그대로 쓴다.
-- 제목이 없는 녹음의 기본 제목은 `녹음 HH:MM`이다(`cli._source_from_recording`).
+- 제목이 없는 녹음의 기본 제목은 `녹음 HH:MM`이다(`cli._source_from_recording`, 영어 화면은 `Recording HH:MM`: 노트에 저장되는 문구는 만들 때의 화면 언어).
 - **화면 문구는 `t("한국어 문구")`(`app/src/i18n.ts`)로 쓰고 영어를 `app/src/en/*.ts`에 더한다**(WORDS.md §7, docs/desktop.md §3.8). 한국어 문구가 키라 한국어를 고치면 사전의 키도 고친다. `t()`를 템플릿 문자열에 넣지 않고, 변수는 `{이름}` 자리표시자, 개수는 `n`(영어 복수형). `app/src/i18n.test.ts`가 빠진 번역과 `t()` 밖에 남은 한국어를 잡는다(언어와 상관없는 데이터는 줄 끝 `i18n-ok`).
 - **Rust·코어도 같은 규칙이다**: Rust는 `i18n::t()`/`tv()` + `app/src-tauri/src/en.json`, 코어는 `tractus.i18n.t()` + `src/tractus/i18n_en.json`(앱이 넘기는 `TRACTUS_LANG=en`일 때만 영어). 검사는 Rust `i18n.rs` 테스트와 `tests/test_i18n.py`. MCP 출력·`store.stamp()`·노트 폴더 파일·AI 프롬프트는 옮기지 않는다(`i18n-ok`).
 
@@ -217,7 +217,8 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 uv run pytest                                       # 단위·CLI 테스트 (모델 불필요). PR마다 GitHub Actions CI(.github/workflows/ci.yml)가 같은 것을 돈다
 scripts/check_words.sh                              # WORDS.md §5 금지어 검사 (출력 없으면 통과)
 uv run python scripts/check_licenses.py             # copyleft(GPL·LGPL·AGPL) 의존성 검사: Python·npm·Rust
-scripts/demo/make_demo.sh                           # README 데모 GIF(docs/images/demo.gif) 다시 만들기 (pnpm dev 미리보기 + Chrome + ffmpeg, 가짜 데이터만)
+scripts/demo/make_demo.sh [--lang en]              # README 데모 GIF(docs/images/demo.gif, 영어는 demo-en.gif) 다시 만들기 (pnpm dev 미리보기 + Chrome + ffmpeg, 가짜 데이터만)
+scripts/screenshots/make_shots.sh [--lang en]       # README 스크린샷(docs/images/*.png, 영어는 docs/images/en/) 다시 만들기
 uv run pytest -m slow                               # 실제 모델 테스트
 uv run pytest -m llm                                # 실제 LLM API 스모크 (키 있는 공급자만)
 uv run pytest -m network                            # 작은 VAD(1.3MB)를 임시 폴더에 실제로 받는다

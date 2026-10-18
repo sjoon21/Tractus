@@ -92,7 +92,7 @@ def pick_summary(d: Path, key: str | None) -> str | None:
 
 
 def _md(d: Path, note: dict, key: str | None) -> str:
-    md = render_markdown(note, load_memos(d), ui=True)
+    md = render_markdown(note, load_memos(d))
     summary = read_markdown(d, key) if key else None
     if summary is None:
         return md
@@ -197,7 +197,7 @@ def render_export(d: Path, fmt: str, summary: str | None = None) -> bytes:
     key = pick_summary(d, summary)
     writers = {
         "txt": lambda: _txt(note).encode("utf-8"), "md": lambda: _md(d, note, key).encode("utf-8"), "srt": lambda: _srt(note).encode("utf-8"),
-        "vtt": lambda: render_vtt(note, ui=True).encode("utf-8"), "csv": lambda: _csv(note), "docx": lambda: _docx(d, note, key), "bundle": lambda: _bundle(d),
+        "vtt": lambda: render_vtt(note).encode("utf-8"), "csv": lambda: _csv(note), "docx": lambda: _docx(d, note, key), "bundle": lambda: _bundle(d),
     }
     if fmt not in writers:
         raise ValueError(t("지원하지 않는 형식입니다: {format} ({formats})", format=fmt, formats=", ".join(FORMATS)))
