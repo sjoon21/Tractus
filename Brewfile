@@ -1,5 +1,6 @@
 # Tractus 개발·빌드 도구. scripts/bootstrap.sh 가 이 파일을 읽어 빠진 것만 설치합니다.
 # 직접 설치하려면: brew bundle --file Brewfile
+# 설치 안내: docs/setup.md (English: docs/en/setup.md)
 # 이미 다른 방법(rustup, nvm 등)으로 PATH에 있는 도구는 bootstrap.sh 가 건너뜁니다.
 
 # 앱(Tauri) 백엔드 컴파일. cargo 가 필요합니다.
