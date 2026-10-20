@@ -1262,13 +1262,14 @@ pub fn run() {
             }
         })
         // 창을 닫아도 메뉴 막대에 남기는 설정이면 끝내지 않고 숨긴다. 끄면 마지막 창이 닫히며 기존 종료 흐름(defer_exit)이 돈다
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" && tray::hides_on_close(window.app_handle()) {
-                    api.prevent_close();
-                    let _ = window.hide();
-                }
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } if window.label() == "main" && tray::hides_on_close(window.app_handle()) => {
+                api.prevent_close();
+                let _ = window.hide();
             }
+            // 메뉴 막대 팝오버는 다른 곳을 누르면 닫힌다
+            tauri::WindowEvent::Focused(false) if window.label() == tray::POPOVER_WINDOW => tray::popover_blurred(window.app_handle()),
+            _ => {}
         })
         // 회의 오디오: media://localhost/<경로> (media.rs). 파일 읽기는 UI 스레드 밖에서
         .register_asynchronous_uri_scheme_protocol("media", |ctx, request, responder| {
@@ -1309,6 +1310,8 @@ pub fn run() {
             set_rec_mode,
             set_checkup_done,
             tray::tray_update,
+            tray::tray_popover_state,
+            tray::tray_popover_action,
             tray::tray_hides_on_close,
             tray::tray_show_if_hidden,
             tray::set_tray_prefs,
