@@ -91,7 +91,8 @@ export function TrayPopoverView({ state, nowMs, onAction }: { state: PopoverStat
               <Square aria-hidden className="size-3.5! fill-current" />
             </button>
           </span>
-        ) : (
+        ) : converting && !state.can.start ? null : (
+          // 변환 중에 녹음을 시작할 수 없으면 흐린 단추를 남기지 않는다 (진행률이 이 줄의 주인공)
           <button type="button" className={cn(round, "bg-primary shadow-xs hover:bg-primary/85")} onClick={() => onAction(ID.start)} disabled={!state.can.start} aria-label={start} title={start}>
             <span className="size-3 rounded-full bg-rec" aria-hidden />
           </button>

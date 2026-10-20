@@ -46,11 +46,12 @@ describe("TrayPopoverView", () => {
     expect(iconButtons(h)[1].label).toBe("계속");
   });
 
-  test("대기 중: 상태 문구와 녹음 시작 단추 하나 (못 쓰면 disabled)", () => {
+  test("대기 중: 상태 문구와 녹음 시작 단추 하나 (변환 중에 못 쓰면 숨김)", () => {
     const ok = iconButtons(html(st({ status: "대기 중", can: { start: true } })));
     expect(ok).toEqual([{ label: "녹음 시작", text: "", off: false }]);
     expect(html(st({ status: "대기 중" }))).toContain("대기 중");
-    expect(iconButtons(html(st({ status: "변환 중 45%", phase: "converting" })))[0].off).toBe(true);
+    expect(iconButtons(html(st({ status: "변환 중 45%", phase: "converting" })))).toEqual([]);
+    expect(iconButtons(html(st({ status: "변환 중 45%", phase: "converting", can: { start: true } })))[0].label).toBe("녹음 시작");
   });
 
   test("변환 중: 큰 진행률과 진행 막대 (모르면 끝을 모르는 막대)", () => {
