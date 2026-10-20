@@ -218,6 +218,34 @@ pub async fn summaries_delete(state: State<'_, AppState>, id: String, key: Strin
     .await
 }
 
+/// 회의록: 칸·위키용 Markdown·짧은 판 (`tractus minutes <노트> show`). 없으면 {"minutes": null}
+#[tauri::command]
+pub async fn minutes_show(state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    if !is_meeting_id(&id) {
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
+    }
+    let s = state.settings();
+    let args: Vec<String> = ["minutes", &id, "show"].map(String::from).to_vec();
+    blocking(move || stdout_json(&run_tractus(&s, &args, None, &t("회의록을 읽지 못했습니다"))?)).await // words-ok: 회의록은 문서 이름
+}
+
+/// 회의록 칸 고치기 (`tractus minutes <노트> save`, stdin {"minutes": …}). 모양·근거 ID 검사는 코어가 한다. 돌려주는 값은 minutes_show와 같다
+#[tauri::command]
+pub async fn minutes_save(state: State<'_, AppState>, id: String, minutes: Value) -> Result<Value, String> {
+    if !is_meeting_id(&id) {
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
+    }
+    let s = state.settings();
+    let args: Vec<String> = ["minutes", &id, "save"].map(String::from).to_vec();
+    let input = json!({ "minutes": minutes }).to_string();
+    let guard = BusyGuard::new(&state.busy, &id);
+    blocking(move || {
+        let _guard = guard;
+        stdout_json(&run_tractus(&s, &args, Some(&input), &t("회의록을 저장하지 못했습니다"))?) // words-ok: 회의록은 문서 이름
+    })
+    .await
+}
+
 /// 요약 하나 만들기. 이벤트는 "job"으로 보내고 {job, kind: "summarize"}를 덧붙인다 (job_start와 같다: 화면의 작업 상태가 그대로 쓴다).
 /// provider: 고른 AI 서비스 (없으면 기본 서비스). template이 없고 custom도 없으면 기본(회의록). custom이 있으면 stdin으로 요약 방법을 넘긴다. 작업하는 동안 그 노트는 삭제할 수 없다
 #[tauri::command]

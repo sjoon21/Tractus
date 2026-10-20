@@ -81,6 +81,7 @@ import { selectClass } from "@/components/ui/select";
 import { cn } from "@/components/ui/utils";
 import { CHIP } from "@/components/panel/chip";
 import { EnhancedNote } from "./EnhancedNote";
+import { MinutesPanel } from "./MinutesPanel";
 
 const RATE_KEY = "tractus.playbackRate";
 const VOLUME_KEY = "tractus.volume";
@@ -177,6 +178,7 @@ export function MeetingView({
   }, []);
   const [summaryRunning, setSummaryRunning] = useState(false); // 요약 탭이 요약을 만드는 중 (삭제를 막는다)
   const [enhanceRunning, setEnhanceRunning] = useState(false); // 메모 탭이 노트를 완성하는 중 (삭제를 막는다)
+  const [minutesRunning, setMinutesRunning] = useState(false); // 회의록 탭이 회의록을 만드는 중 (삭제를 막는다)  // words-ok: 회의록은 문서 이름
   const [selectedSummary, setSelectedSummary] = useState<SummaryDoc | null>(null); // 요약 탭에서 고른 요약 (인쇄가 쓴다)
   const onMemoSaved = useCallback(
     (m: MeetingDetail) => {
@@ -501,6 +503,7 @@ export function MeetingView({
   const railCollapsed = panels.right;
   const [askSeen, setAskSeen] = useState(false);
   const [memoSeen, setMemoSeen] = useState(false);
+  const [minutesSeen, setMinutesSeen] = useState(false);
   const tabs = railTabs(memoNote);
   const tabNow = validTab(tabs, tab);
   const memoSegs = useMemo(() => memoLineSegments(detail?.note_memo), [detail?.note_memo]);
@@ -508,6 +511,7 @@ export function MeetingView({
     if (tabNow === "memo" && k !== "memo") void flushMemos(); // 메모 탭을 떠날 때 저장을 마친다 (입력창을 벗어나는 blur와 같다)
     setTab(k);
     if (k === "ask") setAskSeen(true);
+    if (k === "minutes") setMinutesSeen(true);
     if (k === "memo") {
       setMemoSeen(true);
       if (focusMemo) setMemoPick({ segId: null, nonce: Date.now() }); // 탭을 눌러 열면 입력창에 초점. 방향키로 지나갈 때는 두지 않는다
@@ -819,8 +823,8 @@ export function MeetingView({
               size="icon-sm"
               className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               aria-label={t("삭제")}
-              disabled={align.job.running || summaryRunning || enhanceRunning || !!attach?.lock || !!convertBlock}
-              title={convertBlock ?? (align.job.running || summaryRunning || enhanceRunning || attach?.lock ? t("작업이 끝난 뒤에 삭제할 수 있습니다") : t("노트를 휴지통으로 옮깁니다"))}
+              disabled={align.job.running || summaryRunning || enhanceRunning || minutesRunning || !!attach?.lock || !!convertBlock}
+              title={convertBlock ?? (align.job.running || summaryRunning || enhanceRunning || minutesRunning || attach?.lock ? t("작업이 끝난 뒤에 삭제할 수 있습니다") : t("노트를 휴지통으로 옮깁니다"))}
               onClick={() => onDelete({ kind: "note", id, title: info.title, dir: info.dir, memo: memoNote, withMemo: !memoNote && memoLines.size > 0 })}
             >
               <Trash2 aria-hidden />
@@ -1096,10 +1100,10 @@ export function MeetingView({
               id={`tab-${k}`}
               role="tab"
               aria-selected={tabNow === k}
-              aria-controls={k === "summary" || (k === "ask" ? askSeen : memoSeen) ? `panel-${k}` : undefined}
+              aria-controls={k === "summary" || (k === "ask" ? askSeen : k === "minutes" ? minutesSeen : memoSeen) ? `panel-${k}` : undefined}
               tabIndex={tabNow === k ? 0 : -1}
               onClick={() => showTab(k, k === "memo")}
-              className="h-7 rounded-md px-2.5 text-[13px] font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 aria-selected:bg-accent aria-selected:text-foreground"
+              className="h-7 shrink-0 whitespace-nowrap rounded-md px-2.5 text-[13px] font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 aria-selected:bg-accent aria-selected:text-foreground"
             >
               {RAIL_LABEL[k]}
             </button>
@@ -1132,6 +1136,26 @@ export function MeetingView({
           />
           )}
         </div>
+        {minutesSeen && !memoNote && (
+          <div id="panel-minutes" role="tabpanel" aria-labelledby="tab-minutes" hidden={tabNow !== "minutes"}>
+            <MinutesPanel
+              id={id}
+              rev={summaryRev}
+              disabled={recorded ? CONVERT_FIRST : segments.length === 0 ? t("인식된 대화가 없습니다") : editing || memoBusy ? t("저장이 끝난 뒤에 만들 수 있습니다") : null}
+              prepare={flushMemos}
+              editSeq={editSeq}
+              editSeqRef={editSeqRef}
+              editKinds={editKinds}
+              chip={(ids) => <TimeChip ids={ids} starts={rail} onSeek={seekTo} memo={memoLines.size > 0 ? { lines: memoLines, onPick: openMemoLine, tagged: true } : null} />}
+              notify={notify}
+              onRunning={setMinutesRunning}
+              onChanged={() => {
+                setSummaryRev((r) => r + 1);
+                onChanged();
+              }}
+            />
+          </div>
+        )}
         {askSeen && (
           <div id="panel-ask" role="tabpanel" aria-labelledby="tab-ask" className="rail-ask flex flex-1 flex-col" hidden={tabNow !== "ask"}>
             {recorded ? (

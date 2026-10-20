@@ -158,7 +158,12 @@ def summarize_generic(client, provider: Provider, model: str, transcript: dict, 
 def render_md(data: dict, transcript: dict) -> str:
     """summaries/<key>.md. data는 저장되는 JSON(v2)과 같은 딕셔너리."""
     out = ["---", f"meeting_id: {data['meeting_id']}", f"template: {data['template']}", f"provider: {data['provider']}", f"model: {data['model']}",
-           f"generated_at: {data['generated_at']}", "---", "", f"# {data['title']}", ""]
+           f"generated_at: {data['generated_at']}", "---", ""]
+    if data.get("kind") == "minutes":  # 회의록: 고친 글 또는 저장된 형식으로 그린 글 (docs/design/meeting-minutes.md)
+        from tractus.minutes import markdown
+
+        return "\n".join(out) + markdown(data, transcript)
+    out += [f"# {data['title']}", ""]
     if data["overview"].strip():
         out += [data["overview"], ""]
     for sec in data["sections"]:

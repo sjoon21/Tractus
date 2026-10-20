@@ -196,6 +196,15 @@ export const specsFromPick = (picked: string[], templates: TemplateInfo[]): Summ
 export const togglePick = (picked: string[], id: string): string[] => (picked.includes(id) ? picked.filter((p) => p !== id) : [...picked, id]);
 
 /** 처음 고른 유형: 아직 없는 첫 기본 유형(회의록부터). 모두 있으면 회의록 */
+/** 요약 탭에 보일 요약: 회의록(옛 summary.json과 새 회의록)은 회의록 탭으로 갔다 (docs/design/meeting-minutes.md) */
+export const summaryTabDocs = (docs: SummaryDoc[]): SummaryDoc[] => docs.filter((d) => d.key !== DEFAULT_KEY && d.key !== "minutes");
+
+/** 요약 탭의 유형 메뉴: 기본 유형 `회의록`은 회의록 탭의 `회의록 만들기`가 대신한다 */
+export const summaryTemplates = (templates: TemplateInfo[]): TemplateInfo[] => templates.filter((x) => x.id !== DEFAULT_KEY);
+
+/** 유형 목록을 읽지 못했을 때 만들 요약 */
+export const FALLBACK_SPEC: SummarySpec = { template: "brief", label: t("핵심 요약"), key: "brief" };
+
 export function defaultPick(docs: SummaryDoc[], templates: TemplateInfo[]): string[] {
   const made = new Set(docs.map((d) => d.key));
   const next = templates.find((t) => t.builtin && !made.has(t.id));

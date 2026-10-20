@@ -265,3 +265,32 @@ def test_enhance_keeps_every_note_and_grounds_details_near_marks(tmp_path):
     owners = {it["owner"] for s in out["sections"] for it in s["items"] if it["owner"]}
     assert owners <= {"김민수", "박지영"}, owners
     assert all(re.search(r"[가-힣]", it["text"]) for s in out["sections"] for it in s["items"]), "한국어가 아님"
+
+
+@pytest.mark.llm
+def test_minutes_keep_scope_decisions_and_do_not_invent_teams_or_dues():
+    """회의록 (docs/design/meeting-minutes.md): 가상 회의 tests/fixtures/minutes_meeting.json. 기본 공급자 하나만 본다.
+    S1 = 김지훈 (정산팀), S2 = 기획팀(이름 확인), S3·S4 = 이름 없음. S3만 "저희 플랫폼팀"이라고 밝힌다."""
+    import re
+
+    from tractus import minutes
+
+    try:
+        provider, model = resolve_provider(None, None)
+    except LLMError as e:
+        pytest.skip(str(e))
+    t = json.loads((ROOT / "tests/fixtures/minutes_meeting.json").read_text(encoding="utf-8"))
+    m = minutes.make(make_client(provider), provider, model, t)
+    topics = m["topics"]
+    assert 2 <= len(topics) <= 4, m
+    agreed = " ".join(x["text"] for tp in topics for x in tp["agreed"])
+    assert "2.1" in agreed and re.search(r"해외", agreed), "범위 제외·연기 결정이 조율 사항에 없음"
+    refund = next((tp for tp in topics if "환불" in tp["title"]), None)
+    assert refund and refund["open"], "결론 없이 끝난 환불 정책이 미결이 아님"
+    teams = {a["team"] for a in m["actions"] if a["team"]}
+    assert teams <= {"정산팀", "기획팀", "플랫폼팀"}, teams  # 재무팀·고객 지원은 하기로 한 쪽이 아니다
+    dues = {a["due"] for a in m["actions"] if a["due"]}
+    assert dues <= {"다음 주 수요일", "다음주 수요일"}, dues  # 기한을 말한 할 일은 하나뿐
+    lines = [x["text"] for tp in topics for x in tp["discussed"] + tp["agreed"]] + [a["text"] for a in m["actions"]]
+    assert all(re.search(r"[가-힣]", x) for x in lines), "한국어가 아님"
+    assert not any(re.search(r"참석자\s*\d|화자|세그먼트|s\d{4}", x) for x in lines), "내부 용어가 문장에 샘"

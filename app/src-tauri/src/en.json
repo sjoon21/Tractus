@@ -156,5 +156,7 @@
   "한 번에 받을 수 있는 모델 수를 넘었습니다": "Too many models to download at once",
   "허용하지 않는 검색 요청입니다: {name}": "Search request not allowed: {name}",
   "허용하지 않는 녹음 설정입니다: {f}": "Recording setting not allowed: {f}",
+  "회의록을 읽지 못했습니다": "Couldn’t read the minutes",
+  "회의록을 저장하지 못했습니다": "Couldn’t save the minutes",
   "휴지통으로 옮기지 못했습니다\n{e}": "Couldn’t move to Trash\n{e}"
 }
