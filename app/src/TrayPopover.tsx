@@ -1,6 +1,6 @@
 // 메뉴 막대 아이콘을 왼쪽 클릭하면 뜨는 팝오버 (tray.rs `toggle_popover`, 창 `tray`).
 // 맨 위 녹음 막대(녹음 점·녹음 시각 | 둥근 아이콘 단추), Tractus 열기·종료. 단추는 메뉴 항목과 같은 ID를 `tray_popover_action`으로 보낸다.
-// 상태는 Rust가 보낸다(`tray_popover_state`·`tray-popover` 이벤트). 녹음 시각만 여기서 센다: 팝오버는 보이는 동안만 쓰인다.
+// 상태는 Rust가 보낸다(`tray_popover_state`·`tray-popover` 이벤트). 녹음 시각도 Rust 틱이 1초마다 보내는 이벤트로 고친다: 화면 타이머를 쓰지 않는다.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -10,6 +10,7 @@ import { MENU, MENU_ITEM } from "@/components/menu";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/components/ui/utils";
 import { t } from "./i18n";
+import { applyTheme, readTheme } from "./themePref";
 import { PAUSE_LABEL, PAUSE_TITLE, RESUME_LABEL, RESUME_TITLE } from "./pause";
 
 export type PopoverPhase = "idle" | "starting" | "recording" | "paused" | "converting";
@@ -112,7 +113,7 @@ export function TrayPopoverView({ state, nowMs, onAction }: { state: PopoverStat
   );
 }
 
-/** 팝오버 창 전체: 상태를 받고, 내용 높이에 창을 맞추고, Esc로 닫는다 */
+/** 팝오버 창 전체: 상태를 받고, 내용 높이에 창을 맞추고, Esc로 닫고, 열릴 때마다 설정의 테마를 다시 읽는다 */
 export function TrayPopover() {
   const [state, setState] = useState<PopoverState>(EMPTY_POPOVER);
   const [now, setNow] = useState(() => Date.now());
@@ -127,12 +128,13 @@ export function TrayPopover() {
     return () => void un.then((f) => f());
   }, []);
 
-  const ticking = state.phase === "recording";
+  // 설정에서 테마를 바꿔도 팝오버 창은 살아 있다: 포커스를 받을 때(열릴 때)마다 같은 저장소의 선택을 다시 적용한다
   useEffect(() => {
-    if (!ticking) return;
-    const id = setInterval(() => setNow(Date.now()), 500);
-    return () => clearInterval(id);
-  }, [ticking]);
+    const un = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused) applyTheme(readTheme());
+    });
+    return () => void un.then((f) => f());
+  }, []);
 
   // 창 높이 = 내용 높이 (폭은 tray.rs가 정한다)
   useLayoutEffect(() => {
@@ -147,7 +149,7 @@ export function TrayPopover() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") void getCurrentWindow().hide();
+      if (e.key === "Escape") void invoke("tray_popover_hide");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

@@ -4,8 +4,9 @@
 //! 녹음 시작·종료·북마크는 직접 하지 않는다: `tray-action` 이벤트를 화면에 보내고 화면이 창의 단추와 같은 길로 처리한다.
 //! 경과 시간은 화면 타이머에 기대지 않는다 (숨은 webview는 타이머가 늦어진다): 화면이 녹음 시작 시각을 한 번 보내고 Rust가 1초마다 제목을 고친다.
 //!
-//! 아이콘을 왼쪽 클릭하면 기본 메뉴 대신 팝오버 창(`tray.html`, `TrayPopover.tsx`)이 아이콘 아래에 뜬다: 녹음 막대(녹음 점·시각·아이콘 단추) + 최근 노트 + 열기·종료.
-//! 팝오버의 단추도 메뉴 항목과 같은 ID로 `on_menu_event`를 지난다. 오른쪽 클릭은 기본 메뉴 그대로다 (팝오버를 못 띄워도 길이 남는다).
+//! 아이콘을 왼쪽 클릭하면 기본 메뉴 대신 팝오버 창(`tray.html`, `TrayPopover.tsx`)이 아이콘 아래에 뜬다: 녹음 막대(녹음 점·시각·아이콘 단추) + 열기·종료.
+//! 최근 노트는 오른쪽 클릭의 기본 메뉴에만 있다. 팝오버의 단추도 메뉴 항목과 같은 ID로 `on_menu_event`를 지난다 (팝오버를 못 띄워도 기본 메뉴로 길이 남는다).
+//! 팝오버의 녹음 시각도 Rust 틱이 센다: 틱마다 보이는 팝오버에 상태를 다시 보낸다.
 
 use crate::i18n::{t, tv};
 use crate::{AppState, Settings};
@@ -16,7 +17,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry};
+use tauri::{AppHandle, Emitter, LogicalPosition, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry};
 
 const TRAY_ID: &str = "tractus-tray";
 const TOOLTIP: &str = "Tractus";
@@ -26,7 +27,9 @@ pub const POPOVER_WINDOW: &str = "tray";
 const POPOVER_WIDTH: f64 = 300.0;
 /// 화면(TrayPopover.tsx)이 카드 둘레에 두는 여백 (pt): 카드 그림자 자리. 카드 왼쪽 끝을 아이콘 왼쪽 끝에 맞출 때 뺀다
 const POPOVER_PAD: f64 = 8.0;
-/// 팝오버가 포커스를 잃어 숨은 직후의 아이콘 클릭은 다시 열지 않는다 (아이콘을 눌러 닫는 경우: 숨김이 클릭보다 먼저 온다)
+/// 메뉴 막대 높이(pt)의 보통 값. 아이콘 사각형이 어느 화면 것인지 배율만으로 가릴 수 없을 때 쓴다 (`icon_rect_pt`)
+const MENU_BAR_PT: f64 = 24.0;
+/// 팝오버가 숨은 직후의 아이콘 클릭은 다시 열지 않는다 (아이콘을 눌러 닫는 경우: 포커스를 잃어 숨는 것이 클릭보다 먼저 온다)
 const POPOVER_REOPEN_GUARD: Duration = Duration::from_millis(300);
 /// 메뉴에 보이는 최근 노트 수와 제목 길이 (넘으면 `…`)
 const RECENT_MAX: usize = 5;
@@ -219,7 +222,7 @@ pub fn render(p: &Payload, now_ms: i64) -> View {
 }
 
 /// 팝오버에 보낼 상태 (순수 함수). 단추를 누를 수 있는지는 메뉴와 같은 판단(`render`의 항목)을 쓴다.
-/// 녹음 시각은 팝오버가 센다: 보이는 동안만 쓰이므로 화면 타이머로 충분하다
+/// 녹음 시각은 메뉴 막대 제목과 같은 Rust 틱이 센다: 틱마다 보이는 팝오버에 이 값을 다시 보낸다 (`tick` → `emit_popover`)
 pub fn popover_state(p: &Payload, now_ms: i64) -> Value {
     let view = render(p, now_ms);
     let enabled = |id: &str| view.entries.iter().any(|e| matches!(e, Entry::Item { id: i, enabled: true, .. } if *i == id));
@@ -253,13 +256,34 @@ pub fn popover_state(p: &Payload, now_ms: i64) -> Value {
     })
 }
 
-/// 팝오버 창 왼쪽 위 모서리 (물리 픽셀). 기본 메뉴처럼 카드 왼쪽 끝이 아이콘 왼쪽 끝, 카드 위 끝이 메뉴 막대 바로 아래에 붙는다.
-/// 화면 오른쪽 끝(`screen_right`)을 넘으면 안쪽으로 민다. 입력은 모두 물리 픽셀이다
-pub fn popover_origin(icon_x: f64, icon_bottom: f64, scale: f64, screen_right: Option<f64>) -> (f64, f64) {
-    let mut x = icon_x - POPOVER_PAD * scale;
-    if let Some(right) = screen_right {
-        x = x.min(right - POPOVER_WIDTH * scale);
-    }
+/// 모니터 하나 (논리 좌표 pt, 배율)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Screen {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    pub scale: f64,
+}
+
+/// 아이콘 사각형(`TrayIconEvent`의 rect)을 논리 좌표(pt)로 되돌리고 그 화면을 찾는다: `(화면, 왼쪽, 아래 끝)`.
+/// tray-icon은 macOS에서 전역 논리 좌표에 **아이콘이 있는 화면의 배율**을 곱해 보낸다 (팝오버 창이 있는 화면의 배율이 아니다).
+/// 그래서 화면마다 그 배율로 나눠 그 화면 안에 드는지 본다. 배율이 다른 두 화면에 모두 들면 높이가 메뉴 막대에 가까운 쪽이다
+pub fn icon_rect_pt(px: f64, py: f64, ph: f64, screens: &[Screen]) -> Option<(Screen, f64, f64)> {
+    screens
+        .iter()
+        .filter(|m| {
+            let (x, y) = (px / m.scale, py / m.scale);
+            x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h
+        })
+        .min_by(|a, b| (ph / a.scale - MENU_BAR_PT).abs().total_cmp(&(ph / b.scale - MENU_BAR_PT).abs()))
+        .map(|m| (*m, px / m.scale, (py + ph) / m.scale))
+}
+
+/// 팝오버 창 왼쪽 위 모서리 (논리 좌표 pt). 기본 메뉴처럼 카드 왼쪽 끝이 아이콘 왼쪽 끝, 카드 위 끝이 메뉴 막대 바로 아래에 붙는다.
+/// 아이콘이 있는 화면의 오른쪽 끝을 넘으면 안쪽으로 민다
+pub fn popover_origin(icon_left: f64, icon_bottom: f64, screen: &Screen) -> (f64, f64) {
+    let x = (icon_left - POPOVER_PAD).min(screen.x + screen.w - POPOVER_WIDTH);
     (x, icon_bottom)
 }
 
@@ -347,28 +371,45 @@ fn toggle_popover(app: &AppHandle, rect: tauri::Rect) {
         },
     };
     if win.is_visible().unwrap_or(false) {
-        let _ = win.hide();
+        hide_popover(app);
         return;
     }
-    let scale = win.scale_factor().unwrap_or(2.0);
-    let pos = rect.position.to_physical::<f64>(scale);
-    let size = rect.size.to_physical::<f64>(scale);
-    let right = win.monitor_from_point(pos.x, pos.y).ok().flatten().map(|m| f64::from(m.position().x) + f64::from(m.size().width));
-    let (x, y) = popover_origin(pos.x, pos.y + size.height, scale, right);
-    let _ = win.set_position(PhysicalPosition::new(x, y));
+    // rect는 macOS에서 언제나 Physical이다 (tray-icon). 배율 1은 값을 그대로 꺼내기 위한 것이다
+    let pos = rect.position.to_physical::<f64>(1.0);
+    let size = rect.size.to_physical::<f64>(1.0);
+    let screens: Vec<Screen> = app
+        .available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .map(|m| {
+            let s = m.scale_factor();
+            Screen { x: f64::from(m.position().x) / s, y: f64::from(m.position().y) / s, w: f64::from(m.size().width) / s, h: f64::from(m.size().height) / s, scale: s }
+        })
+        .collect();
+    let Some((screen, left, bottom)) = icon_rect_pt(pos.x, pos.y, size.height, &screens) else {
+        eprintln!("메뉴 막대 아이콘이 있는 화면을 찾지 못했습니다");
+        return;
+    };
+    let (x, y) = popover_origin(left, bottom, &screen);
+    let _ = win.set_position(LogicalPosition::new(x, y));
     let _ = win.emit("tray-popover", popover_state(&state.lock().payload, now_ms()));
     let _ = win.show();
     let _ = win.set_focus();
 }
 
-/// 팝오버가 포커스를 잃었다 (다른 곳을 눌렀다): 숨긴다. lib.rs의 창 이벤트 핸들러가 부른다
-pub fn popover_blurred(app: &AppHandle) {
+/// 팝오버를 숨긴다. 숨기는 길(바깥 클릭·Esc·아이콘 다시 클릭·열기·종료)은 모두 여기를 지나 다시 열기 가드를 건다
+fn hide_popover(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(POPOVER_WINDOW) {
         if w.is_visible().unwrap_or(false) {
             let _ = w.hide();
             app.state::<TrayState>().lock().popover_hidden_at = Some(Instant::now());
         }
     }
+}
+
+/// 팝오버가 포커스를 잃었다 (다른 곳을 눌렀다): 숨긴다. lib.rs의 창 이벤트 핸들러가 부른다
+pub fn popover_blurred(app: &AppHandle) {
+    hide_popover(app);
 }
 
 /// 상태가 바뀌었다: 열려 있는 팝오버에 알린다 (없거나 숨어 있으면 열 때 보낸다)
@@ -522,7 +563,9 @@ impl TrayState {
     }
 
     fn tick(&self, app: &AppHandle) {
-        self.lock().sync(app);
+        let mut g = self.lock();
+        g.sync(app);
+        emit_popover(app, &g.payload);
     }
 
     /// 화면이 상태를 보냈다. 같은 값이면 아무것도 하지 않는다
@@ -564,8 +607,12 @@ impl TrayState {
         }
     }
 
-    /// 화면 언어가 바뀌었다: 메뉴를 새 언어로 다시 그린다
+    /// 화면 언어가 바뀌었다: 메뉴를 새 언어로 다시 그린다.
+    /// 팝오버 창은 없앤다: 문구가 창을 불러올 때 정해지므로(`trayMain.tsx`) 다음 클릭에 새 언어로 다시 만든다
     pub fn relabel(&self, app: &AppHandle) {
+        if let Some(w) = app.get_webview_window(POPOVER_WINDOW) {
+            let _ = w.destroy();
+        }
         let mut g = self.lock();
         g.forget_shown();
         g.sync(app);
@@ -631,11 +678,15 @@ pub fn tray_popover_action(app: AppHandle, id: String) {
         return;
     }
     if popover_closes_on(&id) {
-        if let Some(w) = app.get_webview_window(POPOVER_WINDOW) {
-            let _ = w.hide();
-        }
+        hide_popover(&app);
     }
     on_menu_event(&app, &id);
+}
+
+/// 팝오버에서 Esc를 눌렀다: 다른 숨기기와 같은 길로 숨긴다
+#[tauri::command]
+pub fn tray_popover_hide(app: AppHandle) {
+    hide_popover(&app);
 }
 
 /// 설정 화면의 두 스위치. 바로 적용하고 설정 파일의 그 두 키만 바꾼다 (환경변수 기본값이 파일에 굳지 않게)
@@ -692,12 +743,33 @@ mod tests {
         assert!(popover_closes_on(ID_OPEN) && popover_closes_on(ID_QUIT) && popover_closes_on("tray:note:01A"));
     }
 
+    // 내장 Retina(2x, 1512×982 pt)가 왼쪽, 외장(1x, 2560×1440 pt)이 오른쪽
+    const RETINA: Screen = Screen { x: 0.0, y: 0.0, w: 1512.0, h: 982.0, scale: 2.0 };
+    const EXTERNAL: Screen = Screen { x: 1512.0, y: 0.0, w: 2560.0, h: 1440.0, scale: 1.0 };
+
     #[test]
     fn popover_hangs_from_the_menu_bar_at_the_icon_left_edge() {
-        // 2배 화면: 아이콘 왼쪽 1000, 아래 끝 48 → 카드 여백 16 px만큼 왼쪽, 위 끝은 메뉴 막대 바로 아래
-        assert_eq!(popover_origin(1000.0, 48.0, 2.0, None), (984.0, 48.0));
-        // 오른쪽 끝 아이콘: 폭 600 px 창이 화면(오른쪽 3360) 밖으로 나가지 않게 민다
-        assert_eq!(popover_origin(3200.0, 48.0, 2.0, Some(3360.0)), (2760.0, 48.0));
+        // 카드 왼쪽 끝이 아이콘 왼쪽 끝 (창은 카드 여백 8pt만큼 왼쪽), 위 끝은 메뉴 막대 바로 아래
+        assert_eq!(popover_origin(1000.0, 24.0, &RETINA), (992.0, 24.0));
+        // 오른쪽 끝 아이콘: 폭 300pt 창이 그 화면 밖으로 나가지 않게 민다
+        assert_eq!(popover_origin(1490.0, 24.0, &RETINA), (1212.0, 24.0));
+        assert_eq!(popover_origin(4050.0, 24.0, &EXTERNAL), (3772.0, 24.0));
+    }
+
+    #[test]
+    fn icon_rect_uses_the_scale_of_the_screen_the_icon_is_on() {
+        let both = [RETINA, EXTERNAL];
+        // Retina 메뉴 막대의 아이콘 (pt 1000, 높이 24 → 2배로 온다)
+        let (s, left, bottom) = icon_rect_pt(2000.0, 0.0, 48.0, &both).unwrap();
+        assert_eq!((s, left, bottom), (RETINA, 1000.0, 24.0));
+        // 외장 메뉴 막대의 아이콘 (pt 3000 → 1배): Retina 배율로 나눈 1500도 Retina 안이지만 높이로 가린다
+        let (s, left, bottom) = icon_rect_pt(3000.0, 0.0, 24.0, &both).unwrap();
+        assert_eq!((s, left, bottom), (EXTERNAL, 3000.0, 24.0));
+        // 외장 화면 오른쪽 끝에서도 팝오버가 외장 화면 안에 남는다 (옛 계산은 Retina 배율로 여백을 두 배로 뺐다)
+        assert_eq!(popover_origin(left, bottom, &s), (2992.0, 24.0));
+        // 노치가 있는 Retina (메뉴 막대 37pt)
+        assert_eq!(icon_rect_pt(2000.0, 0.0, 74.0, &both).unwrap().0, RETINA);
+        assert_eq!(icon_rect_pt(1.0e6, 0.0, 24.0, &both), None);
     }
 
     fn recording(started: i64) -> Payload {

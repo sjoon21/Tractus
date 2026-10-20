@@ -1312,6 +1312,7 @@ pub fn run() {
             tray::tray_update,
             tray::tray_popover_state,
             tray::tray_popover_action,
+            tray::tray_popover_hide,
             tray::tray_hides_on_close,
             tray::tray_show_if_hidden,
             tray::set_tray_prefs,
