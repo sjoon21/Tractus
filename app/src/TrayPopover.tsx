@@ -5,8 +5,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import { AppWindow, Bookmark, Pause, Play, Power, Square } from "lucide-react";
+import { AppWindow, AudioLines, Bookmark, Pause, Play, Power, Square } from "lucide-react";
 import { MENU, MENU_ITEM } from "@/components/menu";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/components/ui/utils";
 import { t } from "./i18n";
 import { PAUSE_LABEL, PAUSE_TITLE, RESUME_LABEL, RESUME_TITLE } from "./pause";
@@ -19,6 +20,8 @@ export interface PopoverState {
   status: string;
   started_at_ms: number | null;
   elapsed_ms: number | null;
+  /** 변환 중 진행률 0..100 (모르면 null) */
+  progress_pct?: number | null;
   can: { start: boolean; pause: boolean; resume: boolean; stop: boolean; bookmark: boolean };
   recent: { id: string; label: string }[];
 }
@@ -48,6 +51,8 @@ export function TrayPopoverView({ state, nowMs, onAction }: { state: PopoverStat
   const sec = popoverSeconds(state, nowMs);
   const paused = state.phase === "paused";
   const live = sec !== null;
+  const converting = state.phase === "converting";
+  const pct = state.progress_pct ?? null;
   const stop = t("녹음 종료");
   const bookmark = t("북마크 남기기");
   const start = t("녹음 시작");
@@ -64,9 +69,14 @@ export function TrayPopoverView({ state, nowMs, onAction }: { state: PopoverStat
               <span className={cn("size-2.5 shrink-0 rounded-full bg-rec", paused ? "opacity-40" : "animate-rec-pulse")} aria-hidden />
               {clock(sec)}
             </span>
+          ) : converting ? (
+            <span className="flex items-center gap-2 text-[22px] leading-7 font-semibold tracking-tight tabular-nums">
+              <AudioLines aria-hidden className="size-4 shrink-0 animate-pulse text-muted-foreground" />
+              {pct === null ? "…" : `${pct}%`}
+            </span>
           ) : null}
           <span className="truncate text-xs text-muted-foreground" title={state.status}>
-            {live ? (paused ? t("일시정지됨") : t("녹음 중")) : state.status}
+            {live ? (paused ? t("일시정지됨") : t("녹음 중")) : converting ? t("텍스트로 변환 중") : state.status}
           </span>
         </div>
         {live ? (
@@ -87,6 +97,7 @@ export function TrayPopoverView({ state, nowMs, onAction }: { state: PopoverStat
           </button>
         )}
       </div>
+      {converting && <Progress value={pct === null ? null : pct / 100} className="mx-2.5 mb-3" />}
       <div className="-mx-1 mb-1 h-px bg-border" role="separator" />
       <button type="button" className={MENU_ITEM} onClick={() => onAction(ID.open)}>
         <AppWindow aria-hidden />
@@ -142,8 +153,9 @@ export function TrayPopover() {
   }, []);
 
   return (
-    // 카드 그림자(shadow-pop)가 잘리지 않게 창 가장자리에 여백을 둔다
-    <div ref={box} className="p-2 pb-4">
+    // 카드 그림자(shadow-pop)가 잘리지 않게 창 좌우·아래에 여백을 둔다.
+    // 위쪽 여백은 두지 않는다: 카드가 메뉴 막대 바로 아래에 붙는다 (좌우 여백 8pt는 tray.rs POPOVER_PAD)
+    <div ref={box} className="px-2 pb-4">
       <TrayPopoverView state={state} nowMs={now} onAction={(id) => void invoke("tray_popover_action", { id })} />
     </div>
   );

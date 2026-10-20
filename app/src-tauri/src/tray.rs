@@ -24,8 +24,8 @@ const MAIN_WINDOW: &str = "main";
 /// 메뉴 막대 팝오버 창. 폭은 고정, 높이는 화면이 내용에 맞춰 정한다
 pub const POPOVER_WINDOW: &str = "tray";
 const POPOVER_WIDTH: f64 = 300.0;
-/// 아이콘과 팝오버 사이 (pt)
-const POPOVER_GAP: f64 = 4.0;
+/// 화면(TrayPopover.tsx)이 카드 둘레에 두는 여백 (pt): 카드 그림자 자리. 카드 왼쪽 끝을 아이콘 왼쪽 끝에 맞출 때 뺀다
+const POPOVER_PAD: f64 = 8.0;
 /// 팝오버가 포커스를 잃어 숨은 직후의 아이콘 클릭은 다시 열지 않는다 (아이콘을 눌러 닫는 경우: 숨김이 클릭보다 먼저 온다)
 const POPOVER_REOPEN_GUARD: Duration = Duration::from_millis(300);
 /// 메뉴에 보이는 최근 노트 수와 제목 길이 (넘으면 `…`)
@@ -241,6 +241,7 @@ pub fn popover_state(p: &Payload, now_ms: i64) -> Value {
         "status": view.status,
         "started_at_ms": p.started_at_ms,
         "elapsed_ms": p.elapsed_ms,
+        "progress_pct": p.progress_pct,
         "can": {
             "start": enabled(ID_START),
             "pause": enabled(ID_PAUSE),
@@ -252,9 +253,14 @@ pub fn popover_state(p: &Payload, now_ms: i64) -> Value {
     })
 }
 
-/// 팝오버 왼쪽 위 모서리 (물리 픽셀): 아이콘 가운데 아래. 아이콘 위치·크기도 물리 픽셀이다
-pub fn popover_origin(icon_x: f64, icon_y: f64, icon_w: f64, icon_h: f64, scale: f64) -> (f64, f64) {
-    (icon_x + icon_w / 2.0 - POPOVER_WIDTH * scale / 2.0, icon_y + icon_h + POPOVER_GAP * scale)
+/// 팝오버 창 왼쪽 위 모서리 (물리 픽셀). 기본 메뉴처럼 카드 왼쪽 끝이 아이콘 왼쪽 끝, 카드 위 끝이 메뉴 막대 바로 아래에 붙는다.
+/// 화면 오른쪽 끝(`screen_right`)을 넘으면 안쪽으로 민다. 입력은 모두 물리 픽셀이다
+pub fn popover_origin(icon_x: f64, icon_bottom: f64, scale: f64, screen_right: Option<f64>) -> (f64, f64) {
+    let mut x = icon_x - POPOVER_PAD * scale;
+    if let Some(right) = screen_right {
+        x = x.min(right - POPOVER_WIDTH * scale);
+    }
+    (x, icon_bottom)
 }
 
 /// 창을 닫을 때 끝내지 않고 숨기는가: 두 설정이 모두 켜져 있고 아이콘이 실제로 떠 있을 때만
@@ -347,7 +353,8 @@ fn toggle_popover(app: &AppHandle, rect: tauri::Rect) {
     let scale = win.scale_factor().unwrap_or(2.0);
     let pos = rect.position.to_physical::<f64>(scale);
     let size = rect.size.to_physical::<f64>(scale);
-    let (x, y) = popover_origin(pos.x, pos.y, size.width, size.height, scale);
+    let right = win.monitor_from_point(pos.x, pos.y).ok().flatten().map(|m| f64::from(m.position().x) + f64::from(m.size().width));
+    let (x, y) = popover_origin(pos.x, pos.y + size.height, scale, right);
     let _ = win.set_position(PhysicalPosition::new(x, y));
     let _ = win.emit("tray-popover", popover_state(&state.lock().payload, now_ms()));
     let _ = win.show();
@@ -612,15 +619,23 @@ pub fn tray_popover_state(tray: State<'_, TrayState>) -> Value {
     popover_state(&tray.lock().payload, now_ms())
 }
 
-/// 팝오버의 단추를 눌렀다: 팝오버를 닫고 메뉴 항목과 같은 길로 처리한다. 트레이 ID가 아니면 아무것도 하지 않는다
+/// 팝오버를 닫는 단추인가: 창을 여는 것·끝내는 것만. 녹음 단추는 팝오버를 연 채로 둬 바뀐 상태(시각·단추)를 바로 보인다
+pub fn popover_closes_on(id: &str) -> bool {
+    id == ID_OPEN || id == ID_QUIT || id.starts_with(ID_NOTE)
+}
+
+/// 팝오버의 단추를 눌렀다: 메뉴 항목과 같은 길로 처리한다. 트레이 ID가 아니면 아무것도 하지 않는다
 #[tauri::command]
 pub fn tray_popover_action(app: AppHandle, id: String) {
-    if let Some(w) = app.get_webview_window(POPOVER_WINDOW) {
-        let _ = w.hide();
+    if !id.starts_with("tray:") {
+        return;
     }
-    if id.starts_with("tray:") {
-        on_menu_event(&app, &id);
+    if popover_closes_on(&id) {
+        if let Some(w) = app.get_webview_window(POPOVER_WINDOW) {
+            let _ = w.hide();
+        }
     }
+    on_menu_event(&app, &id);
 }
 
 /// 설정 화면의 두 스위치. 바로 적용하고 설정 파일의 그 두 키만 바꾼다 (환경변수 기본값이 파일에 굳지 않게)
@@ -648,6 +663,7 @@ mod tests {
         let rec = popover_state(&recording(1_000), 61_000);
         assert_eq!(rec["phase"], "recording");
         assert_eq!(rec["started_at_ms"], 1_000);
+        assert_eq!(popover_state(&Payload { phase: Phase::Converting, progress_pct: Some(45), ..idle() }, 0)["progress_pct"], 45);
         assert_eq!(rec["can"], json!({ "start": false, "pause": true, "resume": false, "stop": true, "bookmark": true }));
 
         let paused = popover_state(&Payload { phase: Phase::Paused, elapsed_ms: Some(754_000), ..recording(1_000) }, 999_000);
@@ -669,9 +685,19 @@ mod tests {
     }
 
     #[test]
-    fn popover_sits_centered_under_the_icon() {
-        // 2배 화면: 아이콘 (1000, 0) 크기 44×48 → 폭 600 px 팝오버의 가운데가 아이콘 가운데, 위 끝은 아이콘 아래 8 px
-        assert_eq!(popover_origin(1000.0, 0.0, 44.0, 48.0, 2.0), (1022.0 - 300.0, 56.0));
+    fn popover_stays_open_for_recording_buttons() {
+        for id in [ID_START, ID_PAUSE, ID_RESUME, ID_STOP, ID_BOOKMARK] {
+            assert!(!popover_closes_on(id), "{id}");
+        }
+        assert!(popover_closes_on(ID_OPEN) && popover_closes_on(ID_QUIT) && popover_closes_on("tray:note:01A"));
+    }
+
+    #[test]
+    fn popover_hangs_from_the_menu_bar_at_the_icon_left_edge() {
+        // 2배 화면: 아이콘 왼쪽 1000, 아래 끝 48 → 카드 여백 16 px만큼 왼쪽, 위 끝은 메뉴 막대 바로 아래
+        assert_eq!(popover_origin(1000.0, 48.0, 2.0, None), (984.0, 48.0));
+        // 오른쪽 끝 아이콘: 폭 600 px 창이 화면(오른쪽 3360) 밖으로 나가지 않게 민다
+        assert_eq!(popover_origin(3200.0, 48.0, 2.0, Some(3360.0)), (2760.0, 48.0));
     }
 
     fn recording(started: i64) -> Payload {

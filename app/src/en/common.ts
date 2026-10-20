@@ -34,6 +34,7 @@ export default {
   종료: "Quit Tractus",
   "텍스트로 변환": "Transcribe",
   "변환 중…": "Transcribing…",
+  "텍스트로 변환 중": "Transcribing",
   "변환 전": "Not transcribed",
   즐겨찾기: "Favorites",
   태그: "Tags",

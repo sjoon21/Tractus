@@ -53,6 +53,15 @@ describe("TrayPopoverView", () => {
     expect(iconButtons(html(st({ status: "변환 중 45%", phase: "converting" })))[0].off).toBe(true);
   });
 
+  test("변환 중: 큰 진행률과 진행 막대 (모르면 끝을 모르는 막대)", () => {
+    const h = html(st({ phase: "converting", status: "변환 중 45%", progress_pct: 45 }));
+    expect(h).toContain("45%");
+    expect(h).toContain("텍스트로 변환 중");
+    expect(h).toContain("scaleX(0.45)");
+    expect(html(st({ phase: "converting", status: "변환 중…" }))).toContain("progress-slide");
+    expect(html(st({ status: "대기 중" }))).not.toContain("progress-slide");
+  });
+
   test("최근 노트 목록은 없고 열기·종료만 있다", () => {
     const h = html(st({ recent: [{ id: "tray:note:01A", label: "녹음 10:02" }] }));
     expect(h).not.toContain("녹음 10:02");
