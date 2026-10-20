@@ -104,32 +104,32 @@ def test_unknown_or_missing_evidence_is_rejected():
 # ── 그리기 ────────────────────────────────────────────────────────────
 
 
-def data(m: dict, fmt="table", edited=None) -> dict:
-    return {"title": "정산 서비스 2.0 기획 회의", "minutes": m, "attendees": ["기획팀", "김지훈 (정산팀)"], "format": fmt, "edited": edited}
+def data(m: dict, edited=None) -> dict:
+    return {"title": "정산 서비스 2.0 기획 회의", "minutes": m, "attendees": ["기획팀", "김지훈 (정산팀)"], "edited": edited}
 
 
-def test_table_format_has_summary_table_body_and_actions_by_team():
+def test_one_format_draws_every_part_that_has_content():
     md = minutes.markdown(data(make(reply())), transcript())
-    assert md.startswith("# [26.10.20] 정산 서비스 2.0 기획 회의\n\n참석: 기획팀, 김지훈 (정산팀)\n")
+    assert md.startswith("# [26.10.20] 정산 서비스 2.0 기획 회의\n\n참석: 기획팀, 김지훈 (정산팀)\n\n**주요 안건:** 해외 카드, 리포트, 환불\n")
     assert "| **해외 카드 정산** | • 환율을 하루 한 번만 받아 실시간 정산이 안 됨<br>• 플랫폼팀은" in md
     assert "| **[추가 논의 필요] 환불 정책** | • 부분 환불 허용 여부 | • 추가 논의 필요 |" in md
-    assert "- **기술적 이슈**\n    - 환율 공급사 계약이 아직임\n        - 하루 1회 수신" in md
-    assert "| **정산팀** | • 원화 결제 범위 문서 정리 (김지훈, 기한 다음 주 수요일) |" in md
-    assert "| **담당 미정** | • 새벽 배치 분할 방식 검토 |" in md
-
-
-def test_list_format_numbers_topics_and_puts_teams_in_the_task_cell():
-    md = minutes.markdown(data(make(reply()), fmt="list"), transcript())
-    assert "**주요 안건:** 해외 카드, 리포트, 환불" in md
     assert "### 1) 해외 카드 정산" in md and "### 2) [추가 논의 필요] 환불 정책" in md
-    assert "| 원화 결제 범위 문서 정리 (정산팀 · 김지훈) | 기한 다음 주 수요일 |" in md
-    assert "논의 사항 요약" not in md
+    assert "- **기술적 이슈**\n    - 환율 공급사 계약이 아직임\n        - 하루 1회 수신" in md
+    assert "| 원화 결제 범위 문서 정리 | 정산팀 · 김지훈 | 기한 다음 주 수요일 |" in md
+    assert "| 새벽 배치 분할 방식 검토 | 담당 미정 |  |" in md
 
 
-def test_edited_markdown_is_the_minutes_until_a_format_is_asked_for():
-    d = data(make(reply()), edited={"markdown": "# 내가 고친 회의록\n"})
-    assert minutes.markdown(d, transcript()) == "# 내가 고친 회의록\n"
-    assert minutes.markdown(d, transcript(), "list").startswith("# [26.10.20]")
+def test_parts_without_content_are_not_drawn():
+    one = json.loads(reply())
+    one["topics"], one["actions"], one["agenda"] = one["topics"][:1], [], ""
+    md = minutes.markdown({**data(make(json.dumps(one, ensure_ascii=False))), "attendees": []}, transcript())
+    for part in ("참석", "주요 안건", "논의 사항 요약", "향후 예정 작업"):  # 안건이 하나면 요약 표도 없다
+        assert part not in md
+    assert "### 1) 해외 카드 정산" in md
+
+
+def test_edited_markdown_is_the_minutes():
+    assert minutes.markdown(data(make(reply()), edited={"markdown": "# 내가 고친 회의록\n"}), transcript()) == "# 내가 고친 회의록\n"
 
 
 def test_pipes_in_text_do_not_break_tables():
@@ -147,21 +147,11 @@ def test_summarize_minutes_saves_v2_with_sections_for_other_readers(home, fake):
     assert r.exit_code == 0, r.output
     assert events(r)[-1]["summary_key"] == "minutes"
     saved = json.loads((d / "summaries" / "minutes.json").read_text(encoding="utf-8"))
-    assert (saved["kind"], saved["format"], saved["edited"], saved["attendees"]) == ("minutes", "table", None, ["기획팀", "김지훈 (정산팀)"])
+    assert (saved["kind"], saved["edited"], saved["attendees"]) == ("minutes", None, ["기획팀", "김지훈 (정산팀)"])
     assert [s["heading"] for s in saved["sections"]] == ["해외 카드 정산", "[추가 논의 필요] 환불 정책", "할 일"]
     assert "## 논의 사항 요약" in (d / "summaries" / "minutes.md").read_text(encoding="utf-8")
     assert sums.read_markdown(d, "minutes").count("향후 예정 작업") == 1
     assert "용어 표기 기준" in fake.calls[0]["messages"][1]["content"]
-
-
-def test_summarize_minutes_keeps_the_chosen_format(home, fake):
-    mid, d = make_meeting(home)
-    fake.replies = [reply()]
-    run("summarize", mid, "--template", "minutes")
-    p = d / "summaries" / "minutes.json"
-    p.write_text(json.dumps({**json.loads(p.read_text(encoding="utf-8")), "format": "list"}, ensure_ascii=False), encoding="utf-8")
-    run("summarize", mid, "--template", "minutes")
-    assert json.loads(p.read_text(encoding="utf-8"))["format"] == "list"
 
 
 def test_memo_notes_have_no_minutes(home, fake):

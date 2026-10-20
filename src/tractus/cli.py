@@ -844,7 +844,7 @@ def _enhance(d: Path, provider: str | None, model: str | None) -> None:
 
 
 def _minutes(d: Path, provider: str | None, model: str | None) -> None:
-    """summarize --template minutes: 회의록 (summaries/minutes.json). 녹음 노트만. 형식은 이전 회의록의 것을 이어 쓴다."""
+    """summarize --template minutes: 회의록 (summaries/minutes.json). 녹음 노트만."""
     transcript = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
     if is_memo(transcript):
         _fail(t("녹음이 없는 노트는 회의록을 만들 수 없습니다"), code="no_recording", exit_code=2)  # words-ok: 회의록은 문서 이름
@@ -863,9 +863,7 @@ def _minutes(d: Path, provider: str | None, model: str | None) -> None:
             console.print(f"[red]{escape(str(e))}[/red]")
             _fail(t("AI 응답이 형식에 맞지 않아 회의록을 만들지 못했습니다"), code=e.code)  # words-ok: 회의록은 문서 이름
         _fail(str(e), code=e.code)
-    old = sums.read_data(d, minutes.KEY) or {}
-    fmt = old.get("format") if old.get("format") in minutes.FORMATS else "table"
-    key = minutes.write(d, transcript, result, minutes.attendees(transcript, load_event(d)), p.name, m, fmt)
+    key = minutes.write(d, transcript, result, minutes.attendees(transcript, load_event(d)), p.name, m)
     Events.emit("done", meeting_id=transcript["meeting_id"], meeting_dir=str(d), summary_key=key)
     console.print(t("완료: 안건 {n}개, 할 일 {m}개 ({sec}초)", n=len(result["topics"]), m=len(result["actions"]), sec=f"{time.perf_counter() - t0:.0f}") + f"\n{sums.paths(d, key)[1]}")
 

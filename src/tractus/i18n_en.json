@@ -304,7 +304,6 @@
  "입력은 {\"favorite\": true, \"tags\": [\"…\"], \"folder\": \"<폴더 ID>\"|null} 형식이어야 합니다": "Input must be {\"favorite\": true, \"tags\": [\"…\"], \"folder\": \"<folder ID>\"|null}",
  "입력은 {\"prompt\": \"…\", \"save_as\": \"…\"} 형식이어야 합니다": "Input must be {\"prompt\": \"…\", \"save_as\": \"…\"}",
  "입력은 {shape} 형식이어야 합니다": "Input must be {shape}",
- "작업 내용": "Task",
  "저장 공간이 모자랍니다: 필요 {need}GB, 남은 공간 {free}GB ({path})": "Not enough disk space: need {need} GB, {free} GB free ({path})",
  "저장을 중단했습니다. 같은 명령으로 다시 실행하면 이어서 진행합니다.": "Saving stopped. Run the same command again to continue.",
  "저장했습니다: {path}": "Saved: {path}",
