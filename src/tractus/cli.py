@@ -857,7 +857,7 @@ def _minutes(d: Path, provider: str | None, model: str | None) -> None:
         t0 = time.perf_counter()
         Events.emit("stage", stage="summarize")
         with console.status(t("{provider}/{model}로 회의록 작성 중… (세그먼트 {n}개)", provider=p.name, model=m, n=len(transcript["segments"]))):  # words-ok: 회의록은 문서 이름
-            result = minutes.make(make_client(p), p, m, transcript)
+            result = minutes.make(make_client(p), p, m, transcript, load_glossary(home_dir() / "glossary.md"))
     except LLMError as e:
         if e.code == "llm_invalid":
             console.print(f"[red]{escape(str(e))}[/red]")

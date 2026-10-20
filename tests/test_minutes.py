@@ -65,6 +65,19 @@ def test_input_adds_confirmed_names_and_terms_but_not_auto_labels():
     assert "[s0004 " in text and "참석자 3" in text  # 이름 없는 사람은 대화 줄에만 자동 이름으로
 
 
+def test_input_adds_the_current_glossary_after_the_transcription_terms():
+    text = minutes.build_input(transcript(), ["SYM400", "CSV"])
+    assert "용어 표기 기준 (자주 쓰는 단어): PostgreSQL, CSV, SYM400" in text
+
+
+def test_summarize_minutes_reads_the_glossary(home, fake):
+    mid, _ = make_meeting(home)
+    run("glossary", "add", "SYM400")
+    fake.replies = [reply()]
+    run("summarize", mid, "--template", "minutes")
+    assert "PostgreSQL, CSV, SYM400" in fake.calls[0]["messages"][1]["content"]
+
+
 # ── 근거 대조 ─────────────────────────────────────────────────────────
 
 

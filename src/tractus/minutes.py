@@ -106,11 +106,12 @@ def _confirmed(transcript: dict, label: str | None) -> str | None:
     return ((transcript.get("speakers") or {}).get(label) or {}).get("name") if label else None
 
 
-def build_input(transcript: dict) -> str:
-    """요약과 같은 대화 내용(+ 사용자가 적은 메모) 뒤에 참석자와 용어 표기 기준을 붙인다. 기존 요약 프롬프트는 바뀌지 않는다."""
+def build_input(transcript: dict, glossary: list[str] = ()) -> str:
+    """요약과 같은 대화 내용(+ 사용자가 적은 메모) 뒤에 참석자와 용어 표기 기준을 붙인다. 기존 요약 프롬프트는 바뀌지 않는다.
+    용어 표기 기준 = 변환 때 쓴 단어(asr.hotwords) → 지금의 자주 쓰는 단어(glossary): 변환 뒤에 등록한 단어도 회의록에 반영된다."""
     body = build_prompt(transcript)
     names = list(dict.fromkeys(n for s in transcript["segments"] if (n := _confirmed(transcript, s.get("speaker")))))
-    terms = list(dict.fromkeys(str(x) for x in ((transcript.get("asr") or {}).get("hotwords") or []) if str(x).strip()))
+    terms = list(dict.fromkeys(x for x in (str(y).strip() for y in [*((transcript.get("asr") or {}).get("hotwords") or []), *glossary]) if x))
     extra = []
     if names:
         extra.append("참석자 (사용자가 확인한 이름): " + ", ".join(names))  # i18n-ok: AI 프롬프트
@@ -340,9 +341,9 @@ def to_sections(m: dict) -> list[dict]:
     return secs
 
 
-def make(client, provider: Provider, model: str, transcript: dict) -> dict:
+def make(client, provider: Provider, model: str, transcript: dict, glossary: list[str] = ()) -> dict:
     """AI 원본을 받아 근거 대조까지 마친 minutes 딕셔너리."""
-    m = complete_json(client, provider, model, system_prompt(), build_input(transcript), Minutes, validate=lambda x: check(x, transcript))
+    m = complete_json(client, provider, model, system_prompt(), build_input(transcript, glossary), Minutes, validate=lambda x: check(x, transcript))
     return clean(m, transcript)
 
 
