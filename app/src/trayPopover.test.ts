@@ -6,7 +6,9 @@ import { clock, EMPTY_POPOVER, popoverSeconds, TrayPopoverView, type PopoverStat
 
 const st = (o: Partial<Omit<PopoverState, "can">> & { can?: Partial<PopoverState["can"]> } = {}): PopoverState => ({ ...EMPTY_POPOVER, ...o, can: { ...EMPTY_POPOVER.can, ...o.can } });
 const html = (s: PopoverState, now = 0) => renderToStaticMarkup(createElement(TrayPopoverView, { state: s, nowMs: now, onAction: () => {} }));
-const iconButtons = (h: string) => (h.match(/<button[^>]*aria-label="[^"]*"[^>]*>.*?<\/button>/g) ?? []).map((b) => ({ label: b.match(/aria-label="([^"]*)"/)![1], text: b.replace(/<[^>]+>/g, "").trim(), off: /\sdisabled=""/.test(b) }));
+// 보이는 글자 = 태그 사이의 텍스트 (태그를 지우지 않고 뽑는다)
+const textOf = (h: string) => [...h.matchAll(/>([^<]*)</g)].map((m) => m[1]).join("").trim();
+const iconButtons = (h: string) => (h.match(/<button[^>]*aria-label="[^"]*"[^>]*>.*?<\/button>/g) ?? []).map((b) => ({ label: b.match(/aria-label="([^"]*)"/)![1], text: textOf(b), off: /\sdisabled=""/.test(b) }));
 
 describe("clock", () => {
   test("메뉴 막대 제목과 같은 모양", () => {
