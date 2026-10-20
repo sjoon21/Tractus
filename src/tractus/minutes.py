@@ -145,79 +145,111 @@ def check(m: Minutes, transcript: dict) -> None:
 
 _NAME_TEAM = re.compile(r"(?P<name>.+?)\s*\((?P<team>[^()]+)\)")
 _NUM = re.compile(r"\d+(?:[.:]\d+)*")
-_WHEN = re.compile(r"\d|[월화수목금토일]요일|이번\s*주|다음\s*주|다음\s*달|이번\s*달|내일|모레|오늘|까지|월말|주말|분기|연말|today|tomorrow|week|month|monday|tuesday|wednesday|thursday|friday", re.IGNORECASE)  # i18n-ok: 기한 표현 판별
 
 
 def _norm(s: str) -> str:
     return re.sub(r"[\s,]", "", s).lower()
 
 
-def evidence(transcript: dict, ids: list[str]) -> str:
-    """근거 줄의 문장과, 그 줄의 확인된 참석자 이름을 이은 글."""
+def _flat(s: str | None) -> str:
+    """표·목록을 깨는 줄바꿈을 지운 한 줄."""
+    return " ".join(str(s or "").split())
+
+
+def _texts(transcript: dict, ids: list[str]) -> str:
     segs = {s["id"]: s for s in transcript["segments"]}
     memos = {x["id"]: x["text"] for x in memo_lines(transcript)}
-    parts = []
-    for i in ids:
-        if s := segs.get(i):
-            parts += [seg_text(s), _confirmed(transcript, s.get("speaker")) or ""]
-        elif i in memos:
-            parts.append(memos[i])
-    return " ".join(p for p in parts if p)
+    return " ".join(seg_text(segs[i]) if i in segs else memos.get(i, "") for i in ids)
 
 
-def _said(word: str, ev: str) -> bool:
-    w, e = _norm(word), _norm(ev)
+def _speakers(transcript: dict, ids: list[str]) -> list[str]:
+    """근거 줄을 말한 사람의 확인된 이름."""
+    segs = {s["id"]: s for s in transcript["segments"]}
+    return [n for i in ids if i in segs and (n := _confirmed(transcript, segs[i].get("speaker")))]
+
+
+def evidence(transcript: dict, ids: list[str]) -> str:
+    """근거 줄의 문장과, 그 줄을 말한 사람의 확인된 이름을 이은 글."""
+    return " ".join([_texts(transcript, ids), *_speakers(transcript, ids)])
+
+
+def name_said(name: str, transcript: dict, ids: list[str]) -> bool:
+    """담당 이름: 근거(문장·말한 사람)에 전체 이름이 있거나, '지훈님'처럼 이름으로 불렀고 그 전체 이름이 대화나 확인된 이름 어딘가에 있을 때."""
+    w, e = _norm(name), _norm(evidence(transcript, ids))
     if not w:
         return False
     if w in e:
         return True
-    if w.endswith("팀") and len(w) >= 3 and w[:-1] in e:  # '플랫폼팀' ↔ "저희 플랫폼 쪽은"  # i18n-ok: 팀 이름 판별
+    if re.fullmatch(r"[가-힣]{3}", w) and any(w[1:] + x in e for x in ("님", "씨")):  # i18n-ok: 이름 판별
+        everywhere = _norm(" ".join([*(seg_text(s) for s in transcript["segments"]), *(n for s in transcript["segments"] if (n := _confirmed(transcript, s.get("speaker"))))]))
+        return w in everywhere
+    return False
+
+
+def team_said(team: str, transcript: dict, ids: list[str]) -> bool:
+    """팀 (설계 규칙 a·b): 근거 줄을 말한 사람의 확인된 이름에 그 팀이 있거나, 근거 문장에서 자기 팀으로 말했을 때('저희 플랫폼팀', '우리 플랫폼 쪽')."""
+    w = _norm(team)
+    if not w:
+        return False
+    if any(w in _norm(n) for n in _speakers(transcript, ids)):
         return True
-    return bool(re.fullmatch(r"[가-힣]{3}", w)) and w[1:] in e  # '김지훈' ↔ "지훈님이"  # i18n-ok: 이름 판별
+    base = w[:-1] if w.endswith("팀") and len(w) >= 3 else w  # i18n-ok: 팀 이름 판별
+    e = _norm(_texts(transcript, ids))
+    return any(p + x in e for p in ("저희", "우리") for x in {w, base + "쪽", base + "팀"})  # i18n-ok: 팀 이름 판별
+
+
+def due_said(due: str, transcript: dict, ids: list[str]) -> bool:
+    """기한: 그 표현이 근거 문장에 그대로 있을 때 ('다음 주 수요일까지' ⊃ '다음 주 수요일')."""
+    w = _norm(due).removesuffix("까지")  # i18n-ok: 기한 표현 판별
+    return bool(w) and w in _norm(_texts(transcript, ids))
 
 
 def unverified_numbers(text: str, ev: str) -> list[str]:
-    """문장 속 숫자 가운데 근거에 없는 것. 음성 인식이 숫자를 글자로 적었으면 틀린 경고가 날 수 있어 지우지 않고 표시만 한다."""
-    e = _norm(ev)
-    return list(dict.fromkeys(n for n in _NUM.findall(text.replace(",", "")) if n not in e))
+    """문장 속 숫자 가운데 근거에 없는 것 (숫자 단위로 비교: '144'는 '1440'과 다르다).
+    음성 인식이 숫자를 글자로 적었으면 틀린 경고가 날 수 있어 지우지 않고 표시만 한다."""
+    known = set(_NUM.findall(_norm(ev)))
+    return list(dict.fromkeys(n for n in _NUM.findall(text.replace(",", "")) if n not in known))
 
 
-def _line(x, transcript: dict) -> dict:
-    out = {"text": x.text.strip(), "segment_ids": list(x.segment_ids)}
-    if nums := unverified_numbers(x.text, evidence(transcript, x.segment_ids)):
+def _line(x, transcript: dict, also: str = "") -> dict:
+    text = _flat(x.text)
+    out = {"text": text, "segment_ids": list(x.segment_ids)}
+    if nums := unverified_numbers(f"{text} {also}", evidence(transcript, x.segment_ids)):
         out["unverified"] = nums
     return out
 
 
 def clean_action(a: Action, transcript: dict) -> dict:
-    """팀·담당·기한은 근거에 있을 때만 남긴다. 담당은 요약과 같은 자동 이름·제안 이름 규칙도 지킨다."""
-    ev = evidence(transcript, a.segment_ids)
-    owner = a.owner.strip() if a.owner and a.owner.strip() else None
-    if owner and (_NOT_OWNER.search(owner) or owner in _suggested_only(transcript) or not _said(owner, ev)):
+    """팀·담당·기한은 근거에 있을 때만 남긴다. 담당은 요약과 같은 자동 이름·제안 이름 규칙도 지킨다.
+    '김지훈 (정산팀)'처럼 팀이 붙은 이름은 먼저 나눠 이름과 팀을 따로 본다."""
+    ids = a.segment_ids
+    owner, from_name = _flat(a.owner) or None, None
+    if owner and (m := _NAME_TEAM.fullmatch(owner)):
+        owner, from_name = m["name"].strip(), m["team"].strip()
+    if owner and (_NOT_OWNER.search(owner) or owner in _suggested_only(transcript) or not name_said(owner, transcript, ids)):
         owner = None
-    team = a.team.strip() if a.team and a.team.strip() else None
-    if owner and (m := _NAME_TEAM.fullmatch(owner)):  # '김지훈 (정산팀)' → 담당 김지훈, 팀 정산팀
-        owner, team = m["name"], team or m["team"]
-    if team and (_NOT_OWNER.search(team) or not _said(team, ev)):
-        team = None
-    due = a.due.strip() if a.due and a.due.strip() and _WHEN.search(ev) else None
-    note = a.note.strip() if a.note and a.note.strip() else None
-    return {**_line(a, transcript), "team": team, "owner": owner, "due": due, "note": note}
+    team = next((x for x in (_flat(a.team), from_name) if x and not _NOT_OWNER.search(x) and team_said(x, transcript, ids)), None)
+    if owner and team and _norm(owner) == _norm(team):  # 화자 이름이 팀인 사람: 담당 칸에 두 번 쓰지 않는다
+        owner = None
+    due = _flat(a.due) or None
+    due = due if due and due_said(due, transcript, ids) else None
+    note = _flat(a.note) or None
+    return {**_line(a, transcript, also=note or ""), "team": team, "owner": owner, "due": due, "note": note}
 
 
 def clean(m: Minutes, transcript: dict) -> dict:
     """저장할 minutes 딕셔너리."""
     def topic(tp: Topic) -> dict:
         return {
-            "title": tp.title.strip(), "open": tp.open,
+            "title": _flat(tp.title), "open": tp.open,
             "discussed": [_line(x, transcript) for x in tp.discussed],
             "agreed": [] if tp.open and not tp.agreed else [_line(x, transcript) for x in tp.agreed],
-            "points": [{"label": p.label.strip(), "details": [{**_line(d, transcript), "children": [_line(c, transcript) for c in d.children]} for d in p.details]}
+            "points": [{"label": _flat(p.label), "details": [{**_line(d, transcript), "children": [_line(c, transcript) for c in d.children]} for d in p.details]}
                        for p in tp.points if p.details],
             "approach": [_line(x, transcript) for x in tp.approach[:1]],
         }
 
-    return {"agenda": m.agenda.strip(), "topics": [topic(tp) for tp in m.topics], "actions": [clean_action(a, transcript) for a in m.actions]}
+    return {"agenda": _flat(m.agenda), "topics": [topic(tp) for tp in m.topics], "actions": [clean_action(a, transcript) for a in m.actions]}
 
 
 def attendees(transcript: dict, event: dict | None) -> list[str]:
@@ -237,7 +269,11 @@ def _date(transcript: dict) -> str:
 
 def _cell(lines: list[dict]) -> str:
     """표 칸 하나: 줄마다 `• `, 칸 안 줄바꿈은 <br> (열린 질문: 사내 위키에 붙여 보고 정한다)."""
-    return "<br>".join("• " + x["text"].replace("|", "\\|") for x in lines)
+    return "<br>".join("• " + _esc(x["text"]) for x in lines)
+
+
+def _esc(s: str) -> str:
+    return s.replace("|", "\\|")
 
 
 def _topic_title(tp: dict, n: int | None) -> str:
@@ -265,11 +301,10 @@ def _who(a: dict) -> str:
 
 def _actions(actions: list[dict]) -> list[str]:
     """할 일 표: 한 줄에 하나. 담당은 팀 · 이름, 없으면 `담당 미정`. 비고는 기한 · 비고."""
-    esc = lambda x: x.replace("|", "\\|")  # noqa: E731
     rows = [f"| {t('할 일')} | {t('담당')} | {t('비고')} |", "| --- | --- | --- |"]
     for a in actions:
         note = " · ".join(x for x in (a.get("due") and t("기한 {due}", due=a["due"]), a.get("note")) if x)
-        rows.append(f"| {esc(a['text'])} | {esc(_who(a) or t('담당 미정'))} | {esc(note)} |")
+        rows.append(f"| {_esc(a['text'])} | {_esc(_who(a) or t('담당 미정'))} | {_esc(note)} |")
     return rows
 
 
@@ -286,7 +321,7 @@ def markdown(data: dict, transcript: dict) -> str:
         out += [f"**{t('주요 안건')}:** {m['agenda']}", ""]
     if len(m["topics"]) >= 2:
         out += [f"## {t('논의 사항 요약')}", "", f"| {t('구분')} | {t('논의 내용')} | {t('조율 사항')} |", "| --- | --- | --- |"]
-        out += [f"| **{_topic_title(tp, None)}** | {_cell(tp['discussed'])} | {_cell(tp['agreed']) or ('• ' + t('추가 논의 필요') if tp['open'] else '')} |" for tp in m["topics"]]
+        out += [f"| **{_esc(_topic_title(tp, None))}** | {_cell(tp['discussed'])} | {_cell(tp['agreed']) or ('• ' + t('추가 논의 필요') if tp['open'] else '')} |" for tp in m["topics"]]
         out.append("")
     out += [f"## {t('회의 내용')}", ""]  # words-ok: 회의록 머리글 (문서 종류)
     for n, tp in enumerate(m["topics"], 1):

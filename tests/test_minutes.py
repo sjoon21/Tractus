@@ -93,6 +93,40 @@ def test_numbers_missing_from_the_evidence_are_marked_not_dropped():
     assert "unverified" not in d[1]
 
 
+def test_due_must_be_said_not_just_any_number_in_the_evidence():
+    a = make(reply(actions=[action("문서 정리", "s0006", due="10월 31일"), action("검토", "s0020", due="다음 달 15일"),
+                            action("문서 정리", "s0021", due="다음 주 수요일")]))["actions"]
+    assert [x["due"] for x in a] == [None, None, "다음 주 수요일"]  # s0006엔 2.0, s0020엔 '오늘'만 있다
+
+
+def test_partial_name_or_team_matches_do_not_pass():
+    a = make(reply(actions=[action("문서 정리", "s0021", owner="박지훈"), action("마감 검토", "s0019", team="정산팀"),
+                            action("미팅", "s0025", team="재무팀"), action("문서 정리", "s0021", owner="김지훈")]))["actions"]
+    assert a[0]["owner"] is None  # '지훈님'이라 불렀지만 박지훈은 대화 어디에도 없다
+    assert a[1]["team"] is None  # 플랫폼팀 사람의 말에 '정산'이 나올 뿐
+    assert a[2]["team"] is None  # 재무팀은 언급됐을 뿐 자기 팀이 아니다
+    assert a[3]["owner"] == "김지훈"  # '지훈님' + 확인된 이름 '김지훈 (정산팀)'
+
+
+def test_name_with_team_is_split_before_checking():
+    a = make(reply(actions=[action("문서 정리", "s0021", owner="김지훈 (정산팀)"), action("문서 정리", "s0022", team="플랫폼팀", owner="김지훈 (정산팀)")]))["actions"]
+    assert (a[0]["owner"], a[0]["team"]) == ("김지훈", None)  # s0021은 기획팀이 말했다: 정산팀은 근거가 없다
+    assert (a[1]["owner"], a[1]["team"]) == ("김지훈", "정산팀")  # 틀린 팀은 버리고 이름에 붙은 팀으로
+
+
+def test_owner_equal_to_team_is_written_once():
+    a = make(reply(actions=[action("미팅", "s0025", team="기획팀", owner="기획팀")]))["actions"]
+    assert (a[0]["team"], a[0]["owner"]) == ("기획팀", None)
+
+
+def test_numbers_compare_whole_numbers_and_include_the_note():
+    t = transcript()
+    assert minutes.unverified_numbers("하루 144번", minutes.evidence(t, ["s0004"])) == ["144"]
+    assert minutes.unverified_numbers("하루 1,440번", minutes.evidence(t, ["s0004"])) == []
+    a = make(reply(actions=[action("검토", "s0023", note="3일 안에")]))["actions"]
+    assert a[0]["unverified"] == ["3"]
+
+
 def test_unknown_or_missing_evidence_is_rejected():
     import pytest
 
@@ -132,9 +166,30 @@ def test_edited_markdown_is_the_minutes():
     assert minutes.markdown(data(make(reply()), edited={"markdown": "# 내가 고친 회의록\n"}), transcript()) == "# 내가 고친 회의록\n"
 
 
-def test_pipes_in_text_do_not_break_tables():
-    md = minutes.markdown(data(make(reply(actions=[action("A|B 비교", "s0023")]))), transcript())
-    assert "A\\|B 비교" in md
+def test_pipes_and_newlines_in_text_do_not_break_tables():
+    r = json.loads(reply(actions=[action("A|B 비교\n둘째 줄", "s0023")]))
+    r["topics"][0]["title"] = "가|나 안건"
+    r["topics"][0]["discussed"][0]["text"] = "첫 줄\n둘째 줄"
+    md = minutes.markdown(data(make(json.dumps(r, ensure_ascii=False))), transcript())
+    assert "| A\\|B 비교 둘째 줄 | 담당 미정 |  |" in md
+    assert "| **가\\|나 안건** | • 첫 줄 둘째 줄<br>" in md
+
+
+def test_retitle_keeps_the_date_and_leaves_edited_minutes_alone(home, fake):
+    from tractus import notes
+
+    mid, d = make_meeting(home)
+    fake.replies = [reply()]
+    run("summarize", mid, "--template", "minutes")
+    notes.retitle_summary(d, "새 제목")
+    md = (d / "summaries" / "minutes.md").read_text(encoding="utf-8")
+    assert "# [26.10.20] 새 제목" in md
+    assert md == sums.render_md(json.loads((d / "summaries" / "minutes.json").read_text(encoding="utf-8")), transcript())  # 디스크의 md = 다시 그린 글
+    p = d / "summaries" / "minutes.json"
+    p.write_text(json.dumps({**json.loads(p.read_text(encoding="utf-8")), "edited": {"markdown": "# 내 제목\n"}}, ensure_ascii=False), encoding="utf-8")
+    (d / "summaries" / "minutes.md").write_text("# 내 제목\n", encoding="utf-8")
+    notes.retitle_summary(d, "또 새 제목")
+    assert (d / "summaries" / "minutes.md").read_text(encoding="utf-8") == "# 내 제목\n"
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
