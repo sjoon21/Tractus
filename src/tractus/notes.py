@@ -168,9 +168,7 @@ def _retitle_pair(sj: Path, sm: Path, title: str) -> None:
         text = sm.read_text(encoding="utf-8")
     except OSError:
         return
-    if isinstance(data, dict) and data.get("kind") == "minutes":  # 회의록: 고친 글은 사용자의 것이라 두고, 그린 글은 제목 앞 날짜를 지킨다
-        if data.get("edited"):
-            return
+    if isinstance(data, dict) and data.get("kind") == "minutes":  # 회의록: 제목 앞 날짜를 지킨다
         new = re.sub(r"^# (\[\d{2}\.\d{2}\.\d{2}\] )?.*$", lambda m: f"# {m.group(1) or ''}{title}", text, count=1, flags=re.M)
     else:
         new = re.sub(r"^# .*$", lambda _: f"# {title}", text, count=1, flags=re.M)

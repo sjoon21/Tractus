@@ -1593,6 +1593,36 @@ def summaries_delete(ctx: typer.Context, key: str = typer.Argument(..., metavar=
     print(json.dumps({"deleted": key}))
 
 
+minutes_app = typer.Typer(help="한 노트의 회의록(summaries/minutes.json). 보기·칸 고치기 (docs/design/meeting-minutes.md)")  # words-ok: 회의록은 문서 이름
+app.add_typer(minutes_app, name="minutes")
+
+
+@minutes_app.callback()
+def minutes_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
+    ctx.obj = _note_dir(meeting)
+
+
+def _transcript(d: Path) -> dict:
+    return json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+
+
+@minutes_app.command("show")
+def minutes_show(ctx: typer.Context) -> None:
+    """stdout: {"minutes", "attendees", "title", "generated_at", "edited_at", "markdown", "short"}. 회의록이 없으면 {"minutes": null}."""  # words-ok: 회의록은 문서 이름
+    print(json.dumps(minutes.show(sums.read_data(ctx.obj, minutes.KEY), _transcript(ctx.obj)), ensure_ascii=False))
+
+
+@minutes_app.command("save")
+def minutes_save(ctx: typer.Context) -> None:
+    """칸을 고친 회의록 저장. stdin {"minutes": {...}} (show의 minutes 모양). 비운 줄은 지운다. stdout은 show와 같다. 형식이 틀리면 종료 코드 2."""  # words-ok: 회의록은 문서 이름
+    try:
+        raw = json.loads(sys.stdin.read() or "{}")
+        out = minutes.save_edit(ctx.obj, _transcript(ctx.obj), raw.get("minutes") if isinstance(raw, dict) else None)
+    except ValueError as e:  # json.JSONDecodeError도 ValueError
+        _fail(str(e) if str(e) in (minutes.BAD_EDIT, minutes.NO_MINUTES) else minutes.BAD_EDIT, code="bad_input", exit_code=2)
+    print(json.dumps(out, ensure_ascii=False))
+
+
 @app.command()
 def mcp() -> None:
     """MCP 서버(stdio)를 실행한다. Claude Code·Codex·agy에 등록해서 쓴다 (README 'MCP 연동')."""
