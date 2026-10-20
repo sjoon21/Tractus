@@ -996,7 +996,7 @@ export function App() {
         {view.kind === "record" && <RecordView rec={rec} captions={live} job={progressKind === "save" ? finish.job : waitDir ? { ...IDLE_JOB, running: true, stage: "wait_import" } : transcribe.job} progressKind={progressKind} choosing={afterAsk !== null} send={sendRec} retry={() => (progressKind === "save" ? finishDir.current && finishRecording(finishDir.current) : transcribeDir.current && startTranscribe(transcribeDir.current, transcribeTarget.current))} unconverted={unconverted ? UNCONVERTED_SAVED : null} attachTitle={attach.phase !== "idle" ? (attach.target?.title ?? null) : null} />}
         {view.kind === "settings" && <SettingsView onBack={goBack} onSaved={() => void Promise.all([refresh(), caps.refresh()])} relaunchBlocked={recording || transcribing || imp.job.running || queue.length > 0} />}
         {view.kind === "models" && <ModelsView onBack={goBack} />}
-        {view.kind !== "record" && <RecHeaderControls phase={rec.phase} send={sendRec} />}
+        {view.kind !== "record" && <RecHeaderControls phase={rec.phase} seconds={rec.t} send={sendRec} />}
       </main>
 
       <aside

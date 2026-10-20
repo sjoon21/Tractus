@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 import type { RecPhase } from "./lib";
 import { RecHeaderControls } from "./RecHeaderControls";
 
-const html = (phase: RecPhase) => renderToStaticMarkup(createElement(RecHeaderControls, { phase, send: async () => {} }));
+const html = (phase: RecPhase) => renderToStaticMarkup(createElement(RecHeaderControls, { phase, seconds: 754, send: async () => {} }));
 const buttons = (h: string) => h.match(/<button[^>]*>.*?<\/button>/g) ?? [];
 
 describe("RecHeaderControls (창 위쪽 녹음 단추)", () => {
@@ -33,6 +33,11 @@ describe("RecHeaderControls (창 위쪽 녹음 단추)", () => {
       expect(b).toContain("<svg");
       expect(b).toContain("title=");
     }
+  });
+
+  test("녹음 시각을 보인다 (글자 없이 숫자만)", () => {
+    expect(html("recording")).toContain("12:34");
+    expect(html("paused")).toContain("12:34");
   });
 
   test("녹음 화면에서는 그리지 않는다 (녹음 화면에 같은 단추가 있다)", () => {
