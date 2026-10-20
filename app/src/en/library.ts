@@ -27,8 +27,9 @@ export default {
   "노트와 대화 내용은 그대로 남습니다. 요약은 언제든 다시 만들 수 있습니다.": "The note and transcript stay. You can make the summary again at any time.",
   만들어짐: "Made",
   "‘{label}’ — ": "“{label}” — ",
-  회의록: "Meeting notes", // words-ok: 회의록은 요약 유형(문서)의 이름이다
+  회의록: "Minutes", // words-ok: 회의록은 요약 유형(문서)의 이름이다
   "직접 요약": "Custom summary",
+  "핵심 요약": "Brief",
   "요약 유형: {name}": "Summary type: {name}",
   "요약 유형: {n}개 선택": "Summary types: {n} selected",
   "요약 방법을 입력하세요.": "Enter instructions.",

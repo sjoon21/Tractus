@@ -220,4 +220,38 @@ export default {
   "요약을 메모에 붙였습니다": "Added the summary to your memo",
   "메모에 붙이지 못했습니다: {error}": "Couldn’t add it to your memo: {error}",
   "자주 쓰는 단어에 추가할까요? — {term} (다음 녹음부터 더 정확하게 인식합니다)": "Add to custom vocabulary? — {term} (recognized more accurately from your next recording)",
+  // MinutesPanel (회의록 탭) // words-ok: 회의록은 문서 이름
+  "저장이 끝난 뒤에 만들 수 있습니다": "You can create it after saving finishes",
+  "회의록 만들기": "Create minutes", // words-ok: 회의록은 문서 이름
+  "회의록을 쓰는 중…": "Writing minutes…", // words-ok: 회의록은 문서 이름
+  "두 번 눌러 고칩니다. 비우면 지웁니다": "Double-click to edit. Clear it to delete",
+  "두 번 눌러 고칩니다": "Double-click to edit",
+  "담당 미정": "No owner yet",
+  "기한 미정": "No due date",
+  "위키에 붙일 회의록 전체 (마크다운)": "Full minutes to paste into a wiki (Markdown)", // words-ok: 회의록은 문서 이름
+  "회의록을 마크다운으로 복사했습니다": "Copied the minutes as Markdown", // words-ok: 회의록은 문서 이름
+  "이전 형식의 회의록입니다. ‘회의록 만들기’를 누르면 새 형식으로 만듭니다.": "These minutes use the old format. Click “Create minutes” to make them in the new format.", // words-ok: 회의록은 문서 이름
+  "아직 회의록이 없습니다. ‘회의록 만들기’를 누르면 안건·조율 사항·할 일을 근거 대화와 함께 정리합니다.": "No minutes yet. Click “Create minutes” to get topics, agreements and to-dos with the conversation they came from.", // words-ok: 회의록은 문서 이름
+  "회의록을 다시 만들까요?": "Recreate the minutes?", // words-ok: 회의록은 문서 이름
+  "회의록을 삭제할까요?": "Delete the minutes?", // words-ok: 회의록은 문서 이름
+  "노트와 대화 내용은 그대로 남습니다. 회의록은 언제든 다시 만들 수 있습니다.": "The note and transcript stay. You can create minutes again at any time.", // words-ok: 회의록은 문서 이름
+  "{sentence}. 이 회의록에는 아직 반영되지 않았습니다.": "{sentence}. These minutes don’t reflect it yet.", // words-ok: 회의록은 문서 이름
+  "회의록을 저장하지 못했습니다: {error}": "Couldn’t save the minutes: {error}", // words-ok: 회의록은 문서 이름
+  "짧게 복사": "Copy short version",
+  "메신저로 바로 보낼 짧은 판 (정한 것·할 일·아직 안 정한 것)": "A short version to send in chat right away (decided, to-dos, not decided yet)",
+  "짧은 판을 복사했습니다": "Copied the short version",
+  "참석": "Attendees",
+  "주요 안건": "Agenda",
+  "추가 논의 필요": "Needs more discussion",
+  "조율 사항": "Agreed",
+  "논의 내용": "Discussion",
+  "접근 방식 정리": "Approach",
+  "향후 예정 작업": "Next steps",
+  "할 일 {n}개에 담당이나 기한이 없습니다. 눌러서 채우세요.": ["{n} to-do has no owner or due date. Click to fill it in.", "{n} to-dos have no owner or due date. Click to fill them in."],
+  "다음에 볼 날": "Next meeting",
+  "다시 만들면 직접 고친 내용이 사라집니다.": "Recreating will discard your edits.",
+  "대화에 없는 숫자입니다: {nums}. 확인하세요.": "Not in the conversation: {nums}. Please check.",
+  "숫자 확인": "Check number",
+  "담당": "Owner",
+  "기한": "Due",
 } satisfies Dict;

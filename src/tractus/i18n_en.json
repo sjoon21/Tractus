@@ -14,7 +14,7 @@
  "AI 서비스를 지정하세요: --provider 또는 TRACTUS_LLM_PROVIDER ({choices})": "Choose an AI service: --provider or TRACTUS_LLM_PROVIDER ({choices})",
  "AI 응답이 형식에 맞지 않아 노트를 완성하지 못했습니다": "The AI response wasn’t in the expected format, so the note couldn’t be enhanced",
  "AI 응답이 형식에 맞지 않아 요약하지 못했습니다": "The AI response wasn’t in the expected format, so the summary couldn’t be made",
- "AI 응답이 형식에 맞지 않아 회의록을 만들지 못했습니다": "The AI response didn't match the expected format, so the meeting notes couldn't be created",
+ "AI 응답이 형식에 맞지 않아 회의록을 만들지 못했습니다": "The AI response didn't match the expected format, so the minutes couldn't be created",
  "AI가 빈 답변을 보냈습니다. 다시 질문해 주세요.": "The AI sent an empty answer. Ask again.",
  "Alibaba Qwen 팀": "Alibaba Qwen team",
  "FluidInference (Core ML 변환본)": "FluidInference (Core ML conversion)",
@@ -72,7 +72,7 @@
   "Summarizing with {provider}/{model}… ({n} line)",
   "Summarizing with {provider}/{model}… ({n} lines)"
  ],
- "{provider}/{model}로 회의록 작성 중… (세그먼트 {n}개)": "Writing meeting notes with {provider}/{model}… ({n} segments)",
+ "{provider}/{model}로 회의록 작성 중… (세그먼트 {n}개)": "Writing minutes with {provider}/{model}… ({n} segments)",
  "{sec}초보다 짧은 클립은 fluid 엔진이 화자를 과하게 나눌 수 있습니다. 결과가 이상하면 --diarizer nemotron으로 다시 해 보세요": "In clips shorter than {sec} seconds, the fluid engine may split speakers too much. If the result looks wrong, try again with --diarizer nemotron",
  "{src}의 모델을 {dest}(으)로 옮길까요?": "Move the models in {src} to {dest}?",
  "{var}가 없습니다. .env.local에 넣거나 환경변수로 지정하세요": "{var} is missing. Add it to .env.local or set it as an environment variable",
@@ -128,7 +128,7 @@
  "녹음에서 사람이 말하는 구간을 찾습니다.": "Finds the parts of a recording where people speak.",
  "녹음을 저장하지 못했습니다: {error}": "Couldn’t save the recording: {error}",
  "녹음이 없는 노트는 노트 완성을 할 수 없습니다": "Notes without a recording can’t be enhanced",
- "녹음이 없는 노트는 회의록을 만들 수 없습니다": "Notes without a recording can't have meeting notes",
+ "녹음이 없는 노트는 회의록을 만들 수 없습니다": "Notes without a recording can't have minutes",
  "녹음이 없는 노트라 단어 싱크를 맞출 수 없습니다.": "This note has no recording, so words can’t be synced.",
  "녹음이 없는 노트라 목소리를 등록할 수 없습니다.": "This note has no recording, so voices can’t be registered.",
  "녹음이 없는 노트라 텍스트로 변환할 수 없습니다.": "This note has no recording, so it can’t be transcribed.",
@@ -288,7 +288,7 @@
  "음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요.": "ffmpeg, which reads audio files, is missing. Install it with brew install ffmpeg in Terminal.",
  "음성 파일을 읽지 못했습니다: {error}": "Couldn’t read the audio: {error}",
  "이 Python의 sqlite3는 확장 로딩을 지원하지 않습니다. uv가 설치한 Python으로 실행하세요": "This Python’s sqlite3 doesn’t support loading extensions. Run it with the Python that uv installed",
- "이 노트에는 회의록이 없습니다": "This note has no meeting notes",
+ "이 노트에는 회의록이 없습니다": "This note has no minutes",
  "이 참석자가 {sec}초 이상 이어서 말한 부분이 없어 목소리를 등록할 수 없습니다.": "This speaker never talks for {sec} seconds or more at a time, so their voice can’t be registered.",
  "이름에 쓸 수 있는 글자가 없습니다 ([ ] < > * _ ` \\ 는 쓸 수 없습니다).": "The name has no usable characters ([ ] < > * _ ` \\ aren’t allowed).",
  "이름은 {n}자까지 쓸 수 있습니다.": "Names can be up to {n} characters.",
@@ -301,7 +301,7 @@
  "이어서 진행합니다: {name} ({done}/{total} 청크 완료)": "Continuing: {name} ({done}/{total} chunks done)",
  "인식된 대화가 없어 노트를 완성할 수 없습니다": "No speech was recognized, so the note can’t be enhanced",
  "인식된 대화가 없어 요약할 수 없습니다": "No speech was recognized, so there’s nothing to summarize",
- "인식된 대화가 없어 회의록을 만들 수 없습니다": "No speech was recognized, so meeting notes can't be created",
+ "인식된 대화가 없어 회의록을 만들 수 없습니다": "No speech was recognized, so minutes can't be created",
  "일부만 받음": "Partially downloaded",
  "일시": "When",
  "일시 {when}": "Date {when}",
@@ -388,6 +388,6 @@
  "화자 정보가 없습니다 (화자 분리 없이 전사됨). `tractus speakers <노트> set <세그먼트> new`로 직접 붙일 수 있습니다": "No speakers (transcribed without speaker detection). Assign them with `tractus speakers <note> set <line> new`",
  "화자가 {n}명을 넘을 수 있지만 fluid 헬퍼나 모델이 없어 {n}명으로 나눕니다:\n{hint}": "There may be more than {n} speakers, but the fluid helper or model is missing, so up to {n} are detected:\n{hint}",
  "회의 내용": "Details",
- "회의록": "Meeting notes",
- "회의록을 저장하지 못했습니다: 형식이 맞지 않습니다": "Couldn't save the meeting notes: the format is invalid"
+ "회의록": "Minutes",
+ "회의록을 저장하지 못했습니다: 형식이 맞지 않습니다": "Couldn't save the minutes: the format is invalid"
 }

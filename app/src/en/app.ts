@@ -136,7 +136,7 @@ export default {
 
   // rail.ts
   "요약과 AI 질문": "Summary and Ask AI",
-  "요약, AI 질문, 메모": "Summary, Ask AI, and memo",
+  "요약, 회의록, AI 질문, 메모": "Summary, minutes, Ask AI, and memo", // words-ok: 회의록은 문서 이름
 
   // menu.ts·NewNoteMenu.tsx
   글쓰기: "Write",
