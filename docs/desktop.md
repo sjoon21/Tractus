@@ -480,7 +480,7 @@ Tauri 명령 (`src-tauri/src/removal.rs`, `lib.rs`):
 
 #### 녹음 노트의 메모 (오른쪽 패널 메모 탭, v3.18)
 
-녹음 노트(`kind` 없음)도 사용자가 직접 적은 메모를 가질 수 있다. 앱은 오른쪽 패널의 세 번째 탭(요약 / AI 질문 / 메모)에서 쓰고, 같은 `tractus note save <노트>`로 저장한다. 메모 노트가 입력창이 본문 전체인 노트라면 이것은 **녹음 옆에 붙는 글**이다. 녹음 중 남기는 메모·북마크(`memos.json`)와는 다른 것이다.
+녹음 노트(`kind` 없음)도 사용자가 직접 적은 메모를 가질 수 있다. 앱은 오른쪽 패널의 마지막 탭(요약 / 회의록 / AI 질문 / 메모)에서 쓰고, 같은 `tractus note save <노트>`로 저장한다. 메모 노트가 입력창이 본문 전체인 노트라면 이것은 **녹음 옆에 붙는 글**이다. 녹음 중 남기는 메모·북마크(`memos.json`)와는 다른 것이다.
 
 ```jsonc
 // transcript.json (녹음 노트)에 선택 키 "memo"가 생긴다. 없으면 메모가 없는 것이다 (옛 노트는 migration 없이 그대로)
@@ -845,6 +845,15 @@ tractus transcribe --into <노트> [--track …] [--language …] [--term …] [
 
 **알려진 한계.** 완성된 노트는 읽기 전용이다(고치려면 내 메모를 고친 뒤 `다시 완성`). 녹음이 길면 대화 전체를 한 번에 보낸다(요약과 같다). 메모가 대화보다 단정적인 표현으로 바뀌는 경우가 있다(가상 회의에서 '모으면 좋겠다'를 '모으기로 했다'에 가깝게 씀). WKWebView에서 손으로 확인하지 못했다(미리보기·vitest·tsc만).
 
+### 2.17.1 회의록: `tractus summarize <노트> --template minutes`, `tractus minutes <노트> show|save` (v3.56)
+
+설계·형식은 docs/design/meeting-minutes.md, 문구는 WORDS.md §4.26이다.
+
+- **코어 `minutes.py`:** 녹음 노트만(메모 노트 `no_recording`, 변환 전 `not_converted`, 대화 없음 `no_segments`). AI는 근거가 달린 칸만 낸다(strict JSON, 근거 ID 검사 1회 재요청). 담당·팀·기한·다음에 볼 날은 근거 문장과 대조해 없으면 지우고, 근거에 없는 숫자는 `unverified`로 표시한다. 결과는 `summaries/minutes.json`(요약 v2 + `kind: minutes`·`minutes`·`attendees`·`edited_at`, 기존 소비자용 `sections`)과 `minutes.md`(위키용 Markdown)다. 다시 만들면 `edited_at`이 지워진다.
+- **`minutes <노트> show`** → `{"minutes", "attendees", "title", "generated_at", "edited_at", "markdown", "short"}` (없으면 `{"minutes": null}`). **`minutes <노트> save`**(stdin `{"minutes": …}`, show의 `minutes` 모양): 비운 줄은 지우고, 근거 ID는 노트에 있는 것만 받고, 숫자 표시를 새 문장으로 다시 잰다. 사람이 고친 담당·기한은 대조하지 않는다. 형식이 틀리면 종료 코드 2. 출력은 show와 같다.
+- **앱:** `회의록` 탭(`MinutesPanel`, 녹음 노트만, 처음 열 때 만든다). `summary_start`(template `minutes`)로 만들고 Rust `minutes_show`·`minutes_save`로 읽고 고친다(저장은 차례로, 실패하면 화면을 되돌린다). `복사`는 `markdown`, `짧게 복사`는 `short`를 클립보드에 넣는다. 고친 적이 있으면 다시 만들기 전에 묻는다. 만드는 동안 노트 삭제를 막는다. 요약 탭은 `summaryTabDocs`·`summaryTemplates`로 회의록(옛 `summary.json`과 `minutes`)과 유형 `회의록`을 뺀다.
+- 내보내기·MCP·Obsidian은 요약 key `minutes`로 읽는다(md는 `minutes.md`, docx·MCP 구조는 `sections`).
+
 ### 2.18 Obsidian으로 보내기: `tractus obsidian <노트> --vault <폴더>` (v3.37)
 
 설계: [docs/design/obsidian-export.md](design/obsidian-export.md). 문구: WORDS.md §4.23.
@@ -923,7 +932,7 @@ macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음�
 
 ### 3.2 양쪽 패널 접기·펼치기 (v3.26)
 
-왼쪽 노트 목록(사이드바)과 노트 화면의 오른쪽 패널(`요약`·`AI 질문`·`메모` 탭)을 각각 접고 펼 수 있다. 코어(Python)·Rust는 바뀌지 않는다. 구현은 `app/src/panels.ts`(순수 로직), `PanelToggle.tsx`(상태·단추), 문구는 WORDS.md §4.17이다. ⌘J AI 어시스턴트 서랍은 따로 뜨는 덮개라 그대로다.
+왼쪽 노트 목록(사이드바)과 노트 화면의 오른쪽 패널(`요약`·`회의록`·`AI 질문`·`메모` 탭)을 각각 접고 펼 수 있다. 코어(Python)·Rust는 바뀌지 않는다. 구현은 `app/src/panels.ts`(순수 로직), `PanelToggle.tsx`(상태·단추), 문구는 WORDS.md §4.17이다. ⌘J AI 어시스턴트 서랍은 따로 뜨는 덮개라 그대로다.
 
 - **단추.** 패널마다 하나. 아이콘(꺾쇠) + 이름(`aria-label`)이고 `title`에 단축키가 붙는다: `노트 목록 접기`/`펼치기`(`⌘B`), `오른쪽 패널 접기`/`펼치기`(`⌥⌘B`). `aria-expanded`, `aria-controls`(`sidebar-body`·`rail-body`), `aria-keyshortcuts`(`Meta+B`·`Alt+Meta+B`), 32×32 눌림 영역, 전역 `:focus-visible` 고리. 단추는 패널 안쪽이 아니라 **가장자리 띠에 붙어 있어** 접힌 뒤에도 남는다.
 - **접힌 모양.** 왼쪽은 56px 띠: 펼치기 단추 + **녹음 단추**(동그란 점, 녹음 중에는 붉게, 이름 `녹음 시작`/`녹음 중`/`변환 중…`, 기능 잠금·변환 중 규칙은 사이드바 녹음 단추와 같고, 파일 가져오기·대기 중도 `변환 중…`으로 보인다). 목록 안에만 있는 `변환 대기 중인 녹음`이 있으면 단추 아래에 개수 배지(`변환 대기 중인 녹음 N개`)가 뜬다. 가져오기 진행 막대·경고·목록 불러오기 오류는 목록 안에만 있어 접힌 동안 안 보인다(알려진 한계: 완료·실패는 알림 토스트와 메뉴 막대 아이콘이 알린다). 녹음은 한 번에 닿아야 해서 두었고, 새 노트·검색·설정은 두지 않았다(`⌘N`은 그대로 되고, `⌘K`는 목록을 펼친다). 오른쪽은 52px 띠에 펼치기 단추만 있다. 가운데(전사·편집기)가 남는 너비를 모두 쓴다. 1180px 이하의 좁은 창에서는 오른쪽 패널이 전사 아래로 가므로, 접으면 단추 줄(60px)만 남는다.

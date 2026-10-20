@@ -117,6 +117,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `summary_templates.py` | 요약 유형: 기본(`templates/*.md`)·내 유형(`$TRACTUS_HOME/templates/u-*.md`) 로더·CRUD·검증 |
 | `summaries.py` | 유형별 요약(스키마 v2, `summaries/<key>.json`), 시스템 프롬프트 + 지침 구분자, 근거·owner 검증, 목록·삭제 |
 | `enhance.py` | 노트 완성(`summarize --template enhanced`): 뼈대(메모 탭 `m####` → 녹음 중 메모·북마크 `r####`), 입력, 검증, 원문 덮어쓰기·정렬, `summaries/enhanced.json`(v2 + `kind`·`part`·`source`·`at`) |
+| `minutes.py` | 회의록(`summarize --template minutes`, `minutes show|save`, docs/design/meeting-minutes.md): 칸 스키마, 근거 대조(담당·팀·기한·다음에 볼 날·숫자), 위키용 Markdown·짧은 판 그리기, 칸 고치기 검사, `summaries/minutes.json`(v2 + `kind: minutes`) |
 | `obsidian.py` | Obsidian으로 보내기(`tractus obsidian`): 볼트/Tractus/<폴더…>/<날짜 제목>.md 하나, `.tractus.json`(경로·sha256)으로 고친 파일은 `--force` 없이 덮어쓰지 않음, 데이터 폴더와 겹치는 볼트 거부 |
 | `calendar_event.py` | 캘린더 일정으로 시작한 녹음(`event.json`, 녹음 폴더 → 노트 폴더): 검사(`clean_event`·`load_event`), 기본 제목·참석자 hotwords(그 노트만, glossary에 쓰지 않음) |
 | `sample_note.py` | 예시 노트(첫 사용자 온보딩, `tractus note sample`): `sample_note.json`(가상 회의) → 대화·참석자·메모·녹음 중 메모·회의록·완성된 노트. `"sample": true`는 색인·MCP 목록에서 뺀다 |
