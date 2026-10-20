@@ -35,7 +35,7 @@ from tractus.asr import SR, Transcriber, note_terms  # noqa: E402
 from tractus.diarize import FLUID, FLUID_MIN_CLIP_S, MAX_SPEAKERS, NEMOTRON, MODEL_DIR as DIARIZER_DIR  # noqa: E402
 from tractus.diarize import fluid_hint, load_diarizer, load_fluid, split_chunks  # noqa: E402
 from tractus.export import FORMATS as EXPORT_FORMATS, UnsupportedFormat, render_export, write_bytes_atomic  # noqa: E402
-from tractus import attach, deferred, enhance, notes, obsidian, sample_note  # noqa: E402
+from tractus import attach, deferred, enhance, minutes, notes, obsidian, sample_note  # noqa: E402
 from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_suggestions, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
 from tractus.store import IncompleteError, load_glossary, meeting_dir_name, new_ulid, save_transcript, seg_text, speaker_name, write_transcript  # noqa: E402
 from tractus.store import CHUNKS_FILE, JOB_FILE, edit_transcript, forget_person, note_lock, read_transcript, render_files  # noqa: E402
@@ -777,6 +777,10 @@ def summarize(
         if custom:
             _fail(t("요약 유형과 직접 입력은 함께 쓸 수 없습니다."), code="bad_input", exit_code=2)
         return _enhance(d, provider, model)
+    if template == minutes.KEY:  # 회의록: 요약 유형 목록에 없는 전용 경로 (docs/design/meeting-minutes.md)
+        if custom:
+            _fail(t("요약 유형과 직접 입력은 함께 쓸 수 없습니다."), code="bad_input", exit_code=2)
+        return _minutes(d, provider, model)
     try:
         spec = sums.resolve_spec(home_dir(), template, sys.stdin.read() if custom else None)
     except ValueError as e:
@@ -837,6 +841,33 @@ def _enhance(d: Path, provider: str | None, model: str | None) -> None:
     key = enhance.write(d, transcript, result, p.name, m)
     Events.emit("done", meeting_id=transcript["meeting_id"], meeting_dir=str(d), summary_key=key)
     console.print(t("완료: 블록 {n}개 ({sec}초)", n=len(result["sections"]), sec=f"{time.perf_counter() - t0:.0f}") + f"\n{sums.paths(d, key)[1]}")
+
+
+def _minutes(d: Path, provider: str | None, model: str | None) -> None:
+    """summarize --template minutes: 회의록 (summaries/minutes.json). 녹음 노트만. 형식은 이전 회의록의 것을 이어 쓴다."""
+    transcript = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
+    if is_memo(transcript):
+        _fail(t("녹음이 없는 노트는 회의록을 만들 수 없습니다"), code="no_recording", exit_code=2)  # words-ok: 회의록은 문서 이름
+    if is_recorded(transcript):
+        _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
+    if not transcript["segments"]:
+        _fail(t("인식된 대화가 없어 회의록을 만들 수 없습니다"), code="no_segments")  # words-ok: 회의록은 문서 이름
+    try:
+        p, m = resolve_provider(provider, model)
+        t0 = time.perf_counter()
+        Events.emit("stage", stage="summarize")
+        with console.status(t("{provider}/{model}로 회의록 작성 중… (세그먼트 {n}개)", provider=p.name, model=m, n=len(transcript["segments"]))):  # words-ok: 회의록은 문서 이름
+            result = minutes.make(make_client(p), p, m, transcript)
+    except LLMError as e:
+        if e.code == "llm_invalid":
+            console.print(f"[red]{escape(str(e))}[/red]")
+            _fail(t("AI 응답이 형식에 맞지 않아 회의록을 만들지 못했습니다"), code=e.code)  # words-ok: 회의록은 문서 이름
+        _fail(str(e), code=e.code)
+    old = sums.read_data(d, minutes.KEY) or {}
+    fmt = old.get("format") if old.get("format") in minutes.FORMATS else "table"
+    key = minutes.write(d, transcript, result, minutes.attendees(transcript, load_event(d)), p.name, m, fmt)
+    Events.emit("done", meeting_id=transcript["meeting_id"], meeting_dir=str(d), summary_key=key)
+    console.print(t("완료: 안건 {n}개, 할 일 {m}개 ({sec}초)", n=len(result["topics"]), m=len(result["actions"]), sec=f"{time.perf_counter() - t0:.0f}") + f"\n{sums.paths(d, key)[1]}")
 
 
 def _save_chat(d: Path, question: str, done: dict) -> None:
