@@ -63,7 +63,12 @@ class Model:
 
     @property
     def needed_by(self) -> tuple[str, ...]:
-        return tuple(c.id for c in CAPABILITIES if any(self.id in g for g in c.models))
+        found = tuple(c.id for c in CAPABILITIES if any(self.id in g for g in c.models))
+        return found or (("convert",) if self.engine else ())  # 직접 추가한 변환 엔진은 CAPABILITIES에 없다
+
+    @property
+    def custom(self) -> bool:
+        return self.id.startswith(CUSTOM_PREFIX)
 
 
 @dataclass(frozen=True)
@@ -147,6 +152,40 @@ CAPABILITIES: tuple[Capability, ...] = (
 
 _BY_ID = {m.id: m for m in MODELS}
 
+# ── 직접 추가한 변환 엔진 (docs/design/asr-engines.md) ─────────────────────────
+# 모델 폴더의 custom-models.json에 둔다: 모델 폴더를 옮기면 함께 옮긴다. ID는 custom-…, 폴더 이름은 ID다
+CUSTOM_FILE = "custom-models.json"
+CUSTOM_PREFIX = "custom-"
+CUSTOM_PURPOSE = t("직접 추가한 변환 엔진입니다.")
+
+
+def _custom_entry(e: object) -> Model | None:
+    """custom-models.json의 항목 하나 → Model. 모양이 틀린 항목은 버린다 (손으로 고친 파일이 목록 전체를 막지 않게)."""
+    if not isinstance(e, dict):
+        return None
+    mid, repo, rev, engine, files = e.get("id"), e.get("repo"), e.get("revision"), e.get("engine"), e.get("files")
+    if not (isinstance(mid, str) and mid.startswith(CUSTOM_PREFIX) and ID_RE.fullmatch(mid) and len(mid) <= 40 and isinstance(repo, str) and "/" in repo
+            and isinstance(rev, str) and isinstance(engine, str) and isinstance(files, dict) and files
+            and all(isinstance(k, str) and "/" not in k and ".." not in k and isinstance(v, int) for k, v in files.items())):
+        return None
+    lic = e.get("license")
+    return Model(mid, str(e.get("name") or repo), CUSTOM_PURPOSE, "required", "convert", "hf", mid, sum(files.values()), repo=repo, revision=rev, files=files,
+                 model_name=repo, publisher=repo.split("/")[0], license=lic if isinstance(lic, str) else "", level_note=ONE_OF, engine=engine)
+
+
+def custom_models(root: Path | None = None) -> tuple[Model, ...]:
+    """직접 추가한 변환 엔진 (추가한 순서). 파일이 없거나 깨졌으면 빈 목록."""
+    try:
+        raw = json.loads(((root or paths.models_dir()) / CUSTOM_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ()
+    return tuple(m for e in (raw.get("models") if isinstance(raw, dict) and isinstance(raw.get("models"), list) else []) if (m := _custom_entry(e)))
+
+
+def all_models(root: Path | None = None) -> tuple[Model, ...]:
+    """등록된 모델 + 직접 추가한 변환 엔진."""
+    return MODELS + custom_models(root)
+
 
 def build_hint(item: str) -> str | None:
     """없는 도구를 채우는 안내. 녹음·도우미 프로그램은 저장소 배치일 때만 빌드 명령을 말한다 (paths.build_hint)."""
@@ -154,16 +193,28 @@ def build_hint(item: str) -> str | None:
 
 
 def get(model_id: str) -> Model:
-    return _BY_ID[model_id]
+    """등록된 모델, 없으면 지금 모델 폴더의 직접 추가 모델. 없으면 KeyError."""
+    if model_id in _BY_ID:
+        return _BY_ID[model_id]
+    if model_id.startswith(CUSTOM_PREFIX) and (m := next((x for x in custom_models() if x.id == model_id), None)):
+        return m
+    raise KeyError(model_id)
+
+
+def find(model_id: str) -> Model | None:
+    try:
+        return get(model_id)
+    except KeyError:
+        return None
 
 
 def by_repo(repo: str) -> Model | None:
-    return next((m for m in MODELS if m.repo == repo and m.kind == "hf"), None)
+    return next((m for m in all_models() if m.repo == repo and m.kind == "hf"), None)
 
 
-def asr_ids() -> list[str]:
-    """등록된 변환 엔진 (등록 순서). 기본 두 개(asr-std·asr-lite)가 먼저다."""
-    return [m.id for m in MODELS if m.engine]
+def asr_ids(root: Path | None = None) -> list[str]:
+    """변환 엔진 (등록 순서, 직접 추가한 것은 뒤). 기본 두 개(asr-std·asr-lite)가 먼저다."""
+    return [m.id for m in all_models(root) if m.engine]
 
 
 def preferred_asr(memory: int | None = None) -> str:
@@ -174,7 +225,7 @@ def preferred_asr(memory: int | None = None) -> str:
 def pick_asr(root: Path, memory: int | None = None) -> str | None:
     """엔진을 정하지 않고 변환할 때 쓸 변환 엔진: 메모리가 권하는 기본 엔진이 쓸 수 있으면 그것, 아니면 다른 기본 엔진, 그다음 받아 둔 다른 엔진 (등록 순서). 없으면 None."""
     first = preferred_asr(memory)
-    order = [first, "asr-lite" if first == "asr-std" else "asr-std", *(i for i in asr_ids() if i not in ("asr-std", "asr-lite"))]
+    order = [first, "asr-lite" if first == "asr-std" else "asr-std", *(i for i in asr_ids(root) if i not in ("asr-std", "asr-lite"))]
     return next((i for i in order if usable(i, root)), None)
 
 
@@ -195,11 +246,12 @@ def preset_ids(preset: str, memory: int | None = None, helper: bool = False) -> 
 
 def resolve_ids(ids: list[str], preset: str | None, memory: int | None = None, helper: bool = False) -> list[str]:
     """명령줄의 모델 ID와 프리셋 → 중복 없는 ID (등록 순서). 모르는 ID는 ValueError."""
+    known = {m.id for m in all_models()}
     for i in ids:
-        if not ID_RE.fullmatch(i) or i not in _BY_ID:
-            raise ValueError(t("알 수 없는 모델: {id} ({choices})", id=i, choices=", ".join(_BY_ID)))  # words-ok: 명령줄 인수 오류 (앱은 검증한 ID만 넘긴다)
+        if not ID_RE.fullmatch(i) or i not in known:
+            raise ValueError(t("알 수 없는 모델: {id} ({choices})", id=i, choices=", ".join(sorted(known))))  # words-ok: 명령줄 인수 오류 (앱은 검증한 ID만 넘긴다)
     wanted = set(ids) | (set(preset_ids(preset, memory, helper)) if preset else set())
-    return [m.id for m in MODELS if m.id in wanted]
+    return [m.id for m in all_models() if m.id in wanted]
 
 
 # ── 설치 상태 ────────────────────────────────────────────────────────────────
@@ -305,6 +357,8 @@ def capability_status(states: dict[str, str], tools: dict[str, bool], memory: in
     for c in CAPABILITIES:
         missing: list[str] = []
         for group in c.models:
+            if "asr-std" in group:  # 직접 추가한 변환 엔진도 하나면 된다
+                group = (*group, *(i for i in states if i.startswith(CUSTOM_PREFIX)))
             if not any(states.get(i) == "installed" for i in group):
                 missing.append(preferred_asr(memory) if "asr-std" in group else group[0])  # 변환 엔진이 하나도 없으면 메모리가 권하는 기본 엔진
         missing += [t for t in c.tools if not tools.get(t)]

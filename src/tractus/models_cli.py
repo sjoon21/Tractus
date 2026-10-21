@@ -107,6 +107,19 @@ def register(app: typer.Typer) -> None:
         cli.Events.emit("done", models=done, already=installed_before)
         cli.console.print(t("모델 {n}개를 받았습니다", n=len(done)) + (t(" (이미 설치됨 {n}개)", n=len(installed_before)) if installed_before else ""))  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
 
+    @models_app.command("add")
+    def add_model(
+        repo: str = typer.Argument(..., metavar="REPO", help="Hugging Face 저장소 ID (예: mlx-community/whisper-large-v3-turbo). Qwen3-ASR·Whisper·SenseVoice 계열"),
+        revision: str = typer.Option(None, "--revision", help="브랜치·태그·커밋. 생략하면 지금의 main을 커밋 해시로 고정한다"),
+    ) -> None:
+        """변환 엔진을 직접 추가한다 (받지는 않는다: 이어서 `tractus models download <ID>`). 네트워크로 파일 목록만 읽는다.
+        → {"id", "repo", "revision", "engine", "size_bytes", "license"}. 같은 저장소를 다시 추가하면 리비전을 새로 고친다."""
+        try:
+            m = inst.add_custom(repo, models_dir(), revision)
+        except inst.ModelError as e:
+            _error(e.message, e.code, exit_code=2 if e.code in ("bad_repo", "unsupported_model", "unsupported_engine", "not_found") else 1)
+        _out({"id": m.id, "repo": m.repo, "revision": m.revision, "engine": m.engine, "size_bytes": m.size_bytes, "license": m.license})
+
     @models_app.command("remove")
     def remove_model(
         model_id: str = typer.Argument(..., metavar="ID", help="모델 ID"),

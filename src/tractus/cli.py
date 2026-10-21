@@ -117,9 +117,9 @@ def choose_asr(track: Track | None, engine_id: str | None) -> registry.Model:
     """변환 엔진 고르기 (docs/design/asr-engines.md): `--engine <모델 ID>`(앱 설정 `기본 변환 엔진`) → `--track` → 메모리가 권하는 기본 엔진.
     고른 엔진을 받아 두지 않았으면 경고(asr_engine_missing)하고 기본 엔진으로 변환한다. 변환 엔진이 아닌 ID는 오류."""
     if engine_id:
-        m = next((x for x in registry.MODELS if x.id == engine_id), None)
+        m = registry.find(engine_id)
         if m is None or not m.engine:
-            raise typer.BadParameter(t("변환 엔진이 아닙니다: {id} ({choices})", id=engine_id, choices=", ".join(registry.asr_ids())), param_hint="--engine")
+            raise typer.BadParameter(t("변환 엔진이 아닙니다: {id} ({choices})", id=engine_id, choices=", ".join(registry.asr_ids(models_dir()))), param_hint="--engine")
         if registry.usable(m.id, models_dir()):
             return m
         _warn("asr_engine_missing", t("고른 변환 엔진({name})이 없어 기본 엔진으로 변환합니다 (받으려면 tractus models download {id})", name=m.name, id=m.id))

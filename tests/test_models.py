@@ -570,7 +570,7 @@ def test_doctor_cli_and_models_list_cli_json_shapes(root, monkeypatch):
     assert {"models_dir", "disk_free_bytes", "models", "download_active"} <= set(d) and d["download_active"] is False
     by = {m["id"]: m for m in d["models"]}
     assert set(by["vad"]) == {"id", "name", "purpose", "level", "size_bytes", "installed", "installed_bytes", "state", "needed_by", "group", "path", "level_note",
-                              "model_name", "publisher", "converted_by", "source", "revision", "license", "languages", "params"}
+                              "model_name", "publisher", "converted_by", "source", "revision", "license", "languages", "params", "engine", "custom"}
     assert by["asr-std"]["model_name"] == "Qwen3-ASR 1.7B (8bit 양자화)" and by["asr-std"]["source"] == "mlx-community/Qwen3-ASR-1.7B-8bit"
     assert by["vad"]["installed"] is True and by["vad"]["state"] == "installed" and by["asr-lite"]["needed_by"] == ["convert", "live"]
     assert by["asr-std"]["installed"] is False and by["asr-std"]["installed_bytes"] == 0
