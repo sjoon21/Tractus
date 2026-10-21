@@ -26,7 +26,8 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 
 - 런타임은 `mlx-audio`(`mlx_audio.stt.utils.load`)를 **프로세스 안에서** 호출한다. `mlx_audio.server` HTTP 엔드포인트는 `hotwords`를 전달하지 않으므로 쓰지 않는다. 두 트랙은 모델 경로만 다르고 코드는 같다.
 - VAD는 `mlx-community/silero-vad-v6`(`models/silero-vad-v6`). torch를 의존성에 넣지 않는다.
-- Whisper·Nemotron은 Phase 0에서 탈락했다(`ARCHITECTURE.md` §8 "Phase 0 결과"). 새 벤치마크(`bench/`) 없이 ASR 모델을 바꾸거나 추가하지 않는다.
+- Whisper·Nemotron은 Phase 0에서 탈락했다(`ARCHITECTURE.md` §8 "Phase 0 결과"). 새 벤치마크(`bench/`) 없이 ASR 모델을 바꾸거나 **등록 목록에** 추가하지 않는다. 사용자가 앱에서 직접 추가하는 엔진(`tractus models add`)은 사용자의 선택이라 측정을 요구하지 않는다.
+- **변환 엔진은 계열 어댑터로 돈다(v3.59, docs/design/asr-engines.md)**: `asr.ENGINES`(qwen3·whisper·sensevoice), 계열은 모델 폴더 `config.json`의 `model_type`. 새 계열을 더하면 `ENGINES`·`models_install.NEEDED_FILES`·`bench/asr.py`를 함께 고친다. 자주 쓰는 단어는 Qwen만 넣는다(Whisper는 Phase 0에서 프롬프트가 CER을 크게 나쁘게 했다: 다시 넣으려면 측정한다). 고르기는 `transcribe --engine <ID>`(앱 설정 `asr_engine`)이고 실시간 텍스트 변환은 0.6B 그대로다.
 
 ## 화자 분리 모델 (2026-10-04 확정)
 
@@ -125,7 +126,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `env.py` | `.env` / `.env.local` 로더 |
 | `paths.py` | `TRACTUS_HOME`, `TRACTUS_MODELS_DIR` 해석 (CLI·MCP 공용). 녹음·도우미 프로그램 위치 `tool_bin`(`TRACTUS_REC_BIN`·`TRACTUS_DIAR_BIN` → 앱 번들 `bin/` → 저장소에서 빌드한 것)과 빌드 안내 `build_hint`(저장소 배치일 때만 `swift build` 명령, 아니면 일반 안내). 모델 폴더 순서: `TRACTUS_MODELS_DIR` → 등록된 모델이 이미 있는 `$TRACTUS_HOME/models` → 앱 설정 폴더의 `models` |
 | `models_registry.py` | **모델·기능 목록의 원본**: 저장소·리비전·폴더·파일 크기, 기능(`CAPABILITIES`), 설치 상태(`inspect`), 프리셋, 받기 안내 문구 |
-| `models_install.py` | `models download`(잠금·이어받기·sha256·오류 코드)·`remove` |
+| `models_install.py` | `models download`(잠금·이어받기·sha256·오류 코드)·`remove`, 변환 엔진 직접 추가 `add_custom`(`custom-models.json`, 허브에서 파일·크기·커밋 고정, 계열·필수 파일 검사)·`forget_custom` |
 | `doctor.py`, `models_cli.py` | `tractus doctor`, `tractus models list|download|remove|prune` (docs/desktop.md §2.15) |
 | `embed.py` | Qwen3-Embedding-0.6B 8bit (`mlx-community/Qwen3-Embedding-0.6B-8bit`, mlx-lm `load_model`), `LazyEmbedder`, 선택: `UpstageEmbedder`(solar-embedding-2, `TRACTUS_EMBED=upstage`), `load_embedder`가 고른다 |
 | `index.py` | SQLite FTS5 음절 bigram + sqlite-vec, 증분 동기화(`stats()['pending']` = 지금 모델로 벡터가 없는 청크), strict 우선 + 가중 RRF |
