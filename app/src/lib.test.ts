@@ -275,6 +275,11 @@ describe("recReduce", () => {
     expect(s.marks).toEqual([{ t: 1.5, kind: "memo", text: "예산" }]);
   });
 
+  test("marks(고치기·지우기 뒤 전체 목록)는 메모 목록을 바꾼다", () => {
+    const s = run([started, { event: "mark", t: 1, kind: "memo", text: "a" }, { event: "mark", t: 2, kind: "bookmark", text: null }, { event: "marks", marks: [{ t: 1, kind: "memo", text: "b" }] }]);
+    expect(s.marks).toEqual([{ t: 1, kind: "memo", text: "b" }]);
+  });
+
   test("같은 경고 코드는 한 번만", () => {
     const w: RecEvent = { event: "warning", code: "system_zero", message: "권한 확인" };
     expect(run([started, w, w, { event: "warning", code: "mic_denied", message: "마이크" }]).warnings.map((x) => x.code)).toEqual(["system_zero", "mic_denied"]);

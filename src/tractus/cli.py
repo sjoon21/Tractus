@@ -1486,6 +1486,29 @@ def note_title(meeting: str = typer.Argument(..., help="노트 폴더 경로 또
     print(json.dumps({"title": title}, ensure_ascii=False))
 
 
+marks_app = typer.Typer(help="녹음 중 남긴 메모·북마크 (노트 폴더의 memos.json). 고치기·지우기")
+app.add_typer(marks_app, name="marks")
+
+
+@marks_app.callback()
+def marks_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
+    ctx.obj = _note_dir(meeting)
+
+
+@marks_app.command("save")
+def marks_save(ctx: typer.Context) -> None:
+    """stdin {"marks": [{"t", "kind", "text"}]}: 남은 것만 보낸다 (빠진 항목은 지운다, 메모 글은 고친다, 글을 비우면 지운다).
+    새 메모를 끼워 넣거나 시각·종류를 바꾸면 종료 코드 2. stdout: {"marks": [...]} (시각 순)."""
+    from tractus.store import save_memos
+
+    try:
+        req = _read_json_object(sys.stdin.read(), '{"marks": […]}')
+        out = save_memos(ctx.obj, req.get("marks"))
+    except ValueError as e:
+        _fail(str(e), code="bad_input", exit_code=2)
+    print(json.dumps({"marks": out}, ensure_ascii=False))
+
+
 glossary_app = typer.Typer(help="용어집($TRACTUS_HOME/glossary.md). 다음 전사부터 Qwen3-ASR hotwords로 들어간다")
 app.add_typer(glossary_app, name="glossary")
 

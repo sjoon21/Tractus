@@ -509,6 +509,24 @@ fn set_asr_engine(state: State<'_, AppState>, id: Option<String>) -> Result<(), 
     Ok(())
 }
 
+/// 녹음 중 남긴 메모·북마크 고치기·지우기 (`tractus marks <노트> save`, stdin {"marks": …}). 남은 목록만 보낸다.
+/// 새로 끼워 넣거나 시각·종류를 바꾸는 것은 코어가 거절한다. → {"marks": […]}
+#[tauri::command]
+async fn marks_save(state: State<'_, AppState>, id: String, marks: Value) -> Result<Value, String> {
+    if !is_meeting_id(&id) {
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.clone())]));
+    }
+    let s = state.settings();
+    let args: Vec<String> = ["marks", &id, "save"].map(String::from).to_vec();
+    let input = json!({ "marks": marks }).to_string();
+    let guard = BusyGuard::new(&state.busy, &id);
+    blocking(move || {
+        let _guard = guard;
+        stdout_json(&run_tractus(&s, &args, Some(&input), &t("메모를 저장하지 못했습니다"))?)
+    })
+    .await
+}
+
 /// 설정 파일의 불리언 키 하나만 바꾼다 (merge_rec_mode와 같은 방식: 환경변수 기본값이 파일에 굳지 않게)
 fn merge_flag(raw: Option<&str>, key: &str, value: bool) -> Result<String, String> {
     let mut v: Value = raw.and_then(|r| serde_json::from_str(r).ok()).filter(Value::is_object).unwrap_or_else(|| json!({}));
@@ -698,8 +716,8 @@ fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>, tar
 }
 
 #[tauri::command]
-fn rec_send(state: State<'_, AppState>, cmd: String, text: Option<String>) -> Result<(), String> {
-    let line = procs::recorder_line(&cmd, text.as_deref())?;
+fn rec_send(state: State<'_, AppState>, cmd: String, text: Option<String>, index: Option<u32>) -> Result<(), String> {
+    let line = procs::recorder_line(&cmd, text.as_deref(), index)?;
     let mut rec = state.rec.lock().unwrap();
     let stdin = rec.as_mut().ok_or_else(|| t("녹음 중이 아닙니다"))?;
     stdin.write_all(line.as_bytes()).and_then(|_| stdin.flush()).map_err(|e| tv("녹음 프로그램에 명령을 보내지 못했습니다\n{e}", &[("e", e.to_string())]))?;
@@ -1341,6 +1359,7 @@ pub fn run() {
             save_settings,
             set_rec_mode,
             set_asr_engine,
+            marks_save,
             set_checkup_done,
             tray::tray_update,
             tray::tray_popover_state,

@@ -5,18 +5,19 @@ import { ErrorDetail } from "./ErrorDetail";
 import { t } from "./i18n";
 import { GateHint } from "./GatedButton";
 import { useCapabilities } from "./useCapabilities";
-import { errorView, fmtTime, isRecLive, JOB_ERROR, levelFraction, liveHaltView, liveHalted, REC_MODES, STAGE_LABEL, warningText } from "./lib";
+import { EditableMark } from "./MarkEdit";
+import { errorView, fmtTime, isRecLive, JOB_ERROR, levelFraction, liveHaltView, liveHalted, REC_MODES, STAGE_LABEL, warningText, type RecCommand } from "./lib";
 import { AFTER_ASK } from "./afterRecord";
 import { PAUSE_LABEL, PAUSE_TITLE, PAUSED_NOTE, RESUME_LABEL, RESUME_TITLE } from "./pause";
 import { CONVERT_FAILED_TITLE, CONVERT_RETRY, SAVE_DONE_TITLE, SAVE_FAILED_TITLE, SAVE_RETRY, SAVING } from "./recorded";
 import { Bookmark, Pause, Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { GrowTextarea } from "@/components/ui/textarea";
 import { Kbd } from "@/components/ui/kbd";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/components/ui/utils";
 
-type Send = (cmd: "bookmark" | "memo" | "stop" | "pause" | "resume", text?: string) => Promise<void>;
+type Send = (cmd: RecCommand, text?: string, index?: number) => Promise<void>;
 
 export function RecordView({
   rec,
@@ -121,11 +122,17 @@ export function RecordView({
                 setMemo("");
               }}
             >
-              <time className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-xs font-medium text-memo tabular-nums">{fmtTime(rec.t)}</time>
-              <Input
-                className="h-9 pl-14"
+              <time className="pointer-events-none absolute top-[9px] left-3 text-xs leading-[18px] font-medium text-memo tabular-nums">{fmtTime(rec.t)}</time>
+              {/* 긴 메모는 옆으로 숨지 않고 줄을 늘린다. 메모는 한 줄로 저장되므로 Enter가 저장이다 */}
+              <GrowTextarea
+                className="min-h-9 py-[7px] pl-14 leading-[20px]"
                 value={memo}
-                onChange={(e) => setMemo(e.target.value)}
+                onChange={(e) => setMemo(e.target.value.replace(/\n/g, " "))}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" || composing.current || e.nativeEvent.isComposing) return;
+                  e.preventDefault();
+                  e.currentTarget.form?.requestSubmit();
+                }}
                 onCompositionStart={() => (composing.current = true)}
                 onCompositionEnd={() => (composing.current = false)}
                 placeholder={t("메모를 쓰고 Enter — 지금 시각과 함께 저장됩니다")}
@@ -153,13 +160,29 @@ export function RecordView({
 
         {rec.marks.length > 0 && (
           <ol className="m-0 flex list-none flex-col gap-1 p-0">
-            {[...rec.marks].reverse().map((m, i) => (
-              <li key={i} className="flex items-baseline gap-3 rounded-md bg-memo-wash px-3 py-2 text-[13px]">
-                <time className="text-xs text-memo tabular-nums">{fmtTime(m.t)}</time>
-                <span className="text-[11px] font-semibold text-memo">{m.kind === "bookmark" ? t("북마크") : t("메모")}</span>
-                {m.text}
-              </li>
-            ))}
+            {[...rec.marks].reverse().map((m, i) => {
+              const at = rec.marks.length - 1 - i; // 녹음 프로그램의 목록 자리 (화면은 최신이 위)
+              // 시각·종류는 줄을 바꾸지 않는 칸, 긴 메모는 셋째 칸 안에서만 줄을 바꾼다
+              const row = (
+                <span className="grid grid-cols-[auto_auto_minmax(0,1fr)] items-baseline gap-x-3 py-1 leading-relaxed">
+                  <time className="text-xs whitespace-nowrap text-memo tabular-nums">{fmtTime(m.t)}</time>
+                  <span className="text-[11px] font-semibold whitespace-nowrap text-memo">{m.kind === "bookmark" ? t("북마크") : t("메모")}</span>
+                  <span className="[overflow-wrap:anywhere]">{m.text}</span>
+                </span>
+              );
+              return (
+                <li key={`${m.t}-${at}`} className="rounded-md bg-memo-wash px-3 py-1 text-[13px]">
+                  {/* 녹음이 끝나면 녹음 프로그램이 없다: 그 뒤에는 노트에서 고친다 */}
+                  {live ? (
+                    <EditableMark memo={m} onSave={(text) => void send("mark_edit", text, at)} onDelete={() => void send("mark_delete", undefined, at)}>
+                      {row}
+                    </EditableMark>
+                  ) : (
+                    row
+                  )}
+                </li>
+              );
+            })}
           </ol>
         )}
       </div>

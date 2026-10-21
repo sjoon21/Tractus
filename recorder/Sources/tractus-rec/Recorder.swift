@@ -173,6 +173,16 @@ final class Recorder {
         case .resume: resume()
         case .bookmark: addMark(Mark(t: round2(elapsed), kind: "bookmark", text: nil))
         case let .memo(text): addMark(Mark(t: round2(elapsed), kind: "memo", text: text))
+        case let .editMark(i, text): changeMarks { marks in
+            guard marks.indices.contains(i), marks[i].kind == "memo" else { return false }  // 북마크는 글이 없다: 지우기만
+            marks[i] = Mark(t: marks[i].t, kind: "memo", text: text)
+            return true
+        }
+        case let .deleteMark(i): changeMarks { marks in
+            guard marks.indices.contains(i) else { return false }
+            marks.remove(at: i)
+            return true
+        }
         }
     }
 
@@ -211,6 +221,14 @@ final class Recorder {
         info!.marks.append(mark)
         saveInfo()
         emit(["event": "mark"].merging(mark.json) { a, _ in a })
+    }
+
+    /// 남긴 메모를 고치거나 지운다. 바뀌면 recording.json에 쓰고 전체 목록을 `marks` 이벤트로 알린다 (앱이 번호를 다시 맞춘다).
+    /// 없는 번호·북마크 고치기는 무시하되 지금 목록을 다시 보내 앱이 어긋난 화면을 바로잡게 한다.
+    private func changeMarks(_ change: (inout [Mark]) -> Bool) {
+        guard !stopping, info != nil else { return }
+        if change(&info!.marks) { saveInfo() } else { log("메모를 바꾸지 않았습니다: 없는 번호이거나 북마크입니다") }
+        emit(["event": "marks", "marks": info!.marks.map(\.json)])
     }
 
     /// stop 명령, SIGINT/SIGTERM, stdin EOF, 쓰기 실패가 모두 여기로 온다. 파일을 닫고 프로세스를 끝낸다.
