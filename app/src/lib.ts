@@ -1,5 +1,5 @@
 // 화면과 무관한 순수 로직. 전부 lib.test.ts에서 검사한다.
-import { ASR_ENGINE_MISSING_WARNING, ASR_FALLBACK_WARNING, MODEL_MISSING_ERROR } from "./caps";
+import { ASR_ENGINE_MISSING_WARNING, ASR_FALLBACK_WARNING, MODEL_LOAD_FAILED_ERROR, MODEL_MISSING_ERROR } from "./caps";
 import { locale, t } from "./i18n";
 
 export interface Segment {
@@ -469,6 +469,7 @@ export const WARNING_TEXT: Record<string, string> = {
 
 export const ERROR_TEXT: Record<string, string> = {
   model_missing: MODEL_MISSING_ERROR,
+  model_load_failed: MODEL_LOAD_FAILED_ERROR,
   audio_failed: t("음성 파일을 읽지 못했습니다. 소리가 있는 오디오·동영상 파일인지 확인하세요."),
   ffmpeg_missing: t("음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요."),
   recording_missing: t("녹음된 소리가 없습니다. 마이크 권한과 입력 장치를 확인하세요."),

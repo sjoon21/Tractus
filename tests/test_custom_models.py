@@ -28,7 +28,7 @@ def fake_hub(monkeypatch, files: dict[str, int], config: dict, license: str | No
     monkeypatch.setattr(huggingface_hub, "hf_hub_download", hf_hub_download)
 
 
-WHISPER = {"config.json": 1500, "model.safetensors": 3_000_000, "tokenizer.json": 2000, "vocab.json": 800, "merges.txt": 500,
+WHISPER = {"config.json": 1500, "model.safetensors": 3_000_000, "tokenizer.json": 2000, "vocab.json": 800, "merges.txt": 500, "preprocessor_config.json": 300,
            "training_args.bin": 5000, "runs/events.out": 100, "flax_model.msgpack": 9000}
 
 
@@ -36,7 +36,7 @@ def test_add_registers_a_supported_engine_with_pinned_files(root, monkeypatch):
     fake_hub(monkeypatch, WHISPER, {"model_type": "whisper"})
     m = inst.add_custom("BuzzASR/korean", root)
     assert (m.id, m.engine, m.revision, m.license, m.local_dir) == ("custom-buzzasr-korean", "whisper", "a" * 40, "mit", "custom-buzzasr-korean")
-    assert set(m.files) == {"config.json", "model.safetensors", "tokenizer.json", "vocab.json", "merges.txt"}  # 학습 기록·.bin·하위 폴더는 받지 않는다
+    assert set(m.files) == {"config.json", "model.safetensors", "tokenizer.json", "vocab.json", "merges.txt", "preprocessor_config.json"}  # 학습 기록·.bin·하위 폴더는 받지 않는다
     assert m.size_bytes == sum(m.files.values()) and m.custom and m.needed_by == ("convert",)
     assert [x.id for x in reg.custom_models(root)] == [m.id]
     assert "custom-buzzasr-korean" in reg.asr_ids(root) and reg.get(m.id) == m and reg.resolve_ids([m.id], None) == [m.id]
@@ -53,6 +53,7 @@ def test_adding_the_same_repo_again_keeps_the_id_and_updates_the_revision(root, 
 @pytest.mark.parametrize("files,config,code", [
     ({"config.json": 1, "pytorch_model.bin": 9}, {"model_type": "whisper"}, "unsupported_model"),  # safetensors가 없다
     ({"config.json": 1, "model.safetensors": 9}, {"model_type": "wav2vec2"}, "unsupported_engine"),
+    ({"config.json": 1, "weights.npz": 9}, {"model_type": "whisper"}, "unsupported_model"),  # 토크나이저가 없다 (실측 mlx-community/whisper-tiny)
 ])
 def test_unsupported_models_are_refused(root, monkeypatch, files, config, code):
     fake_hub(monkeypatch, files, config)
@@ -125,7 +126,7 @@ def test_models_add_cli_prints_the_entry(root, monkeypatch):
     r = CliRunner().invoke(cli.app, ["models", "add", "BuzzASR/korean"])
     assert r.exit_code == 0, r.output
     assert json.loads(r.stdout.strip().splitlines()[-1]) == {"id": "custom-buzzasr-korean", "repo": "BuzzASR/korean", "revision": "a" * 40,
-                                                             "engine": "whisper", "size_bytes": sum(v for k, v in WHISPER.items() if k in ("config.json", "model.safetensors", "tokenizer.json", "vocab.json", "merges.txt")), "license": "mit"}
+                                                             "engine": "whisper", "size_bytes": sum(v for k, v in WHISPER.items() if k in ("config.json", "model.safetensors", "tokenizer.json", "vocab.json", "merges.txt", "preprocessor_config.json")), "license": "mit"}
     listed = json.loads(CliRunner().invoke(cli.app, ["models", "list", "--json"]).stdout)
     row = next(x for x in listed["models"] if x["id"] == "custom-buzzasr-korean")
     assert (row["custom"], row["engine"], row["state"], row["needed_by"]) == (True, "whisper", "missing", ["convert"])

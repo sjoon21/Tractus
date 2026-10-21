@@ -128,6 +128,7 @@ export default {
   "변환 엔진: 없음 — 하나 이상 설치하세요": "Transcription engine: missing — install at least one",
   // 기본 변환 엔진·직접 추가 (docs/design/asr-engines.md)
   "고른 기본 변환 엔진이 없어 메모리에 맞는 기본 엔진으로 변환했습니다. 모델 화면에서 받거나 다른 엔진을 고르세요.": "The default transcription engine you chose isn’t installed, so the default for your memory was used. Download it or pick another engine on the Models screen.",
+  "변환 엔진을 불러오지 못했습니다. 모델 화면에서 다른 엔진을 고르거나 그 엔진을 지우고 다시 받으세요.": "Couldn’t load the transcription engine. Pick another engine on the Models screen, or remove it and download it again.",
   "기본 엔진": "Default engine",
   "기본으로 쓰기": "Use as default",
   "자동으로 고르기": "Choose automatically",

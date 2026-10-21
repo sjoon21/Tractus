@@ -329,7 +329,7 @@ def remove(model_id: str, root: Path) -> dict:
 # ── 직접 추가한 변환 엔진 (docs/design/asr-engines.md) ─────────────────────────
 
 REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}/[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")
-CUSTOM_PATTERNS = ("*.json", "*.safetensors", "*.txt", "*.tiktoken", "*.model", "am.mvn")  # 맨 위 폴더의 가중치·설정·토크나이저 (학습 기록·.bin·onnx는 받지 않는다)
+CUSTOM_PATTERNS = ("*.json", "*.safetensors", "*.npz", "*.txt", "*.tiktoken", "*.model", "am.mvn")  # mlx-audio가 읽는 가중치는 safetensors·npz  # 맨 위 폴더의 가중치·설정·토크나이저 (학습 기록·.bin·onnx는 받지 않는다)
 
 
 def _custom_id(repo: str, taken: set[str]) -> str:
@@ -356,6 +356,18 @@ def _write_custom(root: Path, entries: list[dict]) -> None:
     tmp.replace(root / reg.CUSTOM_FILE)
 
 
+# 계열마다 mlx-audio가 불러올 때 꼭 있어야 하는 파일 (하나라도 있으면 되는 묶음들). 없으면 받아도 불러오지 못한다 (실측: mlx-community/whisper-tiny는 토크나이저가 없다)
+NEEDED_FILES = {
+    "qwen3": (("vocab.json", "tokenizer.json"), ("preprocessor_config.json",)),
+    "whisper": (("tokenizer.json", "vocab.json"), ("preprocessor_config.json",)),
+    "sensevoice": (("am.mvn",), (".model",)),
+}
+
+
+def _missing_files(engine: str, files: dict[str, int]) -> list[str]:
+    return [" / ".join(g) for g in NEEDED_FILES.get(engine, ()) if not any(k == n or (n.startswith(".") and k.endswith(n)) for k in files for n in g)]
+
+
 def _engine_of_config(cfg: dict) -> str | None:
     from tractus.asr import ENGINES
 
@@ -375,7 +387,7 @@ def add_custom(repo: str, root: Path, revision: str | None = None) -> reg.Model:
     try:
         info = HfApi().model_info(repo, revision=revision, files_metadata=True)
         files = {f.rfilename: int(f.size) for f in info.siblings or [] if "/" not in f.rfilename and f.size and any(fnmatch.fnmatch(f.rfilename, p) for p in CUSTOM_PATTERNS)}
-        if "config.json" not in files or not any(k.endswith(".safetensors") for k in files):
+        if "config.json" not in files or not any(k.endswith((".safetensors", ".npz")) for k in files):
             raise ModelError("unsupported_model", t("추가할 수 없습니다: config.json과 safetensors 가중치가 있는 저장소만 추가할 수 있습니다"))
         with contextlib.ExitStack() as stack:
             import tempfile
@@ -392,6 +404,8 @@ def add_custom(repo: str, root: Path, revision: str | None = None) -> reg.Model:
     engine = _engine_of_config(cfg) if isinstance(cfg, dict) else None
     if engine is None:
         raise ModelError("unsupported_engine", t("지원하지 않는 변환 엔진 계열입니다 (model_type: {kind}). Qwen3-ASR·Whisper·SenseVoice 계열만 추가할 수 있습니다", kind=(cfg or {}).get("model_type") if isinstance(cfg, dict) else "?"))
+    if missing := _missing_files(engine, files):
+        raise ModelError("unsupported_model", t("추가할 수 없습니다: 이 저장소에는 불러오는 데 필요한 파일이 없습니다 ({files})", files=", ".join(missing)))
     card = getattr(info, "card_data", None) or getattr(info, "cardData", None)
     lic = (card.get("license") if hasattr(card, "get") else getattr(card, "license", None)) or ""
     with download_lock(root):

@@ -108,6 +108,12 @@ def auto_track() -> Track:
 TRACK_MODEL = {Track.standard: "asr-std", Track.lite: "asr-lite"}
 
 
+def _engine_ready(repo: str) -> bool:
+    """작업(.job.json)의 변환 엔진을 지금 쓸 수 있나."""
+    m = registry.by_repo(repo)
+    return registry.usable(m.id, models_dir()) if m else (models_dir() / repo.split("/")[-1].lower() / "config.json").is_file()
+
+
 def track_name(m: registry.Model) -> str:
     """작업·transcript의 `track`: 기본 두 엔진은 standard·lite(예전과 같다), 나머지는 모델 ID."""
     return {"asr-std": Track.standard.value, "asr-lite": Track.lite.value}.get(m.id, m.id)
@@ -297,6 +303,13 @@ def _transcribe(
         raise typer.Exit(0)
 
     job = find_job(meetings, digest, append[1]["meeting_id"] if append else None, into[1]["meeting_id"] if into else None)
+    if job and not _engine_ready(job.model):  # 이어 할 변환 엔진을 지웠다: 같은 노트 폴더에서 지금 고른 엔진으로 처음부터
+        asr = choose_asr(track, asr_engine)
+        if registry.usable(asr.id, models_dir()):
+            _warn("asr_engine_changed", t("이어 할 변환 엔진이 없어 {name}(으)로 처음부터 다시 변환합니다", name=asr.name))
+            job.model, job.track, job.engine = asr.repo, track_name(asr), asr.engine or "qwen3"
+            (job.dir / CHUNKS_FILE).unlink(missing_ok=True)
+            job.save()
     if job:
         prev = registry.by_repo(job.model)
         if (asr_engine and (prev is None or prev.id != asr_engine)) or (track and track.value != job.track):
@@ -548,7 +561,12 @@ def _write_result(job: Job) -> dict:
 
 def _run(job: Job, pcm, source: Source, keep_tracks: bool, align: bool = True) -> None:
     Events.emit("stage", stage="load_model")
-    transcriber = Transcriber.load(local_model(job.model))
+    try:
+        transcriber = Transcriber.load(local_model(job.model))
+    except typer.BadParameter:
+        raise
+    except Exception as e:  # noqa: BLE001 — 직접 추가한 엔진의 파일이 모자라거나 계열이 맞지 않으면 mlx-audio가 여러 예외를 낸다
+        _fail(t("변환 엔진을 불러오지 못했습니다 ({model}): {error}", model=job.model, error=e), code="model_load_failed")
     lang = None if job.language == "auto" else job.language
     done = job.done()
     todo = [i for i in range(len(job.chunks)) if i not in done]
