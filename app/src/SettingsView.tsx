@@ -27,7 +27,7 @@ import { TRAY_KEEP_HINT, TRAY_KEEP_LABEL, TRAY_SHOW_HINT, TRAY_SHOW_LABEL } from
 import { getVersion } from "@tauri-apps/api/app";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
-import { CHECK_LABEL, INSTALL_LABEL, RELAUNCH_LABEL, RELAUNCH_WAIT, remembered, REPO_NOTE, UPDATE_HINT, updateReduce, updateText, versionLine, type UpdateEvent, type UpdateState } from "./update";
+import { CHECK_LABEL, INSTALL_LABEL, NOTES_LABEL, notesVersion, RELAUNCH_LABEL, RELAUNCH_WAIT, remembered, REPO_NOTE, UPDATE_HINT, updateReduce, updateText, versionLine, type UpdateEvent, type UpdateState } from "./update";
 
 // 변환 엔진 위치는 모델 화면에서 바꾼다 (옮기기까지 함께 한다). 실행 파일 경로는 BinField (자동 / 직접 지정)
 const FIELDS: { key: "home"; label: string; hint: string }[] = [{ key: "home", label: t("데이터 위치"), hint: t("노트와 녹음이 저장되는 폴더") }];
@@ -368,6 +368,7 @@ function ThemeSection() {
 
 /** 업데이트 (v3.34, docs/desktop.md §3.5). 자동 설치는 없다: 확인·설치·다시 열기 모두 단추로만. 미리 만든 앱(번들)에서만 확인한다 */
 function UpdateSection({ relaunchBlocked }: { relaunchBlocked: boolean }) {
+  const [linkError, setLinkError] = useState<string | null>(null);
   const [version, setVersion] = useState<string | null>(null);
   const [bundle, setBundle] = useState<boolean | null>(null); // null: 아직 모른다 (단추를 그리지 않는다)
   const [st, setStRaw] = useState<UpdateState>(() => remembered.state);
@@ -409,6 +410,15 @@ function UpdateSection({ relaunchBlocked }: { relaunchBlocked: boolean }) {
   };
 
   const text = updateText(st);
+  const notesFor = notesVersion(st, version);
+  const notesLink = notesFor && (
+    <span className="text-xs">
+      <Button variant="link" size="sm" className="text-xs" onClick={() => void api.openReleaseNotes(notesFor).then(() => setLinkError(null), (e) => setLinkError(errText(e)))}>
+        {NOTES_LABEL} ({notesFor})
+      </Button>
+      {linkError && <span className="ml-2 text-destructive">{linkError}</span>}
+    </span>
+  );
   return (
     <Section title={t("업데이트")}>
       <Row
@@ -434,7 +444,7 @@ function UpdateSection({ relaunchBlocked }: { relaunchBlocked: boolean }) {
           )
         }
         below={
-          bundle && (text || (st.phase === "found" && st.notes)) ? (
+          bundle ? (
             <div className="flex flex-col gap-2">
               {text && (
                 <div className="text-xs text-muted-foreground tabular-nums" role="status">
@@ -444,6 +454,7 @@ function UpdateSection({ relaunchBlocked }: { relaunchBlocked: boolean }) {
                 </div>
               )}
               {st.phase === "found" && st.notes && <pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-secondary px-3 py-2 font-sans text-xs leading-relaxed text-muted-foreground">{st.notes}</pre>}
+              {notesLink}
             </div>
           ) : undefined
         }

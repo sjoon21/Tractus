@@ -367,6 +367,8 @@ export const api = {
   trayShowIfHidden: () => invoke<void>("tray_show_if_hidden"),
   /** 미리 만든 앱(번들)인가: 그때만 업데이트를 확인한다 (update.ts, docs/desktop.md §3.5). 저장소에서 만든 앱·개발 실행은 false */
   updateAvailable: () => invoke<boolean>("update_available"),
+  /** 그 버전의 릴리스 노트 페이지를 브라우저로 연다 (Rust가 주소를 만든다: 화면은 버전만 넘긴다) */
+  openReleaseNotes: (version: string) => invoke<void>("open_release_notes", { version }),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setRecMode: (mode: string) => invoke<void>("set_rec_mode", { mode }),

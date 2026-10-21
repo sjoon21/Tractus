@@ -87,6 +87,15 @@ pub fn update_available() -> bool {
     is_bundled(std::env::current_exe().ok().as_deref())
 }
 
+/// 버전의 릴리스 노트 페이지 (소개 사이트, scripts/releases_page.py). 화면 언어를 따른다.
+/// 화면은 주소를 넘기지 않고 버전만 넘긴다: 숫자 세 마디가 아니면 열지 않는다
+pub fn release_notes_url(version: &str, lang: &str) -> Option<String> {
+    let v = version.trim_start_matches('v');
+    let parts: Vec<&str> = v.split('.').collect();
+    let ok = parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.len() <= 4 && p.bytes().all(|b| b.is_ascii_digit()));
+    ok.then(|| format!("https://sjoon21.github.io/Tractus/{}releases/v{v}/", if lang == "ko" { "ko/" } else { "" }))
+}
+
 /// 데이터 폴더가 동기화 폴더이거나 Obsidian 볼트 안이면 그 이름. 폴더와 그 위 폴더를 모두 본다
 /// ponytail: 폴더 이름으로만 안다. iCloud의 `데스크탑 및 문서 폴더` 동기화처럼 이름에 드러나지 않는 것은 못 잡는다
 pub fn sync_risk(home: &Path) -> Option<&'static str> {
@@ -110,6 +119,15 @@ pub fn sync_risk(home: &Path) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn release_notes_url_takes_only_a_version() {
+        assert_eq!(release_notes_url("0.4.2", "ko").as_deref(), Some("https://sjoon21.github.io/Tractus/ko/releases/v0.4.2/"));
+        assert_eq!(release_notes_url("v0.4.2", "en").as_deref(), Some("https://sjoon21.github.io/Tractus/releases/v0.4.2/"));
+        for bad in ["", "0.4", "0.4.2.1", "0.4.x", "../0.4.2", "0.4.2/../../x", "1.2.3-beta", "12345.0.0"] {
+            assert_eq!(release_notes_url(bad, "en"), None, "{bad}");
+        }
+    }
+
     use super::*;
     use std::fs;
 

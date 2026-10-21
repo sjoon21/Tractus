@@ -16,6 +16,14 @@ export const RELAUNCH_WAIT = t("녹음·변환이 끝난 뒤 누르세요.");
 export const REPO_NOTE = t("저장소에서 만든 앱은 scripts/update.sh로 업데이트합니다.");
 export const UPDATE_HINT = t("‘업데이트 설치’를 누를 때만 받습니다(약 240 MB).");
 
+/** 릴리스 노트(소개 사이트의 버전 페이지)를 여는 링크. 앱 안에는 노트 앞부분만 보이므로 전체는 웹에서 본다 */
+export const NOTES_LABEL = t("릴리스 노트 보기");
+
+/** 링크가 가리킬 버전: 새 버전을 찾았으면 그 버전, 아니면 지금 버전 */
+export function notesVersion(s: UpdateState, current: string | null): string | null {
+  return s.phase === "found" || s.phase === "downloading" || s.phase === "installed" ? s.version : current;
+}
+
 export const versionLine = (v: string | null): string => (v ? t("지금 버전 {version}", { version: v }) : t("지금 버전을 읽는 중…"));
 /** 시작 때 확인에서 새 버전이 있을 때의 알림 (같은 실행에서 한 번만) */
 export const newVersionToast = (version: string): string => t("새 버전이 있습니다: {version}", { version });

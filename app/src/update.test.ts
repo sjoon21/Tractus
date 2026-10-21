@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { IDLE_UPDATE, newVersionToast, noteExcerpt, progressPct, updateErrorView, updateReduce, updateText, versionLine, type UpdateEvent, type UpdateState } from "./update";
+import { IDLE_UPDATE, newVersionToast, noteExcerpt, progressPct, updateErrorView, updateReduce, updateText, versionLine, type UpdateEvent, type UpdateState, notesVersion } from "./update";
 
 const run = (events: UpdateEvent[], from: UpdateState = IDLE_UPDATE) => events.reduce(updateReduce, from);
 
@@ -79,5 +79,14 @@ describe("업데이트 문구", () => {
     expect(updateErrorView("Could not fetch a valid release JSON from the remote", "checking").text).toBe("업데이트 서버에 연결하지 못했습니다. 인터넷 연결을 확인하세요.");
     expect(updateErrorView(null, "checking")).toEqual({ text: "업데이트를 확인하지 못했습니다.", detail: null });
     expect(updateErrorView("", "installed")).toEqual({ text: "업데이트를 설치하지 못했습니다.", detail: null });
+  });
+});
+
+describe("notesVersion", () => {
+  test("points at the version being offered, otherwise the running one", () => {
+    expect(notesVersion({ phase: "found", version: "0.4.2", notes: null }, "0.4.1")).toBe("0.4.2");
+    expect(notesVersion({ phase: "installed", version: "0.4.2" }, "0.4.1")).toBe("0.4.2");
+    expect(notesVersion({ phase: "latest" }, "0.4.2")).toBe("0.4.2");
+    expect(notesVersion({ phase: "idle" }, null)).toBeNull();
   });
 });
