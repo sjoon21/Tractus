@@ -1,4 +1,4 @@
-"""Phase 0 ASR 어댑터. 네 모델을 같은 호출 형태(transcribe)로 감싼다."""
+"""ASR 어댑터 (Phase 0 + 0.4.2 한국어 후보). 모델들을 같은 호출 형태(transcribe)로 감싼다."""
 
 from pathlib import Path
 
@@ -14,6 +14,12 @@ MODELS = {
     "qwen3-0.6b": ("qwen3-asr-0.6b-8bit", "qwen"),
     "whisper-turbo": ("whisper-large-v3-turbo", "whisper"),
     "nemotron-0.6b": ("nemotron-3.5-asr-streaming-0.6b", "nemotron"),
+    # 한국어 특화 후보 (2026-10-21, 0.4.2 모델 교체 검토). Whisper 계열은 HF 원본을 mlx_audio.convert로 8bit 변환
+    "buzz-ko": ("buzzasr-ko-8bit", "whisper"),  # BuzzASR/korean (large-v3, MIT)
+    "ghost613-turbo-ko": ("ghost613-turbo-ko-8bit", "whisper"),  # ghost613/whisper-large-v3-turbo-korean (라이선스 표기 없음)
+    "seastar-medium-ko": ("seastar-medium-ko-8bit", "whisper"),  # seastar105/whisper-medium-komixv2 (AI Hub 회의 데이터로 학습: aihub 지표 오염)
+    "sorimac-1.7b": ("sorimac-ko-1.7b-8bit", "qwen"),  # Sorimac/Sorimac-V2.1-Korean-1.7B-MLX-8bit (Qwen3-ASR 한국어 파인튜닝, 라이선스 표기 없음)
+    "sensevoice": ("sensevoice-small", "sensevoice"),  # mlx-community/SenseVoiceSmall (FunASR Model License)
 }
 
 # 언어 코드(ko/en)를 모델별 표기로 바꾼다. None이면 자동 감지.
@@ -21,6 +27,7 @@ LANG = {
     "qwen": {"ko": "Korean", "en": "English"},
     "whisper": {"ko": "ko", "en": "en"},
     "nemotron": {"ko": "ko-KR", "en": "en-US"},
+    "sensevoice": {"ko": "ko", "en": "en"},
 }
 
 
@@ -38,6 +45,10 @@ class ASR:
         elif self.family == "whisper":
             prompt = ", ".join(glossary) if glossary else None
             out = self.model.generate(x, language=language, initial_prompt=prompt, verbose=False)
+        elif self.family == "sensevoice":
+            if glossary:
+                raise ValueError("SenseVoice(CTC)는 용어집 프롬프트를 받지 않는다")
+            out = self.model.generate(x, language=language or "auto", use_itn=True)
         else:
             if glossary:
                 raise ValueError("Nemotron(RNN-T)은 용어집 프롬프트를 받지 않는다")

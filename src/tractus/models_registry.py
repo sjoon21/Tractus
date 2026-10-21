@@ -54,6 +54,7 @@ class Model:
     languages: str | None = None
     params: str | None = None
     level_note: str | None = None  # None | ONE_OF (화면은 `필수 (둘 중 하나)`, docs/desktop.md §2.15)
+    engine: str | None = None  # 변환 엔진의 계열 (asr.ENGINES: qwen3 | whisper | sensevoice). 변환 엔진이 아니면 None
 
     @property
     def source(self) -> str:
@@ -97,12 +98,12 @@ MODELS: tuple[Model, ...] = (
         model_name="Silero VAD v6", publisher="Silero", converted_by=MLX, license="MIT", params="309K"),
     _hf("asr-std", t("변환 엔진 (표준)"), t("가장 정확합니다. 메모리 16GB 이상을 권합니다."), "required", "convert",
         "mlx-community/Qwen3-ASR-1.7B-8bit", "a8379a2e2f9e313c9292cdf1af4055ab56d50d55", "qwen3-asr-1.7b-8bit",
-        _qwen_asr(7188, 2463307541, 78968), level_note=ONE_OF,
+        _qwen_asr(7188, 2463307541, 78968), level_note=ONE_OF, engine="qwen3",
         # 카드 mlx-community/Qwen3-ASR-1.7B-8bit: Qwen/Qwen3-ASR-1.7B에서 mlx-audio 0.3.1로 변환, apache-2.0. 원본 카드(HF 조직 Qwen): 30개 언어 + 중국어 방언 22개, ko·en 포함
         model_name=t("Qwen3-ASR 1.7B (8bit 양자화)"), publisher=t("Alibaba Qwen 팀"), converted_by=MLX, license="Apache-2.0", languages=t("한국어·영어 등 30개 언어와 중국어 방언 22개"), params="1.7B"),
     _hf("asr-lite", t("변환 엔진 (가벼운 것)"), t("메모리를 덜 쓰는 가벼운 엔진입니다. 실시간 텍스트 변환에는 이 엔진이 따로 필요합니다."), "required", "convert",
         "mlx-community/Qwen3-ASR-0.6B-8bit", "89e96d92ba34aca20b3e29fb10cc284097d1219f", "qwen3-asr-0.6b-8bit",
-        _qwen_asr(7187, 1006229426, 71815), level_note=ONE_OF,
+        _qwen_asr(7187, 1006229426, 71815), level_note=ONE_OF, engine="qwen3",
         # 카드 mlx-community/Qwen3-ASR-0.6B-8bit: Qwen/Qwen3-ASR-0.6B에서 변환, apache-2.0. 언어는 1.7B와 같은 원본 카드 표
         model_name=t("Qwen3-ASR 0.6B (8bit 양자화)"), publisher=t("Alibaba Qwen 팀"), converted_by=MLX, license="Apache-2.0", languages=t("한국어·영어 등 30개 언어와 중국어 방언 22개"), params="0.6B"),
     _hf("diarizer", t("참석자 구분"), t("누가 말했는지 나눕니다. 8명까지 구분합니다."), "recommended", "speakers",
@@ -135,7 +136,7 @@ MODELS: tuple[Model, ...] = (
 
 CAPABILITIES: tuple[Capability, ...] = (
     Capability("record", t("녹음"), tools=("recorder",)),
-    Capability("convert", t("텍스트로 변환"), models=(("vad",), ("asr-std", "asr-lite")), tools=("ffmpeg",)),
+    Capability("convert", t("텍스트로 변환"), models=(("vad",), tuple(m.id for m in MODELS if m.engine)), tools=("ffmpeg",)),  # 변환 엔진 중 하나
     Capability("diarize", t("참석자 구분"), models=(("diarizer",),)),
     Capability("diarize-many", t("참석자 구분 (9명 이상)"), models=(("fluid",),)),
     Capability("align", t("단어 싱크"), models=(("aligner",),), tools=("ffmpeg",)),  # 노트 오디오를 디코딩한다
@@ -160,15 +161,21 @@ def by_repo(repo: str) -> Model | None:
     return next((m for m in MODELS if m.repo == repo and m.kind == "hf"), None)
 
 
+def asr_ids() -> list[str]:
+    """등록된 변환 엔진 (등록 순서). 기본 두 개(asr-std·asr-lite)가 먼저다."""
+    return [m.id for m in MODELS if m.engine]
+
+
 def preferred_asr(memory: int | None = None) -> str:
     """메모리가 권하는 변환 엔진 (16GB 이상이면 표준)."""
     return "asr-std" if (physical_memory() if memory is None else memory) >= STANDARD_MIN_MEMORY else "asr-lite"
 
 
 def pick_asr(root: Path, memory: int | None = None) -> str | None:
-    """`--track` 없이 변환할 때 쓸 변환 엔진: 메모리가 권하는 쪽이 쓸 수 있으면 그것, 아니면 다른 쪽, 둘 다 없으면 None."""
+    """엔진을 정하지 않고 변환할 때 쓸 변환 엔진: 메모리가 권하는 기본 엔진이 쓸 수 있으면 그것, 아니면 다른 기본 엔진, 그다음 받아 둔 다른 엔진 (등록 순서). 없으면 None."""
     first = preferred_asr(memory)
-    return next((i for i in (first, "asr-lite" if first == "asr-std" else "asr-std") if usable(i, root)), None)
+    order = [first, "asr-lite" if first == "asr-std" else "asr-std", *(i for i in asr_ids() if i not in ("asr-std", "asr-lite"))]
+    return next((i for i in order if usable(i, root)), None)
 
 
 def preset_ids(preset: str, memory: int | None = None, helper: bool = False) -> list[str]:
@@ -293,13 +300,13 @@ def usable(model_id: str, root: Path) -> bool:
 
 def capability_status(states: dict[str, str], tools: dict[str, bool], memory: int | None = None) -> list[dict]:
     """모델 상태({id: state})와 도구({ffmpeg: 있음})로 기능별 준비 여부. missing: 채워야 할 모델 ID와 도구 이름.
-    둘 중 하나면 되는 모델(asr-std·asr-lite)이 모두 없으면 메모리가 권하는 쪽을 missing에 둔다."""
+    하나면 되는 모델(변환 엔진)이 모두 없으면 메모리가 권하는 기본 엔진을 missing에 둔다."""
     out = []
     for c in CAPABILITIES:
         missing: list[str] = []
         for group in c.models:
             if not any(states.get(i) == "installed" for i in group):
-                missing.append(preferred_asr(memory) if "asr-std" in group and "asr-lite" in group else group[0])
+                missing.append(preferred_asr(memory) if "asr-std" in group else group[0])  # 변환 엔진이 하나도 없으면 메모리가 권하는 기본 엔진
         missing += [t for t in c.tools if not tools.get(t)]
         if (physical_memory() if memory is None else memory) < c.min_memory:
             missing.append("memory")

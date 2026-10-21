@@ -88,6 +88,7 @@ class Job:
     model: str
     track: str
     language: str  # "auto" | "ko" | "en"
+    engine: str = "qwen3"  # 변환 엔진 계열 (asr.ENGINES). 값이 없는 예전 .job.json은 Qwen3-ASR
     hotwords: list[str] = field(default_factory=list)
     chunks: list[tuple[int, int, str | None]] = field(default_factory=list)  # (시작 표본, 끝 표본, 화자 라벨 또는 None)
     audio_file: str = "audio.opus"  # 새 작업은 audio.ogg. 값이 없는 예전 .job.json은 audio.opus
@@ -234,7 +235,7 @@ def build_transcript(job: Job) -> dict:
         "title": job.title,
         "created_at": job.created_at,
         "audio": {"file": job.audio_file, "duration_sec": job.duration_sec, "source": job.source, "sha256": job.sha256},
-        "asr": {"model": job.model, "track": job.track, "runtime": "mlx-audio", "language": job.language, "hotwords": job.hotwords},
+        "asr": {"model": job.model, "track": job.track, "engine": job.engine, "runtime": "mlx-audio", "language": job.language, "hotwords": job.hotwords},
         "speakers": _speakers_map({k: {"name": None, "suggested": v} for k, v in job.suggestions.items()}, segments),
         "diarization": job.diarizer,
         "segments": segments,
