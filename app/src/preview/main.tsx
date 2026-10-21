@@ -269,6 +269,13 @@ const handlers: Record<string, (a: T) => unknown> = {
   obsidian_send: ({ id }: T) => ({ status: "created", path: `/Users/me/Documents/My Vault/Tractus/${id}.md`, audio: null }),
   doctor: () => ({ doctor, core_error: null, tractus_bin: "tractus", tractus_bin_exists: true, rec_bin: "tractus-rec", rec_bin_exists: true, tractus_source: "repo", rec_source: "repo", home: "~/Tractus", home_risk: null }),
   models_list: () => models,
+  // 변환 엔진 직접 추가·기본 엔진 (docs/design/asr-engines.md): 추가하면 목록 끝에 받지 않은 줄이 생긴다
+  models_add: ({ repo }: T) => {
+    const id = `custom-${String(repo).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`.slice(0, 40);
+    (models as T).models.push({ id, name: String(repo), purpose: EN ? "A transcription engine you added." : "직접 추가한 변환 엔진입니다.", level: "required", level_note: "one_of", size_bytes: 1_600_000_000, installed: false, installed_bytes: 0, state: "missing", needed_by: ["convert"], group: "convert", path: `~/models/${id}`, model_name: repo, publisher: String(repo).split("/")[0], source: repo, revision: "a".repeat(40), license: "", engine: "whisper", custom: true });
+    return { id, repo, engine: "whisper", size_bytes: 1_600_000_000 };
+  },
+  set_asr_engine: ({ id }: T) => void Object.assign(settings, { asr_engine: id ?? "" }),
   templates_list: () => (templates as T).templates,
   llm_settings: () => llm,
   llm_config: () => ({ provider: "upstage", model: "solar-pro2", host: "api.upstage.ai", remote: true, key_present: true }),

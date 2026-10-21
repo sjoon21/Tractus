@@ -671,8 +671,8 @@ MCP: `list_meetings`는 `favorite`·`tags`·`folder`(이름)·`folder_id`를 싣
 | id | 모델 | 단계 | 크기 | 폴더 | 이게 없으면 못 쓰는 기능 |
 | --- | --- | --- | --- | --- | --- |
 | `vad` | Silero VAD v6 | 필수 | 1.2MB | `silero-vad-v6` | `convert`, `live` |
-| `asr-std` | Qwen3-ASR 1.7B 8bit | 필수 (둘 중 하나) | 2.5GB | `qwen3-asr-1.7b-8bit` | `convert` (둘 다 없을 때) |
-| `asr-lite` | Qwen3-ASR 0.6B 8bit | 필수 (둘 중 하나), 실시간은 항상 | 1.0GB | `qwen3-asr-0.6b-8bit` | `convert` (둘 다 없을 때), `live` |
+| `asr-std` | Qwen3-ASR 1.7B 8bit | 필수 (엔진 중 하나) | 2.5GB | `qwen3-asr-1.7b-8bit` | `convert` (둘 다 없을 때) |
+| `asr-lite` | Qwen3-ASR 0.6B 8bit | 필수 (엔진 중 하나), 실시간은 항상 | 1.0GB | `qwen3-asr-0.6b-8bit` | `convert` (둘 다 없을 때), `live` |
 | `diarizer` | Nemotron-3 Diarization | 권장 | 0.2GB | `nemotron-3-diarization` | `diarize` |
 | `aligner` | Qwen3-ForcedAligner 0.6B 8bit | 선택 | 1.3GB | `qwen3-forcedaligner-0.6b-8bit` | `align` |
 | `embedding` | Qwen3-Embedding 0.6B 8bit (mlx-community 변환본, 2026-10-15에 bf16 공식 가중치에서 바꿈) | 선택 | 0.6GB | `qwen3-embedding-0.6b-8bit` | `smart-search` |
@@ -772,6 +772,14 @@ ID와 프리셋을 함께 주면 합친다(중복 제거, 레지스트리 순서
 
 - **테스트.** `tests/test_models.py`(가짜 폴더·로컬 HTTP 서버·시뮬레이션 오류, 실제 모델 불필요) + `@pytest.mark.network` 하나(`pytest -m network`: 작은 VAD를 임시 폴더에 받아 `list`가 설치됨으로 읽는지).
 - **알려진 한계.** 허브가 파일 이름을 알려 주지 않아 `progress.file`은 추정이다. 이어받기 때 `bytes_done`은 허브 막대의 값이라 이미 받은 바이트를 빼고 시작할 수 있다. `fluid`의 받기 진행은 도우미가 이벤트를 내지 않아 `stage`와 `model_done`뿐이다. 받는 중에 앱 프로세스가 강제 종료되면 `.incomplete`가 남는다(다시 받으면 이어받는다). 설치 판정은 크기만 보므로 같은 크기로 바뀐 가중치는 못 잡는다(voices는 sha256 확인, 리비전이 다른 폴더는 완료 표시로 잡는다).
+
+#### 변환 엔진 고르기·직접 추가 (v3.59, docs/design/asr-engines.md)
+
+- **고르기.** `tractus transcribe … --engine <모델 ID>`(변환 엔진이 아닌 ID는 종료 코드 2). 받아 두지 않은 엔진이면 경고 `asr_engine_missing` 뒤 메모리가 권하는 기본 엔진으로 변환한다. `--track`보다 우선한다. 엔진을 정하지 않으면 메모리가 권하는 기본 엔진 → 다른 기본 엔진 → 받아 둔 다른 엔진(등록 순서) 순이다. 이어 할 작업의 엔진을 지웠으면 같은 노트 폴더에서 지금 엔진으로 처음부터(`asr_engine_changed`). 엔진을 불러오지 못하면 오류 `model_load_failed`.
+- **기록.** `transcript.json`·`.job.json`의 `asr.engine`(계열 `qwen3`·`whisper`·`sensevoice`, 없으면 예전 Qwen), `asr.track`(기본 두 엔진은 `standard`·`lite`, 나머지는 모델 ID), `asr.model`(저장소 ID).
+- **직접 추가.** `tractus models add <저장소> [--revision R]` → `{"id", "repo", "revision", "engine", "size_bytes", "license"}`. 허브에서 파일 목록·크기·커밋 해시를 읽어 모델 폴더의 `custom-models.json`(`{"models": [{id, repo, revision, engine, files, name, license, added_at}]}`)에 넣는다. ID는 `custom-<저장소를 소문자·하이픈으로>`(40자까지, 겹치면 `-2`), 폴더 이름은 ID다. 맨 위 폴더의 `*.json`·`*.safetensors`·`*.npz`·`*.txt`·`*.tiktoken`·`*.model`·`am.mvn`만 받는다. 거부(종료 코드 2): `bad_repo`, `unsupported_model`(config.json·가중치·계열별 필수 파일이 없음), `unsupported_engine`(지원하지 않는 `model_type`), `not_found`. 같은 저장소를 다시 추가하면 같은 ID로 리비전·파일을 새로 고친다. 받기는 `models download <ID>`, 지우기 `models remove <ID>`는 목록에서도 뺀다. `prune`은 직접 추가한 폴더를 지우지 않고, `move`는 목록 파일도 옮긴다.
+- **`models list --json`** 줄에 `engine`(변환 엔진 계열, 아니면 null)·`custom`(직접 추가)을 더했다. 직접 추가한 엔진은 `level: required`, `level_note: one_of`, `needed_by: ["convert"]`.
+- **앱.** 설정 `asr_engine`(모델 ID, 비면 자동)을 `set_asr_engine(id|null)`이 `patch_settings`로 바꾸고, 변환(바로 변환·파일 가져오기·나중 변환)을 띄울 때 Rust가 `--engine`을 붙인다(`Settings::with_asr_engine`). `models_add(repo)`는 저장소 ID 모양을 먼저 검사한다(`models::valid_repo`). 모델 화면이 지금 쓰는 엔진을 코어와 같은 순서로 계산해 `기본 엔진`을 표시한다(`models.engineInUse`). 실시간 텍스트 변환은 Qwen3-ASR 0.6B 그대로다.
 
 ### 2.16 녹음과 변환 나누기: `tractus recording finish`, `tractus transcribe --into` (v3.25)
 

@@ -80,8 +80,8 @@ VAD_MODEL = registry.get("vad").repo
 
 
 def local_model(repo: str) -> Path:
-    path = models_dir() / repo.split("/")[1].lower()
     m = registry.by_repo(repo)
+    path = models_dir() / (m.local_dir if m else repo.split("/")[1].lower())
     # 받다 만 모델(config.json만 있고 가중치가 없는 폴더)이 로드 단계에서 트레이스백으로 죽지 않게 레지스트리의 완료 검사를 쓴다
     if not (registry.usable(m.id, models_dir()) if m else (path / "config.json").exists()):
         hint = registry.install_hint(m, models_dir()) if m else f"  hf download {repo} --local-dir {path}"
@@ -103,6 +103,33 @@ def auto_track() -> Track:
     used = Track.lite if want is Track.standard else Track.standard
     _warn("asr_track_fallback", t("{want} 변환 엔진이 없어 {used} 엔진으로 변환합니다 (받으려면 tractus models download {model})", want=want.value, used=used.value, model="asr-std" if want is Track.standard else "asr-lite"))
     return used
+
+
+TRACK_MODEL = {Track.standard: "asr-std", Track.lite: "asr-lite"}
+
+
+def _engine_ready(repo: str) -> bool:
+    """작업(.job.json)의 변환 엔진을 지금 쓸 수 있나."""
+    m = registry.by_repo(repo)
+    return registry.usable(m.id, models_dir()) if m else (models_dir() / repo.split("/")[-1].lower() / "config.json").is_file()
+
+
+def track_name(m: registry.Model) -> str:
+    """작업·transcript의 `track`: 기본 두 엔진은 standard·lite(예전과 같다), 나머지는 모델 ID."""
+    return {"asr-std": Track.standard.value, "asr-lite": Track.lite.value}.get(m.id, m.id)
+
+
+def choose_asr(track: Track | None, engine_id: str | None) -> registry.Model:
+    """변환 엔진 고르기 (docs/design/asr-engines.md): `--engine <모델 ID>`(앱 설정 `기본 변환 엔진`) → `--track` → 메모리가 권하는 기본 엔진.
+    고른 엔진을 받아 두지 않았으면 경고(asr_engine_missing)하고 기본 엔진으로 변환한다. 변환 엔진이 아닌 ID는 오류."""
+    if engine_id:
+        m = registry.find(engine_id)
+        if m is None or not m.engine:
+            raise typer.BadParameter(t("변환 엔진이 아닙니다: {id} ({choices})", id=engine_id, choices=", ".join(registry.asr_ids(models_dir()))), param_hint="--engine")
+        if registry.usable(m.id, models_dir()):
+            return m
+        _warn("asr_engine_missing", t("고른 변환 엔진({name})이 없어 기본 엔진으로 변환합니다 (받으려면 tractus models download {id})", name=m.name, id=m.id))
+    return registry.get(TRACK_MODEL[track or auto_track()])
 
 
 @app.callback()
@@ -180,6 +207,7 @@ def transcribe(
     recording: Path = typer.Option(None, "--recording", exists=True, file_okay=False, help="tractus-rec 녹음 폴더 (마이크·시스템 트랙을 섞어 전사)"),
     title: str = typer.Option(None, "--title", help="노트 제목. 생략하면 파일 이름 (녹음이면 '녹음 HH:MM')"),
     track: Track = typer.Option(None, "--track", help="standard(1.7B) | lite(0.6B). 생략하면 메모리 16GB 이상이면 standard"),
+    asr_engine: str = typer.Option(None, "--engine", help="변환 엔진 모델 ID (`tractus models list`의 변환 엔진). --track보다 우선한다. 받아 두지 않았으면 기본 엔진으로 변환한다"),
     language: Language = typer.Option(Language.auto, "--language", help="auto 권장. ko로 고정하면 영어 발화를 번역할 수 있음"),
     term: list[str] = typer.Option([], "--term", "-t", help="이 노트의 용어 (참석자 이름·제품명). 여러 번 지정 가능"),
     keep_tracks: bool = typer.Option(False, "--keep-tracks", help="녹음 원본 트랙을 지우지 않고 노트 폴더의 tracks/로 옮긴다"),
@@ -208,7 +236,7 @@ def transcribe(
         _emit_error(str(e), code="note_audio_missing" if convert else "recording_missing")  # 노트에 녹음 파일이 없으면 마이크 안내가 아니라 그 노트의 문장
         raise
     try:
-        _transcribe(source, title, track, language, term, keep_tracks, not no_diarize, max_speakers, not no_align, diarizer, append, convert)
+        _transcribe(source, title, track, language, term, keep_tracks, not no_diarize, max_speakers, not no_align, diarizer, append, convert, asr_engine)
     except audio.FFmpegError as e:
         _fail_audio(e)
     except typer.BadParameter as e:  # local_model: 변환 엔진(모델) 파일 없음
@@ -261,6 +289,7 @@ def _source_from_note(d: Path, note: dict) -> Source:
 def _transcribe(
     source: Source, title: str | None, track: Track | None, language: Language, term: list[str], keep_tracks: bool, diarize: bool, max_speakers: int | None,
     align: bool = True, engine: DiarizerEngine = DiarizerEngine.auto, append: tuple[Path, dict] | None = None, into: tuple[Path, dict] | None = None,
+    asr_engine: str | None = None,
 ) -> None:
     audio.require_ffmpeg()
     meetings = home_dir() / "meetings"
@@ -274,13 +303,21 @@ def _transcribe(
         raise typer.Exit(0)
 
     job = find_job(meetings, digest, append[1]["meeting_id"] if append else None, into[1]["meeting_id"] if into else None)
+    if job and not _engine_ready(job.model):  # 이어 할 변환 엔진을 지웠다: 같은 노트 폴더에서 지금 고른 엔진으로 처음부터
+        asr = choose_asr(track, asr_engine)
+        if registry.usable(asr.id, models_dir()):
+            _warn("asr_engine_changed", t("이어 할 변환 엔진이 없어 {name}(으)로 처음부터 다시 변환합니다", name=asr.name))
+            job.model, job.track, job.engine = asr.repo, track_name(asr), asr.engine or "qwen3"
+            (job.dir / CHUNKS_FILE).unlink(missing_ok=True)
+            job.save()
     if job:
-        if track and track.value != job.track:
+        prev = registry.by_repo(job.model)
+        if (asr_engine and (prev is None or prev.id != asr_engine)) or (track and track.value != job.track):
             console.print(f"[yellow]{t('진행 중인 작업의 트랙({track})으로 이어서 합니다.', track=job.track)}[/yellow]")
         console.print(t("이어서 진행합니다: {name} ({done}/{total} 청크 완료)", name=job.dir.name, done=len(job.done()), total=len(job.chunks)))  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
         pcm = audio.decode(source.paths)
     else:
-        job, pcm = _new_job(source, meetings, digest, title, track or auto_track(), language, term, diarize, max_speakers, engine, append, into)
+        job, pcm = _new_job(source, meetings, digest, title, choose_asr(track, asr_engine), language, term, diarize, max_speakers, engine, append, into)
 
     _run(job, pcm, source, keep_tracks, align)
 
@@ -434,10 +471,10 @@ def _align(d: Path, note: dict, pcm) -> None:
 
 
 def _new_job(
-    source: Source, meetings: Path, digest: str, title: str | None, track: Track, language: Language, terms: list[str], diarize: bool, max_speakers: int | None,
+    source: Source, meetings: Path, digest: str, title: str | None, asr: registry.Model, language: Language, terms: list[str], diarize: bool, max_speakers: int | None,
     engine: DiarizerEngine = DiarizerEngine.auto, append: tuple[Path, dict] | None = None, into: tuple[Path, dict] | None = None,
 ):
-    vad_dir, _ = local_model(VAD_MODEL), local_model(MODELS[track])  # 오래 걸리는 작업 전에 모델부터 확인
+    vad_dir, _ = local_model(VAD_MODEL), local_model(asr.repo)  # 오래 걸리는 작업 전에 모델부터 확인
     with console.status(t("오디오 디코딩·VAD·화자 분리 중…")):
         pcm = audio.decode(source.paths)
         Events.emit("stage", stage="vad")
@@ -478,12 +515,12 @@ def _new_job(
     job = Job(
         dir=d, meeting_id=meeting_id, sha256=digest, source=source.name, title=title,
         created_at=created_at, duration_sec=round(len(pcm) / SR, 2),
-        model=MODELS[track], track=track.value, language=language.value, hotwords=hotwords, chunks=chunks, audio_file="audio.ogg",
+        model=asr.repo, track=track_name(asr), engine=asr.engine or "qwen3", language=language.value, hotwords=hotwords, chunks=chunks, audio_file="audio.ogg",
         diarizer=diarization, suggestions=suggestions, attach=bool(append), convert=bool(into),
     )
     job.save()
     n_spk = len({c[2] for c in chunks} - {None})
-    console.print(t("노트 폴더: {path}\n트랙 {track} ({model}), 청크 {chunks}개, 화자 {speakers}명(추정), 용어 {terms}개", path=d, track=track.value, model=MODELS[track], chunks=len(chunks), speakers=n_spk, terms=len(hotwords)))  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+    console.print(t("노트 폴더: {path}\n트랙 {track} ({model}), 청크 {chunks}개, 화자 {speakers}명(추정), 용어 {terms}개", path=d, track=track_name(asr), model=asr.repo, chunks=len(chunks), speakers=n_spk, terms=len(hotwords)))  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
     return job, pcm
 
 
@@ -524,7 +561,12 @@ def _write_result(job: Job) -> dict:
 
 def _run(job: Job, pcm, source: Source, keep_tracks: bool, align: bool = True) -> None:
     Events.emit("stage", stage="load_model")
-    transcriber = Transcriber.load(local_model(job.model))
+    try:
+        transcriber = Transcriber.load(local_model(job.model))
+    except typer.BadParameter:
+        raise
+    except Exception as e:  # noqa: BLE001 — 직접 추가한 엔진의 파일이 모자라거나 계열이 맞지 않으면 mlx-audio가 여러 예외를 낸다
+        _fail(t("변환 엔진을 불러오지 못했습니다 ({model}): {error}", model=job.model, error=e), code="model_load_failed")
     lang = None if job.language == "auto" else job.language
     done = job.done()
     todo = [i for i in range(len(job.chunks)) if i not in done]

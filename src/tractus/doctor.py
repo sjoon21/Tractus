@@ -66,28 +66,29 @@ def model_row(m: reg.Model, root: Path) -> dict:
     return {"id": m.id, "name": m.name, "purpose": m.purpose, "level": m.level, "level_note": m.level_note, "size_bytes": m.size_bytes, "installed": st.installed,
             "installed_bytes": st.installed_bytes, "state": st.state, "needed_by": list(m.needed_by), "group": m.group,
             "path": str(root / m.local_dir), "model_name": m.model_name, "publisher": m.publisher, "converted_by": m.converted_by,
-            "source": m.source, "revision": m.revision, "license": m.license, "languages": m.languages, "params": m.params}
+            "source": m.source, "revision": m.revision, "license": m.license, "languages": m.languages, "params": m.params,
+            "engine": m.engine, "custom": m.custom}
 
 
 def models_list(root: Path) -> dict:
     return {"models_dir": str(root), "disk_free_bytes": disk_free(root), "download_active": lock_held(root),
-            "models": [model_row(m, root) for m in reg.MODELS], "unregistered": unregistered(root)}  # 등록되지 않은 폴더 (옛 모델 등): models prune
+            "models": [model_row(m, root) for m in reg.all_models(root)], "unregistered": unregistered(root)}  # 등록되지 않은 폴더 (옛 모델 등): models prune
 
 
 def effective_track(root: Path, memory: int | None = None) -> str | None:
     """지금 `--track` 없이 변환하면 쓰는 트랙: 메모리가 권하는 쪽이 쓸 수 있으면 그것, 아니면 다른 쪽, 둘 다 없으면 None."""
     pick = reg.pick_asr(root, memory)
-    return pick and TRACK_OF[pick]
+    return pick and TRACK_OF.get(pick, pick)  # 기본 두 엔진은 standard·lite, 나머지는 모델 ID
 
 
 def report(root: Path) -> dict:
     t = tools()
-    states = {m.id: reg.inspect(m.id, root).state for m in reg.MODELS}
+    states = {m.id: reg.inspect(m.id, root).state for m in reg.all_models(root)}
     memory = reg.physical_memory()
     return {
         "system": system(root),
         "tools": t,
-        "models": [{"id": m.id, "level": m.level, "level_note": m.level_note, "state": states[m.id]} for m in reg.MODELS],
+        "models": [{"id": m.id, "level": m.level, "level_note": m.level_note, "state": states[m.id]} for m in reg.all_models(root)],
         "capabilities": reg.capability_status(states, {k: v["found"] for k, v in t.items()}, memory),
         "recommended_track": TRACK_OF[reg.preferred_asr(memory)],
         "effective_track": effective_track(root, memory),

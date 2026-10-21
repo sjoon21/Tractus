@@ -145,6 +145,8 @@ export interface Settings {
   obsidian_vault?: string;
   /** 오디오도 볼트에 복사한다. 없으면 꺼짐 */
   obsidian_audio?: boolean;
+  /** 기본 변환 엔진 (모델 ID). 비거나 없으면 자동(메모리에 맞는 기본 엔진). set_asr_engine으로 바로 저장한다 */
+  asr_engine?: string;
 }
 
 /** `tractus obsidian` 결과. edited면 볼트에서 고친 파일이라 아무것도 쓰지 않았다 */
@@ -346,6 +348,10 @@ export const api = {
   doctor: () => invoke<DoctorReport>("doctor"),
   /** 받기는 modelsJob.ts가 시작한다 (job 이벤트 kind "models"). 지우기는 받는 중이면 코어가 거절한다 */
   modelsRemove: (id: string) => invoke<void>("models_remove", { id }),
+  /** `tractus models add <저장소>`: 변환 엔진 직접 추가 (받지는 않는다) */
+  modelsAdd: (repo: string) => invoke<{ id: string; repo: string; engine: string; size_bytes: number }>("models_add", { repo }),
+  /** 기본 변환 엔진 고르기. null이면 자동 */
+  setAsrEngine: (id: string | null) => invoke<void>("set_asr_engine", { id }),
   /** 모델 폴더 옮기기 (지금 폴더 → dest). 성공한 뒤에 화면이 `models_dir` 설정을 저장한다 */
   modelsMove: (dest: string) => invoke<{ moved: string[]; freed_bytes: number }>("models_move", { dest }),
   /** 등록되지 않은 폴더 정리 */

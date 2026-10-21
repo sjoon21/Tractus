@@ -8,6 +8,8 @@
 import contextlib
 import errno
 import fcntl
+import fnmatch
+import re
 import hashlib
 import json
 import os
@@ -281,7 +283,7 @@ def unregistered(root: Path) -> list[dict]:
     """모델 폴더 바로 아래의 등록되지 않은 모델 폴더(옛 버전 모델 등) → [{"name", "bytes"}] 이름순.
     파일·숨김 항목(잠금 파일 포함)·심볼릭 링크는 세지 않는다 (그래서 prune이 건드리지도 않는다).
     모델이 하나도 없는 곳, 노트 폴더, 모델 모양이 아닌 폴더는 비운다: 사용자가 모델 폴더를 문서·바탕화면 같은 곳으로 잘못 골랐을 때 prune이 지우지 않게."""
-    known = {m.local_dir for m in reg.MODELS}
+    known = {m.local_dir for m in reg.all_models(root)}  # 직접 추가한 변환 엔진도 등록된 것이다 (prune이 지우지 않는다)
     if not root.is_dir() or _is_notes_home(root) or not any((root / d).is_dir() for d in known):
         return []
     return [{"name": p.name, "bytes": reg._dir_bytes(p)} for p in sorted(root.iterdir())
@@ -311,13 +313,122 @@ def remove(model_id: str, root: Path) -> dict:
     if not _inside(path, root):
         raise ModelError(code="unsafe_path", message=t("모델 폴더가 아닌 곳은 지우지 않습니다: {path}", path=path), model=model_id)
     if not path.exists():
+        if m.custom:  # 직접 추가한 엔진: 받지 않았어도 목록에서 뺀다
+            return {"id": model_id, "removed": forget_custom(model_id, root), "freed_bytes": 0}
         return {"id": model_id, "removed": False, "freed_bytes": 0}
     if not path.is_dir():
         raise ModelError(code="unsafe_path", message=t("모델 폴더가 아니어서 지우지 않습니다: {path}", path=path), model=model_id)
     with download_lock(root):
         freed = reg._dir_bytes(path)
         shutil.rmtree(path)
+    if m.custom:  # 잠금을 푼 뒤 (forget_custom이 다시 잠근다)
+        forget_custom(model_id, root)
     return {"id": model_id, "removed": True, "freed_bytes": freed}
+
+
+# ── 직접 추가한 변환 엔진 (docs/design/asr-engines.md) ─────────────────────────
+
+REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}/[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")
+CUSTOM_PATTERNS = ("*.json", "*.safetensors", "*.npz", "*.txt", "*.tiktoken", "*.model", "am.mvn")  # mlx-audio가 읽는 가중치는 safetensors·npz  # 맨 위 폴더의 가중치·설정·토크나이저 (학습 기록·.bin·onnx는 받지 않는다)
+
+
+def _custom_id(repo: str, taken: set[str]) -> str:
+    """저장소 → custom-<소문자-이름> (40자까지, 겹치면 -2·-3)."""
+    base = (reg.CUSTOM_PREFIX + re.sub(r"[^a-z0-9]+", "-", repo.lower()).strip("-"))[:37].rstrip("-")
+    mid, n = base, 2
+    while mid in taken:
+        mid, n = f"{base}-{n}", n + 1
+    return mid
+
+
+def _read_custom(root: Path) -> list[dict]:
+    try:
+        raw = json.loads((root / reg.CUSTOM_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [e for e in raw.get("models", []) if isinstance(e, dict)] if isinstance(raw, dict) and isinstance(raw.get("models"), list) else []
+
+
+def _write_custom(root: Path, entries: list[dict]) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    tmp = root / (reg.CUSTOM_FILE + ".tmp")
+    tmp.write_text(json.dumps({"models": entries}, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(root / reg.CUSTOM_FILE)
+
+
+# 계열마다 mlx-audio가 불러올 때 꼭 있어야 하는 파일 (하나라도 있으면 되는 묶음들). 없으면 받아도 불러오지 못한다 (실측: mlx-community/whisper-tiny는 토크나이저가 없다)
+NEEDED_FILES = {
+    "qwen3": (("vocab.json", "tokenizer.json"), ("preprocessor_config.json",)),
+    "whisper": (("tokenizer.json", "vocab.json"), ("preprocessor_config.json",)),
+    "sensevoice": (("am.mvn",), (".model",)),
+}
+
+
+def _missing_files(engine: str, files: dict[str, int]) -> list[str]:
+    return [" / ".join(g) for g in NEEDED_FILES.get(engine, ()) if not any(k == n or (n.startswith(".") and k.endswith(n)) for k in files for n in g)]
+
+
+def _engine_of_config(cfg: dict) -> str | None:
+    from tractus.asr import ENGINES
+
+    kind = str(cfg.get("model_type") or "")
+    return next((e.family for e in ENGINES.values() if kind in e.model_types), None)
+
+
+def add_custom(repo: str, root: Path, revision: str | None = None) -> reg.Model:
+    """HF 저장소의 변환 엔진을 직접 추가 목록에 넣는다 (받지는 않는다: `models download <ID>`).
+    파일 목록·크기·리비전(커밋 해시)은 지금 허브에서 읽어 고정한다. config.json의 model_type이 지원 계열이 아니면 거부한다.
+    같은 저장소를 다시 추가하면 같은 ID로 리비전·파일을 새로 고친다."""
+    repo = repo.strip()
+    if not REPO_RE.fullmatch(repo):
+        raise ModelError("bad_repo", t("Hugging Face 저장소 ID를 확인하세요 (예: 이름/저장소): {repo}", repo=repo))
+    from huggingface_hub import HfApi, hf_hub_download
+
+    try:
+        info = HfApi().model_info(repo, revision=revision, files_metadata=True)
+        files = {f.rfilename: int(f.size) for f in info.siblings or [] if "/" not in f.rfilename and f.size and any(fnmatch.fnmatch(f.rfilename, p) for p in CUSTOM_PATTERNS)}
+        if "config.json" not in files or not any(k.endswith((".safetensors", ".npz")) for k in files):
+            raise ModelError("unsupported_model", t("추가할 수 없습니다: config.json과 safetensors 가중치가 있는 저장소만 추가할 수 있습니다"))
+        with contextlib.ExitStack() as stack:
+            import tempfile
+
+            tmp = stack.enter_context(tempfile.TemporaryDirectory(dir=root if root.is_dir() else None))
+            cfg = json.loads(Path(hf_hub_download(repo, "config.json", revision=info.sha, local_dir=tmp)).read_text(encoding="utf-8"))
+    except ModelError:
+        raise
+    except Exception as e:  # noqa: BLE001 — 허브 예외를 코드로 바꾼다
+        code = classify(e)
+        if code == "unknown" and type(e).__name__ in ("RepositoryNotFoundError", "RevisionNotFoundError"):
+            code = "not_found"
+        raise ModelError(code, t("저장소 정보를 읽지 못했습니다: {repo} ({error})", repo=repo, error=e)) from e
+    engine = _engine_of_config(cfg) if isinstance(cfg, dict) else None
+    if engine is None:
+        raise ModelError("unsupported_engine", t("지원하지 않는 변환 엔진 계열입니다 (model_type: {kind}). Qwen3-ASR·Whisper·SenseVoice 계열만 추가할 수 있습니다", kind=(cfg or {}).get("model_type") if isinstance(cfg, dict) else "?"))
+    if missing := _missing_files(engine, files):
+        raise ModelError("unsupported_model", t("추가할 수 없습니다: 이 저장소에는 불러오는 데 필요한 파일이 없습니다 ({files})", files=", ".join(missing)))
+    card = getattr(info, "card_data", None) or getattr(info, "cardData", None)
+    lic = (card.get("license") if hasattr(card, "get") else getattr(card, "license", None)) or ""
+    with download_lock(root):
+        entries = _read_custom(root)
+        old = next((e for e in entries if e.get("repo") == repo), None)
+        mid = old["id"] if old else _custom_id(repo, {e.get("id") for e in entries} | {m.id for m in reg.MODELS})
+        entry = {"id": mid, "repo": repo, "revision": info.sha, "engine": engine, "files": files, "name": repo, "license": str(lic) if not isinstance(lic, list) else ", ".join(map(str, lic)),
+                 "added_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+        _write_custom(root, [entry if e is old else e for e in entries] if old else [*entries, entry])
+    m = reg._custom_entry(entry)
+    assert m is not None
+    return m
+
+
+def forget_custom(model_id: str, root: Path) -> bool:
+    """직접 추가 목록에서 뺀다 (파일은 remove가 지운다). 뺐으면 True."""
+    with download_lock(root):
+        entries = _read_custom(root)
+        kept = [e for e in entries if e.get("id") != model_id]
+        if len(kept) != len(entries):
+            _write_custom(root, kept)
+            return True
+    return False
 
 
 # ── 옮기기 ───────────────────────────────────────────────────────────────────
@@ -332,7 +443,7 @@ def move(src: Path, dest: Path) -> dict:
         raise ModelError(code="bad_argument", message=t("노트가 들어 있는 폴더는 모델 폴더로 쓸 수 없습니다: {path}", path=dest))
     if src == dest or dest.is_relative_to(src) or src.is_relative_to(dest):
         raise ModelError(code="bad_argument", message=t("같은 폴더이거나 서로 안에 들어 있어 옮길 수 없습니다: {path}", path=dest))
-    found = [m for m in reg.MODELS if (src / m.local_dir).is_dir() and not (src / m.local_dir).is_symlink()]
+    found = [m for m in reg.all_models(src) if (src / m.local_dir).is_dir() and not (src / m.local_dir).is_symlink()]
     if not found:
         return {"moved": [], "freed_bytes": 0}
     if clash := [m.id for m in found if (dest / m.local_dir).exists()]:
@@ -361,4 +472,8 @@ def move(src: Path, dest: Path) -> dict:
                     leftover.append(m.local_dir)
                     print(t("경고: 옛 폴더를 다 지우지 못해 남겼습니다 ({path}): {error}", path=a, error=e), file=sys.stderr)
             moved.append(m.id)
+        if (src / reg.CUSTOM_FILE).is_file():  # 직접 추가 목록도 함께 옮긴다 (목적지에 이미 있으면 합친다)
+            merged = {e.get("id"): e for e in _read_custom(dest)} | {e.get("id"): e for e in _read_custom(src)}
+            _write_custom(dest, [e for e in merged.values() if e.get("id")])
+            (src / reg.CUSTOM_FILE).unlink()
     return {"moved": moved, "freed_bytes": 0 if same_volume else size, **({"leftover": leftover} if leftover else {})}

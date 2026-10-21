@@ -37,6 +37,20 @@ fn doctor_args() -> Vec<String> {
     to_args(&["doctor", "--json"])
 }
 
+/// Hugging Face 저장소 ID 모양: `이름/저장소` (영문·숫자·`_.-`, 앞은 영문·숫자). 코어 models_install.REPO_RE와 같다
+pub fn valid_repo(repo: &str) -> bool {
+    let part = |p: &str| (1..=96).contains(&p.len()) && p.as_bytes()[0].is_ascii_alphanumeric() && p.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-'));
+    matches!(repo.split_once('/'), Some((a, b)) if part(a) && part(b) && !b.contains('/'))
+}
+
+fn add_args(repo: &str) -> Result<Vec<String>, String> {
+    let repo = repo.trim();
+    if !valid_repo(repo) {
+        return Err(tv("Hugging Face 저장소 ID를 확인하세요 (예: 이름/저장소): {repo}", &[("repo", repo.to_string())]));
+    }
+    Ok(to_args(&["models", "add", repo]))
+}
+
 fn remove_args(id: &str) -> Result<Vec<String>, String> {
     if !valid_id(id) {
         return Err(tv("잘못된 모델 ID입니다: {id}", &[("id", id.to_string())]));
@@ -135,6 +149,10 @@ pub struct ModelRow {
     pub license: Option<String>,
     pub languages: Option<String>,
     pub params: Option<String>,
+    /// 변환 엔진의 계열 (qwen3 | whisper | sensevoice). 변환 엔진이 아니거나 옛 코어면 None
+    pub engine: Option<String>,
+    /// 직접 추가한 변환 엔진 (`tractus models add`)
+    pub custom: bool,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -184,6 +202,8 @@ fn model_row(v: &Value) -> Option<ModelRow> {
         license: s_of(v, "license"),
         languages: s_of(v, "languages"),
         params: s_of(v, "params"),
+        engine: s_of(v, "engine"),
+        custom: bool_of(v, "custom").unwrap_or(false),
         id,
     })
 }
@@ -492,6 +512,19 @@ pub async fn models_remove(state: State<'_, AppState>, id: String) -> Result<(),
     blocking(move || run_tractus(&s, &args, None, &t("모델을 삭제하지 못했습니다")).map(|_| ())).await
 }
 
+/// 변환 엔진 직접 추가 (`tractus models add <저장소>`, docs/design/asr-engines.md). 받지는 않는다: 화면이 이어서 받기를 시작한다.
+/// → {"id", "repo", "revision", "engine", "size_bytes", "license"}
+#[tauri::command]
+pub async fn models_add(state: State<'_, AppState>, repo: String) -> Result<Value, String> {
+    let s = state.settings();
+    let args = add_args(&repo)?;
+    blocking(move || {
+        let out = run_tractus(&s, &args, None, &t("변환 엔진을 추가하지 못했습니다"))?;
+        parse_object(&out).ok_or_else(|| t("변환 엔진을 추가하지 못했습니다"))
+    })
+    .await
+}
+
 /// 모델 폴더 옮기기 (지금 모델 폴더 → dest, 등록된 모델만). 설정은 건드리지 않는다: 화면이 성공한 뒤에 `models_dir`을 저장한다.
 /// → {"moved": [ID], "freed_bytes"}
 #[tauri::command]
@@ -517,6 +550,26 @@ pub async fn models_prune(state: State<'_, AppState>) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repo_ids_for_adding_an_engine() {
+        for ok in ["BuzzASR/korean", "mlx-community/whisper-large-v3-turbo", "a_b/c.d-e"] {
+            assert!(valid_repo(ok), "{ok}");
+        }
+        for bad in ["", "korean", "a/b/c", "../x", "-a/b", "a/.b", "a/ b", "a/b;rm", "a/b --revision x"] {
+            assert!(!valid_repo(bad), "{bad}");
+        }
+        assert_eq!(add_args(" BuzzASR/korean ").unwrap(), ["models", "add", "BuzzASR/korean"]);
+        assert!(add_args("a/b --yes").is_err());
+    }
+
+    #[test]
+    fn custom_and_engine_fields_are_read() {
+        let row = model_row(&json!({"id": "custom-buzzasr-korean", "name": "korean", "state": "missing", "engine": "whisper", "custom": true})).unwrap();
+        assert_eq!((row.engine.as_deref(), row.custom), (Some("whisper"), true));
+        let old = model_row(&json!({"id": "vad", "state": "installed"})).unwrap();
+        assert_eq!((old.engine, old.custom), (None, false));
+    }
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
     use std::sync::mpsc::channel;
@@ -583,7 +636,7 @@ mod tests {
         assert_eq!((l.models_dir.as_str(), l.disk_free_bytes, l.download_active), ("/m", Some(123_456_789), true));
         assert_eq!(l.models.len(), 2);
         assert_eq!(l.models[1].level_note.as_deref(), Some("one_of")); // 변환 엔진은 `필수 (둘 중 하나)`: 새 키를 그대로 넘긴다
-        assert_eq!(l.models[0], ModelRow { id: "vad".into(), name: "음성 구간 분석".into(), purpose: "p".into(), level: "required".into(), size_bytes: 1_300_000, installed: true, installed_bytes: 1_300_000, state: "installed".into(), needed_by: vec!["convert".into(), "live".into()], group: "asr".into(), level_note: None, model_name: None, publisher: None, converted_by: None, source: None, revision: None, license: None, languages: None, params: None });
+        assert_eq!(l.models[0], ModelRow { id: "vad".into(), name: "음성 구간 분석".into(), purpose: "p".into(), level: "required".into(), size_bytes: 1_300_000, installed: true, installed_bytes: 1_300_000, state: "installed".into(), needed_by: vec!["convert".into(), "live".into()], group: "asr".into(), level_note: None, model_name: None, publisher: None, converted_by: None, source: None, revision: None, license: None, languages: None, params: None, engine: None, custom: false });
         assert_eq!((l.models[1].size_bytes, l.models[1].state.as_str(), l.models[1].installed), (2_300_000_000, "partial", false));
     }
 

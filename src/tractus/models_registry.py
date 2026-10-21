@@ -54,6 +54,7 @@ class Model:
     languages: str | None = None
     params: str | None = None
     level_note: str | None = None  # None | ONE_OF (화면은 `필수 (둘 중 하나)`, docs/desktop.md §2.15)
+    engine: str | None = None  # 변환 엔진의 계열 (asr.ENGINES: qwen3 | whisper | sensevoice). 변환 엔진이 아니면 None
 
     @property
     def source(self) -> str:
@@ -62,7 +63,12 @@ class Model:
 
     @property
     def needed_by(self) -> tuple[str, ...]:
-        return tuple(c.id for c in CAPABILITIES if any(self.id in g for g in c.models))
+        found = tuple(c.id for c in CAPABILITIES if any(self.id in g for g in c.models))
+        return found or (("convert",) if self.engine else ())  # 직접 추가한 변환 엔진은 CAPABILITIES에 없다
+
+    @property
+    def custom(self) -> bool:
+        return self.id.startswith(CUSTOM_PREFIX)
 
 
 @dataclass(frozen=True)
@@ -97,12 +103,12 @@ MODELS: tuple[Model, ...] = (
         model_name="Silero VAD v6", publisher="Silero", converted_by=MLX, license="MIT", params="309K"),
     _hf("asr-std", t("변환 엔진 (표준)"), t("가장 정확합니다. 메모리 16GB 이상을 권합니다."), "required", "convert",
         "mlx-community/Qwen3-ASR-1.7B-8bit", "a8379a2e2f9e313c9292cdf1af4055ab56d50d55", "qwen3-asr-1.7b-8bit",
-        _qwen_asr(7188, 2463307541, 78968), level_note=ONE_OF,
+        _qwen_asr(7188, 2463307541, 78968), level_note=ONE_OF, engine="qwen3",
         # 카드 mlx-community/Qwen3-ASR-1.7B-8bit: Qwen/Qwen3-ASR-1.7B에서 mlx-audio 0.3.1로 변환, apache-2.0. 원본 카드(HF 조직 Qwen): 30개 언어 + 중국어 방언 22개, ko·en 포함
         model_name=t("Qwen3-ASR 1.7B (8bit 양자화)"), publisher=t("Alibaba Qwen 팀"), converted_by=MLX, license="Apache-2.0", languages=t("한국어·영어 등 30개 언어와 중국어 방언 22개"), params="1.7B"),
     _hf("asr-lite", t("변환 엔진 (가벼운 것)"), t("메모리를 덜 쓰는 가벼운 엔진입니다. 실시간 텍스트 변환에는 이 엔진이 따로 필요합니다."), "required", "convert",
         "mlx-community/Qwen3-ASR-0.6B-8bit", "89e96d92ba34aca20b3e29fb10cc284097d1219f", "qwen3-asr-0.6b-8bit",
-        _qwen_asr(7187, 1006229426, 71815), level_note=ONE_OF,
+        _qwen_asr(7187, 1006229426, 71815), level_note=ONE_OF, engine="qwen3",
         # 카드 mlx-community/Qwen3-ASR-0.6B-8bit: Qwen/Qwen3-ASR-0.6B에서 변환, apache-2.0. 언어는 1.7B와 같은 원본 카드 표
         model_name=t("Qwen3-ASR 0.6B (8bit 양자화)"), publisher=t("Alibaba Qwen 팀"), converted_by=MLX, license="Apache-2.0", languages=t("한국어·영어 등 30개 언어와 중국어 방언 22개"), params="0.6B"),
     _hf("diarizer", t("참석자 구분"), t("누가 말했는지 나눕니다. 8명까지 구분합니다."), "recommended", "speakers",
@@ -135,7 +141,7 @@ MODELS: tuple[Model, ...] = (
 
 CAPABILITIES: tuple[Capability, ...] = (
     Capability("record", t("녹음"), tools=("recorder",)),
-    Capability("convert", t("텍스트로 변환"), models=(("vad",), ("asr-std", "asr-lite")), tools=("ffmpeg",)),
+    Capability("convert", t("텍스트로 변환"), models=(("vad",), tuple(m.id for m in MODELS if m.engine)), tools=("ffmpeg",)),  # 변환 엔진 중 하나
     Capability("diarize", t("참석자 구분"), models=(("diarizer",),)),
     Capability("diarize-many", t("참석자 구분 (9명 이상)"), models=(("fluid",),)),
     Capability("align", t("단어 싱크"), models=(("aligner",),), tools=("ffmpeg",)),  # 노트 오디오를 디코딩한다
@@ -146,6 +152,40 @@ CAPABILITIES: tuple[Capability, ...] = (
 
 _BY_ID = {m.id: m for m in MODELS}
 
+# ── 직접 추가한 변환 엔진 (docs/design/asr-engines.md) ─────────────────────────
+# 모델 폴더의 custom-models.json에 둔다: 모델 폴더를 옮기면 함께 옮긴다. ID는 custom-…, 폴더 이름은 ID다
+CUSTOM_FILE = "custom-models.json"
+CUSTOM_PREFIX = "custom-"
+CUSTOM_PURPOSE = t("직접 추가한 변환 엔진입니다.")
+
+
+def _custom_entry(e: object) -> Model | None:
+    """custom-models.json의 항목 하나 → Model. 모양이 틀린 항목은 버린다 (손으로 고친 파일이 목록 전체를 막지 않게)."""
+    if not isinstance(e, dict):
+        return None
+    mid, repo, rev, engine, files = e.get("id"), e.get("repo"), e.get("revision"), e.get("engine"), e.get("files")
+    if not (isinstance(mid, str) and mid.startswith(CUSTOM_PREFIX) and ID_RE.fullmatch(mid) and len(mid) <= 40 and isinstance(repo, str) and "/" in repo
+            and isinstance(rev, str) and isinstance(engine, str) and isinstance(files, dict) and files
+            and all(isinstance(k, str) and "/" not in k and ".." not in k and isinstance(v, int) for k, v in files.items())):
+        return None
+    lic = e.get("license")
+    return Model(mid, str(e.get("name") or repo), CUSTOM_PURPOSE, "required", "convert", "hf", mid, sum(files.values()), repo=repo, revision=rev, files=files,
+                 model_name=repo, publisher=repo.split("/")[0], license=lic if isinstance(lic, str) else "", level_note=ONE_OF, engine=engine)
+
+
+def custom_models(root: Path | None = None) -> tuple[Model, ...]:
+    """직접 추가한 변환 엔진 (추가한 순서). 파일이 없거나 깨졌으면 빈 목록."""
+    try:
+        raw = json.loads(((root or paths.models_dir()) / CUSTOM_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ()
+    return tuple(m for e in (raw.get("models") if isinstance(raw, dict) and isinstance(raw.get("models"), list) else []) if (m := _custom_entry(e)))
+
+
+def all_models(root: Path | None = None) -> tuple[Model, ...]:
+    """등록된 모델 + 직접 추가한 변환 엔진."""
+    return MODELS + custom_models(root)
+
 
 def build_hint(item: str) -> str | None:
     """없는 도구를 채우는 안내. 녹음·도우미 프로그램은 저장소 배치일 때만 빌드 명령을 말한다 (paths.build_hint)."""
@@ -153,11 +193,28 @@ def build_hint(item: str) -> str | None:
 
 
 def get(model_id: str) -> Model:
-    return _BY_ID[model_id]
+    """등록된 모델, 없으면 지금 모델 폴더의 직접 추가 모델. 없으면 KeyError."""
+    if model_id in _BY_ID:
+        return _BY_ID[model_id]
+    if model_id.startswith(CUSTOM_PREFIX) and (m := next((x for x in custom_models() if x.id == model_id), None)):
+        return m
+    raise KeyError(model_id)
+
+
+def find(model_id: str) -> Model | None:
+    try:
+        return get(model_id)
+    except KeyError:
+        return None
 
 
 def by_repo(repo: str) -> Model | None:
-    return next((m for m in MODELS if m.repo == repo and m.kind == "hf"), None)
+    return next((m for m in all_models() if m.repo == repo and m.kind == "hf"), None)
+
+
+def asr_ids(root: Path | None = None) -> list[str]:
+    """변환 엔진 (등록 순서, 직접 추가한 것은 뒤). 기본 두 개(asr-std·asr-lite)가 먼저다."""
+    return [m.id for m in all_models(root) if m.engine]
 
 
 def preferred_asr(memory: int | None = None) -> str:
@@ -166,9 +223,10 @@ def preferred_asr(memory: int | None = None) -> str:
 
 
 def pick_asr(root: Path, memory: int | None = None) -> str | None:
-    """`--track` 없이 변환할 때 쓸 변환 엔진: 메모리가 권하는 쪽이 쓸 수 있으면 그것, 아니면 다른 쪽, 둘 다 없으면 None."""
+    """엔진을 정하지 않고 변환할 때 쓸 변환 엔진: 메모리가 권하는 기본 엔진이 쓸 수 있으면 그것, 아니면 다른 기본 엔진, 그다음 받아 둔 다른 엔진 (등록 순서). 없으면 None."""
     first = preferred_asr(memory)
-    return next((i for i in (first, "asr-lite" if first == "asr-std" else "asr-std") if usable(i, root)), None)
+    order = [first, "asr-lite" if first == "asr-std" else "asr-std", *(i for i in asr_ids(root) if i not in ("asr-std", "asr-lite"))]
+    return next((i for i in order if usable(i, root)), None)
 
 
 def preset_ids(preset: str, memory: int | None = None, helper: bool = False) -> list[str]:
@@ -188,11 +246,12 @@ def preset_ids(preset: str, memory: int | None = None, helper: bool = False) -> 
 
 def resolve_ids(ids: list[str], preset: str | None, memory: int | None = None, helper: bool = False) -> list[str]:
     """명령줄의 모델 ID와 프리셋 → 중복 없는 ID (등록 순서). 모르는 ID는 ValueError."""
+    known = {m.id for m in all_models()}
     for i in ids:
-        if not ID_RE.fullmatch(i) or i not in _BY_ID:
-            raise ValueError(t("알 수 없는 모델: {id} ({choices})", id=i, choices=", ".join(_BY_ID)))  # words-ok: 명령줄 인수 오류 (앱은 검증한 ID만 넘긴다)
+        if not ID_RE.fullmatch(i) or i not in known:
+            raise ValueError(t("알 수 없는 모델: {id} ({choices})", id=i, choices=", ".join(sorted(known))))  # words-ok: 명령줄 인수 오류 (앱은 검증한 ID만 넘긴다)
     wanted = set(ids) | (set(preset_ids(preset, memory, helper)) if preset else set())
-    return [m.id for m in MODELS if m.id in wanted]
+    return [m.id for m in all_models() if m.id in wanted]
 
 
 # ── 설치 상태 ────────────────────────────────────────────────────────────────
@@ -293,13 +352,15 @@ def usable(model_id: str, root: Path) -> bool:
 
 def capability_status(states: dict[str, str], tools: dict[str, bool], memory: int | None = None) -> list[dict]:
     """모델 상태({id: state})와 도구({ffmpeg: 있음})로 기능별 준비 여부. missing: 채워야 할 모델 ID와 도구 이름.
-    둘 중 하나면 되는 모델(asr-std·asr-lite)이 모두 없으면 메모리가 권하는 쪽을 missing에 둔다."""
+    하나면 되는 모델(변환 엔진)이 모두 없으면 메모리가 권하는 기본 엔진을 missing에 둔다."""
     out = []
     for c in CAPABILITIES:
         missing: list[str] = []
         for group in c.models:
+            if "asr-std" in group:  # 직접 추가한 변환 엔진도 하나면 된다
+                group = (*group, *(i for i in states if i.startswith(CUSTOM_PREFIX)))
             if not any(states.get(i) == "installed" for i in group):
-                missing.append(preferred_asr(memory) if "asr-std" in group and "asr-lite" in group else group[0])
+                missing.append(preferred_asr(memory) if "asr-std" in group else group[0])  # 변환 엔진이 하나도 없으면 메모리가 권하는 기본 엔진
         missing += [t for t in c.tools if not tools.get(t)]
         if (physical_memory() if memory is None else memory) < c.min_memory:
             missing.append("memory")

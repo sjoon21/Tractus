@@ -128,3 +128,42 @@ def test_note_terms_pick_term_like_words_from_title_and_memos():
     assert note_terms("녹음 14:05") == [] and note_terms("Recording 2:05 PM", "") == ["PM"]
     assert note_terms("온톨로지 온톨로지를") == ["온톨로지"]  # 조사를 떼고 한 번만
     assert len(note_terms(" ".join(f"용어{chr(0xAC00 + i)}" for i in range(40)))) == NOTE_TERMS_MAX
+
+
+# ── 변환 엔진 계열 (docs/design/asr-engines.md) ─────────────────────────────
+
+
+def test_engine_comes_from_the_model_folder_config(tmp_path):
+    import json
+
+    import pytest
+
+    from tractus.asr import engine_of
+
+    for kind, family in (("qwen3_asr", "qwen3"), ("whisper", "whisper"), ("sensevoice", "sensevoice")):
+        (tmp_path / "config.json").write_text(json.dumps({"model_type": kind}))
+        assert engine_of(tmp_path).family == family
+    (tmp_path / "config.json").write_text("{}")
+    assert engine_of(tmp_path).family == "qwen3"  # 옛 직접 만든 폴더·픽스처
+    (tmp_path / "config.json").write_text(json.dumps({"model_type": "wav2vec2"}))
+    with pytest.raises(ValueError, match="model_type=wav2vec2"):
+        engine_of(tmp_path)
+
+
+def test_whisper_gets_a_language_code_and_never_the_hotwords():
+    model = FakeModel({"ko": FakeOut("쿠버네티스 배포", language="ko", generation_tokens=0)})
+    seg = Transcriber(model, "whisper").transcribe(AUDIO, language="ko", hotwords=["Kubernetes"])
+    assert seg.text == "쿠버네티스 배포" and seg.lang == "ko"
+    assert model.calls == [{"language": "ko", "condition_on_previous_text": False, "verbose": False}]
+
+
+def test_sensevoice_runs_auto_language_with_itn_and_no_misdetect_retry():
+    model = FakeModel({"auto": FakeOut("你好", language="zh", generation_tokens=0)})
+    seg = Transcriber(model, "sensevoice").transcribe([0.0] * 16000 * 2)  # 짧은 청크·중국어 감지: Qwen만 한국어로 다시 한다
+    assert seg.lang == "zh" and len(model.calls) == 1
+    assert model.calls[0] == {"language": "auto", "use_itn": True}
+
+
+def test_non_qwen_engines_do_not_treat_zero_tokens_as_the_cap():
+    model = FakeModel({None: FakeOut("정상 문장입니다", language="ko", generation_tokens=10_000)})
+    assert not Transcriber(model, "whisper").transcribe(AUDIO).repaired  # 토큰 수를 상한 판단에 쓰지 않는다

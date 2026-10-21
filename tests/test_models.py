@@ -570,7 +570,7 @@ def test_doctor_cli_and_models_list_cli_json_shapes(root, monkeypatch):
     assert {"models_dir", "disk_free_bytes", "models", "download_active"} <= set(d) and d["download_active"] is False
     by = {m["id"]: m for m in d["models"]}
     assert set(by["vad"]) == {"id", "name", "purpose", "level", "size_bytes", "installed", "installed_bytes", "state", "needed_by", "group", "path", "level_note",
-                              "model_name", "publisher", "converted_by", "source", "revision", "license", "languages", "params"}
+                              "model_name", "publisher", "converted_by", "source", "revision", "license", "languages", "params", "engine", "custom"}
     assert by["asr-std"]["model_name"] == "Qwen3-ASR 1.7B (8bit 양자화)" and by["asr-std"]["source"] == "mlx-community/Qwen3-ASR-1.7B-8bit"
     assert by["vad"]["installed"] is True and by["vad"]["state"] == "installed" and by["asr-lite"]["needed_by"] == ["convert", "live"]
     assert by["asr-std"]["installed"] is False and by["asr-std"]["installed_bytes"] == 0
@@ -579,7 +579,7 @@ def test_doctor_cli_and_models_list_cli_json_shapes(root, monkeypatch):
     plain = CliRunner().invoke(cli.app, ["models", "list"])
     assert plain.exit_code == 0 and "silero" not in plain.stdout and "vad" in plain.stdout
     lines = {ln.split()[0]: ln for ln in plain.stdout.splitlines()[1:]}
-    assert "필수 (둘 중 하나)" in lines["asr-std"] and "필수 (둘 중 하나)" in lines["asr-lite"] and "둘 중 하나" not in lines["vad"]
+    assert "필수 (엔진 중 하나)" in lines["asr-std"] and "필수 (엔진 중 하나)" in lines["asr-lite"] and "엔진 중 하나" not in lines["vad"]
 
 
 # ── CLI 이벤트 ───────────────────────────────────────────────────────────────
@@ -856,3 +856,33 @@ def test_cli_prune_asks_unless_yes_and_keeps_stdout_json(root):
     r = CliRunner().invoke(cli.app, ["models", "prune", "--json", "--yes"])
     assert r.exit_code == 0 and json.loads(r.stdout) == {"removed": [{"name": "old", "bytes": 2}], "freed_bytes": 2} and not (root / "old").exists()
     assert CliRunner().invoke(cli.app, ["models", "prune", "--yes"]).stdout.strip() == "지울 폴더가 없습니다"
+
+
+# ── 변환 엔진 고르기: --engine (docs/design/asr-engines.md) ──────────────────
+
+
+def test_engine_option_picks_an_installed_engine_and_falls_back_with_a_warning(root, monkeypatch):
+    for mid in ("asr-std", "asr-lite"):
+        d = root / reg.get(mid).local_dir
+        d.mkdir()
+        (d / "config.json").write_text("{}")
+    warnings = []
+    monkeypatch.setattr(cli, "physical_memory", lambda: 16 * GB)
+    monkeypatch.setattr(cli, "_warn", lambda code, message: warnings.append(code))
+    assert cli.choose_asr(None, "asr-lite").id == "asr-lite"
+    assert cli.choose_asr(cli.Track.lite, None).id == "asr-lite"
+    assert cli.choose_asr(None, None).id == "asr-std" and warnings == []
+    import shutil
+
+    shutil.rmtree(root / reg.get("asr-lite").local_dir)
+    assert cli.choose_asr(None, "asr-lite").id == "asr-std" and warnings == ["asr_engine_missing"]
+    with pytest.raises(Exception, match="변환 엔진이 아닙니다"):
+        cli.choose_asr(None, "vad")
+    assert (cli.track_name(reg.get("asr-std")), cli.track_name(reg.get("asr-lite"))) == ("standard", "lite")
+
+
+def test_convert_needs_any_one_transcription_engine():
+    assert reg.get("vad").engine is None
+    groups = next(c for c in reg.CAPABILITIES if c.id == "convert").models
+    assert groups[1] == tuple(reg.asr_ids()) and {"asr-std", "asr-lite"} <= set(groups[1])
+    assert all(reg.get(i).engine for i in groups[1])
