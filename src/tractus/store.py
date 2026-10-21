@@ -566,6 +566,39 @@ def load_memos(d: Path) -> list[dict]:
     return sorted((m for m in memos if isinstance(m, dict) and isinstance(m.get("t"), (int, float))), key=lambda m: m["t"])
 
 
+MEMO_TEXT_MAX = 500  # 녹음 중 메모 한 줄의 글자 수 상한 (앱 입력과 같다)
+
+
+def save_memos(d: Path, marks: object) -> list[dict]:
+    """녹음 중 남긴 메모·북마크를 고친다(글 고치기·지우기). 새 메모를 끼워 넣거나 시각·종류를 바꾸는 것은 받지 않는다:
+    marks의 각 항목은 지금 memos.json의 항목 하나와 시각(t)·종류(kind)가 같아야 한다 (한 항목에 한 번만).
+    글을 비운 메모는 지운다. 파일이 없어도 빈 목록으로 남긴다: 변환 전 노트는 memos.json이 있으면 녹음 원본의 메모를 다시 읽지 않는다.
+    transcript.md를 다시 만든다(메모가 들어간다). 고친 목록을 시각 순으로 돌려준다."""
+    if not isinstance(marks, list):
+        raise ValueError(t("입력은 {shape} 형식이어야 합니다", shape='{"marks": [{"t", "kind", "text"}]}'))  # words-ok: 앱 계약 오류
+    with note_lock(d):
+        left = load_memos(d)
+        out: list[dict] = []
+        for m in marks:
+            if not (isinstance(m, dict) and isinstance(m.get("t"), (int, float)) and m.get("kind") in ("memo", "bookmark")):
+                raise ValueError(t("입력은 {shape} 형식이어야 합니다", shape='{"marks": [{"t", "kind", "text"}]}'))  # words-ok: 앱 계약 오류
+            same = next((o for o in left if o.get("t") == m["t"] and o.get("kind") == m["kind"]), None)
+            if same is None:
+                raise ValueError(t("없는 메모는 고칠 수 없습니다 (새로 남기거나 시각·종류를 바꿀 수 없습니다)"))
+            left.remove(same)
+            if m["kind"] == "bookmark":
+                out.append({**same, "text": None})
+                continue
+            text = one_line(str(m.get("text") or ""))[:MEMO_TEXT_MAX]
+            if text:
+                out.append({**same, "text": text})
+        out.sort(key=lambda x: x["t"])
+        _write_atomic(d / MEMOS_FILE, json.dumps(out, ensure_ascii=False, indent=1))
+        if (d / "transcript.json").is_file():
+            render_files(d, read_transcript(d))
+    return out
+
+
 def _vtt_time(sec: float) -> str:
     ms = round(sec * 1000)
     return f"{ms // 3_600_000:02d}:{ms // 60_000 % 60:02d}:{ms // 1000 % 60:02d}.{ms % 1000:03d}"

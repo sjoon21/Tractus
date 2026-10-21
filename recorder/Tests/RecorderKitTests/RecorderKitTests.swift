@@ -122,6 +122,18 @@ final class CommandTests: XCTestCase {
         XCTAssertNil(Command.parse("pause now"))
         XCTAssertNil(Command.parse("Pause"))
     }
+
+    func testParseMarkEditAndDelete() {
+        XCTAssertEqual(Command.parse("mark_edit 2 예산 다시 확인"), .editMark(2, "예산 다시 확인"))
+        XCTAssertEqual(Command.parse("mark_edit 0   a b  "), .editMark(0, "a b"))
+        XCTAssertNil(Command.parse("mark_edit 1 "))  // 빈 글은 고치기가 아니다 (지우기는 mark_delete)
+        XCTAssertNil(Command.parse("mark_edit x 글"))
+        XCTAssertNil(Command.parse("mark_edit -1 글"))
+        XCTAssertEqual(Command.parse("mark_delete 3"), .deleteMark(3))
+        XCTAssertNil(Command.parse("mark_delete"))
+        XCTAssertNil(Command.parse("mark_delete -2"))
+        XCTAssertNil(Command.parse("mark_delete 1 2"))
+    }
 }
 
 final class RecordOptionsTests: XCTestCase {

@@ -45,6 +45,8 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 - **stdin**: 한 줄에 명령 하나.
   - `bookmark`: 지금 시각에 북마크
   - `memo <텍스트>`: 지금 시각에 메모
+  - `mark_edit <i> <텍스트>`: `marks[i]`(0부터, 남긴 순서) 메모의 글을 바꾼다. 북마크·없는 번호는 바꾸지 않는다 (v3.60)
+  - `mark_delete <i>`: `marks[i]` 메모·북마크를 지운다. 둘 다 결과를 `marks` 이벤트(전체 목록)로 알리고 `recording.json`을 다시 쓴다
   - `pause`: 일시정지 (2026-10-14). 아래 "일시정지" 절을 본다
   - `resume`: 일시정지를 풀고 이어서 녹음
   - `stop`: 녹음을 마무리하고 종료 (일시정지 중에도 된다)
@@ -58,6 +60,7 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 {"event":"level","t":12.25,"mic":-23.1,"system":-41.7}        // 250ms마다, dBFS (트랙이 없으면 null)
 {"event":"mark","t":95.0,"kind":"bookmark","text":null}
 {"event":"mark","t":130.5,"kind":"memo","text":"예산 다시 확인"}
+{"event":"marks","marks":[{"t":130.5,"kind":"memo","text":"예산 확인"}]}   // mark_edit·mark_delete 뒤의 전체 목록. 앱은 목록을 이것으로 바꾼다
 {"event":"paused","elapsed":95.0}                             // 일시정지됨. elapsed = 멈춘 오디오 시각
 {"event":"resumed","elapsed":95.0}                            // 계속함. elapsed는 paused와 같은 오디오 시각에서 이어진다
 {"event":"warning","code":"system_zero","message":"시스템 오디오가 5초 동안 정확히 0입니다. 시스템 설정 > 개인정보 보호 > 화면 및 시스템 오디오 녹음 권한을 확인하세요"}
@@ -121,6 +124,7 @@ macOS 캘린더(EventKit) 읽기. 설계: [docs/design/calendar.md](design/calen
 | `audio.ogg` | 새 회의는 `audio.ogg`(Ogg Opus 32kbps mono)로 보관한다. Obsidian은 `.opus`를 열지 못한다. `transcript.json`의 `audio.file`이 실제 파일 이름이다. 예전 `audio.opus` 회의도 그대로 읽는다 |
 | `transcript.vtt` | 세그먼트마다 WebVTT 큐(큐 ID = 세그먼트 ID). Obsidian Media Extended, 브라우저 `<track>`이 그대로 읽는다 |
 | `memos.json` | 녹음 중 메모·북마크 `[{"t": 초, "kind": "memo"\|"bookmark", "text": str\|null}]`. `transcript.md`에도 시각 순으로 끼워 넣는다 |
+| `tractus marks <노트> save` (v3.60) | stdin `{"marks": [...]}`: 녹음 중 메모·북마크를 고치거나 지운 목록을 `memos.json`에 쓴다(`note_lock`). 항목은 기존 항목과 `t`·`kind`가 맞아야 하고(새로 남기기·시각 바꾸기 불가, 종료 코드 2 + `bad_input`), 메모 글은 한 줄·500자, 비우면 지운다. 모두 지워도 빈 `memos.json`을 남긴다(변환 전 노트가 녹음 폴더의 원래 메모를 다시 읽지 않게). `transcript.md`를 다시 그린다. → `{"marks": [...]}` |
 | `tractus transcribe --recording <dir>` | `recording.json`의 트랙들을 FFmpeg `amix`로 섞어 전사한다. `marks`는 `memos.json`으로 옮긴다. 성공하면 녹음 폴더를 지운다(`--keep-tracks`면 회의 폴더의 `tracks/`로 옮김). 회의 시각은 `started_at` |
 | `--progress-json` | `transcribe`·`summarize`가 stdout에 JSON Lines를 출력한다. 사람용 출력은 원래대로 stderr로 보낸다 |
 | 화자 분리 (2026-10-04) | `transcribe`가 VAD 다음에 화자 분리를 한다(기본 켜짐, `--no-diarize`로 끔, `--max-speakers N`으로 상한. v3.15부터 상한 없음, Nemotron은 8명까지). 엔진은 `--diarizer auto|nemotron|fluid`(기본 auto: Nemotron이 8명을 모두 쓰면 Swift 헬퍼 `tractus-diar`로 다시 나눈다. 앱은 넘기지 않으므로 auto). 라벨은 `S1`…`Sn`이고 n은 8을 넘을 수 있다(앱 화자 색은 16칸: 잉크 8개, 9번째 슬롯부터 같은 잉크에 속 빈 점·빗금 막대, 16명이 넘으면 겹친다). `transcript.json` schema_version 2: `segments[].speaker`(`"S1"`… 또는 null), 최상위 `speakers: {"S1": {"name": null}}`, `diarization`(끄거나 모델이 없으면 null). 표시 이름 = `name`, 없으면 라벨, `speaker`가 null이면 md·vtt에 표시 안 함(앱은 화자 있는 회의에서 "알 수 없음" 참석자 칩으로 보여 주고 참석자를 고를 수 있게 한다). schema_version 1 회의는 `speakers`가 없다 (ARCHITECTURE.md §6) |

@@ -5,7 +5,8 @@ import { ErrorDetail } from "./ErrorDetail";
 import { t } from "./i18n";
 import { GateHint } from "./GatedButton";
 import { useCapabilities } from "./useCapabilities";
-import { errorView, fmtTime, isRecLive, JOB_ERROR, levelFraction, liveHaltView, liveHalted, REC_MODES, STAGE_LABEL, warningText } from "./lib";
+import { EditableMark } from "./MarkEdit";
+import { errorView, fmtTime, isRecLive, JOB_ERROR, levelFraction, liveHaltView, liveHalted, REC_MODES, STAGE_LABEL, warningText, type RecCommand } from "./lib";
 import { AFTER_ASK } from "./afterRecord";
 import { PAUSE_LABEL, PAUSE_TITLE, PAUSED_NOTE, RESUME_LABEL, RESUME_TITLE } from "./pause";
 import { CONVERT_FAILED_TITLE, CONVERT_RETRY, SAVE_DONE_TITLE, SAVE_FAILED_TITLE, SAVE_RETRY, SAVING } from "./recorded";
@@ -16,7 +17,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/components/ui/utils";
 
-type Send = (cmd: "bookmark" | "memo" | "stop" | "pause" | "resume", text?: string) => Promise<void>;
+type Send = (cmd: RecCommand, text?: string, index?: number) => Promise<void>;
 
 export function RecordView({
   rec,
@@ -153,13 +154,28 @@ export function RecordView({
 
         {rec.marks.length > 0 && (
           <ol className="m-0 flex list-none flex-col gap-1 p-0">
-            {[...rec.marks].reverse().map((m, i) => (
-              <li key={i} className="flex items-baseline gap-3 rounded-md bg-memo-wash px-3 py-2 text-[13px]">
-                <time className="text-xs text-memo tabular-nums">{fmtTime(m.t)}</time>
-                <span className="text-[11px] font-semibold text-memo">{m.kind === "bookmark" ? t("북마크") : t("메모")}</span>
-                {m.text}
-              </li>
-            ))}
+            {[...rec.marks].reverse().map((m, i) => {
+              const at = rec.marks.length - 1 - i; // 녹음 프로그램의 목록 자리 (화면은 최신이 위)
+              const row = (
+                <span className="flex items-baseline gap-3">
+                  <time className="text-xs text-memo tabular-nums">{fmtTime(m.t)}</time>
+                  <span className="text-[11px] font-semibold text-memo">{m.kind === "bookmark" ? t("북마크") : t("메모")}</span>
+                  <span className="min-w-0 break-words">{m.text}</span>
+                </span>
+              );
+              return (
+                <li key={`${m.t}-${at}`} className="rounded-md bg-memo-wash px-3 py-1 text-[13px]">
+                  {/* 녹음이 끝나면 녹음 프로그램이 없다: 그 뒤에는 노트에서 고친다 */}
+                  {live ? (
+                    <EditableMark memo={m} onSave={(text) => void send("mark_edit", text, at)} onDelete={() => void send("mark_delete", undefined, at)}>
+                      {row}
+                    </EditableMark>
+                  ) : (
+                    <div className="py-1">{row}</div>
+                  )}
+                </li>
+              );
+            })}
           </ol>
         )}
       </div>

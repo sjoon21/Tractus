@@ -80,11 +80,15 @@ pub fn spawn_streaming(
 }
 
 /// 녹음 헬퍼 stdin 명령. 한 줄에 명령 하나이므로 메모의 줄바꿈은 공백으로 바꾼다.
-pub fn recorder_line(cmd: &str, text: Option<&str>) -> Result<String, String> {
-    match (cmd, text) {
-        ("bookmark" | "stop" | "pause" | "resume", _) => Ok(format!("{cmd}\n")),
-        ("memo", Some(t)) if !t.trim().is_empty() => Ok(format!("memo {}\n", t.split_whitespace().collect::<Vec<_>>().join(" "))),
-        ("memo", _) => Err(t("메모가 비어 있습니다")),
+pub fn recorder_line(cmd: &str, text: Option<&str>, index: Option<u32>) -> Result<String, String> {
+    let one_line = |t: &str| t.split_whitespace().collect::<Vec<_>>().join(" ");
+    match (cmd, text, index) {
+        ("bookmark" | "stop" | "pause" | "resume", _, _) => Ok(format!("{cmd}\n")),
+        ("memo", Some(t), _) if !t.trim().is_empty() => Ok(format!("memo {}\n", one_line(t))),
+        ("memo", _, _) => Err(t("메모가 비어 있습니다")),
+        // 녹음 중에 남긴 메모 고치기·지우기 (번호는 남긴 순서, 0부터). 글을 비우면 지우기다
+        ("mark_edit", Some(t), Some(i)) if !t.trim().is_empty() => Ok(format!("mark_edit {i} {}\n", one_line(t))),
+        ("mark_edit", _, Some(i)) | ("mark_delete", _, Some(i)) => Ok(format!("mark_delete {i}\n")),
         _ => Err(tv("알 수 없는 녹음 명령: {cmd}", &[("cmd", cmd.to_string())])),
     }
 }
@@ -218,7 +222,7 @@ mod tests {
         cmd.arg("record").arg("--out").arg(&out).args(["--fake", "--no-system"]);
         let (tx, rx) = channel();
         let (mut stdin, _) = spawn_streaming(cmd, Map::new(), move |v| tx.send(v).unwrap()).unwrap();
-        let mut send = |cmd: &str| stdin.write_all(recorder_line(cmd, None).unwrap().as_bytes()).and_then(|_| stdin.flush()).unwrap();
+        let mut send = |cmd: &str| stdin.write_all(recorder_line(cmd, None, None).unwrap().as_bytes()).and_then(|_| stdin.flush()).unwrap();
         let mut seen: Vec<Value> = vec![];
         let mut wait = |event: &str| loop {
             let v = rx.recv_timeout(Duration::from_secs(10)).unwrap();
@@ -254,13 +258,18 @@ mod tests {
 
     #[test]
     fn recorder_commands() {
-        assert_eq!(recorder_line("bookmark", None).unwrap(), "bookmark\n");
+        assert_eq!(recorder_line("bookmark", None, None).unwrap(), "bookmark\n");
         // 일시정지·계속은 녹음 헬퍼의 stdin 명령이다 (recorder/README.md). 본문은 받지 않는다
-        assert_eq!(recorder_line("pause", None).unwrap(), "pause\n");
-        assert_eq!(recorder_line("resume", Some("x")).unwrap(), "resume\n");
-        assert!(recorder_line("Pause", None).is_err() && recorder_line("pause now", None).is_err());
-        assert_eq!(recorder_line("memo", Some(" 예산\n다시  확인 ")).unwrap(), "memo 예산 다시 확인\n");
-        assert!(recorder_line("memo", Some("  ")).is_err());
-        assert!(recorder_line("rm -rf", None).is_err());
+        assert_eq!(recorder_line("pause", None, None).unwrap(), "pause\n");
+        assert_eq!(recorder_line("resume", Some("x"), None).unwrap(), "resume\n");
+        assert!(recorder_line("Pause", None, None).is_err() && recorder_line("pause now", None, None).is_err());
+        assert_eq!(recorder_line("memo", Some(" 예산\n다시  확인 "), None).unwrap(), "memo 예산 다시 확인\n");
+        assert!(recorder_line("memo", Some("  "), None).is_err());
+        assert!(recorder_line("rm -rf", None, None).is_err());
+        // 녹음 중 메모 고치기·지우기: 번호가 있어야 하고, 빈 글로 고치면 지우기다
+        assert_eq!(recorder_line("mark_edit", Some(" 고친\n 메모 "), Some(2)).unwrap(), "mark_edit 2 고친 메모\n");
+        assert_eq!(recorder_line("mark_edit", Some("  "), Some(2)).unwrap(), "mark_delete 2\n");
+        assert_eq!(recorder_line("mark_delete", None, Some(0)).unwrap(), "mark_delete 0\n");
+        assert!(recorder_line("mark_edit", Some("글"), None).is_err() && recorder_line("mark_delete", None, None).is_err());
     }
 }

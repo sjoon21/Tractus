@@ -55,6 +55,8 @@ import { indexer } from "./indexer";
 import { printDoc } from "./print";
 import { EDIT_BLOCKED, type DeleteTarget } from "./remove";
 import { appendBlock } from "./memoEdit";
+import { EditableMark } from "./MarkEdit";
+import { deleteMark, editMark } from "./marks";
 import { termFromEdit } from "./vocab";
 import { PrintSheet } from "./PrintSheet";
 import { SummariesPanel } from "./SummariesPanel";
@@ -295,6 +297,25 @@ export function MeetingView({
         .finally(() => setInFlight((n) => n - 1));
     },
     [id],
+  );
+  // 녹음 중 남긴 메모·북마크 고치기·지우기 (marks.ts, `tractus marks save`): 낙관적으로 바꾸고 줄을 세워 저장한다. 실패하면 코어가 확인한 목록으로 되돌린다
+  const saveMarks = useCallback(
+    (next: Memo[]) => {
+      if (editQueue.isBlocked(id)) return setEditError(EDIT_BLOCKED);
+      setBase((b) => (b ? { ...b, memos: next } : b));
+      void serial(async () => {
+        try {
+          const { marks } = await api.marksSave(id, next);
+          if (confirmed.current) confirmed.current = { ...confirmed.current, memos: marks };
+          setBase((b) => (b ? { ...b, memos: marks } : b));
+        } catch (e) {
+          const back = confirmed.current?.memos ?? [];
+          setBase((b) => (b ? { ...b, memos: back } : b));
+          notify({ text: errText(e), detail: errDetail(e), error: true });
+        }
+      });
+    },
+    [id, serial, notify],
   );
   // 오류 표시는 사용자가 새로 고칠 때만 지운다: 줄에 선 다음 작업이 시작하며 지우면 실패를 못 보고 지나간다
   const editSpeakers = useCallback(
@@ -944,7 +965,13 @@ export function MeetingView({
                 onChip={openChip}
               />
             ) : (
-              <MemoRow key={`m${i}`} memo={r.memo} onSeek={seekTo} />
+              <MemoRow
+                key={`m${i}`}
+                memo={r.memo}
+                onSeek={seekTo}
+                onSave={(text) => saveMarks(editMark(detail.memos, detail.memos.indexOf(r.memo), text))}
+                onDelete={() => saveMarks(deleteMark(detail.memos, detail.memos.indexOf(r.memo)))}
+              />
             ),
           )}
         </ol>}
@@ -1314,17 +1341,19 @@ function caretOffset(button: HTMLElement, x: number, y: number): number | null {
   return r && r.startContainer === node ? r.startOffset : null;
 }
 
-function MemoRow({ memo: m, onSeek }: { memo: Memo; onSeek: (t: number) => void }) {
+function MemoRow({ memo: m, onSeek, onSave, onDelete }: { memo: Memo; onSeek: (t: number) => void; onSave: (text: string) => void; onDelete: () => void }) {
   const isBookmark = m.kind === "bookmark";
   return (
     <li className={`memo is-${isBookmark ? "bookmark" : "memo"}`}>
-      <button className="seg-button" onClick={() => onSeek(m.t)}>
-        <time className="seg-time tnum">{fmtTime(m.t)}</time>
-        <span className="memo-body">
-          <span className="memo-kind">{isBookmark ? t("북마크") : t("메모")}</span>
-          {m.text}
-        </span>
-      </button>
+      <EditableMark memo={m} onSave={onSave} onDelete={onDelete}>
+        <button className="seg-button" onClick={() => onSeek(m.t)}>
+          <time className="seg-time tnum">{fmtTime(m.t)}</time>
+          <span className="memo-body">
+            <span className="memo-kind">{isBookmark ? t("북마크") : t("메모")}</span>
+            {m.text}
+          </span>
+        </button>
+      </EditableMark>
     </li>
   );
 }

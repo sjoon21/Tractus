@@ -243,6 +243,7 @@ uv run tractus note new [--title T]                  # 메모 만들기 → {"me
 uv run tractus note sample                          # 예시 노트(온보딩, 가상 회의) → {"meeting_id","meeting_dir","created"}. 이미 있으면 그것
 echo '{"body":"…"}' | uv run tractus note save <meeting_id>   # 메모 본문 저장(메모 노트·녹음 노트) → {"saved":true,"segments":N,"changed":bool,"kind":"memo"|"recording"}
 echo '{"title":"…"}' | uv run tractus note title <meeting_id> # 제목 바꾸기 → {"title":"…"}
+echo '{"marks":[…]}' | uv run tractus marks <meeting_id> save   # 녹음 중 메모·북마크 고치기·지우기 → {"marks": […]}
 echo '{"favorite":true,"tags":["a"],"folder":"<폴더 ID>"|null}' | uv run tractus note meta <meeting_id>   # 즐겨찾기·태그·폴더 → 저장된 값
 uv run tractus folders list --json | create --name N [--parent ID] | rename ID --name N | move ID --parent ID|none | delete ID
 uv run tractus notes list --json [--favorite] [--tag T] [--folder ID|이름|none] [--sort created|updated|title|duration] [--order asc|desc]
