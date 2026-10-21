@@ -254,4 +254,8 @@ export default {
   "숫자 확인": "Check number",
   "담당": "Owner",
   "기한": "Due",
+  // 녹음 중 남긴 메모·북마크 (MarkEdit.tsx)
+  "메모 고치기": "Edit memo",
+  "메모 삭제": "Delete memo",
+  "북마크 삭제": "Delete bookmark",
 } satisfies Dict;

@@ -576,10 +576,15 @@ export function jobReduce(s: JobState, ev: JobEvent): JobState {
   }
 }
 
+/** 녹음 프로그램 stdin 명령 (Rust procs::recorder_line, docs/desktop.md §1) */
+export type RecCommand = "bookmark" | "memo" | "mark_edit" | "mark_delete" | "stop" | "pause" | "resume";
+
 export type RecEvent =
   | { event: "started"; dir: string; tracks: string[]; started_at: string }
   | { event: "level"; t: number; mic: number | null; system: number | null }
   | { event: "mark"; t: number; kind: string; text: string | null }
+  /** 메모를 고치거나 지운 뒤의 전체 목록 (mark_edit·mark_delete) */
+  | { event: "marks"; marks: Memo[] }
   /** 일시정지·계속. elapsed는 일시정지한 시간을 뺀 녹음 시각(초) */
   | { event: "paused"; elapsed: number }
   | { event: "resumed"; elapsed: number }
@@ -648,6 +653,8 @@ export function recReduce(s: RecState, ev: RecEvent): RecState {
       return s.phase === "paused" || s.phase === "recording" ? { ...s, phase: "recording", t: ev.elapsed } : s;
     case "mark":
       return { ...s, marks: [...s.marks, { t: ev.t, kind: ev.kind, text: ev.text }] };
+    case "marks":
+      return { ...s, marks: ev.marks };
     case "warning":
       return s.warnings.some((w) => w.code === ev.code) ? s : { ...s, warnings: [...s.warnings, { code: ev.code, message: ev.message }] };
     case "stopped":

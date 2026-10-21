@@ -88,6 +88,27 @@ final class FakeModeTests: XCTestCase {
         XCTAssertEqual(saved[1]["text"] as? String, "테스트")
     }
 
+    func testMarksCanBeEditedAndDeletedWhileRecording() throws {
+        let r = try run([]) { _, stdin in
+            Thread.sleep(forTimeInterval: 0.6)
+            stdin.write(Data("memo 첫 메모\nbookmark\nmemo 셋째\n".utf8))
+            Thread.sleep(forTimeInterval: 0.3)
+            stdin.write(Data("mark_edit 0 고친 메모\nmark_edit 1 북마크에 글\nmark_delete 2\nmark_delete 9\n".utf8))
+            Thread.sleep(forTimeInterval: 0.3)
+            stdin.write(Data("stop\n".utf8))
+        }
+        XCTAssertEqual(r.status, 0)
+        let lists = r.events.filter { $0["event"] as? String == "marks" }.map { ($0["marks"] as? [[String: Any]]) ?? [] }
+        XCTAssertEqual(lists.count, 4, "명령마다 지금 목록을 알린다 (무시한 명령도)")
+        XCTAssertEqual(lists[0].map { $0["text"] as? String }, ["고친 메모", nil, "셋째"])
+        XCTAssertEqual(lists[1].map { $0["kind"] as? String }, ["memo", "bookmark", "memo"], "북마크는 글을 고치지 않는다")
+        XCTAssertEqual(lists[2].map { $0["text"] as? String }, ["고친 메모", nil])
+        XCTAssertEqual(lists[3].count, 2, "없는 번호는 무시")
+        let info = try JSONSerialization.jsonObject(with: Data(contentsOf: r.dir.appendingPathComponent("recording.json"))) as! [String: Any]
+        let saved = info["marks"] as! [[String: Any]]
+        XCTAssertEqual(saved.map { $0["text"] as? String }, ["고친 메모", nil])
+    }
+
     func testSigtermStopsGracefully() throws {
         let r = try run(["--no-mic"]) { p, _ in
             Thread.sleep(forTimeInterval: 0.7)

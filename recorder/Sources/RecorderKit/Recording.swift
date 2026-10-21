@@ -7,6 +7,10 @@ public enum Command: Equatable {
     case pause
     case resume
     case stop
+    /// 남긴 메모의 글 고치기: `mark_edit <번호> <글>` (번호는 0부터, 남긴 순서)
+    case editMark(Int, String)
+    /// 남긴 메모·북마크 지우기: `mark_delete <번호>`
+    case deleteMark(Int)
 
     public static func parse(_ line: String) -> Command? {
         let s = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -16,9 +20,21 @@ public enum Command: Equatable {
         case "pause": return .pause
         case "resume": return .resume
         default:
-            guard s.hasPrefix("memo ") else { return nil }
-            let text = s.dropFirst(5).trimmingCharacters(in: .whitespaces)
-            return text.isEmpty ? nil : .memo(text)
+            if s.hasPrefix("memo ") {
+                let text = s.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                return text.isEmpty ? nil : .memo(text)
+            }
+            if s.hasPrefix("mark_delete ") {
+                guard let i = Int(s.dropFirst(12).trimmingCharacters(in: .whitespaces)), i >= 0 else { return nil }
+                return .deleteMark(i)
+            }
+            if s.hasPrefix("mark_edit ") {
+                let rest = s.dropFirst(10)
+                guard let space = rest.firstIndex(of: " "), let i = Int(rest[..<space]), i >= 0 else { return nil }
+                let text = rest[space...].trimmingCharacters(in: .whitespaces)
+                return text.isEmpty ? nil : .editMark(i, text)
+            }
+            return nil
         }
     }
 }

@@ -11,7 +11,7 @@ import type { Folder, MetaPatch, NoteMeta, SortKey, SortOrder } from "./organize
 import { parseShown, type Minutes } from "./minutes";
 import { parseSummaryDocs, type TemplateInfo } from "./summaries";
 import type { TrayWire } from "./tray";
-import { APP_ERROR, DetailedError, IDLE_JOB, splitMessage, IDLE_LIVE, IDLE_REC, jobReduce, liveReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type LiveEvent, type LiveState, type Memo, type NoteMemo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
+import { APP_ERROR, DetailedError, IDLE_JOB, splitMessage, IDLE_LIVE, IDLE_REC, jobReduce, liveReduce, parseToolResult, recFlags, recReduce, type RecCommand, type RecMode, type JobEvent, type JobState, type LiveEvent, type LiveState, type Memo, type NoteMemo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
 
 export type { JobState, LiveState, RecState } from "./lib";
 
@@ -278,6 +278,8 @@ export const api = {
   minutesShow: async (id: string) => parseShown(await invoke<unknown>("minutes_show", { id })),
   /** `tractus minutes <노트> save`: 고친 칸을 저장하고 새로 그린 값을 돌려준다 */
   minutesSave: async (id: string, minutes: Minutes) => parseShown(await invoke<unknown>("minutes_save", { id, minutes })),
+  /** `tractus marks <노트> save`: 녹음 중 남긴 메모·북마크를 고치거나 지운 목록을 저장한다 */
+  marksSave: (id: string, marks: Memo[]) => invoke<{ marks: Memo[] }>("marks_save", { id, marks }),
   /** `tractus note new`: 새 메모 노트(기본 제목 `메모 HH:MM`). 만든 노트 ID */
   noteNew: (title?: string) => invoke<{ meeting_id: string }>("note_new", { title: title ?? null }),
   /** `tractus note save`: 메모 본문 전체를 저장한다 (메모 노트는 본문, 녹음 노트는 메모 탭의 글). 코어가 만든 줄 수와 고친 노트. 노트별 줄(editQueue)에 세워서 부른다 */
@@ -492,10 +494,11 @@ export function useRecorder(onStopped: (dir: string, seconds: number) => void) {
     }
   }, []);
 
-  const send = useCallback(async (cmd: "bookmark" | "memo" | "stop" | "pause" | "resume", text?: string) => {
+  /** 녹음 프로그램 명령. mark_edit·mark_delete는 index(rec.marks의 자리)를 함께 보낸다 */
+  const send = useCallback(async (cmd: RecCommand, text?: string, index?: number) => {
     if (cmd === "stop") setRec((s) => ({ ...s, phase: "stopping" }));
     try {
-      await invoke("rec_send", { cmd, text: text ?? null });
+      await invoke("rec_send", { cmd, text: text ?? null, index: index ?? null });
     } catch (e) {
       setRec((s) => ({ ...s, error: errText(e) }));
     }
