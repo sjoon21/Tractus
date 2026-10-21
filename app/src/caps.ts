@@ -154,6 +154,8 @@ export function decide(report: DoctorReport | null | undefined, id: CapId): Deci
 /** 코어 오류 `model_missing`(변환 엔진 파일 없음)과 경고 `asr_track_fallback`(권장 엔진이 없어 다른 엔진으로 변환)의 문장 (lib.ts가 코드 표에 쓴다) */
 export const MODEL_MISSING_ERROR = t("변환 엔진 파일이 없어 진행하지 못했습니다. 모델 화면에서 설치하거나 설정의 ‘변환 엔진 위치’를 확인하세요.");
 export const ASR_FALLBACK_WARNING = t("권장 변환 엔진이 없어 설치된 다른 변환 엔진으로 변환했습니다. 권장 엔진은 모델 화면에서 설치할 수 있습니다.");
+/** 경고 `asr_engine_missing`: 모델 화면에서 고른 기본 엔진을 받아 두지 않았다 (docs/design/asr-engines.md) */
+export const ASR_ENGINE_MISSING_WARNING = t("고른 기본 변환 엔진이 없어 메모리에 맞는 기본 엔진으로 변환했습니다. 모델 화면에서 받거나 다른 엔진을 고르세요.");
 
 /** 녹음 버튼 아래 안내: 녹음은 모델 없이도 된다. 변환을 못 하는 이유가 있을 때만 (없으면 null) */
 export const RECORD_NOTICE_MODELS = t("변환 엔진이 없어 녹음만 저장됩니다. 모델 화면에서 설치하면 변환할 수 있습니다");

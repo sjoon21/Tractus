@@ -579,7 +579,7 @@ def test_doctor_cli_and_models_list_cli_json_shapes(root, monkeypatch):
     plain = CliRunner().invoke(cli.app, ["models", "list"])
     assert plain.exit_code == 0 and "silero" not in plain.stdout and "vad" in plain.stdout
     lines = {ln.split()[0]: ln for ln in plain.stdout.splitlines()[1:]}
-    assert "필수 (둘 중 하나)" in lines["asr-std"] and "필수 (둘 중 하나)" in lines["asr-lite"] and "둘 중 하나" not in lines["vad"]
+    assert "필수 (엔진 중 하나)" in lines["asr-std"] and "필수 (엔진 중 하나)" in lines["asr-lite"] and "엔진 중 하나" not in lines["vad"]
 
 
 # ── CLI 이벤트 ───────────────────────────────────────────────────────────────

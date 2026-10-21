@@ -76,6 +76,8 @@ pub struct Settings {
     pub calendar_hidden: Vec<String>,
     /// 화면 언어: "system"(macOS 언어, 기본) | "ko" | "en" (i18n.rs, docs/desktop.md §3.8)
     pub ui_lang: String,
+    /// 기본 변환 엔진 (모델 ID, docs/design/asr-engines.md). 비어 있으면 자동: 코어가 메모리에 맞는 기본 엔진을 고른다. 변환할 때 `--engine`으로 넘긴다
+    pub asr_engine: String,
     /// 앱 설정 폴더 (키가 있는 곳). 파일에는 쓰지 않고 `AppState::settings()`가 채운다
     #[serde(skip)]
     pub config_dir: Option<PathBuf>,
@@ -109,6 +111,7 @@ impl Default for Settings {
             calendar_enabled: false,
             calendar_hidden: vec![],
             ui_lang: "system".into(),
+            asr_engine: String::new(),
             config_dir: None,
             stale: vec![],
         }
@@ -267,6 +270,14 @@ impl Settings {
         let mut cmd = Command::new(self.tractus_path());
         cmd.args(args).envs(self.child_env()).current_dir(self.tractus_cwd());
         cmd
+    }
+
+    /// 변환 명령(`transcribe …`)에 고른 기본 변환 엔진을 붙인다 (자동이면 그대로). 받아 두지 않은 엔진이면 코어가 경고하고 기본 엔진으로 변환한다
+    pub(crate) fn with_asr_engine(&self, mut args: Vec<String>) -> Vec<String> {
+        if args.first().is_some_and(|a| a == "transcribe") && models::valid_id(&self.asr_engine) {
+            args.extend(["--engine".to_string(), self.asr_engine.clone()]);
+        }
+        args
     }
 
     /// 노트 문장·검색어를 임베딩하는 실행 (색인·변환·가져오기). 스마트 검색을 Upstage로 쓰면 그 키가 더해진다 (`embed_key_env`)
@@ -474,6 +485,27 @@ fn merge_rec_mode(raw: Option<&str>, mode: &str) -> Result<String, String> {
 fn set_rec_mode(state: State<'_, AppState>, mode: String) -> Result<(), String> {
     patch_settings(&state.config_path, |raw| merge_rec_mode(raw, &mode))?;
     state.settings.lock().unwrap().rec_mode = mode;
+    Ok(())
+}
+
+/// 기본 변환 엔진 하나만 바꾼다. None이면 키를 지운다 (자동)
+fn merge_asr_engine(raw: Option<&str>, id: Option<&str>) -> Result<String, String> {
+    let mut v: Value = raw.and_then(|r| serde_json::from_str(r).ok()).filter(Value::is_object).unwrap_or_else(|| json!({}));
+    match id {
+        Some(id) if models::valid_id(id) => v["asr_engine"] = json!(id),
+        Some(id) => return Err(tv("잘못된 변환 엔진 ID입니다: {id}", &[("id", id.to_string())])),
+        None => {
+            v.as_object_mut().map(|o| o.remove("asr_engine"));
+        }
+    }
+    serde_json::to_string_pretty(&v).map_err(|e| e.to_string())
+}
+
+/// 기본 변환 엔진 고르기 (모델 화면). 받아 두었는지는 코어가 변환할 때 본다
+#[tauri::command]
+fn set_asr_engine(state: State<'_, AppState>, id: Option<String>) -> Result<(), String> {
+    patch_settings(&state.config_path, |raw| merge_asr_engine(raw, id.as_deref()))?;
+    state.settings.lock().unwrap().asr_engine = id.unwrap_or_default();
     Ok(())
 }
 
@@ -705,7 +737,7 @@ fn job_args(home: &Path, kind: &str, target: &str) -> Result<Vec<String>, String
 #[tauri::command]
 fn job_start(app: AppHandle, state: State<'_, AppState>, kind: String, target: String, job: String, append_to: Option<String>, provider: Option<String>) -> Result<(), String> {
     let s = state.settings();
-    let args = attach::with_target(job_args(&s.home(), &kind, &target)?, &kind, append_to.as_deref(), &s.home(), |t| is_busy(&state.busy, t))?;
+    let args = s.with_asr_engine(attach::with_target(job_args(&s.home(), &kind, &target)?, &kind, append_to.as_deref(), &s.home(), |t| is_busy(&state.busy, t))?);
     // provider: 요약에서 고른 AI 서비스 (없으면 기본 서비스). 다른 작업은 쓰지 않는다
     let cmd = match kind.as_str() {
         "summarize" => state.llm_cmd(&args, provider.as_deref())?,
@@ -1308,6 +1340,7 @@ pub fn run() {
             paths::update_available,
             save_settings,
             set_rec_mode,
+            set_asr_engine,
             set_checkup_done,
             tray::tray_update,
             tray::tray_popover_state,
@@ -1333,6 +1366,7 @@ pub fn run() {
             models::models_download,
             models::models_cancel,
             models::models_remove,
+            models::models_add,
             models::models_move,
             models::models_prune,
             list_meetings,
@@ -1822,6 +1856,28 @@ mod tests {
         assert!(segments_edit("01ABC", &[]).is_err());
         assert!(segments_edit("01ABC", &[e("S1", "a")]).is_err());
         assert!(segments_edit("01ABC", &[e("s0001", "  ")]).is_err()); // 빈 문장은 코어도 거부한다
+    }
+
+    #[test]
+    fn asr_engine_is_passed_to_transcribe_only() {
+        let mut s = Settings { asr_engine: "custom-buzzasr-korean".into(), ..Settings::default() };
+        let v = |a: &[&str]| a.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(s.with_asr_engine(v(&["transcribe", "--recording", "/r", "--progress-json"])), v(&["transcribe", "--recording", "/r", "--progress-json", "--engine", "custom-buzzasr-korean"]));
+        assert_eq!(s.with_asr_engine(v(&["summarize", "01A"])), v(&["summarize", "01A"]));
+        s.asr_engine = String::new(); // 자동
+        assert_eq!(s.with_asr_engine(v(&["transcribe", "x"])), v(&["transcribe", "x"]));
+        s.asr_engine = "--bad".into();
+        assert_eq!(s.with_asr_engine(v(&["transcribe", "x"])), v(&["transcribe", "x"]));
+    }
+
+    #[test]
+    fn asr_engine_setting_is_merged_and_cleared() {
+        let set = merge_asr_engine(Some(r#"{"ui_lang":"ko"}"#), Some("asr-lite")).unwrap();
+        let v: Value = serde_json::from_str(&set).unwrap();
+        assert_eq!((v["asr_engine"].as_str(), v["ui_lang"].as_str()), (Some("asr-lite"), Some("ko")));
+        let cleared: Value = serde_json::from_str(&merge_asr_engine(Some(&set), None).unwrap()).unwrap();
+        assert!(cleared.get("asr_engine").is_none() && cleared["ui_lang"] == "ko");
+        assert!(merge_asr_engine(None, Some("a b")).is_err());
     }
 
     #[test]

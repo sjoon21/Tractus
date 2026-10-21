@@ -376,7 +376,7 @@
   "{n} samples"
  ],
  "필수": "Required",
- "필수 (둘 중 하나)": "Required (one of two)",
+ "필수 (엔진 중 하나)": "Required (any one engine)",
  "한국어·영어 등 11개 언어": "11 languages including Korean and English",
  "한국어·영어 등 30개 언어와 중국어 방언 22개": "30 languages including Korean and English, plus 22 Chinese dialects",
  "할 일": "To-dos",

@@ -30,6 +30,8 @@ import {
   type DownloadState,
   type ModelRow,
   type ModelsEvent,
+  engineInUse,
+  validRepo,
 } from "./models";
 
 const row = (id: string, over: Partial<ModelRow> = {}): ModelRow => ({
@@ -104,18 +106,18 @@ describe("받을 것 계산", () => {
     expect(diskShort(plan, null)).toBeNull();
     expect(diskShort([], 0)).toBeNull();
   });
-  test("구분 글자: 변환 엔진 둘은 `필수 (둘 중 하나)`, 나머지는 그대로", () => {
+  test("구분 글자: 변환 엔진은 `필수 (엔진 중 하나)`, 나머지는 그대로", () => {
     const eng = (id: string, installed = false) => row(id, { level: "required", level_note: "one_of", installed });
-    expect(levelLabel(eng("asr-std"))).toBe("필수 (둘 중 하나)");
+    expect(levelLabel(eng("asr-std"))).toBe("필수 (엔진 중 하나)");
     expect(levelLabel(row("vad", { level: "required" }))).toBe("필수");
     expect(levelLabel(row("vad", { level: "required", level_note: null }))).toBe("필수"); // 옛 코어
     expect(levelLabel(row("aligner", { level: "optional" }))).toBe("선택");
   });
-  test("필수 요약 줄: 변환 엔진 둘 중 하나라도 있으면 설치됨, 둘 다 없으면 안내, 옛 코어는 줄 없음", () => {
+  test("필수 요약 줄: 변환 엔진 중 하나라도 있으면 설치됨, 모두 없으면 안내, 옛 코어는 줄 없음", () => {
     const eng = (id: string, installed: boolean) => row(id, { level: "required", level_note: "one_of", installed });
     expect(engineSummary([row("vad", { level: "required" }), eng("asr-std", false), eng("asr-lite", true)])).toEqual({ ok: true, text: "변환 엔진: 설치됨" });
     expect(engineSummary([eng("asr-std", true), eng("asr-lite", false)])?.ok).toBe(true);
-    expect(engineSummary([eng("asr-std", false), eng("asr-lite", false)])).toEqual({ ok: false, text: "변환 엔진: 없음 — 둘 중 하나를 설치하세요" });
+    expect(engineSummary([eng("asr-std", false), eng("asr-lite", false)])).toEqual({ ok: false, text: "변환 엔진: 없음 — 하나 이상 설치하세요" });
     expect(engineSummary([row("vad", { level: "required", installed: true })])).toBeNull();
   });
   test("installLabel·installedSummary·removeDialog", () => {
@@ -296,5 +298,21 @@ describe("모델 폴더: 위치 바꾸기·정리", () => {
     expect(d.body).toContain("2개(2.5 MB)");
     expect(d.body).toContain("‘/Volumes/ext/models’");
     expect([moveDone(3), moveDone(0)]).toEqual(["모델 3개를 옮겼습니다.", "모델 폴더를 바꿨습니다."]);
+  });
+});
+
+describe("default transcription engine", () => {
+  const rows = (ids: string[], installed: string[]) => ids.map((id) => ({ id, engine: id === "vad" ? null : "qwen3", installed: installed.includes(id) }));
+  test("the chosen engine wins when installed, otherwise the same order as the core", () => {
+    const all = rows(["vad", "asr-std", "asr-lite", "custom-buzzasr-korean"], ["vad", "asr-std", "asr-lite", "custom-buzzasr-korean"]);
+    expect(engineInUse(all, "custom-buzzasr-korean", "standard")).toBe("custom-buzzasr-korean");
+    expect(engineInUse(all, null, "standard")).toBe("asr-std");
+    expect(engineInUse(all, null, "lite")).toBe("asr-lite");
+    expect(engineInUse(rows(["asr-std", "custom-x"], ["custom-x"]), "asr-std", "standard")).toBe("custom-x"); // 고른 엔진이 없으면 받아 둔 다른 엔진
+    expect(engineInUse(rows(["vad", "asr-std"], ["vad"]), null, "standard")).toBeNull();
+  });
+  test("repo ids for adding an engine", () => {
+    for (const ok of ["BuzzASR/korean", " mlx-community/whisper-large-v3-turbo "]) expect(validRepo(ok)).toBe(true);
+    for (const bad of ["", "korean", "a/b/c", "../x", "-a/b", "a/ b"]) expect(validRepo(bad)).toBe(false);
   });
 });

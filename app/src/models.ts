@@ -30,6 +30,10 @@ export interface ModelRow {
   license?: string | null;
   languages?: string | null;
   params?: string | null;
+  /** 변환 엔진의 계열 (qwen3 | whisper | sensevoice). 변환 엔진이 아니거나 옛 코어면 없다 */
+  engine?: string | null;
+  /** 직접 추가한 변환 엔진 (`tractus models add`) */
+  custom?: boolean;
 }
 
 export interface ModelsList {
@@ -43,8 +47,8 @@ export interface ModelsList {
 }
 
 export const LEVEL_LABEL: Record<ModelLevel, string> = { required: t("필수"), recommended: t("권장"), optional: t("선택") };
-export const ONE_OF_LABEL = t("필수 (둘 중 하나)");
-/** 구분 칸 글자: 변환 엔진처럼 둘 중 하나만 있으면 되는 필수 모델은 `필수 (둘 중 하나)` */
+export const ONE_OF_LABEL = t("필수 (엔진 중 하나)");
+/** 구분 칸 글자: 변환 엔진처럼 여럿 중 하나만 있으면 되는 필수 모델은 `필수 (엔진 중 하나)` */
 export const levelLabel = (m: Pick<ModelRow, "level" | "level_note">): string => (m.level === "required" && m.level_note === "one_of" ? ONE_OF_LABEL : LEVEL_LABEL[m.level]);
 
 /** 필수 요약 줄: 둘 중 하나인 필수 모델(변환 엔진) 중 어느 하나라도 있으면 설치됨. 그런 모델이 없으면(옛 코어) null */
@@ -52,7 +56,33 @@ export function engineSummary(models: Pick<ModelRow, "level" | "level_note" | "i
   const group = models.filter((m) => m.level === "required" && m.level_note === "one_of");
   if (group.length === 0) return null;
   const ok = group.some((m) => m.installed);
-  return { ok, text: ok ? t("변환 엔진: 설치됨") : t("변환 엔진: 없음 — 둘 중 하나를 설치하세요") };
+  return { ok, text: ok ? t("변환 엔진: 설치됨") : t("변환 엔진: 없음 — 하나 이상 설치하세요") };
+}
+
+// ── 기본 변환 엔진 (docs/design/asr-engines.md) ──
+
+export const ENGINE_IN_USE = t("기본 엔진");
+export const ENGINE_USE = t("기본으로 쓰기");
+export const ENGINE_AUTO = t("자동으로 고르기");
+export const ENGINE_ADD_TITLE = t("변환 엔진 직접 추가");
+export const ENGINE_ADD_HINT = t("Hugging Face 저장소 ID를 넣으면 모델 목록에 추가합니다. Qwen3-ASR·Whisper·SenseVoice 계열을 쓸 수 있습니다. 추가한 뒤 받기를 누르세요.");
+export const ENGINE_ADD_PLACEHOLDER = t("예: mlx-community/whisper-large-v3-turbo");
+export const ENGINE_ADD = t("추가");
+export const engineAdded = (repo: string) => t("‘{repo}’을(를) 추가했습니다. 받기를 누르면 받습니다.", { repo });
+export const engineChosen = (name: string) => t("이제 ‘{name}’으로 텍스트로 변환합니다.", { name });
+export const ENGINE_AUTO_CHOSEN = t("이제 메모리에 맞는 기본 엔진으로 텍스트로 변환합니다.");
+
+/** 저장소 ID 모양 (코어 models_install.REPO_RE와 같다) */
+export const validRepo = (repo: string): boolean => /^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$/.test(repo.trim());
+
+/** 지금 변환에 쓰는 엔진 (코어 cli.choose_asr·registry.pick_asr와 같은 순서):
+ * 고른 엔진이 설치돼 있으면 그것, 아니면 메모리가 권하는 기본 엔진 → 다른 기본 엔진 → 설치된 다른 엔진. 하나도 없으면 null */
+export function engineInUse(models: Pick<ModelRow, "id" | "engine" | "installed">[], chosen: string | null | undefined, recommendedTrack: string | null | undefined): string | null {
+  const installed = models.filter((m) => m.engine && m.installed).map((m) => m.id);
+  if (chosen && installed.includes(chosen)) return chosen;
+  const first = trackOf(recommendedTrack) === "lite" ? "asr-lite" : "asr-std";
+  const order = [first, first === "asr-std" ? "asr-lite" : "asr-std", ...installed.filter((i) => i !== "asr-std" && i !== "asr-lite")];
+  return order.find((i) => installed.includes(i)) ?? null;
 }
 export const STATE_LABEL: Record<ModelState, string> = { installed: t("설치됨"), missing: t("없음"), partial: t("일부만 받음"), corrupt: t("손상") };
 

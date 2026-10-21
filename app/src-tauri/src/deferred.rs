@@ -100,7 +100,7 @@ pub fn recording_finish(app: AppHandle, state: State<'_, AppState>, dir: String,
 /// 변환 전 노트를 그 자리에서 텍스트로 변환한다. 변환하는 동안 그 노트는 삭제할 수 없다
 #[tauri::command]
 pub fn convert_note(app: AppHandle, state: State<'_, AppState>, id: String, job: String) -> Result<(), String> {
-    let args = convert_args(&id)?;
+    let args = state.settings().with_asr_engine(convert_args(&id)?);
     start(app, &state, args, "convert", job, &id, true)
 }
 

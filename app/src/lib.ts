@@ -1,5 +1,5 @@
 // 화면과 무관한 순수 로직. 전부 lib.test.ts에서 검사한다.
-import { ASR_FALLBACK_WARNING, MODEL_MISSING_ERROR } from "./caps";
+import { ASR_ENGINE_MISSING_WARNING, ASR_FALLBACK_WARNING, MODEL_MISSING_ERROR } from "./caps";
 import { locale, t } from "./i18n";
 
 export interface Segment {
@@ -458,6 +458,7 @@ export const WARNING_TEXT: Record<string, string> = {
   voices_failed: t("등록된 참석자 목소리를 확인하지 못했습니다. 참석자 이름은 노트에서 직접 지정할 수 있습니다."),
   aligner_missing: t("단어 싱크에 필요한 파일이 없어 단어 싱크 없이 저장했습니다."),
   asr_track_fallback: ASR_FALLBACK_WARNING,
+  asr_engine_missing: ASR_ENGINE_MISSING_WARNING,
   tracks_missing: t("보관한 녹음 원본이 없어 저장된 오디오로 변환했습니다. 음질이 조금 낮을 수 있습니다."),
   aligner_failed: t("단어 싱크를 맞추지 못했습니다. 노트의 ‘단어 싱크 맞추기’로 다시 시도할 수 있습니다."),
   chat_save_failed: t("질문 기록을 저장하지 못했습니다. 답변은 그대로 볼 수 있습니다."),

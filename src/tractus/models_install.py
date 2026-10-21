@@ -398,7 +398,7 @@ def add_custom(repo: str, root: Path, revision: str | None = None) -> reg.Model:
         entries = _read_custom(root)
         old = next((e for e in entries if e.get("repo") == repo), None)
         mid = old["id"] if old else _custom_id(repo, {e.get("id") for e in entries} | {m.id for m in reg.MODELS})
-        entry = {"id": mid, "repo": repo, "revision": info.sha, "engine": engine, "files": files, "name": repo.split("/")[1], "license": str(lic) if not isinstance(lic, list) else ", ".join(map(str, lic)),
+        entry = {"id": mid, "repo": repo, "revision": info.sha, "engine": engine, "files": files, "name": repo, "license": str(lic) if not isinstance(lic, list) else ", ".join(map(str, lic)),
                  "added_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
         _write_custom(root, [entry if e is old else e for e in entries] if old else [*entries, entry])
     m = reg._custom_entry(entry)

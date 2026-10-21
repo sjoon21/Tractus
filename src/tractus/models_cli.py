@@ -18,7 +18,7 @@ from tractus.paths import models_dir
 
 STATE_LABEL = {"installed": t("설치됨"), "missing": t("없음"), "partial": t("일부만 받음"), "corrupt": t("손상")}
 LEVEL_LABEL = {"required": t("필수"), "recommended": t("권장"), "optional": t("선택")}
-ONE_OF_LABEL = t("필수 (둘 중 하나)")  # level_note가 one_of인 필수 모델 (변환 엔진)
+ONE_OF_LABEL = t("필수 (엔진 중 하나)")  # level_note가 one_of인 필수 모델 (변환 엔진)
 
 
 def _cli():

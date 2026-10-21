@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { OK_BADGE, OK_TEXT, WARN_TEXT } from "@/components/settings/tone";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { PageBody, PageHeader } from "@/components/ui/page";
 import { Progress } from "@/components/ui/progress";
 import { Row, Section } from "@/components/ui/section";
@@ -26,6 +27,18 @@ import {
   installedSummary,
   installLabel,
   engineSummary,
+  engineAdded,
+  engineChosen,
+  engineInUse,
+  ENGINE_ADD,
+  ENGINE_ADD_HINT,
+  ENGINE_ADD_PLACEHOLDER,
+  ENGINE_ADD_TITLE,
+  ENGINE_AUTO,
+  ENGINE_AUTO_CHOSEN,
+  ENGINE_IN_USE,
+  ENGINE_USE,
+  validRepo,
   levelLabel,
   moveDialog,
   moveDone,
@@ -238,6 +251,37 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
   const [msg, setMsg] = useState<{ text: string; detail: string | null; error?: boolean } | null>(null);
   const helperFound = caps.report?.doctor?.tools.diar_helper.found;
   const viaUpstage = useViaUpstage();
+  // 기본 변환 엔진 (docs/design/asr-engines.md): 비면 자동. 변환할 때 Rust가 `--engine`으로 넘긴다
+  const [asrEngine, setAsrEngine] = useState<string | null>(null);
+  useEffect(() => void api.getSettings().then((st) => setAsrEngine(st.asr_engine || null), () => setAsrEngine(null)), []);
+  const [repo, setRepo] = useState("");
+  const [adding, setAdding] = useState(false);
+  const inUse = list ? engineInUse(list.models, asrEngine, caps.report?.doctor?.recommended_track) : null;
+  const choose = async (m: ModelRow | null) => {
+    try {
+      await api.setAsrEngine(m?.id ?? null);
+      setAsrEngine(m?.id ?? null);
+      setMsg({ text: m ? engineChosen(m.name) : ENGINE_AUTO_CHOSEN, detail: null });
+    } catch (e) {
+      setMsg({ text: errText(e), detail: errDetail(e), error: true });
+    }
+  };
+  const addEngine = async () => {
+    const r = repo.trim();
+    if (!validRepo(r)) return;
+    setAdding(true);
+    setMsg(null);
+    try {
+      await api.modelsAdd(r);
+      setRepo("");
+      setMsg({ text: engineAdded(r), detail: null });
+      await changed();
+    } catch (e) {
+      setMsg({ text: errText(e), detail: errDetail(e), error: true });
+    } finally {
+      setAdding(false);
+    }
+  };
 
   const changed = async () => {
     await load();
@@ -418,6 +462,7 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
                           {m.state === "partial" && m.installed_bytes > 0 ? t("{size} 받음", { size: fmtBytes(m.installed_bytes) }) + " / " : ""}
                           {fmtBytes(m.size_bytes)}
                         </span>
+                        {m.engine && m.id === inUse && <Badge className={OK_BADGE}>{ENGINE_IN_USE}</Badge>}
                         {unusedHere ? (
                           <Badge>{NOT_IN_USE}</Badge>
                         ) : (
@@ -428,6 +473,16 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
                       </div>
                       {(m.state !== "installed" && !unusedHere) || m.state !== "missing" ? (
                         <div className="flex items-center gap-1">
+                          {m.engine && m.installed && m.id !== inUse && (
+                            <Button variant="ghost" size="sm" disabled={busy} onClick={() => void choose(m)} aria-label={t("{name}을(를) 기본 변환 엔진으로", { name: m.name })}>
+                              {ENGINE_USE}
+                            </Button>
+                          )}
+                          {m.engine && m.id === inUse && asrEngine === m.id && (
+                            <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={busy} onClick={() => void choose(null)}>
+                              {ENGINE_AUTO}
+                            </Button>
+                          )}
                           {m.state !== "missing" && (
                             <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={busy || removing} onClick={() => setAsking(m)} aria-label={t("{name} 삭제", { name: m.name })}>
                               {t("삭제")}
@@ -446,6 +501,26 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
                 </article>
               );
             })}
+          </Section>
+        )}
+
+        {list && (
+          <Section title={ENGINE_ADD_TITLE}>
+            <form
+              className="flex flex-col gap-2 px-4 py-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void addEngine();
+              }}
+            >
+              <p className="m-0 text-xs leading-relaxed text-muted-foreground">{ENGINE_ADD_HINT}</p>
+              <div className="flex items-center gap-2">
+                <Input className="max-w-md font-mono text-xs" value={repo} placeholder={ENGINE_ADD_PLACEHOLDER} aria-label={ENGINE_ADD_TITLE} spellCheck={false} autoCapitalize="off" autoCorrect="off" onChange={(e) => setRepo(e.target.value)} disabled={adding || busy} />
+                <Button type="submit" variant="outline" size="sm" disabled={adding || busy || !validRepo(repo)}>
+                  {ENGINE_ADD}
+                </Button>
+              </div>
+            </form>
           </Section>
         )}
       </PageBody>
