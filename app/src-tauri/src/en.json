@@ -161,5 +161,6 @@
   "허용하지 않는 녹음 설정입니다: {f}": "Recording setting not allowed: {f}",
   "회의록을 읽지 못했습니다": "Couldn’t read the minutes",
   "회의록을 저장하지 못했습니다": "Couldn’t save the minutes",
-  "휴지통으로 옮기지 못했습니다\n{e}": "Couldn’t move to Trash\n{e}"
+  "휴지통으로 옮기지 못했습니다\n{e}": "Couldn’t move to Trash\n{e}",
+  "잘못된 버전입니다: {version}": "Invalid version: {version}"
 }

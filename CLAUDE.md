@@ -210,6 +210,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - 번들 빌드와 `.dmg`는 저장소 복사본에서 돌려 시험한다(`rsync`로 `.git`·`target`·`node_modules`·`.venv`·`models`·`data` 제외). 결과는 `dist/`(gitignore)에 둔다.
 - **앱 안 업데이트(v3.34, Tauri updater)는 번들에서만 켠다**: Rust `update_available()`이 `paths.rs`의 번들 판별(`../Resources/runtime/bin/tractus`)로 가르고, 저장소에서 만든 앱·개발 실행에서는 확인하지 않는다. **자동 설치 금지**: 확인은 시작 약 10초 뒤와 `업데이트 확인` 단추에서만, 받기·설치는 사용자가 `업데이트 설치`를 누른 뒤에만, 다시 열기도 단추다.
 - 서명 개인 키는 `~/.tauri/tractus.key`(비밀번호 없음, 저장소 밖, **백업 필수**: 잃으면 기존 설치본이 새 업데이트를 거부한다). 저장소에는 공개 키(`tauri.conf.json` `plugins.updater.pubkey`)만 두고 개인 키 내용을 출력·로그·커밋하지 않는다.
+- **릴리스마다 `docs/releases/v<버전>.md`를 쓰고 버전 PR에 넣는다**(앞머리 `version`·`date`·`summary`·`summary_en`, 한국어 본문, `---` 뒤 `## English`). 이것이 웹 페이지(`releases/v<버전>/`, `scripts/releases_page.py`가 Pages 배포 때 만든다), 앱 업데이트 칸의 짧은 글(`latest.json` `notes`), GitHub 릴리스 본문의 원본이다. 페이지는 main에 합쳐야 생기므로 `release.sh --publish`보다 먼저 합친다. `tests/test_releases_page.py`가 모든 노트 파일을 읽어 본다.
 - **`latest.json`·`Tractus.app.tar.gz`·`.sig`는 `scripts/release.sh`만 만든다.** `bundle.createUpdaterArtifacts`는 쓰지 않는다(`tauri build`의 tar.gz는 최종 ad-hoc 재서명 전이다). 엔드포인트 `releases/latest/download/latest.json`은 공개 저장소의 정식 릴리스(pre-release 아님)만 가리킨다. 사용자 문구는 WORDS.md §4.21이다.
 
 ## 자주 쓰는 명령

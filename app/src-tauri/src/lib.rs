@@ -509,6 +509,13 @@ fn set_asr_engine(state: State<'_, AppState>, id: Option<String>) -> Result<(), 
     Ok(())
 }
 
+/// 버전의 릴리스 노트 페이지를 브라우저로 연다 (설정 › 업데이트). 주소는 paths::release_notes_url이 만든다
+#[tauri::command]
+fn open_release_notes(version: String) -> Result<(), String> {
+    let url = paths::release_notes_url(&version, i18n::lang()).ok_or_else(|| tv("잘못된 버전입니다: {version}", &[("version", version.clone())]))?;
+    tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string())
+}
+
 /// 녹음 중 남긴 메모·북마크 고치기·지우기 (`tractus marks <노트> save`, stdin {"marks": …}). 남은 목록만 보낸다.
 /// 새로 끼워 넣거나 시각·종류를 바꾸는 것은 코어가 거절한다. → {"marks": […]}
 #[tauri::command]
@@ -1356,6 +1363,7 @@ pub fn run() {
             ui_lang,
             set_ui_lang,
             paths::update_available,
+            open_release_notes,
             save_settings,
             set_rec_mode,
             set_asr_engine,

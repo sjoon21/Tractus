@@ -1,6 +1,6 @@
 [package]
 name = "tractus-app"
-version = "0.4.1"
+version = "0.4.2"
 description = "Tractus 데스크톱 앱"
 license = "Apache-2.0"
 edition = "2021"

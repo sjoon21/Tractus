@@ -22,7 +22,8 @@ usage() {
         scripts/release.sh --check
 
   --skip-build <Tractus.app>  앱을 새로 만들지 않고 이미 만든 앱으로 압축·서명·latest.json·dmg 만 만듭니다
-  --notes-file <파일>         릴리스 노트 (latest.json 의 notes 와 GitHub 릴리스 본문. 기본: "Tractus <버전>")
+  --notes-file <파일>         릴리스 노트 (기본: docs/releases/v<버전>.md. 앞머리의 summary·summary_en + 웹 페이지 주소가
+                              latest.json 의 notes(앱 업데이트 칸), 본문이 GitHub 릴리스 본문이 된다. 웹 페이지는 main에 합치면 Pages가 만든다)
   --with-fluid                build_app_bundle.sh 에 넘깁니다 (9명 이상 참석자 구분 도우미 포함)
   --out <폴더>                결과를 둘 폴더 (기본: dist/release/<버전>)
   --publish                   gh release create 를 실제로 실행합니다 (기본은 명령만 출력합니다)
@@ -63,6 +64,7 @@ step() { printf '\n%s== %s%s\n' "$B" "$1" "$N"; }
 VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$REPO/app/src-tauri/tauri.conf.json" | head -1)"
 [ -n "$OUT" ] || OUT="$REPO/dist/release/$VERSION"
 TAG="v$VERSION"
+[ -n "$NOTES_FILE" ] || NOTES_FILE="$REPO/docs/releases/v$VERSION.md"
 URL="https://github.com/$GH_REPO/releases/download/$TAG/Tractus.app.tar.gz"
 
 step "사전 조건 확인 (버전 $VERSION)"
@@ -75,7 +77,9 @@ elif [ -f "$KEY" ]; then ok "서명 키: $KEY"
 else fail "서명 키가 없습니다: $KEY  (cd app && pnpm tauri signer generate -w ~/.tauri/tractus.key --ci)"; fi
 grep -q '"pubkey": *"[^"]\+"' "$REPO/app/src-tauri/tauri.conf.json" && ok "tauri.conf.json plugins.updater.pubkey" || fail "tauri.conf.json 에 plugins.updater.pubkey 가 없습니다"
 if command -v gh >/dev/null 2>&1; then ok "gh"; elif [ "$PUBLISH" -eq 1 ]; then fail "gh 가 없습니다 (--publish 에 필요)"; else ok "gh 없음 (--publish 때만 필요)"; fi
-[ -z "$NOTES_FILE" ] || { [ -f "$NOTES_FILE" ] && ok "릴리스 노트: $NOTES_FILE" || fail "릴리스 노트 파일이 없습니다: $NOTES_FILE"; }
+if [ ! -f "$NOTES_FILE" ]; then fail "릴리스 노트 파일이 없습니다: $NOTES_FILE (docs/releases/v<버전>.md, 앞머리 version·date·summary·summary_en)"
+elif CHECK_DIR="$(mktemp -d)" && python3 "$REPO/scripts/releases_page.py" --release-texts "$NOTES_FILE" "$CHECK_DIR"; then ok "릴리스 노트: $NOTES_FILE"; rm -rf "$CHECK_DIR"
+else fail "릴리스 노트를 읽지 못했습니다: $NOTES_FILE"; fi
 if [ -n "$APP" ]; then
   [ -f "$APP/Contents/Info.plist" ] && ok "앱: $APP" || fail "Tractus.app 이 아닙니다: $APP"
 else
@@ -114,8 +118,9 @@ SIGN_KEY=(); [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] || SIGN_KEY=(-f "$KEY")
 ok "$TGZ.sig"
 
 step "4. latest.json"
-NOTES="Tractus $VERSION"
-[ -z "$NOTES_FILE" ] || NOTES="$(cat "$NOTES_FILE")"
+TEXTS="$OUT/notes"; mkdir -p "$TEXTS"
+python3 "$REPO/scripts/releases_page.py" --release-texts "$NOTES_FILE" "$TEXTS"
+NOTES="$(cat "$TEXTS/notes.txt")"
 PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 python3 - "$OUT/latest.json" "$VERSION" "$PUB_DATE" "$URL" "$TGZ.sig" "$NOTES" <<'PY'
 import json, sys
@@ -140,7 +145,7 @@ echo "결과:   $OUT"
 echo "걸린 시간: $((SECONDS - START))초"
 echo "서명 검증(앱과 같은 방식, app/src-tauri/tests/update_signature.rs):"
 echo "  TRACTUS_UPDATE_ARTIFACT=$TGZ TRACTUS_UPDATE_SIG=$TGZ.sig cargo test --manifest-path $REPO/app/src-tauri/Cargo.toml --test update_signature"
-NOTES_ARG=(--notes "Tractus $VERSION"); [ -z "$NOTES_FILE" ] || NOTES_ARG=(--notes-file "$NOTES_FILE")
+NOTES_ARG=(--notes-file "$TEXTS/body.md")
 GH_CMD=(gh release create "$TAG" -R "$GH_REPO" --title "Tractus $VERSION" "${NOTES_ARG[@]}" "$DMG" "$DMG.sha256" "$TGZ" "$TGZ.sig" "$OUT/latest.json")
 echo
 echo "GitHub 릴리스 (정식 릴리스여야 앱이 찾습니다. pre-release 가 아니고, 저장소가 공개여야 합니다):"

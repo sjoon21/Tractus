@@ -248,6 +248,7 @@ export default {
 
   // update.ts
   "업데이트 확인": "Check for updates",
+  "릴리스 노트 보기": "Release notes",
   "업데이트 설치": "Install update",
   "다시 열기": "Relaunch",
   "녹음·변환이 끝난 뒤 누르세요.": "Available after recording and transcription finish.",
