@@ -9,5 +9,6 @@ export default defineConfig({
   resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
   clearScreen: false,
   server: { port: 1420, strictPort: true, watch: { ignored: ["**/src-tauri/**"] } },
-  build: { target: "safari17" },
+  // 메인 창(index.html)과 메뉴 막대 팝오버 창(tray.html, tray.rs) 두 페이지
+  build: { target: "safari17", rollupOptions: { input: { main: path.resolve(__dirname, "index.html"), tray: path.resolve(__dirname, "tray.html") } } },
 });

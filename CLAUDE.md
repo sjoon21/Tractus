@@ -198,7 +198,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 
 ## 메뉴 막대 아이콘 (v3.24)
 
-- **메뉴 막대(트레이)의 녹음 시작·종료·북마크는 Rust가 하지 않는다.** Rust(`tray.rs`)는 메뉴·제목·아이콘만 그리고 `tray-action` 이벤트를 화면에 보내며, 화면이 창의 단추와 같은 함수로 처리한다(쓰던 메모 저장·권한·기능 잠금이 한 곳에 있게). 경과 시간은 화면 타이머가 아니라 Rust 틱이 센다(숨은 창은 타이머가 늦다). 창 닫기는 `should_hide_on_close`, 종료는 언제나 `begin_quit`이다 (docs/desktop.md §3.1, WORDS.md §4.16).
+- **메뉴 막대(트레이)의 녹음 시작·종료·북마크는 Rust가 하지 않는다.** Rust(`tray.rs`)는 메뉴·제목·아이콘만 그리고 `tray-action` 이벤트를 화면에 보내며, 화면이 창의 단추와 같은 함수로 처리한다(쓰던 메모 저장·권한·기능 잠금이 한 곳에 있게). 경과 시간은 화면 타이머가 아니라 Rust 틱이 센다(숨은 창은 타이머가 늦다). 왼쪽 클릭 팝오버(v3.57)도 같다: 단추는 메뉴 항목과 같은 ID로 `on_menu_event`를 지나고, 녹음 시각은 틱이 보내는 `tray-popover` 이벤트로 고친다. 창 닫기는 `should_hide_on_close`, 종료는 언제나 `begin_quit`이다 (docs/desktop.md §3.1, WORDS.md §4.16).
 
 ## 앱 번들 규칙 (미리 만든 앱, `scripts/build_app_bundle.sh`·`make_dmg.sh`)
 

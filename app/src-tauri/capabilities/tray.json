@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "tray-popover",
+  "description": "메뉴 막대 팝오버 창: 앱 명령, 이벤트 수신(상태·창 포커스), 내용에 맞춘 창 높이, 창 테마(설정의 라이트·다크)만 허용한다. 숨기기는 Rust 명령 tray_popover_hide가 한다",
+  "windows": [
+    "tray"
+  ],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-set-size",
+    "core:window:allow-set-theme"
+  ]
+}
