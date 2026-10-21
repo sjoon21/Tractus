@@ -115,8 +115,13 @@
   caret-color: var(--rec);
 }
 
-/* 녹음 중에 남긴 메모·북마크 */
+/* 녹음 중에 남긴 메모·북마크. 시각은 메모 첫 줄과 같은 줄에 앉는다(긴 메모가 여러 줄이어도) */
+.memo .seg-button {
+  align-items: baseline;
+}
+
 .memo .seg-time {
+  padding-top: 0;
   color: var(--memo);
 }
 
@@ -131,8 +136,14 @@
   line-height: 1.6;
 }
 
+.memo-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .memo-kind {
   flex: none;
+  white-space: nowrap;
   font-size: 11px;
   font-weight: 600;
   color: var(--memo);

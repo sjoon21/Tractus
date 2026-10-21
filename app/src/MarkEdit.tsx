@@ -3,7 +3,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { GrowTextarea } from "@/components/ui/textarea";
 import type { Memo } from "./lib";
 import { MARK_EDIT_HINT, MARK_EDIT_LABEL, MEMO_TEXT_MAX, markDeleteLabel } from "./marks";
 
@@ -24,11 +24,12 @@ export function EditableMark({ memo, onSave, onDelete, children }: { memo: Memo;
   };
 
   return (
-    <div className="group flex min-w-0 items-center gap-1">
+    <div className="group flex min-w-0 items-start gap-1">
       {editing ? (
-        <Input
+        <GrowTextarea
           autoFocus
-          className="h-8 flex-1"
+          className="flex-1 py-1.5"
+          onFocus={(e) => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
           defaultValue={memo.text ?? ""}
           maxLength={MEMO_TEXT_MAX}
           aria-label={MARK_EDIT_LABEL}

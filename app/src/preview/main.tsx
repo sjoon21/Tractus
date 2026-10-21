@@ -124,7 +124,11 @@ const llm = {
 let recMarks: T[] = [];
 const fakeRecording = () => {
   const rec = (payload: T) => void emit("rec", payload);
-  recMarks = [{ t: 42, kind: "bookmark", text: null }, { t: 61, kind: "memo", text: EN ? "double-check budget numbers" : "예산 숫자 다시 확인" }];
+  recMarks = [
+    { t: 42, kind: "bookmark", text: null },
+    { t: 61, kind: "memo", text: EN ? "double-check budget numbers" : "예산 숫자 다시 확인" },
+    { t: 75, kind: "memo", text: EN ? "ask Minsu after the meeting whether the Q3 cloud GPU cap of $8K a month includes the dev cluster, and send the slow-query analysis link to the channel" : "회의 끝나고 민수님께 3분기 클라우드 GPU 월 800만 원 한도에 개발 클러스터도 들어가는지 물어보고 slow query 분석 링크를 채널에 공유하기" },
+  ];
   setTimeout(() => {
     rec({ event: "started", dir: "/tmp/preview-rec", tracks: ["mic"], started_at: new Date().toISOString() });
     rec({ event: "level", t: 83.4, mic: -18, system: null });
@@ -142,7 +146,13 @@ const fakeRecSend = ({ cmd, text, index }: T) => {
 // 노트의 녹음 중 메모 (첫 노트): marks_save가 바꾼다
 let noteMarks: Record<string, T[]> = {};
 const marksOf = (id: string): T[] =>
-  noteMarks[id] ?? (id === notes[0].t.meeting_id ? [{ t: 12, kind: "memo", text: EN ? "check pool size" : "pool size 확인" }, { t: 30, kind: "bookmark", text: null }] : []);
+  noteMarks[id] ?? (id === notes[0].t.meeting_id
+    ? [
+        { t: 12, kind: "memo", text: EN ? "check pool size" : "pool size 확인" },
+        { t: 30, kind: "bookmark", text: null },
+        { t: 45, kind: "memo", text: EN ? "ask Minsu after the meeting whether the pool size change needs a DB restart, and send the slow-query analysis link to the channel before Wednesday" : "회의 끝나고 민수님께 pool size 바꾸면 DB 재시작이 필요한지 물어보고 수요일 전에 slow query 분석 링크를 채널에 공유하기" },
+      ]
+    : []);
 
 // 노트 완성 (첫 노트): 메모 탭 글 + 누르면 완성된 노트를 만든다
 const FIRST = notes[0].t;

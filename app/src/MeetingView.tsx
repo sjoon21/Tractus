@@ -1350,7 +1350,7 @@ function MemoRow({ memo: m, onSeek, onSave, onDelete }: { memo: Memo; onSeek: (t
           <time className="seg-time tnum">{fmtTime(m.t)}</time>
           <span className="memo-body">
             <span className="memo-kind">{isBookmark ? t("북마크") : t("메모")}</span>
-            {m.text}
+            <span className="memo-text">{m.text}</span>
           </span>
         </button>
       </EditableMark>

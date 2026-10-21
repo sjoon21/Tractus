@@ -82,7 +82,7 @@ describe("RecordView (일시정지·끝낸 뒤)", () => {
     expect(h).not.toContain("is-live");
     // 단추들이 disabled가 아니다 (일시정지 중에도 된다)
     expect(h).not.toMatch(/<button[^>]*disabled=""[^>]*>[^<]*(북마크|녹음 종료)/);
-    expect(h).not.toMatch(/<input[^>]*disabled/);
+    expect(h).not.toMatch(/<(input|textarea)[^>]*disabled/);
   });
 
   test("끝낸 뒤 묻는 중에는 옛 변환의 `완료` 줄을 보이지 않는다", () => {
