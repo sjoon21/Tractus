@@ -188,6 +188,36 @@ const fakeSummary = (a: T) => {
   return null;
 };
 
+// 회의록 탭 (docs/design/meeting-minutes.md): 첫 노트에만 있다. 근거는 그 노트의 첫 대화 줄들
+const minutesFor = (id: string) => {
+  const n = notes.find((x) => x.t.meeting_id === id);
+  if (n !== notes[0]) return null;
+  const ids = (n.t.segments as { id: string }[]).map((x) => x.id);
+  const L = (text: string, k: number, extra: T = {}) => ({ text, segment_ids: [ids[k % ids.length]], ...extra });
+  return EN
+    ? {
+        agenda: "Payments API latency, release date, onboarding docs",
+        topics: [
+          { title: "Payments API latency", open: false, discussed: [L("p95 rose to 800 ms since last week", 1, { unverified: ["800"] }), L("The connection pool fills up", 1)], agreed: [L("Raise the pool size from 20 to 50", 2)], points: [{ label: "Technical issue", details: [{ ...L("Pool exhaustion at peak", 1), children: [L("Slow queries hold connections", 2)] }] }], approach: [] },
+          { title: "Onboarding docs", open: true, discussed: [L("Notion or Confluence?", 3)], agreed: [], points: [], approach: [] },
+        ],
+        actions: [{ ...L("Share the slow-query analysis", 2), team: null, owner: "Minsu Kim", due: "Wednesday", note: null }, { ...L("Draft the onboarding outline", 3), team: null, owner: null, due: null, note: null }],
+        next_meeting: [L("Next Tuesday", 3)],
+      }
+    : {
+        agenda: "결제 API latency, 릴리스 일정, 온보딩 문서",
+        topics: [
+          { title: "결제 API latency", open: false, discussed: [L("지난주부터 p95가 800ms까지 오름", 1, { unverified: ["800"] }), L("DB connection pool이 꽉 참", 1)], agreed: [L("pool size를 20에서 50으로 올리기로 함", 2)], points: [{ label: "기술적 이슈", details: [{ ...L("피크 시간에 pool 고갈", 1), children: [L("slow query가 연결을 오래 잡음", 2)] }] }], approach: [] },
+          { title: "온보딩 문서", open: true, discussed: [L("Notion과 Confluence 중 어디에 둘지", 3)], agreed: [], points: [], approach: [] },
+        ],
+        actions: [{ ...L("slow query 분석 공유", 2), team: null, owner: "김민수", due: "수요일", note: null }, { ...L("온보딩 목차 초안", 3), team: null, owner: null, due: null, note: null }],
+        next_meeting: [L("다음 주 화요일", 3)],
+      };
+};
+let minutesEdited: Record<string, T> = {};
+const shownMinutes = (m: T | null, edited: string | null) =>
+  m ? { minutes: m, attendees: PEOPLE.slice(0, 2), title: EN ? "Weekly dev sync" : "주간 개발 회의", generated_at: "2026-10-20T10:00:00+09:00", edited_at: edited, markdown: "# [26.10.20] …", short: "[회의록] …" } : { minutes: null };
+
 const handlers: Record<string, (a: T) => unknown> = {
   rec_start: fakeRecording,
   summary_start: fakeSummary,
@@ -201,6 +231,8 @@ const handlers: Record<string, (a: T) => unknown> = {
     const extra = made.has(a.id) && n === notes[0] ? [ENHANCED] : [];
     return n?.summary ? [{ ...n.summary, key: "meeting" }, ...(n === notes[0] ? [BRIEF] : []), ...extra] : extra;
   },
+  minutes_show: (a) => shownMinutes((minutesEdited[a.id] as T) ?? minutesFor(a.id), minutesEdited[a.id] ? "2026-10-20T11:00:00+09:00" : null),
+  minutes_save: (a) => ((minutesEdited = { ...minutesEdited, [a.id]: a.minutes }), shownMinutes(a.minutes, "2026-10-20T11:00:00+09:00")),
   load_chat: (a) => (a.id === notes[0].t.meeting_id ? CHAT : []),
   get_settings: () => settings,
   calendar_next: () => {

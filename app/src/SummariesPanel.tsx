@@ -14,15 +14,16 @@ import { OpenSettings } from "./OpenSettings";
 import { staleSentence, type EditKind } from "./memo";
 import {
   afterDelete,
-  DEFAULT_KEY,
-  DEFAULT_NAME,
   defaultPick,
+  FALLBACK_SPEC,
   docMarkdown,
   orderDocs,
   pickLabel,
   pickSelected,
   rerunSpec,
   specsFromPick,
+  summaryTabDocs,
+  summaryTemplates,
   tabLabels,
   togglePick,
   type SummaryDoc,
@@ -91,7 +92,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
     async (alive: () => boolean = () => true) => {
       try {
         const d = await api.summariesList(id);
-        if (alive()) setDocs(d);
+        if (alive()) setDocs(summaryTabDocs(d));
       } catch (e) {
         if (alive()) notify({ text: errText(e), error: true });
       } finally {
@@ -108,7 +109,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
 
   const loadTemplates = useCallback(() => {
     setTemplatesFailed(false);
-    api.templatesList().then(setTemplates, () => setTemplatesFailed(true));
+    api.templatesList().then((ts) => setTemplates(summaryTemplates(ts)), () => setTemplatesFailed(true));
   }, []);
   useEffect(loadTemplates, [loadTemplates]);
 
@@ -155,7 +156,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
   }, [menuOpen]);
 
   const pick = picked ?? defaultPick(docs, templates);
-  const specs = templates.length > 0 ? specsFromPick(pick, templates) : templatesFailed ? [{ label: DEFAULT_NAME, key: DEFAULT_KEY }] : [];
+  const specs = templates.length > 0 ? specsFromPick(pick, templates) : templatesFailed ? [FALLBACK_SPEC] : [];
   const start = async (list: SummarySpec[]) => {
     if (running || p.blocked || list.length === 0) return;
     if (!(await p.prepare())) return;

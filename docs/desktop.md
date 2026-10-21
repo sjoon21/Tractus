@@ -480,7 +480,7 @@ Tauri 명령 (`src-tauri/src/removal.rs`, `lib.rs`):
 
 #### 녹음 노트의 메모 (오른쪽 패널 메모 탭, v3.18)
 
-녹음 노트(`kind` 없음)도 사용자가 직접 적은 메모를 가질 수 있다. 앱은 오른쪽 패널의 세 번째 탭(요약 / AI 질문 / 메모)에서 쓰고, 같은 `tractus note save <노트>`로 저장한다. 메모 노트가 입력창이 본문 전체인 노트라면 이것은 **녹음 옆에 붙는 글**이다. 녹음 중 남기는 메모·북마크(`memos.json`)와는 다른 것이다.
+녹음 노트(`kind` 없음)도 사용자가 직접 적은 메모를 가질 수 있다. 앱은 오른쪽 패널의 마지막 탭(요약 / 회의록 / AI 질문 / 메모)에서 쓰고, 같은 `tractus note save <노트>`로 저장한다. 메모 노트가 입력창이 본문 전체인 노트라면 이것은 **녹음 옆에 붙는 글**이다. 녹음 중 남기는 메모·북마크(`memos.json`)와는 다른 것이다.
 
 ```jsonc
 // transcript.json (녹음 노트)에 선택 키 "memo"가 생긴다. 없으면 메모가 없는 것이다 (옛 노트는 migration 없이 그대로)
@@ -845,6 +845,15 @@ tractus transcribe --into <노트> [--track …] [--language …] [--term …] [
 
 **알려진 한계.** 완성된 노트는 읽기 전용이다(고치려면 내 메모를 고친 뒤 `다시 완성`). 녹음이 길면 대화 전체를 한 번에 보낸다(요약과 같다). 메모가 대화보다 단정적인 표현으로 바뀌는 경우가 있다(가상 회의에서 '모으면 좋겠다'를 '모으기로 했다'에 가깝게 씀). WKWebView에서 손으로 확인하지 못했다(미리보기·vitest·tsc만).
 
+### 2.17.1 회의록: `tractus summarize <노트> --template minutes`, `tractus minutes <노트> show|save` (v3.56)
+
+설계·형식은 docs/design/meeting-minutes.md, 문구는 WORDS.md §4.26이다.
+
+- **코어 `minutes.py`:** 녹음 노트만(메모 노트 `no_recording`, 변환 전 `not_converted`, 대화 없음 `no_segments`). AI는 근거가 달린 칸만 낸다(strict JSON, 근거 ID 검사 1회 재요청). 담당·팀·기한·다음에 볼 날은 근거 문장과 대조해 없으면 지우고, 근거에 없는 숫자는 `unverified`로 표시한다. 결과는 `summaries/minutes.json`(요약 v2 + `kind: minutes`·`minutes`·`attendees`·`edited_at`, 기존 소비자용 `sections`)과 `minutes.md`(위키용 Markdown)다. 다시 만들면 `edited_at`이 지워진다.
+- **`minutes <노트> show`** → `{"minutes", "attendees", "title", "generated_at", "edited_at", "markdown", "short"}` (없으면 `{"minutes": null}`). **`minutes <노트> save`**(stdin `{"minutes": …}`, show의 `minutes` 모양): 비운 줄은 지우고, 근거 ID는 노트에 있는 것만 받고, 숫자 표시를 새 문장으로 다시 잰다. 사람이 고친 담당·기한은 대조하지 않는다. 형식이 틀리면 종료 코드 2. 출력은 show와 같다.
+- **앱:** `회의록` 탭(`MinutesPanel`, 녹음 노트만, 처음 열 때 만든다). `summary_start`(template `minutes`)로 만들고 Rust `minutes_show`·`minutes_save`로 읽고 고친다(저장은 차례로, 실패하면 화면을 되돌린다). `복사`는 `markdown`, `짧게 복사`는 `short`를 클립보드에 넣는다. 고친 적이 있으면 다시 만들기 전에 묻는다. 만드는 동안 노트 삭제를 막는다. 요약 탭은 `summaryTabDocs`·`summaryTemplates`로 회의록(옛 `summary.json`과 `minutes`)과 유형 `회의록`을 뺀다.
+- 내보내기·MCP·Obsidian은 요약 key `minutes`로 읽는다(md는 `minutes.md`, docx·MCP 구조는 `sections`).
+
 ### 2.18 Obsidian으로 보내기: `tractus obsidian <노트> --vault <폴더>` (v3.37)
 
 설계: [docs/design/obsidian-export.md](design/obsidian-export.md). 문구: WORDS.md §4.23.
@@ -895,7 +904,7 @@ tractus transcribe --into <노트> [--track …] [--language …] [--term …] [
 
 ### 3.1 메뉴 막대 아이콘 (v3.24, 이슈 #1)
 
-macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음을 시작·종료하고, 북마크를 남기고, 최근 노트를 열고, 창을 닫아도 앱(녹음·변환)이 계속 돌게 한다. 코어(Python)는 바뀌지 않는다. 구현은 `app/src-tauri/src/tray.rs`(메뉴·제목·아이콘·팝오버 창)와 `app/src/tray.ts`(화면 상태 → 메뉴 상태, 동작 라우팅), 팝오버 화면은 `app/src/TrayPopover.tsx`(`tray.html`), 문구는 WORDS.md §4.16이다. **아이콘을 왼쪽 클릭하면 팝오버, 오른쪽 클릭하면 아래의 기본 메뉴**가 뜬다(v3.56, 이슈 #32).
+macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음을 시작·종료하고, 북마크를 남기고, 최근 노트를 열고, 창을 닫아도 앱(녹음·변환)이 계속 돌게 한다. 코어(Python)는 바뀌지 않는다. 구현은 `app/src-tauri/src/tray.rs`(메뉴·제목·아이콘·팝오버 창)와 `app/src/tray.ts`(화면 상태 → 메뉴 상태, 동작 라우팅), 팝오버 화면은 `app/src/TrayPopover.tsx`(`tray.html`), 문구는 WORDS.md §4.16이다. **아이콘을 왼쪽 클릭하면 팝오버, 오른쪽 클릭하면 아래의 기본 메뉴**가 뜬다(v3.57, 이슈 #32).
 
 - **역할 나누기.** Rust는 그리기만 한다: 메뉴·아이콘·제목, 창 보이기·숨기기. 녹음 시작·종료·북마크는 Rust가 하지 않고 화면이 창의 단추와 **같은 함수**(`onRecordButton`·`sendRec`·`openMeeting`)로 처리한다. 그래서 쓰던 메모 저장, 마이크 권한 처리, 마지막으로 고른 녹음 방식, 기능 잠금 알림, 글만 있는 노트의 녹음 추가 흐름이 그대로 적용된다.
 - **상태 → Rust: 명령 `tray_update(payload)`.** 화면(`App.tsx`)이 `deriveTrayState`로 만든 값을 보낸다. 같은 값은 다시 보내지 않고(`createTraySender`), 최근 노트 목록은 바뀔 때만 싣는다(없으면 Rust가 이전 목록을 둔다). 타이머로 모으지 않는다: 숨은 webview의 `setTimeout`은 한참 늦어져 메뉴가 낡은 채로 남는다.
@@ -914,14 +923,14 @@ macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음�
 - **알림: 명령 `tray_show_if_hidden`.** 녹음 시작 실패(`rec.phase === "error"`)나 녹음 경고는 녹음 화면에만 보이므로, 화면이 이때 이 명령을 불러 숨었거나 최소화한 창을 꺼낸다(보이는 창은 그대로). 메뉴 막대에서 시작한 녹음이 숨은 창에서 조용히 실패하지 않게 한다. 북마크는 창을 숨긴 동안 따로 알리지 않는다(알려진 한계).
 - **동작 → 화면: 이벤트 `tray-action`** (메인 창에만 `emit_to`). `{"action": "record_start" | "record_pause" | "record_resume" | "record_stop" | "bookmark" | "open_note", "id"?: 노트 ID}`. 화면이 아직 준비되지 않았으면 이벤트는 조용히 버려진다. `routeTrayAction`이 지금 상태에서 뜻 없는 동작(이미 녹음 중인 시작, 녹음 중이 아닌 종료·북마크)을 무시하고, 메뉴를 빠르게 두 번 눌러도 두 번째가 들어오기 전에 단계를 앞당겨 `rec_start`가 두 번 불리지 않게 한다. `Tractus 열기`와 `open_note`는 Rust가 창을 직접 보이고(`show`+`unminimize`+`set_focus`) 숨은 창에서도 된다. `종료`는 ⌘Q와 같은 `begin_quit`이다(쓰던 메모 저장, 3초 안에 종료, 녹음에는 `stop`).
 - **경과 시간.** 화면 타이머를 쓰지 않는다. 화면이 녹음 시작 시각(`rec` 이벤트 `started`를 받은 `Date.now()`)을 한 번 보내고, Rust가 1초 틱(별도 스레드가 메인 스레드에 `sync`를 맡긴다)으로 상태 줄과 아이콘 옆 글자(`●12:34`, 한 시간이 넘으면 `●1:02:03`)를 고친다. 틱은 단계가 바뀌거나 아이콘을 끄거나 앱이 끝나면(`RunEvent::Exit`) 멈춘다. **일시정지 중에는 틱이 멈춘다**: 상태 줄 `일시정지됨 12:34`와 아이콘 옆 `‖12:34`는 화면이 보낸 `elapsed_ms`로 고정되고 시계를 읽지 않는다. 메뉴는 줄이 바뀔 때만 다시 만들고, 경과 시간은 글자만 바꾼다. 팝오버의 녹음 시각도 같은 틱이 센다: 틱마다 보이는 팝오버에 `tray-popover`를 다시 보내고, 팝오버는 받은 `started_at_ms`와 받은 순간의 시계로 그린다(팝오버에는 타이머가 없다).
-- **팝오버 (왼쪽 클릭, v3.56).** 창 `tray`(`tray.html`, 폭 300pt, 투명·테두리 없음·항상 위·모든 Space, 높이는 화면이 내용에 맞춘다). 맨 위 녹음 막대(대기 중: 상태 문구 + `녹음 시작` / 녹음 중·일시정지: 녹음 시각 + `북마크 남기기`·`일시정지`(`계속`)·`녹음 종료` / 변환 중: 진행률 + 진행 막대, 녹음을 시작할 수 없으면 시작 단추를 숨긴다) · 구분선 · `Tractus 열기` · `종료`. **최근 노트는 팝오버에 없고 오른쪽 클릭 메뉴에만 있다.** 단추는 글자 없이 `aria-label`·`title`만 둔다.
+- **팝오버 (왼쪽 클릭, v3.57).** 창 `tray`(`tray.html`, 폭 300pt, 투명·테두리 없음·항상 위·모든 Space, 높이는 화면이 내용에 맞춘다). 맨 위 녹음 막대(대기 중: 상태 문구 + `녹음 시작` / 녹음 중·일시정지: 녹음 시각 + `북마크 남기기`·`일시정지`(`계속`)·`녹음 종료` / 변환 중: 진행률 + 진행 막대, 녹음을 시작할 수 없으면 시작 단추를 숨긴다) · 구분선 · `Tractus 열기` · `종료`. **최근 노트는 팝오버에 없고 오른쪽 클릭 메뉴에만 있다.** 단추는 글자 없이 `aria-label`·`title`만 둔다.
   - **상태 → 팝오버.** 명령 `tray_popover_state`(처음 뜰 때)와 이벤트 `tray-popover`(열 때, 상태가 바뀔 때, 녹음 중 1초 틱마다; 보일 때만). 값은 `popover_state(payload)`: `{"phase": "idle"|"starting"|"recording"|"paused"|"converting", "status", "started_at_ms", "elapsed_ms", "progress_pct", "can": {"start","pause","resume","stop","bookmark"}, "recent"}`. 단추를 누를 수 있는지는 메뉴와 같은 `render` 판단이다.
   - **팝오버 → 동작.** 명령 `tray_popover_action(id)`: 메뉴 항목과 같은 ID(`tray:` 접두어만 받는다)로 `on_menu_event`를 지나 `tray-action`이 된다. 녹음 단추는 팝오버를 연 채로 두고(바뀐 시각·단추가 바로 보인다), `Tractus 열기`·`종료`는 닫는다(`popover_closes_on`).
   - **닫기.** 바깥 클릭(`Focused(false)`), Esc(명령 `tray_popover_hide`), 아이콘 다시 클릭, `Tractus 열기`·`종료`. 모두 `hide_popover`를 지나 숨긴 시각을 남기고, 그 뒤 300ms 안의 아이콘 클릭은 다시 열지 않는다(아이콘을 눌러 닫을 때 포커스를 잃어 숨는 것이 클릭보다 먼저 온다).
   - **위치.** 카드 왼쪽 끝을 아이콘 왼쪽 끝에, 위 끝을 메뉴 막대 바로 아래에 붙이고, 아이콘이 있는 화면의 오른쪽 끝을 넘으면 안쪽으로 민다. tray-icon이 주는 아이콘 사각형은 전역 논리 좌표에 **아이콘이 있는 화면의 배율**을 곱한 값이라, 화면마다 그 배율로 되돌려 아이콘의 화면을 찾고(`icon_rect_pt`, 배율이 다른 두 화면에 모두 들면 높이가 메뉴 막대 24pt에 가까운 쪽) 논리 좌표로 놓는다(`popover_origin`). 팝오버 창이 지금 있는 화면의 배율을 쓰지 않는다.
   - **언어·테마.** 언어를 바꾸면(`set_ui_lang` → `relabel`) 팝오버 창을 없애고 다음 클릭에 새 언어로 다시 만든다(문구가 창을 불러올 때 정해진다). 테마는 팝오버가 포커스를 받을 때마다 메인 창과 같은 저장소의 선택을 다시 적용한다.
   - **권한** (`capabilities/tray.json`, 창 `tray`만): `core:event:default`, `core:window:allow-set-size`, `core:window:allow-set-theme`. 앱 명령은 따로 막지 않는다(앱 매니페스트 없음).
-  - **빌드.** 둥근 카드 밖을 비우는 투명 창이라 Tauri `macOSPrivateApi: true`(Cargo 기능 `macos-private-api`)를 켰다. 비공개 API를 쓰므로 Mac App Store에는 낼 수 없다(ARCHITECTURE.md v3.56).
+  - **빌드.** 둥근 카드 밖을 비우는 투명 창이라 Tauri `macOSPrivateApi: true`(Cargo 기능 `macos-private-api`)를 켰다. 비공개 API를 쓰므로 Mac App Store에는 낼 수 없다(ARCHITECTURE.md v3.57).
 - **메뉴 (오른쪽 클릭).** 상태 줄(눌리지 않음) · `녹음 시작` · `일시정지`(일시정지 중에는 같은 자리가 `계속`) · `녹음 종료` · `북마크 남기기` · 구분선 · `최근 노트` ▸ (최대 5개, 제목 40자, 클릭하면 노트 열기) · 구분선 · `Tractus 열기` · `종료`. 항목을 숨기지 않고 못 쓸 때는 비활성으로 둔다.
 - **설정** (`settings.json`, 없으면 기본값 — 옛 설정 파일 호환): `tray_enabled`(기본 `true`, `메뉴 막대에 Tractus 표시`), `keep_in_tray`(기본 `true`, `창을 닫아도 메뉴 막대에 남기기`, `tray_enabled`가 꺼지면 쓸 수 없다). 설정 화면의 두 스위치는 저장 단추를 기다리지 않고 `set_tray_prefs`로 바로 적용한다(그 두 키만 병합해 쓴다. `save_settings`도 같은 적용을 한다). 아이콘은 실행 중에 만들고 없앤다(다시 시작 없음). 끌 때 창이 숨어 있으면 다시 보인다(다시 찾을 길이 Dock뿐이라서).
 - **창 닫기.** `should_hide_on_close(settings, tray_exists)` = `tray_enabled && keep_in_tray && 아이콘이 실제로 떠 있음`. 참이면 Rust의 창 이벤트 핸들러가 `prevent_close` + `hide`한다. 화면의 닫기 핸들러는 `tray_hides_on_close`로 같은 판단을 물어 참이면 쓰던 메모만 저장하고 닫기를 막는다(숨기기만 하므로 변환 취소 경고를 띄우지 않는다). 거짓(설정이 꺼짐, OS가 아이콘을 거절)이면 기존 흐름 그대로다: 닫기 확인 → 마지막 창이 닫히며 `ExitRequested` → `defer_exit`. Dock 아이콘(`RunEvent::Reopen`)은 숨은 창을 다시 보인다. ⌘Q와 아이콘의 `종료`는 `begin_quit`이다.
@@ -931,7 +940,7 @@ macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음�
 
 ### 3.2 양쪽 패널 접기·펼치기 (v3.26)
 
-왼쪽 노트 목록(사이드바)과 노트 화면의 오른쪽 패널(`요약`·`AI 질문`·`메모` 탭)을 각각 접고 펼 수 있다. 코어(Python)·Rust는 바뀌지 않는다. 구현은 `app/src/panels.ts`(순수 로직), `PanelToggle.tsx`(상태·단추), 문구는 WORDS.md §4.17이다. ⌘J AI 어시스턴트 서랍은 따로 뜨는 덮개라 그대로다.
+왼쪽 노트 목록(사이드바)과 노트 화면의 오른쪽 패널(`요약`·`회의록`·`AI 질문`·`메모` 탭)을 각각 접고 펼 수 있다. 코어(Python)·Rust는 바뀌지 않는다. 구현은 `app/src/panels.ts`(순수 로직), `PanelToggle.tsx`(상태·단추), 문구는 WORDS.md §4.17이다. ⌘J AI 어시스턴트 서랍은 따로 뜨는 덮개라 그대로다.
 
 - **단추.** 패널마다 하나. 아이콘(꺾쇠) + 이름(`aria-label`)이고 `title`에 단축키가 붙는다: `노트 목록 접기`/`펼치기`(`⌘B`), `오른쪽 패널 접기`/`펼치기`(`⌥⌘B`). `aria-expanded`, `aria-controls`(`sidebar-body`·`rail-body`), `aria-keyshortcuts`(`Meta+B`·`Alt+Meta+B`), 32×32 눌림 영역, 전역 `:focus-visible` 고리. 단추는 패널 안쪽이 아니라 **가장자리 띠에 붙어 있어** 접힌 뒤에도 남는다.
 - **접힌 모양.** 왼쪽은 56px 띠: 펼치기 단추 + **녹음 단추**(동그란 점, 녹음 중에는 붉게, 이름 `녹음 시작`/`녹음 중`/`변환 중…`, 기능 잠금·변환 중 규칙은 사이드바 녹음 단추와 같고, 파일 가져오기·대기 중도 `변환 중…`으로 보인다). 목록 안에만 있는 `변환 대기 중인 녹음`이 있으면 단추 아래에 개수 배지(`변환 대기 중인 녹음 N개`)가 뜬다. 가져오기 진행 막대·경고·목록 불러오기 오류는 목록 안에만 있어 접힌 동안 안 보인다(알려진 한계: 완료·실패는 알림 토스트와 메뉴 막대 아이콘이 알린다). 녹음은 한 번에 닿아야 해서 두었고, 새 노트·검색·설정은 두지 않았다(`⌘N`은 그대로 되고, `⌘K`는 목록을 펼친다). 오른쪽은 52px 띠에 펼치기 단추만 있다. 가운데(전사·편집기)가 남는 너비를 모두 쓴다. 1180px 이하의 좁은 창에서는 오른쪽 패널이 전사 아래로 가므로, 접으면 단추 줄(60px)만 남는다.

@@ -8,6 +8,7 @@ import type { DoctorReport } from "./caps";
 import type { ModelsList } from "./models";
 import { clockAt, resumedStartMs, type ClockAnchor } from "./pause";
 import type { Folder, MetaPatch, NoteMeta, SortKey, SortOrder } from "./organize";
+import { parseShown, type Minutes } from "./minutes";
 import { parseSummaryDocs, type TemplateInfo } from "./summaries";
 import type { TrayWire } from "./tray";
 import { APP_ERROR, DetailedError, IDLE_JOB, splitMessage, IDLE_LIVE, IDLE_REC, jobReduce, liveReduce, parseToolResult, recFlags, recReduce, type RecMode, type JobEvent, type JobState, type LiveEvent, type LiveState, type Memo, type NoteMemo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
@@ -273,6 +274,10 @@ export const api = {
   /** 노트의 요약 전부(기본 + summaries/). 원본 JSON + key라 summaries.parseSummaryDocs로 읽는다 */
   summariesList: async (id: string) => parseSummaryDocs(await invoke<unknown[]>("summaries_list", { id })),
   summariesDelete: (id: string, key: string) => invoke<void>("summaries_delete", { id, key }),
+  /** `tractus minutes <노트> show`: 회의록 칸 + 위키용 Markdown + 짧은 판. 없으면 null (docs/design/meeting-minutes.md) */
+  minutesShow: async (id: string) => parseShown(await invoke<unknown>("minutes_show", { id })),
+  /** `tractus minutes <노트> save`: 고친 칸을 저장하고 새로 그린 값을 돌려준다 */
+  minutesSave: async (id: string, minutes: Minutes) => parseShown(await invoke<unknown>("minutes_save", { id, minutes })),
   /** `tractus note new`: 새 메모 노트(기본 제목 `메모 HH:MM`). 만든 노트 ID */
   noteNew: (title?: string) => invoke<{ meeting_id: string }>("note_new", { title: title ?? null }),
   /** `tractus note save`: 메모 본문 전체를 저장한다 (메모 노트는 본문, 녹음 노트는 메모 탭의 글). 코어가 만든 줄 수와 고친 노트. 노트별 줄(editQueue)에 세워서 부른다 */

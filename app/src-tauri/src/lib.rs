@@ -1360,6 +1360,8 @@ pub fn run() {
             summaries::summary_start,
             summaries::summaries_list,
             summaries::summaries_delete,
+            summaries::minutes_show,
+            summaries::minutes_save,
             summaries::templates_list,
             summaries::templates_save,
             summaries::templates_delete,

@@ -1,0 +1,288 @@
+{
+ "schema_version": 2,
+ "meeting_id": "01SAMPLEMINUTES000000000000",
+ "title": "정산 서비스 2.0 기획 회의",
+ "created_at": "2026-10-20T14:00:00+09:00",
+ "audio": {
+  "file": "audio.ogg",
+  "duration_sec": 228.7,
+  "source": "sample.m4a",
+  "sha256": "sample"
+ },
+ "asr": {
+  "model": "synthetic",
+  "track": "standard",
+  "runtime": "none",
+  "language": "auto",
+  "hotwords": [
+   "PostgreSQL",
+   "CSV"
+  ]
+ },
+ "speakers": {
+  "S1": {
+   "name": "김지훈 (정산팀)"
+  },
+  "S2": {
+   "name": "기획팀"
+  },
+  "S3": {
+   "name": null
+  },
+  "S4": {
+   "name": null
+  }
+ },
+ "segments": [
+  {
+   "id": "s0001",
+   "start": 3.0,
+   "end": 17.0,
+   "text": "네 시작하겠습니다. 오늘은 정산 서비스 2.0 범위 세 가지를 보려고요. 해외 카드 정산, 정산 리포트 자동 발송, 그리고 환불 정책입니다.",
+   "lang": "ko",
+   "speaker": "S2",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0002",
+   "start": 17.8,
+   "end": 27.3,
+   "text": "해외 카드 정산부터 볼게요. 기획안은 해외 카드 열두 개 통화를 전부 지원하는 거였는데요.",
+   "lang": "ko",
+   "speaker": "S1",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0003",
+   "start": 28.1,
+   "end": 38.7,
+   "text": "문제는 환율 데이터를 하루에 한 번만 받아서 실시간 정산이 안 됩니다. 환율 공급사 계약도 아직이고요.",
+   "lang": "ko",
+   "speaker": "S1",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0004",
+   "start": 39.5,
+   "end": 49.8,
+   "text": "저희 플랫폼팀에서는 환율을 1분마다 당겨 오면 API 호출이 하루 1440번이라 비용이 걱정입니다.",
+   "lang": "ko",
+   "speaker": "S3",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0005",
+   "start": 50.6,
+   "end": 59.0,
+   "text": "그럼 해외 카드는 이번 2.0 범위에서 빼고 2.1에서 다시 보는 걸로 하죠.",
+   "lang": "ko",
+   "speaker": "S2",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0006",
+   "start": 59.8,
+   "end": 66.7,
+   "text": "네 동의합니다. 대신 원화 결제는 2.0에 그대로 넣겠습니다.",
+   "lang": "ko",
+   "speaker": "S1",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0007",
+   "start": 67.5,
+   "end": 78.1,
+   "text": "근데 해외 결제 문의가 지난달에 200건 넘게 들어왔어요. 고객 지원 쪽 부담이 좀 있을 것 같은데요.",
+   "lang": "ko",
+   "speaker": "S4",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0008",
+   "start": 78.9,
+   "end": 85.5,
+   "text": "그건 공지로 먼저 안내하는 걸로 하고요. 다음 안건 보죠.",
+   "lang": "ko",
+   "speaker": "S2",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0009",
+   "start": 86.3,
+   "end": 94.0,
+   "text": "정산 리포트 자동 발송이요. 매달 1일에 가맹점에 메일로 보내는 거요.",
+   "lang": "ko",
+   "speaker": "S2",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0010",
+   "start": 94.8,
+   "end": 104.6,
+   "text": "리포트는 포스트그레스에서 집계 쿼리를 돌리는데 가맹점이 많으면 한 번에 30초 넘게 걸립니다.",
+   "lang": "ko",
+   "speaker": "S1",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0011",
+   "start": 105.4,
+   "end": 114.1,
+   "text": "플랫폼팀 의견은 집계 배치를 새벽 3시로 옮기고 가맹점을 나눠서 돌리자는 거예요.",
+   "lang": "ko",
+   "speaker": "S3",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0012",
+   "start": 114.9,
+   "end": 123.0,
+   "text": "좋습니다. 그럼 집계는 새벽 배치로 하고 메일은 아침 9시에 나가게 하죠.",
+   "lang": "ko",
+   "speaker": "S1",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0013",
+   "start": 123.8,
+   "end": 129.0,
+   "text": "리포트 양식은 기존 PDF 그대로 가나요?",
+   "lang": "ko",
+   "speaker": "S2",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0014",
+   "start": 129.8,
+   "end": 140.1,
+   "text": "처음에는 CSV만 하고 PDF는 나중에 보죠. PDF 만드는 라이브러리 라이선스 확인이 필요해서요.",
+   "lang": "ko",
+   "speaker": "S1",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0015",
+   "start": 140.9,
+   "end": 149.8,
+   "text": "그럼 2.0은 CSV로 가고, PDF는 라이선스 확인한 뒤에 다시 얘기하는 걸로요.",
+   "lang": "ko",
+   "speaker": "S2",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0016",
+   "start": 150.6,
+   "end": 156.6,
+   "text": "마지막으로 환불 정책이요. 부분 환불을 허용할지요.",
+   "lang": "ko",
+   "speaker": "S2",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0017",
+   "start": 157.4,
+   "end": 165.3,
+   "text": "부분 환불을 하면 수수료 계산이 복잡해져요. 카드사마다 규칙이 달라서요.",
+   "lang": "ko",
+   "speaker": "S4",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0018",
+   "start": 166.1,
+   "end": 172.9,
+   "text": "저는 허용해야 한다고 봐요. 요청이 제일 많은 기능이라서요.",
+   "lang": "ko",
+   "speaker": "S1",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0019",
+   "start": 173.7,
+   "end": 182.7,
+   "text": "시스템적으로는 가능한데 정산 마감 이후 환불은 따로 처리해야 해서 공수가 꽤 듭니다.",
+   "lang": "ko",
+   "speaker": "S3",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0020",
+   "start": 183.5,
+   "end": 190.4,
+   "text": "이건 오늘 정하기 어렵겠네요. 재무팀 의견을 듣고 다시 보죠.",
+   "lang": "ko",
+   "speaker": "S2",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0021",
+   "start": 191.2,
+   "end": 199.7,
+   "text": "정리하면, 지훈님이 원화 결제 범위 문서를 다음 주 수요일까지 정리해 주시고요.",
+   "lang": "ko",
+   "speaker": "S2",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0022",
+   "start": 200.5,
+   "end": 205.0,
+   "text": "네 다음 주 수요일까지 하겠습니다.",
+   "lang": "ko",
+   "speaker": "S1",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0023",
+   "start": 205.8,
+   "end": 211.9,
+   "text": "저희는 새벽 배치 분할 방식을 검토해서 공유드릴게요.",
+   "lang": "ko",
+   "speaker": "S3",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0024",
+   "start": 212.7,
+   "end": 221.1,
+   "text": "그리고 해외 결제 공지 문안은 고객 지원 쪽이랑 같이 만들어야 할 것 같아요.",
+   "lang": "ko",
+   "speaker": "S2",
+   "corrected_text": null,
+   "words": null
+  },
+  {
+   "id": "s0025",
+   "start": 221.9,
+   "end": 227.9,
+   "text": "재무팀 미팅은 제가 잡겠습니다. 네 수고하셨습니다.",
+   "lang": "ko",
+   "speaker": "S2",
+   "corrected_text": null,
+   "words": null
+  }
+ ]
+}
