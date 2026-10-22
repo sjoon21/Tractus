@@ -84,6 +84,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - **용어집은 `hotwords=[...]`로 넣는다.** 용어 재현율이 72%에서 84%로 오른다.
 - **청크는 Silero VAD로 무음 지점에서 최대 30초 단위로 자른다.**
 - **반복 루프를 막는다.** 청크 길이에 비례한 `max_tokens` 상한을 두고, 반복을 감지하면 재시도한다(언어 고정이면 자동 감지로, 아니면 그 청크만 온도 0.3으로 한 번 더, 그래도 루프면 반복을 접는다). 0.6B에서 한 발화가 11,000자 넘게 반복된 사례가 있다.
+- **숫자 표기 바꾸기(v3.64, `itn.py`).** 변환 결과의 한자어 수를 숫자로 바꾼다(`Transcriber.transcribe` 끝, 모든 계열). 규칙(`UNITS`·`PARTICLE_START`·`ATTACHED_OK`·`이` 제외)을 바꾸면 `bench/itn_eval.py`로 나빠진 발화가 늘지 않는지 본다(문장은 찍지 않는다). 회의록 숫자 대조(`minutes.unverified_numbers`)도 근거를 같은 함수로 읽는다.
 - **자주 쓰는 단어(hotwords) 안전장치(v3.51).** 이 노트에 가까운 것부터(일정 참석자 → `--term` → glossary → 노트의 제목·녹음 중 메모·내 메모에서 고른 낱말 `asr.note_terms` 20개까지, v3.53) 앞의 50개(`asr.HOTWORDS_MAX`)만, 1초 미만 청크에는 넣지 않고, 출력이 목록을 받아 적었으면(`asr.echoes_hotwords`) 그 청크만 단어 없이 다시 변환한다. 전역 `repetition_penalty`·앞 청크 텍스트를 문맥으로 넣기는 하지 않는다(리서치: 근거 없음·오류 전파).
 
 ## 데이터와 저장소 규칙
@@ -104,6 +105,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `vad.py` | VAD 발화 구간 → 30초 이하 청크 |
 | `diarize.py` | 화자 분리(Nemotron 3 `Diarizer`, fluid `FluidDiarizer` = `tractus-diar` 헬퍼), 단일 화자 평활(`smooth`), turn 정리(`_tidy`), 화자 경계로 청크 나누기(`split_chunks`) |
 | `asr.py` | `Transcriber`: 청크 전사, 토큰 상한, 반복 루프 재시도·보정 |
+| `itn.py` | 숫자 표기 바꾸기: 한자어 수 → 숫자(`korean_numbers`, 단위·조사 규칙, `이` 한 글자·고유어 수는 그대로). `asr.Transcriber.transcribe`와 회의록 숫자 대조가 쓴다 |
 | `align.py` | 단어 정렬(Qwen3-ForcedAligner): `tokenize`(soynlp 대체), `Aligner.align`, `align_segments`, 편집 뒤 시각 옮기기 `remap_words` |
 | `attach.py` | 글만 있는 노트에 녹음 덧붙이기(`transcribe --append-to`, `finish_append`): 메모 노트 → 녹음 노트 변환, 세그먼트 ID(`s####` → `m####`) 옮김표로 요약(`summary.json`·`summaries/*.json`)·질문 기록 근거 옮기기, 녹음 폴더 `attach.json` 읽기 |
 | `deferred.py` | 녹음과 변환 나누기(`tractus recording finish`, `transcribe --into`): 녹음 폴더 → "변환 전" 노트(`state: "recorded"`, `tracks/`·`audio.ogg`·`memos.json`, `.finish.json`으로 끊긴 저장 이어서 끝내기), 변환 전 노트의 입력 찾기(`note_tracks`)와 변환 결과 합치기(`finish_convert`) |
@@ -255,6 +257,7 @@ uv run tractus export <meeting_id> --format docx --out 회의.docx [--force] [--
 uv run tractus obsidian <meeting_id> --vault <볼트> [--summary KEY] [--audio] [--force]   # Obsidian으로 보내기 → {"status": created|updated|unchanged|edited, "path", "audio"}
 uv run python bench/search_eval.py                  # 검색 평가 (가상)
 uv run python bench/ask_eval.py [--memo]            # 질의 평가 (가상 회의만 원격 LLM으로, --memo: 메모가 달린 가상 노트 3건 + 메모 질문 6개)
+(cd bench && uv run python itn_eval.py)                # 숫자 표기 바꾸기 효과 (저장한 AI Hub 발화 단위 결과, 지표만, 추론 없음)
 uv run tractus transcribe <파일> [--no-align] [--diarizer auto|nemotron|fluid]   # 전사 (+ 단어 타이밍)
 (cd recorder && swift build -c release && swift test)                # tractus-rec (Swift 5.10+)
 (cd recorder/diar && swift build -c release && swift test)           # tractus-diar (Swift 6.2+)

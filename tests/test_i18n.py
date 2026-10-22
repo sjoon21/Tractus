@@ -13,7 +13,8 @@ SRC = Path(i18n.__file__).parent
 HANGUL = re.compile(r"[가-힣]")
 VAR = re.compile(r"\{(\w+)\}")
 # MCP 출력은 에이전트용 기술 문서라 옮기지 않는다 (CLAUDE.md "MCP 출력")
-SKIP = {"mcp_server.py"}
+# itn.py는 한국어 숫자 표기 규칙이라 한글 글자 자체가 데이터다 (화면 문구가 없다)
+SKIP = {"mcp_server.py", "itn.py"}
 # CLI 도움말·로그는 개발자용이다
 DEV_KWARGS = {"help", "rich_help_panel", "metavar", "epilog", "short_help"}
 DEV_LOGGERS = {"log", "logger", "logging"}
