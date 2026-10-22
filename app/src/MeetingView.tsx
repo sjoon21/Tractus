@@ -84,6 +84,8 @@ import { cn } from "@/components/ui/utils";
 import { CHIP } from "@/components/panel/chip";
 import { EnhancedNote } from "./EnhancedNote";
 import { MinutesPanel } from "./MinutesPanel";
+import { PolishBar, PolishButton, PolishDiff, usePolish } from "./PolishControls";
+import { AI_EDITED, livePolish, NO_SUGGESTIONS, pendingIds, type PolishSuggestion } from "./polish";
 
 const RATE_KEY = "tractus.playbackRate";
 const VOLUME_KEY = "tractus.volume";
@@ -413,6 +415,44 @@ export function MeetingView({
       void serial(() => persist(edits, false, suggestTerm));
     },
     [id, serial, persist],
+  );
+  // AI 다듬기 (docs/design/transcript-polish.md): 제안은 polish.json이 원본이다. 끝나면 노트를 다시 읽는다
+  const polish = usePolish(id, notify, async () => {
+    const d = await api.loadMeeting(id);
+    commit(d);
+    if (!d.polish?.length) notify({ text: NO_SUGGESTIONS });
+  });
+  const [deciding, setDeciding] = useState<ReadonlySet<string>>(new Set());
+  /** 제안 받기·버리기: 줄에 세워 코어가 고친 회의를 돌려준다. 받은 문장은 ⌘Z로 되돌릴 수 있고, 하나만 받았으면 자주 쓰는 단어를 제안한다 */
+  const decidePolish = useCallback(
+    (ids: string[], accept: boolean) => {
+      if (!ids.length) return;
+      if (editQueue.isBlocked(id)) return setEditError(EDIT_BLOCKED);
+      setDeciding((d) => new Set([...d, ...ids]));
+      void serial(async () => {
+        const before = confirmed.current;
+        try {
+          const { changed, meeting } = await api.polishResolve(id, ids, accept);
+          commit(meeting);
+          if (accept && changed > 0) {
+            onEdited?.(id, meeting.info.updated_at ?? "");
+            bumpEdit("text");
+            indexer.touch();
+            const now = new Map(meeting.segments.map((s) => [s.id, s]));
+            const edits = ids.flatMap((i) => (now.has(i) ? [{ id: i, text: segText(now.get(i)!) }] : []));
+            if (before) undoStack.current.push(inverseEdits(before.segments, edits));
+            const old = edits.length === 1 ? before?.segments.find((s) => s.id === edits[0].id) : undefined;
+            const term = old ? termFromEdit(segText(old), edits[0].text) : null;
+            if (term) suggestTerm(term);
+          }
+        } catch (e) {
+          notify({ text: errText(e), detail: errDetail(e), error: true });
+        } finally {
+          setDeciding((d) => new Set([...d].filter((x) => !ids.includes(x))));
+        }
+      });
+    },
+    [id, serial, commit, onEdited, bumpEdit, suggestTerm, notify],
   );
   // 되돌리기도 줄에 선다: 앞선 저장이 끝나 스택에 오른 뒤에 꺼낸다(저장 중에 ⌘Z를 눌러도 순서가 맞다)
   const undo = useCallback(() => {
@@ -787,10 +827,14 @@ export function MeetingView({
     : memoPick;
   const noteBody = detail.note_memo?.body ?? "";
   const bodyChars = (detail.body ?? "").length;
+  // AI 다듬기: 돌아가는 동안은 끝난 구간의 제안, 끝나면 polish.json. 지금 문장과 맞는 것만, 정하는 중인 것은 빼고
+  const polishMap = new Map([...livePolish(segments, polish.running ? polish.live : (detail.polish ?? []))].filter(([k]) => !deciding.has(k)));
+  const glowing = polish.running ? pendingIds(segments, polish.ranges) : null;
+  const polishOff = recorded ? CONVERT_FIRST : editing || memoBusy ? t("저장이 끝난 뒤에 교정할 수 있습니다") : null;
 
   return (
     <div className={cn("meeting grid h-full max-[1180px]:block max-[1180px]:overflow-y-auto", railCollapsed ? "is-rail-collapsed grid-cols-[minmax(0,1fr)_52px]" : "grid-cols-[minmax(0,1fr)_var(--rail)]")}>
-      <article className="transcript-col relative flex min-h-0 flex-col overflow-y-auto max-[1180px]:overflow-visible" onWheel={() => playing && setFollow(false)} onScroll={() => menu && setMenu(null)}>
+      <article className="transcript-col relative col-start-1 row-start-1 flex min-h-0 flex-col overflow-y-auto max-[1180px]:overflow-visible" onWheel={() => playing && setFollow(false)} onScroll={() => menu && setMenu(null)}>
         <div data-tauri-drag-region className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-2 bg-background/90 pr-3 pl-6 backdrop-blur-md">
           <p className="m-0 flex min-w-0 items-center gap-2 truncate text-xs text-muted-foreground tabular-nums" data-tauri-drag-region>
             {created?.toLocaleDateString(locale(), { year: "numeric", month: "long", day: "numeric", weekday: "short" })}
@@ -799,6 +843,9 @@ export function MeetingView({
             {recorded && <Badge variant="memo">{RECORDED_BADGE}</Badge>}
           </p>
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
+            {!memoNote && !recorded && segments.length > 0 && (
+              <PolishButton running={polish.running} done={polish.done} total={polish.total} disabled={polishOff} again={(detail.polish?.length ?? 0) > 0} onClick={() => void polish.start(flushMemos)} />
+            )}
             {!memoNote && segments.length > 0 && !hasWords && detail.audio_path && (
               <GatedButton
                 gate={alignGate}
@@ -844,8 +891,8 @@ export function MeetingView({
               size="icon-sm"
               className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               aria-label={t("삭제")}
-              disabled={align.job.running || summaryRunning || enhanceRunning || minutesRunning || !!attach?.lock || !!convertBlock}
-              title={convertBlock ?? (align.job.running || summaryRunning || enhanceRunning || minutesRunning || attach?.lock ? t("작업이 끝난 뒤에 삭제할 수 있습니다") : t("노트를 휴지통으로 옮깁니다"))}
+              disabled={align.job.running || summaryRunning || enhanceRunning || minutesRunning || polish.running || !!attach?.lock || !!convertBlock}
+              title={convertBlock ?? (align.job.running || summaryRunning || enhanceRunning || minutesRunning || polish.running || attach?.lock ? t("작업이 끝난 뒤에 삭제할 수 있습니다") : t("노트를 휴지통으로 옮깁니다"))}
               onClick={() => onDelete({ kind: "note", id, title: info.title, dir: info.dir, memo: memoNote, withMemo: !memoNote && memoLines.size > 0 })}
             >
               <Trash2 aria-hidden />
@@ -944,7 +991,8 @@ export function MeetingView({
             <p className="mt-1.5 mb-0 text-xs leading-relaxed text-muted-foreground">{t("이 녹음에서 말소리를 찾지 못했습니다. 아래 플레이어로 녹음된 소리를 확인해 보세요. 마이크가 멀었거나 녹음이 너무 짧았을 수 있습니다.")}</p>
           </div>
         )}
-        {!memoNote && <ol className={`transcript ${diarized ? "has-speakers" : ""}`} ref={list}>
+        {!memoNote && <PolishBar live={polishMap} running={polish.running} busy={deciding.size > 0} onDecide={decidePolish} />}
+        {!memoNote && <ol className={`transcript ${diarized ? "has-speakers" : ""} ${polish.running ? "is-polishing" : ""}`} ref={list}>
           {rows.map((r, i) =>
             r.kind === "seg" ? (
               <SegmentRow
@@ -963,6 +1011,10 @@ export function MeetingView({
                 turnStart={!!r.turnStart}
                 flow={!!r.flow}
                 onChip={openChip}
+                suggestion={polishMap.get(r.seg.id)}
+                glowing={!!glowing?.has(r.seg.id)}
+                deciding={deciding.size > 0}
+                onDecide={decidePolish}
               />
             ) : (
               <MemoRow
@@ -1101,6 +1153,7 @@ export function MeetingView({
           />
         )}
       </article>
+      {polish.running && <div aria-hidden className="polish-frame pointer-events-none col-start-1 row-start-1 max-[1180px]:hidden" />}
 
       <aside className="summary-col relative flex min-h-0 flex-col border-l border-border bg-background max-[1180px]:overflow-visible max-[1180px]:border-t max-[1180px]:border-l-0" aria-label={railLabel(memoNote)}>
         <PanelToggle side="right" />
@@ -1250,6 +1303,10 @@ const SegmentRow = memo(function SegmentRow({
   turnStart,
   flow,
   onChip,
+  suggestion,
+  glowing,
+  deciding,
+  onDecide,
 }: {
   seg: Segment;
   index: number;
@@ -1268,6 +1325,12 @@ const SegmentRow = memo(function SegmentRow({
   /** 같은 발언에서 바로 이어진 줄: 문단처럼 붙여 그린다 (lib.transcriptRows) */
   flow: boolean;
   onChip: (seg: Segment, anchor: HTMLElement) => void;
+  /** AI 다듬기 제안 (줄 아래 diff + 받기·버리기) */
+  suggestion?: PolishSuggestion;
+  /** AI가 아직 보지 않은 줄: 은은하게 빛난다 */
+  glowing: boolean;
+  deciding: boolean;
+  onDecide: (ids: string[], accept: boolean) => void;
 }) {
   const diarized = speaker !== undefined;
   const button = useRef<HTMLButtonElement>(null);
@@ -1282,7 +1345,7 @@ const SegmentRow = memo(function SegmentRow({
   const edited = seg.corrected_text != null;
   return (
     <li
-      className={`seg ${isActive ? "is-active" : ""} ${diarized && turnStart ? "is-turn" : ""} ${flow ? "is-flow" : ""} ${isFind ? "is-find" : ""}`}
+      className={`seg ${isActive ? "is-active" : ""} ${diarized && turnStart ? "is-turn" : ""} ${flow ? "is-flow" : ""} ${isFind ? "is-find" : ""} ${glowing ? "is-glow" : ""} ${suggestion ? "has-polish" : ""}`}
       data-seg={index}
       data-seg-id={seg.id}
       style={{ "--i": Math.min(order, 16), ...(diarized ? spkStyle(slot) : {}) } as React.CSSProperties}
@@ -1323,13 +1386,14 @@ const SegmentRow = memo(function SegmentRow({
           <span className="seg-body">
             <span className="seg-text">{segText(seg)}</span>
             {edited && (
-              <span className="seg-edited" title={t("수정 전: {text}", { text: seg.text })}>
-                {t("수정됨")}
+              <span className={`seg-edited ${seg.corrected_by === "ai" ? "is-ai" : ""}`} title={t("수정 전: {text}", { text: seg.text })}>
+                {seg.corrected_by === "ai" ? AI_EDITED : t("수정됨")}
               </span>
             )}
           </span>
         </button>
       )}
+      {suggestion && !isEditing && <PolishDiff s={suggestion} busy={deciding} onDecide={onDecide} />}
     </li>
   );
 });

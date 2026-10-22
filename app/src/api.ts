@@ -9,6 +9,7 @@ import type { ModelsList } from "./models";
 import { clockAt, resumedStartMs, type ClockAnchor } from "./pause";
 import type { Folder, MetaPatch, NoteMeta, SortKey, SortOrder } from "./organize";
 import { parseShown, type Minutes } from "./minutes";
+import type { PolishSuggestion } from "./polish";
 import { parseSummaryDocs, type TemplateInfo } from "./summaries";
 import type { TrayWire } from "./tray";
 import { APP_ERROR, DetailedError, IDLE_JOB, splitMessage, IDLE_LIVE, IDLE_REC, jobReduce, liveReduce, parseToolResult, recFlags, recReduce, type RecCommand, type RecMode, type JobEvent, type JobState, type LiveEvent, type LiveState, type Memo, type NoteMemo, type RecEvent, type RecState, type Segment, type Speakers, type TextEdit } from "./lib";
@@ -63,6 +64,8 @@ export interface MeetingDetail {
   audio_path: string | null;
   /** 캘린더 일정으로 시작한 녹음이면 그 일정의 참석자 이름 (참석자 이름 고르기). 옛 앱·없음은 빈 목록 */
   attendees?: string[];
+  /** 아직 정하지 않은 AI 다듬기 제안 (polish.json). 화면은 polish.livePolish로 지금도 맞는 것만 보인다. 옛 앱은 없다 */
+  polish?: PolishSuggestion[];
 }
 
 /** `tractus-rec calendar next`의 일정 하나 (docs/design/calendar.md). 시각은 ISO 8601 */
@@ -255,6 +258,8 @@ export const api = {
   editSpeakers: (id: string, edit: SpeakerEdit) => invoke<MeetingDetail>("edit_speakers", { id, edit }),
   /** `tractus segments <회의> edit` 묶음 한 번. 원문과 같은 문장은 해제된다. 코어가 바꾼 세그먼트 수와 고친 회의 */
   editSegments: (id: string, edits: TextEdit[]) => invoke<{ changed: number; meeting: MeetingDetail }>("edit_segments", { id, edits }),
+  /** AI 다듬기 제안 받기(accept)·버리기. 받으면 고친 문장으로 바뀌고(원문은 남는다, corrected_by "ai") 남은 제안과 함께 고친 회의를 돌려준다 */
+  polishResolve: (id: string, ids: string[], accept: boolean) => invoke<{ changed: number; meeting: MeetingDetail }>("polish_resolve", { id, ids, accept }),
   /** 목소리 프로필 (Phase 7.1, docs/desktop.md §2.7) */
   voicesList: () => invoke<VoiceList>("voices_list"),
   /** 이름 바꾸기 + 목소리 기억하기. 동의 확인(폼의 두 번째 체크)을 받은 뒤에만 부른다. 그 사람의 표본 수와 고친 회의 */
@@ -393,7 +398,7 @@ type Warning = JobState["warnings"][number];
 
 /** 작업 하나를 실행하고 진행 이벤트를 상태로 모은다. 성공(exit 0 + done)하면 onDone(meeting_id, 경고들, 요약 key), 실패하면 onFail().
  * 요약 key는 요약 작업의 done 이벤트(summary_key)에만 있다 */
-export function useJob(onDone: (meetingId: string, warnings: Warning[], summaryKey: string | null) => void, onFail?: () => void) {
+export function useJob(onDone: (meetingId: string, warnings: Warning[], summaryKey: string | null) => void, onFail?: () => void, onEvent?: (ev: JobEvent) => void) {
   const [state, setState] = useState<JobState>(IDLE_JOB);
   const jobId = useRef<string | null>(null);
   const doneId = useRef<string | null>(null);
@@ -403,10 +408,13 @@ export function useJob(onDone: (meetingId: string, warnings: Warning[], summaryK
   onDoneRef.current = onDone;
   const onFailRef = useRef(onFail);
   onFailRef.current = onFail;
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
 
   useEffect(() => {
     const un = listen<JobEvent>("job", ({ payload: ev }) => {
       if (ev.job !== jobId.current) return;
+      onEventRef.current?.(ev); // 진행 이벤트에 실린 결과를 그때그때 쓰는 작업 (AI 다듬기의 구간별 제안)
       // 부수 효과는 상태 갱신 함수 밖에서 (StrictMode는 갱신 함수를 두 번 부른다)
       if (ev.event === "done") {
         doneId.current = ev.meeting_id;

@@ -106,6 +106,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `diarize.py` | 화자 분리(Nemotron 3 `Diarizer`, fluid `FluidDiarizer` = `tractus-diar` 헬퍼), 단일 화자 평활(`smooth`), turn 정리(`_tidy`), 화자 경계로 청크 나누기(`split_chunks`) |
 | `asr.py` | `Transcriber`: 청크 전사, 토큰 상한, 반복 루프 재시도·보정 |
 | `itn.py` | 숫자 표기 바꾸기: 한자어 수 → 숫자(`korean_numbers`, 단위·조사 규칙, `이` 한 글자·고유어 수는 그대로). `asr.Transcriber.transcribe`와 회의록 숫자 대조가 쓴다 |
+| `polish.py` | AI 다듬기(docs/design/transcript-polish.md): 문장 단위 교정 제안 `suggest`(5천 자 창 + 문맥, 동시 4개, 거르기·표시), `polish.json`(`pending`·`resolve`). 받기는 `apply_text_edits`의 `by: "ai"` → `corrected_by` |
 | `align.py` | 단어 정렬(Qwen3-ForcedAligner): `tokenize`(soynlp 대체), `Aligner.align`, `align_segments`, 편집 뒤 시각 옮기기 `remap_words` |
 | `attach.py` | 글만 있는 노트에 녹음 덧붙이기(`transcribe --append-to`, `finish_append`): 메모 노트 → 녹음 노트 변환, 세그먼트 ID(`s####` → `m####`) 옮김표로 요약(`summary.json`·`summaries/*.json`)·질문 기록 근거 옮기기, 녹음 폴더 `attach.json` 읽기 |
 | `deferred.py` | 녹음과 변환 나누기(`tractus recording finish`, `transcribe --into`): 녹음 폴더 → "변환 전" 노트(`state: "recorded"`, `tracks/`·`audio.ogg`·`memos.json`, `.finish.json`으로 끊긴 저장 이어서 끝내기), 변환 전 노트의 입력 찾기(`note_tracks`)와 변환 결과 합치기(`finish_convert`) |

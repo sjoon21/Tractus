@@ -475,6 +475,7 @@ def apply_text_edits(t: dict, edits: list) -> tuple[dict, int]:
     단어 시각(words)이 있으면 바뀐 텍스트에 맞게 옮긴다(align.remap_words, 새 단어는 approx).
     처음 고칠 때 words를 words_asr(선택 키)에 복사해 두고, 원문과 같아지면 words_asr로 words를 정확히 되돌린다.
     원문과 같아지면 교정을 지운다(null). 공백·줄바꿈은 한 칸으로 줄이고 제어 문자는 뺀다(one_line).
+    `by: "ai"`인 편집(받은 AI 다듬기 제안, polish.py)은 선택 키 corrected_by="ai"를 남긴다. 그 밖의 편집(사람)과 원문으로 되돌리기는 지운다.
     없는 id·빈 텍스트·잘못된 형식이 하나라도 있으면 아무것도 바꾸지 않고 ValueError."""
     t = copy.deepcopy(t)
     by_id = {s["id"]: s for s in t["segments"]}
@@ -487,11 +488,11 @@ def apply_text_edits(t: dict, edits: list) -> tuple[dict, int]:
         text = one_line(e["text"])
         if not text:
             raise ValueError(SEGMENT_EMPTY)
-        plan.append((by_id[e["id"]], text))
+        plan.append((by_id[e["id"]], text, e.get("by") == "ai"))
     from tractus.align import remap_words  # align이 store를 불러오므로 여기서 불러온다
 
     changed = set()
-    for seg, text in plan:
+    for seg, text, by_ai in plan:
         new = None if text == one_line(seg["text"]) else text
         if seg.get("corrected_text") != new:
             if seg.get("corrected_text") is None and seg.get("words") is not None:
@@ -502,6 +503,10 @@ def apply_text_edits(t: dict, edits: list) -> tuple[dict, int]:
             if saved is not None and [w["text"] for w in saved] == seg_text(seg).split():
                 seg["words"] = saved  # 원문으로 돌아왔다: 추정(approx)한 시각 대신 처음 정렬한 단어 시각
             changed.add(seg["id"])
+        if by_ai and new is not None:
+            seg["corrected_by"] = "ai"
+        elif seg["id"] in changed:
+            seg.pop("corrected_by", None)
     return t, len(changed)
 
 
