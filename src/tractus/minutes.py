@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
+from tractus import itn
 from tractus.i18n import ai_prompt, t
 from tractus.llm import Provider, complete_json
 from tractus.store import _write_atomic, memo_lines, seg_text
@@ -210,8 +211,8 @@ def due_said(due: str, transcript: dict, ids: list[str]) -> bool:
 
 def unverified_numbers(text: str, ev: str) -> list[str]:
     """문장 속 숫자 가운데 근거에 없는 것 (숫자 단위로 비교: '144'는 '1440'과 다르다).
-    음성 인식이 숫자를 글자로 적었으면 틀린 경고가 날 수 있어 지우지 않고 표시만 한다."""
-    known = set(_NUM.findall(_norm(ev)))
+    근거의 한자어 수는 숫자로 읽는다(itn). 그래도 고유어 수("두 명")나 "이 년"은 글자로 남아 틀린 경고가 날 수 있어 지우지 않고 표시만 한다."""
+    known = set(_NUM.findall(_norm(itn.korean_numbers(ev))))  # 옛 노트처럼 근거가 "삼십 프로"로 적혀 있어도 "30"을 찾는다
     return list(dict.fromkeys(n for n in _NUM.findall(text.replace(",", "")) if n not in known))
 
 

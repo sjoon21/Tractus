@@ -167,3 +167,9 @@ def test_sensevoice_runs_auto_language_with_itn_and_no_misdetect_retry():
 def test_non_qwen_engines_do_not_treat_zero_tokens_as_the_cap():
     model = FakeModel({None: FakeOut("정상 문장입니다", language="ko", generation_tokens=10_000)})
     assert not Transcriber(model, "whisper").transcribe(AUDIO).repaired  # 토큰 수를 상한 판단에 쓰지 않는다
+
+
+def test_transcribe_writes_sino_korean_numbers_as_digits():
+    model = FakeModel({None: FakeOut("점유율이 삼십 프로이고 이번 주에 칠 명이 옵니다")})
+    seg = Transcriber(model).transcribe(AUDIO, language=None)
+    assert seg.text == "점유율이 30프로이고 이번 주에 7명이 옵니다"

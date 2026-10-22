@@ -136,6 +136,7 @@ def test_numbers_compare_whole_numbers_and_include_the_note():
     t = transcript()
     assert minutes.unverified_numbers("하루 144번", minutes.evidence(t, ["s0004"])) == ["144"]
     assert minutes.unverified_numbers("하루 1,440번", minutes.evidence(t, ["s0004"])) == []
+    assert minutes.unverified_numbers("예산 30만 원, 점유율 6프로", "예산은 삼십만 원이고 점유율은 육 프로입니다") == []  # 근거가 한글 수여도 찾는다
     a = make(reply(actions=[action("검토", "s0023", note="3일 안에")]))["actions"]
     assert a[0]["unverified"] == ["3"]
 

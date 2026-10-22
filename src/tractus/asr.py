@@ -8,10 +8,12 @@ mlx-audio를 프로세스 안에서 호출한다. `mlx_audio.server`의 HTTP 엔
 import json
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
+
+from tractus import itn
 
 SR = 16000
 
@@ -166,7 +168,11 @@ class Transcriber:
         return has_loop(out.text) or (self.engine.token_cap and out.generation_tokens >= cap)
 
     def transcribe(self, audio, language: str | None = None, hotwords: list[str] | None = None) -> Segment:
-        """language: None(자동 감지) | "ko" | "en"."""
+        """language: None(자동 감지) | "ko" | "en". 한글로 적힌 한자어 수는 숫자로 바꾼다 (itn.korean_numbers, 모든 계열·실시간 자막 공통)."""
+        seg = self._transcribe(audio, language, hotwords)
+        return replace(seg, text=itn.korean_numbers(seg.text))
+
+    def _transcribe(self, audio, language: str | None, hotwords: list[str] | None) -> Segment:
         cap = max_tokens_for(len(audio) / SR)
         name = self._lang_arg(language)
         hotwords = hotwords if self.engine.hotwords else None
