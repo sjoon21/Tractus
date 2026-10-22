@@ -94,7 +94,10 @@ def aihub():
         ref = " ".join(aihub_clean(u["form"]) for u in utts)
         ref_pron = " ".join(aihub_clean(u["form"], spelling=False) for u in utts)
         terms = sorted({re.sub(r"[가-힣]+$", "", t["english"]) for u in utts for t in (u["hangeulToEnglish"] or [])} - {""})
-        meta = {"ref_pron": ref_pron, "topic": d["metadata"]["topic"], "glossary": terms}
+        # 정답 구간(run.py --segments label|utt): 라벨 발화 구간(샘플 단위), (())뿐인 구간은 뺀다
+        spans = [(int(float(u["start"]) * SR), int(float(u["end"]) * SR)) for u in utts if u["form"].strip() != "(())"]
+        forms = [u["form"] for u in utts if u["form"].strip() != "(())"]  # spans와 같은 순서 (score.cer_best)
+        meta = {"ref_pron": ref_pron, "topic": d["metadata"]["topic"], "glossary": terms, "spans": spans, "forms": forms}
         yield Sample(sid, a, ref, "ko", meta)
 
 

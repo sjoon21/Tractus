@@ -108,6 +108,45 @@ def term_recall(rows: list[dict]) -> float:
     return hit / total * 100 if total else 0.0
 
 
+def pair_kind(spelling: str) -> str:
+    return "num" if re.search(r"\d", spelling) else "latin" if re.search(r"[A-Za-z]", spelling) else "other"
+
+
+def cer_best(rows: list[dict], kinds: frozenset = frozenset({"num", "latin", "other"})) -> float:
+    """표기 차이를 뺀 CER(%): 발화마다 이중전사 짝을 철자·발음 중 전사에 가까운 쪽으로 골라 채점한다.
+    run.py --segments utt 결과만 (meta.parts·forms가 발화마다 짝). kinds 밖의 짝은 철자 그대로 (빈 집합 = 철자 기준 발화 단위 CER).
+    짝마다 따로 고른다(다른 짝은 철자로 둔 채): 한 발화 안의 짝끼리 거의 독립이라 충분하다."""
+    from data import _DUAL, aihub_clean
+    from rapidfuzz.distance import Levenshtein
+
+    edits = chars = 0
+    for r in rows:
+        for form, hyp in zip(r["meta"]["forms"], r["meta"]["parts"]):
+            h = norm_ko(hyp)
+            pairs = list(_DUAL.finditer(form))
+            choice = []
+            for i, m in enumerate(pairs):
+                if pair_kind(m.group(2)) not in kinds:
+                    choice.append(2)
+                    continue
+                trial = lambda g: norm_ko(aihub_clean(_pick(form, pairs, {i: g})))  # noqa: E731
+                choice.append(1 if Levenshtein.distance(trial(1), h) < Levenshtein.distance(trial(2), h) else 2)
+            ref = norm_ko(aihub_clean(_pick(form, pairs, dict(enumerate(choice)))))
+            if ref:
+                edits += Levenshtein.distance(ref, h)
+                chars += len(ref)
+    return edits / chars * 100 if chars else 0.0
+
+
+def _pick(form: str, pairs: list, groups: dict[int, int]) -> str:
+    """짝 i를 groups[i](1 발음, 2 철자, 없으면 철자)로 바꾼 form. aihub_clean이 나머지를 철자로 푼다"""
+    out, last = [], 0
+    for i, m in enumerate(pairs):
+        out += [form[last : m.start()], m.group(groups.get(i, 2))]
+        last = m.end()
+    return "".join(out) + form[last:]
+
+
 _REPEAT = re.compile(r"(.{4,}?)\1{2,}")
 
 
@@ -122,4 +161,8 @@ if __name__ == "__main__":
     assert repetitions("회의를 시작합니다. 회의를 시작합니다. 회의를 시작합니다.") == 1
     assert repetitions("네 네 네 좋습니다") == 0
     assert term_recall([{"ref": "WTO 가입과 OECD", "hyp": "wto 가입과 오이씨디", "meta": {"glossary": ["WTO", "OECD"]}}]) == 50.0
+    row = {"meta": {"forms": ["(육 프로)/(6프로) 올랐고 (더블유티오)/(WTO) 가입"], "parts": ["육 프로 올랐고 WTO 가입"]}}
+    assert round(cer_best([row], frozenset()), 1) > 0  # 철자 기준이면 "육 프로"가 오류
+    assert cer_best([row]) == 0.0
+    assert cer_best([row], frozenset({"latin"})) > 0  # 숫자 짝은 철자 그대로
     print("ok")
