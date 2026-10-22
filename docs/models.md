@@ -10,7 +10,7 @@ uv run tractus models download --preset standard    # required | standard | lite
 uv run tractus models remove aligner                # 하나 지우기
 ```
 
-구성은 `standard`(약 4.6GB, 메모리 16GB 이상), `lite`(약 1.2GB, 메모리 8GB), `required`(1.0~2.5GB, 변환에 꼭 필요한 것만), `all`(약 5.7GB)입니다. 기본 흐름(녹음·가져오기 → 변환 → 요약)은 `required`로 됩니다. 실시간 텍스트 변환(미리보기)은 메모리 16GB 이상에서만 켜지고 가벼운 엔진(`asr-lite`)이 따로 필요하므로, 8GB Mac(`lite` 구성)에서는 쓸 수 없습니다. 변환 엔진 둘(`asr-std`·`asr-lite`)은 **필수 (둘 중 하나)** 입니다: 하나만 받아도 텍스트 변환이 되고, 모델 화면에는 `변환 엔진: 설치됨`으로 보입니다.
+구성은 `standard`(약 4.6GB, 메모리 16GB 이상), `lite`(약 1.2GB, 메모리 8GB), `required`(1.0~2.5GB, 변환에 꼭 필요한 것만), `all`(약 7.3GB, 변환 엔진 셋 모두)입니다. 기본 흐름(녹음·가져오기 → 변환 → 요약)은 `required`로 됩니다. 실시간 텍스트 변환(미리보기)은 메모리 16GB 이상에서만 켜지고 가벼운 엔진(`asr-lite`)이 따로 필요하므로, 8GB Mac(`lite` 구성)에서는 쓸 수 없습니다. 변환 엔진(`asr-std`·`asr-lite`·`asr-ko-mix`)은 **필수 (엔진 중 하나)** 입니다: 하나만 받아도 텍스트 변환이 되고, 모델 화면에는 `변환 엔진: 설치됨`으로 보입니다.
 
 모델이 없는 기능은 단추를 눌러 보면 이유와 설치 방법을 알려 줍니다. 녹음은 모델 없이 되고, 변환 엔진이 없으면 `변환 대기 중인 녹음`으로 남습니다.
 
@@ -29,7 +29,7 @@ Tractus는 모델 가중치를 저장소에 넣지 않습니다. 사용자가 �
 | [Qwen3-Embedding 0.6B (MLX 8bit)](https://huggingface.co/mlx-community/Qwen3-Embedding-0.6B-8bit) | 스마트 검색 (비슷한 뜻) | 0.6GB | Apache-2.0 |
 | [3D-Speaker CAM++ zh_en](https://modelscope.cn/models/iic/speech_campplus_sv_zh_en_16k-common_advanced) ([ONNX 변환](https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models)) | 참석자 목소리 프로필 | 28MB | Apache-2.0 |
 
-변환 엔진 둘(1.7B·0.6B)은 **필수 (둘 중 하나)** 입니다. 하나만 있어도 텍스트 변환이 됩니다. 1.7B는 가장 정확하고 메모리 16GB 이상을 권하며, 0.6B는 메모리를 덜 쓰고 실시간 미리보기에는 0.6B가 따로 필요합니다.
+변환 엔진(1.7B·0.6B·BuzzASR)은 **필수 (엔진 중 하나)** 입니다. 하나만 있어도 텍스트 변환이 됩니다. 1.7B는 가장 정확하고 메모리 16GB 이상을 권하며, 0.6B는 메모리를 덜 쓰고 실시간 미리보기에는 0.6B가 따로 필요합니다. BuzzASR(`asr-ko-mix`)은 영어 용어가 많이 섞인 한국어 대화에 강하고 자주 쓰는 단어를 쓰지 않습니다.
 
 Tractus 자체는 Apache-2.0입니다. 모델의 라이선스와 약관은 각각 따로 확인하세요. 크기와 리비전의 원본은 `src/tractus/models_registry.py`입니다.
 

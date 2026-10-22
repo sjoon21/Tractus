@@ -111,6 +111,15 @@ MODELS: tuple[Model, ...] = (
         _qwen_asr(7187, 1006229426, 71815), level_note=ONE_OF, engine="qwen3",
         # 카드 mlx-community/Qwen3-ASR-0.6B-8bit: Qwen/Qwen3-ASR-0.6B에서 변환, apache-2.0. 언어는 1.7B와 같은 원본 카드 표
         model_name=t("Qwen3-ASR 0.6B (8bit 양자화)"), publisher=t("Alibaba Qwen 팀"), converted_by=MLX, license="Apache-2.0", languages=t("한국어·영어 등 30개 언어와 중국어 방언 22개"), params="0.6B"),
+    _hf("asr-ko-mix", t("변환 엔진 (영어 섞인 한국어)"), t("영어 용어가 많이 섞인 한국어 대화를 더 정확히 적습니다. 한국어만 쓰는 대화는 표준 엔진이 조금 더 정확하고, 자주 쓰는 단어는 쓰지 않습니다."), "required", "convert",
+        "voyagar/BuzzASR-korean-mlx-8bit", "b73fdad446cfa19ad50dd919d06d7f96af1726ff", "buzzasr-korean-mlx-8bit",
+        {"added_tokens.json": 34648, "config.json": 1490, "generation_config.json": 3942, "merges.txt": 493869, "model.safetensors": 1644890110,
+         "model.safetensors.index.json": 151144, "normalizer.json": 52666, "preprocessor_config.json": 357, "special_tokens_map.json": 2186,
+         "tokenizer.json": 3930645, "tokenizer_config.json": 282873, "vocab.json": 835528},
+        level_note=ONE_OF, engine="whisper",
+        # BuzzASR/korean(411b6854, MIT, Whisper large-v3 한국어 파인튜닝, arXiv 2609.09554)을 mlx-audio 0.5.7로 8bit 변환해 소유자 계정에 올린 것(2026-10-22).
+        # 측정(docs/design/asr-engines.md): AI Hub CER 10.29(표준 9.49), HiKE MER 22.79(표준 28.3), 영어 용어 재현율 86.3%(단어 없이). Whisper 계열이라 자주 쓰는 단어를 넣지 않는다(asr.ENGINES)
+        model_name=t("BuzzASR Korean (8bit 양자화)"), publisher="BuzzASR", converted_by=t("Tractus (MLX 변환본)"), license="MIT", languages=t("한국어"), params="1.5B"),
     _hf("diarizer", t("참석자 구분"), t("누가 말했는지 나눕니다. 8명까지 구분합니다."), "recommended", "speakers",
         diarize.MODEL_REPO, diarize.MODEL_REVISION, diarize.MODEL_DIR,
         {"config.json": 1521, "model.safetensors": 198632220},

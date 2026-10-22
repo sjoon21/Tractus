@@ -673,6 +673,7 @@ MCP: `list_meetings`는 `favorite`·`tags`·`folder`(이름)·`folder_id`를 싣
 | `vad` | Silero VAD v6 | 필수 | 1.2MB | `silero-vad-v6` | `convert`, `live` |
 | `asr-std` | Qwen3-ASR 1.7B 8bit | 필수 (엔진 중 하나) | 2.5GB | `qwen3-asr-1.7b-8bit` | `convert` (둘 다 없을 때) |
 | `asr-lite` | Qwen3-ASR 0.6B 8bit | 필수 (엔진 중 하나), 실시간은 항상 | 1.0GB | `qwen3-asr-0.6b-8bit` | `convert` (둘 다 없을 때), `live` |
+| `asr-ko-mix` | BuzzASR Korean 8bit (Whisper large-v3 한국어 파인튜닝, `voyagar/BuzzASR-korean-mlx-8bit`) | 필수 (엔진 중 하나) | 1.7GB | `buzzasr-korean-mlx-8bit` | `convert` (엔진이 하나도 없을 때). 자주 쓰는 단어 없음 |
 | `diarizer` | Nemotron-3 Diarization | 권장 | 0.2GB | `nemotron-3-diarization` | `diarize` |
 | `aligner` | Qwen3-ForcedAligner 0.6B 8bit | 선택 | 1.3GB | `qwen3-forcedaligner-0.6b-8bit` | `align` |
 | `embedding` | Qwen3-Embedding 0.6B 8bit (mlx-community 변환본, 2026-10-15에 bf16 공식 가중치에서 바꿈) | 선택 | 0.6GB | `qwen3-embedding-0.6b-8bit` | `smart-search` |
@@ -702,7 +703,7 @@ MCP: `list_meetings`는 `favorite`·`tags`·`folder`(이름)·`folder_id`를 싣
 
 - **`unregistered`(추가 키, 2026-10-15).** 모델 폴더 바로 아래의 **등록되지 않은 폴더**(옛 버전 모델 등)의 `[{name, bytes}]`(이름순, 없으면 `[]`). 파일·숨김 항목(`.tractus-models.lock` 포함)·심볼릭 링크는 세지 않는다. `bytes`는 폴더 안 파일 크기의 합이다. `models prune`이 지우는 목록과 같다. **모델 모양(완료 표시·`config.json`·`*.safetensors`가 있는) 폴더만** 나오고, 모델 폴더에 등록된 모델이 하나도 없거나 노트 폴더(`TRACTUS_HOME`이거나 `meetings/`·`recordings/`를 품은 곳)면 항상 `[]`다: 모델 폴더를 문서·노트 폴더로 잘못 골랐을 때 사용자 폴더가 지워지지 않게 한다.
 - `state`: `installed`(파일이 모두 있고 크기가 맞음) · `missing`(없음) · `partial`(일부만, 또는 받다 만 `.incomplete`·`.part`가 있음. `installed_bytes`에 받은 바이트) · `corrupt`(파일 크기가 다름, voices는 sha256 불일치). fluid는 모델 폴더와 도우미 프로그램이 모두 있어야 `installed`(모델만 있으면 `partial`).
-- `group`: `convert` · `speakers` · `words` · `search`. `level`: `required` · `recommended` · `optional`. `level_note`(추가 키, 2026-10-14): 같은 기능의 필수 모델 여럿 중 하나만 있으면 될 때 `"one_of"`, 아니면 `null`. 지금은 `asr-std`·`asr-lite`만 `one_of`이고(레지스트리의 `ONE_OF`, `tests/test_models.py`가 `CAPABILITIES`의 둘 중 하나 묶음과 일치를 검사한다) `level`은 그대로 `required`다: **`level` 값을 바꾸지 않아 옛 소비자는 그대로 읽는다.** 앱은 `level: required` + `level_note: one_of`를 `필수 (둘 중 하나)`로 보이고, 둘 중 하나라도 설치됐으면 `변환 엔진: 설치됨`으로 본다(WORDS.md §4.15). `tractus models list`(사람용 출력)도 같은 글자를 쓴다. `doctor`의 `models` 항목에도 같은 키가 있다. `download_active`: 다른 프로세스가 이 폴더에서 받는 중.
+- `group`: `convert` · `speakers` · `words` · `search`. `level`: `required` · `recommended` · `optional`. `level_note`(추가 키, 2026-10-14): 같은 기능의 필수 모델 여럿 중 하나만 있으면 될 때 `"one_of"`, 아니면 `null`. 지금은 등록된 변환 엔진(`asr-std`·`asr-lite`·`asr-ko-mix`)과 직접 추가한 엔진만 `one_of`이고(레지스트리의 `ONE_OF`, `tests/test_models.py`가 `CAPABILITIES`의 하나면 되는 묶음과 일치를 검사한다) `level`은 그대로 `required`다: **`level` 값을 바꾸지 않아 옛 소비자는 그대로 읽는다.** 앱은 `level: required` + `level_note: one_of`를 `필수 (엔진 중 하나)`로 보이고, 하나라도 설치됐으면 `변환 엔진: 설치됨`으로 본다(WORDS.md §4.15). `tractus models list`(사람용 출력)도 같은 글자를 쓴다. `doctor`의 `models` 항목에도 같은 키가 있다. `download_active`: 다른 프로세스가 이 폴더에서 받는 중.
 - 받기를 마치면 HF 모델 폴더에 `.tractus-model.json`(`{id, revision, files, completed_at}`)을 **맨 마지막에** 쓴다. 상태 판단은 파일 크기가 기본이고, 이 표시가 있으면 `revision`이 레지스트리와 같은지도 본다(다르면 `partial`: 다시 받으면 새 리비전으로 채운다). 표시가 없는 폴더(직접 받은 것)는 파일이 맞으면 설치로 본다. 내용 해시는 voices만 확인한다.
 
 #### `tractus models download [ID …] [--preset required|standard|lite|all] [--progress-json]`
