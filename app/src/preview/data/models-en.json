@@ -83,6 +83,32 @@
       "custom": false
     },
     {
+      "id": "asr-ko-mix",
+      "name": "Transcription engine (Korean with English)",
+      "purpose": "More accurate when Korean conversations mix in a lot of English terms. For Korean-only conversations the standard engine is slightly more accurate, and this engine does not use custom vocabulary.",
+      "level": "required",
+      "level_note": "one_of",
+      "size_bytes": 1650679458,
+      "installed": false,
+      "installed_bytes": 0,
+      "state": "missing",
+      "needed_by": [
+        "convert"
+      ],
+      "group": "convert",
+      "path": "models/buzzasr-korean-mlx-8bit",
+      "model_name": "BuzzASR Korean (8-bit quantized)",
+      "publisher": "BuzzASR",
+      "converted_by": "Tractus (MLX conversion)",
+      "source": "voyagar/BuzzASR-korean-mlx-8bit",
+      "revision": "b73fdad446cfa19ad50dd919d06d7f96af1726ff",
+      "license": "MIT",
+      "languages": "Korean",
+      "params": "1.5B",
+      "engine": "whisper",
+      "custom": false
+    },
+    {
       "id": "diarizer",
       "name": "Speaker detection",
       "purpose": "Separates who spoke. Detects up to 8 speakers.",

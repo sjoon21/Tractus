@@ -1,6 +1,7 @@
 # 설계: 변환 엔진 고르기·바꾸기·직접 추가 (0.4.2)
 
 > 상태: 0.4.2에 들어감 (2026-10-21). 목록은 Qwen3-ASR 둘, Whisper·SenseVoice 계열은 직접 추가. 후보 측정은 BuzzASR까지 하고 멈춤.
+> 2026-10-22: BuzzASR을 목록에 넣었다(`asr-ko-mix`, 아래 "BuzzASR 등록").
 
 ## 한 줄 요약
 
@@ -68,3 +69,12 @@
 - ghost613·seastar·SenseVoice는 소유자 요청으로 측정을 멈췄다(14:00). 짧은 합성 음성에서 ghost613은 글자가 깨지고, seastar는 문장 뒤를 지어내고, SenseVoice는 띄어쓰기가 깨졌다.
 
 측정: FLEURS(낭독, CER), HiKE(한·영 혼용, MER), AI Hub 회의(CER, 용어 재현율). 한국어 전용 파인튜닝은 영어 용어를 한글로 적는 경향이 있고, AI Hub 정답도 한글 표기라 AI Hub CER이 좋게 나온다. **HiKE를 같이 본다.** 기준: Qwen3-ASR 1.7B 8bit — AI Hub 9.49(자주 쓰는 단어 넣으면 9.36), FLEURS 2.62.
+
+## BuzzASR 등록 (2026-10-22)
+
+- **왜:** HF에 BuzzASR의 MLX 판이 없어 직접 추가로는 쓸 수 없었다(`BuzzASR/korean`은 transformers 형식). 측정(위 표)에서 한·영 혼용과 영어 용어가 가장 좋았다.
+- **어떻게:** `BuzzASR/korean` @ `411b6854`를 mlx-audio 0.5.7 `mlx_audio.convert --quantize --q-bits 8`로 바꿔 소유자 계정 [`voyagar/BuzzASR-korean-mlx-8bit`](https://huggingface.co/voyagar/BuzzASR-korean-mlx-8bit)에 공개로 올렸다(커밋 `b73fdad4`, `model.safetensors` sha256 `51e3f340…5d78`, MIT 원작자 표기와 측정표를 모델 카드에 적음). 다시 바꾼 것이 지난 측정본과 같은지는 FLEURS 50문장으로 봤다: 47개가 글자까지 같고, 나머지 3개는 같은 모델로도 돌릴 때마다 달랐다(Whisper 온도 재시도).
+- **목록:** `asr-ko-mix` = `변환 엔진 (영어 섞인 한국어)`, `required` + `one_of`(직접 추가한 엔진과 같다), 계열 `whisper`(자주 쓰는 단어 없음). 기본 엔진 순서(`pick_asr`)는 그대로라 사용자가 `기본으로 쓰기`를 누를 때만 쓴다. 구성: 앱의 표준·저사양·필수에는 넣지 않고, 명령줄 `--preset all`(약 7.3GB)에만 들어간다.
+- **확인:** 빈 모델 폴더에서 `tractus models download asr-ko-mix` → `transcribe --engine asr-ko-mix`(가상 `say` 음성): `asr.model`이 이 저장소, 영어 용어·숫자(`30만원`)를 그대로 적었다.
+- 바꾸지 않은 것: 실시간 텍스트 변환(0.6B), 자주 쓰는 단어(Whisper 계열은 넣지 않는다, 다시 넣으려면 재서 정한다).
+

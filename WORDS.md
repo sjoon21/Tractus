@@ -520,6 +520,7 @@ LLM 프롬프트(요약·AI 질문)도 이름 없는 참석자를 `참석자 N`�
 | `vad` | 목소리 구간 감지 | 녹음에서 사람이 말하는 구간을 찾습니다. |
 | `asr-std` | 변환 엔진 (표준) | 가장 정확합니다. 메모리 16GB 이상을 권합니다. |
 | `asr-lite` | 변환 엔진 (가벼운 것) | 메모리를 덜 쓰는 가벼운 엔진입니다. 실시간 텍스트 변환에는 이 엔진이 따로 필요합니다. |
+| `asr-ko-mix` | 변환 엔진 (영어 섞인 한국어) | 영어 용어가 많이 섞인 한국어 대화를 더 정확히 적습니다. 한국어만 쓰는 대화는 표준 엔진이 조금 더 정확하고, 자주 쓰는 단어는 쓰지 않습니다. |
 | `diarizer` | 참석자 구분 | 누가 말했는지 나눕니다. 8명까지 구분합니다. |
 | `aligner` | 단어 싱크 | 단어마다 재생 시각을 맞춰, 듣는 곳의 단어를 강조합니다. |
 | `embedding` | 스마트 검색 | 단어가 달라도 비슷한 뜻의 대화를 찾습니다. |
@@ -535,6 +536,7 @@ LLM 프롬프트(요약·AI 질문)도 이름 없는 참석자를 `참석자 N`�
 | `vad` | Silero VAD v6 | Silero | mlx-community (MLX 변환본) | MIT | — |
 | `asr-std` | Qwen3-ASR 1.7B (8bit 양자화) | Alibaba Qwen 팀 | mlx-community (MLX 변환본) | Apache-2.0 | 한국어·영어 등 30개 언어와 중국어 방언 22개 |
 | `asr-lite` | Qwen3-ASR 0.6B (8bit 양자화) | Alibaba Qwen 팀 | mlx-community (MLX 변환본) | Apache-2.0 | (위와 같음) |
+| `asr-ko-mix` | BuzzASR Korean (8bit 양자화) | BuzzASR | Tractus (MLX 변환본) | MIT | 한국어 |
 | `diarizer` | Nemotron 3 Diarization | NVIDIA | mlx-community (MLX 변환본) | OpenMDW-1.1 | — |
 | `aligner` | Qwen3-ForcedAligner 0.6B (8bit 양자화) | Alibaba Qwen 팀 | mlx-community (MLX 변환본) | Apache-2.0 | 한국어·영어 등 11개 언어 |
 | `embedding` | Qwen3-Embedding 0.6B (8bit 양자화) | Alibaba Qwen 팀 | mlx-community (MLX 변환본) | Apache-2.0 | 100개 이상의 언어 |
@@ -543,6 +545,7 @@ LLM 프롬프트(요약·AI 질문)도 이름 없는 참석자를 `참석자 N`�
 
 - 이름에는 `모델`·`화자`·`전사`를 쓰지 않는다(§2·§5). ASR은 `변환 엔진`, VAD는 `목소리 구간 감지`다. 위 표의 `모델 이름`은 이 규칙의 `name`(제품 이름)과 다른 값이다: 모델 화면이 이름 아래에 둘을 같이 보인다.
 - **`필수 (둘 중 하나)`(2026-10-14).** 변환 엔진 둘은 하나만 있으면 텍스트 변환이 되므로 둘 다 `필수`로 보이면 둘 다 받아야 하는 것처럼 읽힌다. 코어는 `level: "required"`를 그대로 두고 추가 키 `level_note: "one_of"`를 준다(옛 소비자를 깨지 않는다). 화면 글자는 앱이 정한다: `필수 (둘 중 하나)`. 두 엔진의 목적 문장은 서로를 비교하는 말이다: 가벼운 것은 `실시간 텍스트 변환에는 이 엔진이 따로 필요합니다`(표준 엔진은 실시간 지연이 길어 못 쓴다), 표준은 `가장 정확합니다`. `음성을 텍스트로 바꿉니다`는 이름(`변환 엔진`)이 이미 말하므로 두 문장 모두에서 뺐다.
+- **`영어 섞인 한국어`(2026-10-22).** BuzzASR은 크기가 아니라 잘하는 대화로 이름을 붙였다: 한·영 혼용과 영어 용어에서 표준보다 낫고 한국어만 쓰는 회의는 조금 나쁘다(docs/design/asr-engines.md 측정). 목적 문장은 그 둘과 자주 쓰는 단어를 쓰지 않는다는 점을 함께 말한다(Whisper 계열은 넣지 않는다). 변환한 곳 `Tractus (MLX 변환본)`은 소유자 계정에 올린 변환본이라는 뜻이다.
 - `표준`/`가벼운 것`은 엔진의 크기를 말한다. 숫자(`1.7B`·`0.6B`)는 이름에 쓰지 않고, 실시간 텍스트 변환이 작은 엔진을 따로 필요로 한다는 안내에서만 `0.6B`를 쓴다.
 - `doctor`의 `hint`와 `missing`은 개발자용 명령(`tractus models download <id>`, `brew install ffmpeg`)이라 코드로 취급한다. 화면 문장은 앱이 만든다.
 

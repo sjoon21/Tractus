@@ -83,6 +83,32 @@
       "custom": false
     },
     {
+      "id": "asr-ko-mix",
+      "name": "변환 엔진 (영어 섞인 한국어)",
+      "purpose": "영어 용어가 많이 섞인 한국어 대화를 더 정확히 적습니다. 한국어만 쓰는 대화는 표준 엔진이 조금 더 정확하고, 자주 쓰는 단어는 쓰지 않습니다.",
+      "level": "required",
+      "level_note": "one_of",
+      "size_bytes": 1650679458,
+      "installed": false,
+      "installed_bytes": 0,
+      "state": "missing",
+      "needed_by": [
+        "convert"
+      ],
+      "group": "convert",
+      "path": "models/buzzasr-korean-mlx-8bit",
+      "model_name": "BuzzASR Korean (8bit 양자화)",
+      "publisher": "BuzzASR",
+      "converted_by": "Tractus (MLX 변환본)",
+      "source": "voyagar/BuzzASR-korean-mlx-8bit",
+      "revision": "b73fdad446cfa19ad50dd919d06d7f96af1726ff",
+      "license": "MIT",
+      "languages": "한국어",
+      "params": "1.5B",
+      "engine": "whisper",
+      "custom": false
+    },
+    {
       "id": "diarizer",
       "name": "참석자 구분",
       "purpose": "누가 말했는지 나눕니다. 8명까지 구분합니다.",
