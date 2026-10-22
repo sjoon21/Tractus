@@ -12,23 +12,23 @@ export interface PolishSuggestion {
   flags: string[];
 }
 
-export const POLISH_LABEL = t("AI 다듬기");
+export const POLISH_LABEL = t("스마트 교정");
 export const POLISH_TITLE = t("AI가 대화 내용 전체를 보고, 잘못 들은 말이 있는 문장의 고친 문장을 제안합니다. 받을지는 문장마다 정합니다");
-export const POLISH_AGAIN_TITLE = t("다시 다듬으면 지금 남은 제안은 새 제안으로 바뀝니다");
-export const polishRunning = (done: number, total: number) => (total ? t("AI가 다듬는 중… {done}/{total}", { done, total }) : t("AI가 다듬는 중…"));
+export const POLISH_AGAIN_TITLE = t("다시 교정하면 지금 남은 제안은 새 제안으로 바뀝니다");
+export const polishRunning = (done: number, total: number) => (total ? t("스마트 교정 중… {done}/{total}", { done, total }) : t("스마트 교정 중…"));
 export const ACCEPT = t("수락");
 export const REJECT = t("거절");
 export const ACCEPT_ALL = t("모두 수락");
 export const REJECT_ALL = t("모두 거절");
 export const ACCEPT_ALL_TITLE = t("숫자 확인·다시 쓴 문장 표시가 있는 제안은 하나씩 정하세요");
-export const AI_EDITED = t("AI 다듬음");
+export const AI_EDITED = t("스마트 교정됨");
 export const NO_SUGGESTIONS = t("고칠 곳을 찾지 못했습니다");
 export const FLAG_LABEL: Record<string, { text: string; title: string }> = {
   number: { text: t("숫자 확인"), title: t("원문에 없던 숫자가 생겼습니다. AI가 짐작했을 수 있습니다") },
   rewrite: { text: t("다시 쓴 문장"), title: t("여러 낱말을 한꺼번에 바꿨습니다. 녹음을 들어 보고 정하세요") },
 };
 export const suggestionCount = (n: number, flagged: number) =>
-  flagged ? t("AI 제안 {n}개 · 확인할 것 {flagged}개", { n, flagged }) : t("AI 제안 {n}개", { n });
+  flagged ? t("교정 제안 {n}개 · 확인할 것 {flagged}개", { n, flagged }) : t("교정 제안 {n}개", { n });
 
 /** 지금도 맞는 제안만: 문장이 있고, 제안을 만든 뒤 아무도 고치지 않았다(before == 지금 문장). 같은 문장은 하나 (뒤의 것) */
 export function livePolish(segments: Segment[], list: PolishSuggestion[]): Map<string, PolishSuggestion> {

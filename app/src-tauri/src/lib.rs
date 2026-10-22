@@ -1113,7 +1113,7 @@ async fn polish_resolve(state: State<'_, AppState>, id: String, ids: Vec<String>
     let guard = BusyGuard::new(&state.busy, &id);
     blocking(move || {
         let _guard = guard;
-        let fail = if accept { t("제안을 받지 못했습니다") } else { t("제안을 버리지 못했습니다") };
+        let fail = if accept { t("제안을 수락하지 못했습니다") } else { t("제안을 거절하지 못했습니다") };
         let changed = stdout_json(&run_tractus(&s, &args, Some(&input), &fail)?)?["changed"].as_u64().unwrap_or(0);
         Ok(EditResult { changed, meeting: meetings::load(&s.home(), &id)? })
     })

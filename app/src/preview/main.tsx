@@ -227,13 +227,13 @@ const fakePolish = (a: T) => {
       if (!part.length) return;
       const ids = new Set(part.map((s) => s.id));
       job({ event: "progress", done: done + 1, total: 3, suggestions: made.filter((m) => ids.has(m.id)), range: [part[0].id, part[part.length - 1].id] });
-    }, 900 * (done + 1)),
+    }, 1600 * (done + 1)),
   );
   setTimeout(() => {
     polishPending.set(a.id, made);
     job({ event: "done", meeting_id: a.id, meeting_dir: "/tmp", suggestions: made.length });
     job({ event: "exit", code: 0 });
-  }, 3000);
+  }, 5400);
   return null;
 };
 const resolvePolish = (a: T) => {

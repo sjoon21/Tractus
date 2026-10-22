@@ -734,13 +734,51 @@
   position: absolute;
   inset: 1px -6px;
   border-radius: var(--radius);
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ring) 10%, transparent) 35%, color-mix(in srgb, var(--ring) 6%, transparent) 75%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ring) 6%, transparent), color-mix(in srgb, var(--ring) 20%, transparent) 40%, color-mix(in srgb, var(--ring) 12%, transparent) 75%, transparent);
   pointer-events: none;
-  animation: polish-glow 2.2s ease-in-out infinite;
-  animation-delay: calc(var(--i, 0) * 90ms);
+  animation: polish-glow 1.8s ease-in-out infinite;
+  animation-delay: calc(var(--i, 0) * 110ms);
 }
 @keyframes polish-glow {
-  0%, 100% { opacity: 0.2; }
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+/* 대화 내용 영역 테두리: 빛 한 줄기가 가장자리를 따라 돌고, 안쪽이 숨 쉬듯 밝아진다 (MeetingView의 polish-frame, 넓은 창에서만) */
+@property --polish-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+.polish-frame {
+  position: relative;
+  z-index: 40;
+  margin: 3px;
+  border-radius: 12px;
+}
+.polish-frame::before,
+.polish-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.polish-frame::before {
+  padding: 2px;
+  background: conic-gradient(from var(--polish-angle), transparent 0deg, color-mix(in srgb, var(--ring) 90%, transparent) 50deg, color-mix(in srgb, var(--ring) 35%, transparent) 120deg, transparent 200deg, color-mix(in srgb, var(--ring) 25%, transparent) 290deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: polish-turn 3.2s linear infinite;
+}
+.polish-frame::after {
+  box-shadow: inset 0 0 28px 2px color-mix(in srgb, var(--ring) 22%, transparent);
+  animation: polish-breathe 2.4s ease-in-out infinite;
+}
+@keyframes polish-turn {
+  to { --polish-angle: 360deg; }
+}
+@keyframes polish-breathe {
+  0%, 100% { opacity: 0.35; }
   50% { opacity: 1; }
 }
 .polish-spin {

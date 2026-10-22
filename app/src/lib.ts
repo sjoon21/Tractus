@@ -509,7 +509,7 @@ export const JOB_ERROR = {
   summarize: t("요약하지 못했습니다"),
   align: t("단어 싱크를 맞추지 못했습니다"),
   ask: t("답변을 받지 못했습니다"),
-  polish: t("다듬지 못했습니다"),
+  polish: t("교정하지 못했습니다"),
   live: t("실시간 변환이 일시 중지되었습니다 (녹음은 정상 진행 중)"),
 } as const;
 

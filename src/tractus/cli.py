@@ -1399,7 +1399,7 @@ def polish_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="노
 def _polish_note(d: Path) -> dict:
     note = _read_transcript(d)
     if is_memo(note):
-        _fail(t("녹음이 없는 노트는 AI로 다듬을 수 없습니다"), code="no_recording", exit_code=2)
+        _fail(t("녹음이 없는 노트는 스마트 교정을 쓸 수 없습니다"), code="no_recording", exit_code=2)
     if is_recorded(note):
         _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
     return note
@@ -1429,18 +1429,18 @@ def polish_run(
     d = ctx.obj
     note = _polish_note(d)
     if not note["segments"]:
-        _fail(t("인식된 대화가 없어 다듬을 수 없습니다"), code="no_segments")
+        _fail(t("인식된 대화가 없어 교정할 수 없습니다"), code="no_segments")
     try:
         p, m = resolve_provider(provider, model)
         t0 = time.perf_counter()
         Events.emit("stage", stage="polish")
         report = lambda done, total, got, span: Events.emit("progress", done=done, total=total, suggestions=got, range=list(span))  # noqa: E731
-        with console.status(t("{provider}/{model}로 다듬는 중… (대화 {n}개)", provider=p.name, model=m, n=len(note["segments"]))):
+        with console.status(t("{provider}/{model}로 교정하는 중… (대화 {n}개)", provider=p.name, model=m, n=len(note["segments"]))):
             found = polish.suggest(make_client(p), p, m, note, load_glossary(home_dir() / "glossary.md"), on_window=report)
     except LLMError as e:
         if e.code == "llm_invalid":
             console.print(f"[red]{escape(str(e))}[/red]")
-            _fail(t("AI 응답이 형식에 맞지 않아 다듬지 못했습니다"), code=e.code)
+            _fail(t("AI 응답이 형식에 맞지 않아 교정하지 못했습니다"), code=e.code)
         _fail(str(e), code=e.code)
     with note_lock(d):
         latest = read_transcript(d)  # AI를 기다리는 동안 고친 문장의 제안은 쓰지 않는다

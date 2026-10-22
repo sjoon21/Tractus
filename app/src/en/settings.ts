@@ -48,7 +48,7 @@ export default {
   "등록된 키가 없습니다": "No key saved",
   "AI 키가 없어 요약할 수 없습니다. 설정에서 API 키를 등록하세요.": "No AI key to summarize with. Add an API key in Settings.",
   "AI 키가 없어 답변할 수 없습니다. 설정에서 API 키를 등록하세요.": "No AI key to answer with. Add an API key in Settings.",
-  "AI 키가 없어 다듬을 수 없습니다. 설정에서 API 키를 등록하세요.": "No AI key to polish with. Add an API key in Settings.",
+  "AI 키가 없어 교정할 수 없습니다. 설정에서 API 키를 등록하세요.": "No AI key for Smart fix. Add an API key in Settings.",
   "서비스 주소는 http:// 또는 https://로 시작하는 올바른 주소여야 합니다.": "Service URL must be a valid address starting with http:// or https://.",
   "서비스 주소에 사용자 이름이나 비밀번호를 넣을 수 없습니다. API 키는 따로 입력하세요.": "Service URL cannot include a username or password. Enter the API key separately.",
   "https가 아닌 주소입니다. 키와 대화 내용이 암호화되지 않은 채 전송됩니다.": "This URL is not https. Your key and transcripts will be sent unencrypted.",

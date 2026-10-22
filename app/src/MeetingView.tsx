@@ -830,11 +830,11 @@ export function MeetingView({
   // AI 다듬기: 돌아가는 동안은 끝난 구간의 제안, 끝나면 polish.json. 지금 문장과 맞는 것만, 정하는 중인 것은 빼고
   const polishMap = new Map([...livePolish(segments, polish.running ? polish.live : (detail.polish ?? []))].filter(([k]) => !deciding.has(k)));
   const glowing = polish.running ? pendingIds(segments, polish.ranges) : null;
-  const polishOff = recorded ? CONVERT_FIRST : editing || memoBusy ? t("저장이 끝난 뒤에 다듬을 수 있습니다") : null;
+  const polishOff = recorded ? CONVERT_FIRST : editing || memoBusy ? t("저장이 끝난 뒤에 교정할 수 있습니다") : null;
 
   return (
     <div className={cn("meeting grid h-full max-[1180px]:block max-[1180px]:overflow-y-auto", railCollapsed ? "is-rail-collapsed grid-cols-[minmax(0,1fr)_52px]" : "grid-cols-[minmax(0,1fr)_var(--rail)]")}>
-      <article className="transcript-col relative flex min-h-0 flex-col overflow-y-auto max-[1180px]:overflow-visible" onWheel={() => playing && setFollow(false)} onScroll={() => menu && setMenu(null)}>
+      <article className="transcript-col relative col-start-1 row-start-1 flex min-h-0 flex-col overflow-y-auto max-[1180px]:overflow-visible" onWheel={() => playing && setFollow(false)} onScroll={() => menu && setMenu(null)}>
         <div data-tauri-drag-region className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-2 bg-background/90 pr-3 pl-6 backdrop-blur-md">
           <p className="m-0 flex min-w-0 items-center gap-2 truncate text-xs text-muted-foreground tabular-nums" data-tauri-drag-region>
             {created?.toLocaleDateString(locale(), { year: "numeric", month: "long", day: "numeric", weekday: "short" })}
@@ -1153,6 +1153,7 @@ export function MeetingView({
           />
         )}
       </article>
+      {polish.running && <div aria-hidden className="polish-frame pointer-events-none col-start-1 row-start-1 max-[1180px]:hidden" />}
 
       <aside className="summary-col relative flex min-h-0 flex-col border-l border-border bg-background max-[1180px]:overflow-visible max-[1180px]:border-t max-[1180px]:border-l-0" aria-label={railLabel(memoNote)}>
         <PanelToggle side="right" />

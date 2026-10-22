@@ -164,6 +164,6 @@
   "휴지통으로 옮기지 못했습니다\n{e}": "Couldn’t move to Trash\n{e}",
   "잘못된 버전입니다: {version}": "Invalid version: {version}",
   "고를 제안이 없습니다": "No suggestions selected",
-  "제안을 받지 못했습니다": "Couldn’t accept the suggestions",
-  "제안을 버리지 못했습니다": "Couldn’t dismiss the suggestions"
+  "제안을 수락하지 못했습니다": "Couldn’t accept the suggestions",
+  "제안을 거절하지 못했습니다": "Couldn’t dismiss the suggestions"
 }

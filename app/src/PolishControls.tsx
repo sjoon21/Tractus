@@ -96,7 +96,7 @@ export function PolishBar({ live, running, busy, onDecide }: { live: Map<string,
 /** 줄 안의 제안: 지운 말(줄 긋기) → 새 말, 표시, 받기·버리기 */
 export function PolishDiff({ s, busy, onDecide }: { s: PolishSuggestion; busy: boolean; onDecide: (ids: string[], accept: boolean) => void }) {
   return (
-    <div className="seg-polish" role="group" aria-label={t("AI 제안")}>
+    <div className="seg-polish" role="group" aria-label={t("교정 제안")}>
       <p className="seg-polish-text m-0">
         {wordDiff(s.before, s.text).map((p, i) =>
           p.op === "same" ? (
