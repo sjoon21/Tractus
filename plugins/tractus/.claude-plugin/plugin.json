@@ -1,7 +1,7 @@
 {
   "name": "tractus",
   "displayName": "Tractus",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Your meetings as local memory for Claude Code: search notes, transcripts, decisions and action items recorded on this Mac with Tractus. Nothing leaves your Mac except what Claude reads.",
   "author": { "name": "sjoon21", "url": "https://github.com/sjoon21" },
   "homepage": "https://github.com/sjoon21/Tractus",
