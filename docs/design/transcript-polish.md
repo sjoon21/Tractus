@@ -1,6 +1,6 @@
 # 설계: 대화 내용 다듬기 제안 (AI 교정)
 
-> 상태: 코어·측정 (2026-10-22, 브랜치 `feat/transcript-polish`). 화면은 소유자와 함께 정한다. 모듈 `src/tractus/polish.py`, 측정 `bench/polish_eval.py`.
+> 상태: 개발 (2026-10-22, 브랜치 `feat/transcript-polish`, ARCHITECTURE v3.65). 코어 `src/tractus/polish.py`·`tractus polish`, 앱 `PolishControls.tsx`·`polish.ts`, 측정 `bench/polish_eval.py`.
 
 ## 한 줄 요약
 
@@ -56,10 +56,22 @@
 - 5천 자 설정의 제안 277개: `rewrite` 12개(4%), `number` 11개.
 - 눈으로 본 판정(10-06 노트 73개): 대부분 맞는 교정이다(로고 → 로그, 인계치 → 임계치, 인시덤·이순도 → 인시던트, 언론·알로선 → 얼럿, 쳤다음 → 셧다운, 이어스 파스 → IaaS PaaS). 약 10–15%는 짐작이다(“완만한 수로 마치는 얘기요” → “방안으로 맞추는 게 맞고요”, 일본어로 잘못 받은 줄 → 한국어 문장). 대개 `rewrite` 표시가 붙는다.
 
-## 남은 것 (화면과 함께 정한다)
+## 화면 (소유자, 2026-10-22)
 
-- 제안 보기·받기·버리기 화면, 모두 받기, `number`·`rewrite` 표시 모양
-- 받은 줄의 "AI가 다듬음" 표시와 원문으로 되돌리기(`corrected_text` 출처 키)
-- CLI(`tractus polish <노트>` / `apply`), 진행 이벤트, 오류 코드, 로컬 전용 모드, 요금 안내
-- 받은 용어 교정 → 자주 쓰는 단어 제안
-- 프롬프트를 바꾸면 `bench/polish_eval.py synth`와 `pytest -m llm`(추가 예정)으로 확인한다
+- **시작:** 변환이 끝난 녹음 노트의 대화 내용 툴바 `AI 다듬기`(양옆 패널이 아니다). AI 서비스는 요약 탭에서 고른 것을 쓴다.
+- **도는 동안:** AI가 아직 보지 않은 줄이 위에서부터 물결처럼 은은하게 빛난다(`.seg.is-glow`, opacity만 움직임, 움직임 줄이기에서는 멈춘 빛). 구간(5천 자)이 끝날 때마다 그 구간의 빛이 꺼지고 제안이 나타난다(progress 이벤트의 `suggestions`·`range`). 단추에 `AI가 다듬는 중… {done}/{total}`.
+- **제안:** 그 줄 바로 아래에 낱말 diff(지운 말 줄 긋기 → 새 말 파랑 바탕)와 `숫자 확인`·`다시 쓴 문장` 표시, `수락`·`거절`.
+- **많을 때:** 대화 내용 위에 붙는 막대 `AI 제안 {n}개 · 확인할 것 {m}개` + `모두 수락`(표시 없는 제안만) · `모두 거절`.
+- **받은 줄:** `수정됨` 자리에 `AI 다듬음`(파랑, 사람이 고친 `수정됨`은 memo 색). 원문은 남고 ⌘Z로 되돌린다. 하나만 받았으면 자주 쓰는 단어를 제안한다(`vocab.termFromEdit`).
+- **남은 제안:** polish.json에 남아 노트를 다시 열어도 보인다. 제안을 만든 뒤 그 줄을 누가 고쳤으면 보이지 않는다(`before`가 지금 문장과 다름). 다시 누르면 새 제안으로 바뀐다.
+
+## 코어·앱 계약
+
+- `tractus polish <노트> run [--provider P] [--model M] --progress-json`: `stage polish` → 구간마다 `progress {done, total, suggestions, range: [첫 ID, 끝 ID]}` → `done {suggestions: N}`. AI를 기다리는 동안 고친 줄의 제안은 저장하지 않는다(`note_lock` 안에서 다시 읽어 거른다).
+- `show` → `{suggestions}`(지금도 맞는 것만), `accept`·`reject` stdin `{"ids"}` → `{changed, remaining}`·`{remaining}`. 받기는 `apply_text_edits`에 `by: "ai"`(선택 키 `corrected_by: "ai"`, 사람이 다시 고치거나 원문으로 되돌리면 지운다).
+- Rust: `polish_start(id, job, provider)`(요약과 같은 `llm_cmd`·`busy`, 이벤트 `job` + `kind: "polish"`), `polish_resolve(id, ids, accept)` → 고친 회의. `load_meeting`이 `polish.json`의 제안을 `polish`로 싣고 `Segment.corrected_by`를 넘긴다.
+
+## 남은 것
+
+- 프롬프트를 바꾸면 `bench/polish_eval.py synth`(가상 회의)로 나아짐·나빠짐을 본다. 실제 AI 스모크(`pytest -m llm`)는 아직 없다.
+- 실행 취소(도는 중 멈추기)는 없다(요약·회의록과 같다).

@@ -15,6 +15,9 @@ pub struct Segment {
     pub text: String,
     #[serde(default)]
     pub corrected_text: Option<String>,
+    /// "ai": 받은 AI 다듬기 제안 (`tractus polish accept`). 사람이 고친 문장·원문은 없다
+    #[serde(default, deserialize_with = "lenient", skip_serializing_if = "Option::is_none")]
+    pub corrected_by: Option<String>,
     /// "S1"… schema_version 1이나 화자 분리를 끈 회의는 없거나 null
     #[serde(default)]
     pub speaker: Option<String>,
@@ -257,6 +260,27 @@ pub struct MeetingDetail {
     pub audio_path: Option<String>,
     /// 캘린더 일정으로 시작한 녹음이면 그 일정의 참석자 이름 (참석자 이름 고르기). 아니면 빈 목록
     pub attendees: Vec<String>,
+    /// 아직 정하지 않은 AI 다듬기 제안 (polish.json). 화면이 지금 문장과 같은 것(before)만 보인다. 없거나 깨졌으면 빈 목록
+    pub polish: Vec<PolishSuggestion>,
+}
+
+/// AI 다듬기 제안 하나 (docs/design/transcript-polish.md). flags: "number"(짐작한 숫자) · "rewrite"(여러 낱말을 다시 씀)
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct PolishSuggestion {
+    pub id: String,
+    pub start: f64,
+    pub before: String,
+    pub text: String,
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub flags: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct PolishFile {
+    #[serde(default)]
+    suggestions: Vec<PolishSuggestion>,
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
@@ -434,7 +458,8 @@ pub fn load(home: &Path, id: &str) -> Result<MeetingDetail, String> {
     let body = if is_memo { Some(t.body.clone().unwrap_or_default()) } else { None };
     let note_memo = if is_memo { None } else { parse_note_memo(t.memo.as_ref()) };
     let attendees = crate::calendar::attendees(&dir);
-    Ok(MeetingDetail { info: info(&dir, &t), speakers: t.speakers, segments: t.segments, summary, memos, body, note_memo, audio_path, attendees })
+    let polish = read_json::<PolishFile>(&dir.join("polish.json")).map(|f| f.suggestions).unwrap_or_default();
+    Ok(MeetingDetail { info: info(&dir, &t), speakers: t.speakers, segments: t.segments, summary, memos, body, note_memo, audio_path, attendees, polish })
 }
 
 /// chat.json 항목 (`tractus ask --save`가 덧붙인다, 최근 50개). 없는 필드는 기본값으로 읽는다

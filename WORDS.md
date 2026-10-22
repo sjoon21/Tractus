@@ -832,6 +832,20 @@ LLM 프롬프트(요약·AI 질문)도 이름 없는 참석자를 `참석자 N`�
 | 입력 | `aria-label` `메모 고치기`. Enter·밖을 누르면 저장, Esc는 취소 |
 | 오류 (앱·코어) | `메모를 저장하지 못했습니다` / `없는 메모는 고칠 수 없습니다 (새로 남기거나 시각·종류를 바꿀 수 없습니다)` |
 
+### 4.28 AI 다듬기 (v3.65, docs/design/transcript-polish.md)
+
+변환이 끝난 녹음 노트의 대화 내용 툴바에서 시작한다. AI가 잘못 들은 말이 있는 문장의 고친 문장을 **제안**하고, 사용자가 문장마다 수락·거절한다. `받기`는 모델 화면의 `받기`(내려받기)와 겹쳐 쓰지 않는다: `수락`·`거절`이다.
+
+| 위치 | 문구 |
+| --- | --- |
+| 툴바 단추 | `AI 다듬기`, 도는 동안 `AI가 다듬는 중… {done}/{total}`. `title` `AI가 대화 내용 전체를 보고, 잘못 들은 말이 있는 문장의 고친 문장을 제안합니다. 받을지는 문장마다 정합니다`(+ 남은 제안이 있으면 `다시 다듬으면 지금 남은 제안은 새 제안으로 바뀝니다`). 못 쓸 때 `title` `먼저 텍스트로 변환하세요.` / `저장이 끝난 뒤에 다듬을 수 있습니다` |
+| 제안 막대 | `AI 제안 {n}개` / `AI 제안 {n}개 · 확인할 것 {flagged}개`, 단추 `모두 수락`(표시 없는 제안만, `title` `숫자 확인·다시 쓴 문장 표시가 있는 제안은 하나씩 정하세요`) · `모두 거절` |
+| 줄 안의 제안 | 지운 말 줄 긋기 → 새 말, `aria-label` `AI 제안`, 단추 `수락` · `거절` |
+| 표시 | `숫자 확인`(`title` `원문에 없던 숫자가 생겼습니다. AI가 짐작했을 수 있습니다`) · `다시 쓴 문장`(`title` `여러 낱말을 한꺼번에 바꿨습니다. 녹음을 들어 보고 정하세요`) |
+| 받은 줄 | `수정됨` 자리에 `AI 다듬음`(파랑). 사람이 다시 고치면 `수정됨` |
+| 알림 | 제안이 없으면 `고칠 곳을 찾지 못했습니다`. 실패 `다듬지 못했습니다`, 키 없음 `AI 키가 없어 다듬을 수 없습니다. 설정에서 API 키를 등록하세요.` |
+| 오류 (앱·코어) | `제안을 받지 못했습니다` / `제안을 버리지 못했습니다` / `고를 제안이 없습니다` / `녹음이 없는 노트는 AI로 다듬을 수 없습니다` / `인식된 대화가 없어 다듬을 수 없습니다` / `AI 응답이 형식에 맞지 않아 다듬지 못했습니다` |
+
 ## 5. 금지어 검사
 
 사용자에게 보이는 문구를 바꾼 뒤, 커밋하기 전에 저장소 루트에서 돌린다. **출력이 없으면 통과다.**
@@ -845,7 +859,7 @@ T='회의|전사|세그먼트|화자|청크|벡터|임베딩|색인|(?<!AI )모�
   rg -n --pcre2 "$T" app/src/{caps,models,checkupRows}.ts app/src/ModelsSettings.tsx | sed 's/모델//g'
   awk '/#\[cfg\(test\)\]/{exit} {print FILENAME":"FNR":"$0}' app/src-tauri/src/models.rs | sed 's/모델//g'
   rg -n --pcre2 '^(?!\s*#).*(raise [\w.]+\(|_fail\(|\bfail\(|emit\("error"|console\.print\(|add_heading|add_paragraph|writerow|_HEADER =|NO_EVIDENCE =)' \
-    src/tractus/{store,export,summarize,ask,cli,llm,audio,voices,notes,attach,deferred,organize,organize_cli,summaries,summary_templates,models_registry,models_install,models_cli,doctor,enhance,obsidian,calendar_event,sample_note}.py
+    src/tractus/{store,export,summarize,ask,cli,llm,audio,voices,notes,attach,deferred,organize,organize_cli,summaries,summary_templates,models_registry,models_install,models_cli,doctor,enhance,obsidian,calendar_event,sample_note,polish}.py
   rg -n '^(name|description):' src/tractus/templates | sed 's/회의록//g'  # 요약 유형 이름·설명 (회의록은 문서 이름이라 뺀다)
 } | rg -v '^[^:]+:\d+:\s*(//|/\*|\*|\{/\*)' | rg -v 'words-ok|code=|eprintln!' \
   | sed -E 's#[[:space:]]//[^"`]*$##' | rg --pcre2 "$T"

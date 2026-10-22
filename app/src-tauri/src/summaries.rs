@@ -282,6 +282,30 @@ pub fn summary_start(app: AppHandle, state: State<'_, AppState>, id: String, job
     }
 }
 
+/// `tractus polish <노트> run --progress-json`: AI 다듬기 제안 만들기 (docs/design/transcript-polish.md). 이벤트는 "job"으로 {job, kind: "polish"}를 덧붙인다.
+/// 창이 끝날 때마다 progress에 그 구간의 suggestions가 온다. provider: 고른 AI 서비스. 작업하는 동안 그 노트는 삭제할 수 없다
+#[tauri::command]
+pub fn polish_start(app: AppHandle, state: State<'_, AppState>, id: String, job: String, provider: Option<String>) -> Result<(), String> {
+    if !is_meeting_id(&id) {
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
+    }
+    let cmd = state.llm_cmd(&["polish".into(), id.clone(), "run".into(), "--progress-json".into()], provider.as_deref())?;
+    let tag = json!({"job": job, "kind": "polish"}).as_object().unwrap().clone();
+    let (busy, key) = (state.busy.clone(), hold(&state.busy, &id));
+    cancel_index(&state.index);
+    let (slot_busy, slot_key) = (busy.clone(), key.clone());
+    let started = crate::procs::spawn_streaming(cmd, tag, move |ev| {
+        if ev["event"] == "exit" {
+            release(&slot_busy, &slot_key);
+        }
+        let _ = app.emit("job", ev);
+    });
+    started.map(|_| ()).map_err(|e| {
+        release(&busy, &key);
+        e
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

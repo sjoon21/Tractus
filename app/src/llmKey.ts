@@ -33,6 +33,7 @@ export const SETTINGS_FIX_CODES: readonly string[] = [KEY_ERROR_CODE, "llm_auth"
 const KEY_MISSING = {
   summarize: t("AI 키가 없어 요약할 수 없습니다. 설정에서 API 키를 등록하세요."),
   ask: t("AI 키가 없어 답변할 수 없습니다. 설정에서 API 키를 등록하세요."),
+  polish: t("AI 키가 없어 다듬을 수 없습니다. 설정에서 API 키를 등록하세요."),
 } as const;
 
 /** 요약·질문 실패 문장. `settings`가 true면 화면이 `설정 열기`를 함께 보인다 */

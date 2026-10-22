@@ -12,14 +12,14 @@
 from __future__ import annotations
 
 import difflib
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import re
 import unicodedata
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 from pydantic import Field
 
@@ -128,30 +128,42 @@ def _input(t: dict, lo: int, hi: int, glossary: list[str]) -> tuple[str, set[str
     return build_input(window, glossary) + "\n\n" + scope, editable
 
 
-def suggest(client, provider: Provider, model: str, t: dict, glossary: list[str] = (), dropped: dict | None = None) -> list[dict]:
-    """제안 목록 [{id, start, before, text, kind, flags}] (문장 순서). dropped가 있으면 버린 제안을 까닭별로 센다(측정용)."""
+def _clean(t: dict, p: Polish, dropped: dict | None) -> list[dict]:
     by_id = {s["id"]: s for s in t["segments"]}
-    jobs = [job for lo, hi in windows(t["segments"], WINDOW_CHARS) if (job := _input(t, lo, hi, list(glossary)))[1]]
+    out = []
+    for e in p.edits:
+        s = by_id[e.id]
+        before, text = seg_text(s), one_line(e.text)
+        why = ("same" if _bare(before) == _bare(text) else "short" if len(_bare(text)) < SHORTEN_MIN * len(_bare(before))
+               else "edge" if moves_edge(before, text) else None)
+        if why:
+            if dropped is not None:
+                dropped[why] = dropped.get(why, 0) + 1
+            continue
+        flags = [f for f, on in (("number", bool(set(re.findall(r"\d+", text)) - set(re.findall(r"\d+", before)))), ("rewrite", rewrites(before, text))) if on]
+        out.append({"id": e.id, "start": s["start"], "before": before, "text": text, "kind": e.kind, "flags": flags})
+    return out
+
+
+def suggest(client, provider: Provider, model: str, t: dict, glossary: list[str] = (), dropped: dict | None = None,
+            on_window: Callable[[int, int, list[dict], tuple[str, str]], None] | None = None) -> list[dict]:
+    """제안 목록 [{id, start, before, text, kind, flags}] (문장 순서). dropped가 있으면 버린 제안을 까닭별로 센다(측정용).
+    on_window(끝난 창 수, 창 수, 그 창의 제안, (범위 첫 ID, 끝 ID))는 창이 끝날 때마다 부른다 (앱이 끝난 구간부터 빛을 끄고 제안을 보인다)."""
+    segs = t["segments"]
+    jobs = [(job, (segs[lo]["id"], segs[hi - 1]["id"])) for lo, hi in windows(segs, WINDOW_CHARS) if (job := _input(t, lo, hi, list(glossary)))[1]]
 
     def ask(job: tuple[str, set[str]]) -> Polish:
         user, editable = job
         return complete_json(client, provider, model, SYSTEM_PROMPT, user, Polish, validate=lambda x: check(x, editable))
 
-    with ThreadPoolExecutor(max_workers=PARALLEL) as pool:
-        replies = list(pool.map(ask, jobs))
     out: list[dict] = []
-    for p in replies:
-        for e in p.edits:
-            s = by_id[e.id]
-            before, text = seg_text(s), one_line(e.text)
-            why = ("same" if _bare(before) == _bare(text) else "short" if len(_bare(text)) < SHORTEN_MIN * len(_bare(before))
-                   else "edge" if moves_edge(before, text) else None)
-            if why:
-                if dropped is not None:
-                    dropped[why] = dropped.get(why, 0) + 1
-                continue
-            flags = [f for f, on in (("number", bool(set(re.findall(r"\d+", text)) - set(re.findall(r"\d+", before)))), ("rewrite", rewrites(before, text))) if on]
-            out.append({"id": e.id, "start": s["start"], "before": before, "text": text, "kind": e.kind, "flags": flags})
+    with ThreadPoolExecutor(max_workers=PARALLEL) as pool:
+        futures = {pool.submit(ask, j): span for j, span in jobs}
+        for done, f in enumerate(as_completed(futures), 1):
+            got = _clean(t, f.result(), dropped)
+            out += got
+            if on_window:
+                on_window(done, len(jobs), got, futures[f])
     order = {s["id"]: i for i, s in enumerate(t["segments"])}
     return sorted(out, key=lambda x: order[x["id"]])
 
@@ -162,3 +174,26 @@ def write(d: Path, t: dict, suggestions: list[dict], provider: str, model: str) 
     path = d / FILE
     _write_atomic(path, json.dumps(data, ensure_ascii=False, indent=1))
     return path
+
+
+def pending(d: Path, t: dict) -> list[dict]:
+    """아직 정하지 않은 제안 중 지금도 맞는 것: 문장이 있고, 제안을 만든 뒤 아무도 고치지 않았다(before == 지금 문장). 파일이 없거나 깨졌으면 빈 목록."""
+    try:
+        data = json.loads((d / FILE).read_text(encoding="utf-8"))
+        items = data["suggestions"] if data.get("meeting_id") == t["meeting_id"] else []
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+    now = {s["id"]: seg_text(s) for s in t["segments"]}
+    return [x for x in items if isinstance(x, dict) and now.get(x.get("id")) == x.get("before") and isinstance(x.get("text"), str)]
+
+
+def resolve(d: Path, t: dict, ids: set[str]) -> int:
+    """받았거나 버린 제안(ids)과 더는 맞지 않는 제안을 polish.json에서 뺀다. 남은 수를 돌려준다. 하나도 안 남으면 파일을 지운다."""
+    left = [x for x in pending(d, t) if x["id"] not in ids]
+    path = d / FILE
+    if not left:
+        path.unlink(missing_ok=True)
+        return 0
+    data = json.loads(path.read_text(encoding="utf-8"))
+    _write_atomic(path, json.dumps({**data, "suggestions": left}, ensure_ascii=False, indent=1))
+    return len(left)

@@ -1,6 +1,7 @@
 // 화면과 무관한 순수 로직. 전부 lib.test.ts에서 검사한다.
 import { ASR_ENGINE_MISSING_WARNING, ASR_FALLBACK_WARNING, MODEL_LOAD_FAILED_ERROR, MODEL_MISSING_ERROR } from "./caps";
 import { locale, t } from "./i18n";
+import type { PolishSuggestion } from "./polish";
 
 export interface Segment {
   id: string;
@@ -8,6 +9,8 @@ export interface Segment {
   end: number;
   text: string;
   corrected_text?: string | null;
+  /** "ai": 받은 AI 다듬기 제안. 사람이 고친 문장·원문은 없다 */
+  corrected_by?: string | null;
   /** "S1"… schema_version 1이나 화자 분리를 끈 회의는 없거나 null */
   speaker?: string | null;
   /** 단어 타이밍 (Phase 6.1, `tractus align`). 표시 텍스트의 공백 토큰과 1:1. 없거나 정렬 전이면 null */
@@ -506,6 +509,7 @@ export const JOB_ERROR = {
   summarize: t("요약하지 못했습니다"),
   align: t("단어 싱크를 맞추지 못했습니다"),
   ask: t("답변을 받지 못했습니다"),
+  polish: t("다듬지 못했습니다"),
   live: t("실시간 변환이 일시 중지되었습니다 (녹음은 정상 진행 중)"),
 } as const;
 
@@ -532,7 +536,7 @@ export function errorView(message: string | null, code: string | null | undefine
 
 export type JobEvent =
   | { job: string; event: "stage"; stage: string }
-  | { job: string; event: "progress"; done: number; total: number }
+  | { job: string; event: "progress"; done: number; total: number; suggestions?: PolishSuggestion[]; range?: [string, string] }
   | { job: string; event: "done"; meeting_id: string; meeting_dir: string; summary_key?: string }
   | { job: string; event: "warning"; code: string; message: string }
   | { job: string; event: "error"; message: string; code?: string }

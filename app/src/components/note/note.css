@@ -723,3 +723,66 @@
   background: var(--memo);
   pointer-events: none;
 }
+
+/* ── AI 다듬기 (PolishControls.tsx, docs/design/transcript-polish.md) ──
+   돌아가는 동안 AI가 아직 보지 않은 줄이 위에서부터 물결처럼 은은하게 빛나고(opacity만 움직인다), 끝난 구간부터 빛이 꺼지며 제안이 나타난다 */
+.seg.is-glow {
+  position: relative;
+}
+.seg.is-glow::before {
+  content: "";
+  position: absolute;
+  inset: 1px -6px;
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ring) 10%, transparent) 35%, color-mix(in srgb, var(--ring) 6%, transparent) 75%, transparent);
+  pointer-events: none;
+  animation: polish-glow 2.2s ease-in-out infinite;
+  animation-delay: calc(var(--i, 0) * 90ms);
+}
+@keyframes polish-glow {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+.polish-spin {
+  animation: polish-spin 2.4s linear infinite;
+}
+@keyframes polish-spin {
+  to { transform: rotate(360deg); }
+}
+/* AI가 고친 문장 (받은 제안): 사람이 고친 것(memo 색)과 구분해 다듬기 빛과 같은 파랑 */
+.seg-edited.is-ai {
+  background: color-mix(in srgb, var(--ring) 12%, transparent);
+  color: var(--ring);
+}
+.seg-polish {
+  margin: 2px 12px 10px var(--time-col);
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--foreground) 2.5%, transparent);
+  animation: polish-in var(--fast, 150ms) ease-out;
+}
+.seg-polish-text {
+  font-size: 15px;
+  line-height: 1.75rem;
+}
+.seg-polish-text del {
+  color: var(--muted-foreground);
+  text-decoration-color: color-mix(in srgb, var(--destructive) 70%, transparent);
+}
+.seg-polish-text ins {
+  margin-right: 0.25em;
+  padding: 1px 3px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ring) 12%, transparent);
+  color: var(--foreground);
+  text-decoration: none;
+  font-weight: 500;
+}
+.seg-polish-text del + ins {
+  margin-left: 0.3em;
+}
+@keyframes polish-in {
+  from { opacity: 0; transform: translateY(-2px); }
+}
+/* 움직임 줄이기는 base.css가 모든 animation을 끈다 (빛은 켜진 채 멈춘다) */

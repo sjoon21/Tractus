@@ -1093,6 +1093,33 @@ async fn edit_segments(state: State<'_, AppState>, id: String, edits: Vec<TextEd
     .await
 }
 
+/// `tractus polish <노트> accept|reject` + stdin {"ids": [...]}. 받으면 고친 문장으로 바꾸고(원문은 남는다) 제안에서 뺀다
+fn polish_resolve_args(id: &str, ids: &[String], accept: bool) -> Result<(Vec<String>, String), String> {
+    if !is_meeting_id(id) {
+        return Err(tv("잘못된 노트 ID: {id}", &[("id", id.to_string())]));
+    }
+    if ids.is_empty() || ids.iter().any(|i| !is_tagged(i, 's')) {
+        return Err(t("고를 제안이 없습니다"));
+    }
+    let verb = if accept { "accept" } else { "reject" };
+    Ok((["polish", id, verb].map(String::from).to_vec(), json!({ "ids": ids }).to_string()))
+}
+
+/// AI 다듬기 제안 받기·버리기. 고친 회의(남은 제안 포함)를 돌려준다
+#[tauri::command]
+async fn polish_resolve(state: State<'_, AppState>, id: String, ids: Vec<String>, accept: bool) -> Result<EditResult, String> {
+    let s = state.settings();
+    let (args, input) = polish_resolve_args(&id, &ids, accept)?;
+    let guard = BusyGuard::new(&state.busy, &id);
+    blocking(move || {
+        let _guard = guard;
+        let fail = if accept { t("제안을 받지 못했습니다") } else { t("제안을 버리지 못했습니다") };
+        let changed = stdout_json(&run_tractus(&s, &args, Some(&input), &fail)?)?["changed"].as_u64().unwrap_or(0);
+        Ok(EditResult { changed, meeting: meetings::load(&s.home(), &id)? })
+    })
+    .await
+}
+
 /// `tractus glossary add -- <용어…>`. 다음 전사의 hotwords가 된다. 중복 제거는 코어가 한다
 fn glossary_args(terms: &[String]) -> Result<Vec<String>, String> {
     let terms: Vec<&str> = terms.iter().map(|t| t.trim()).filter(|t| !t.is_empty()).collect();
@@ -1419,6 +1446,8 @@ pub fn run() {
             rec_send,
             job_start,
             summaries::summary_start,
+            summaries::polish_start,
+            polish_resolve,
             summaries::summaries_list,
             summaries::summaries_delete,
             summaries::minutes_show,
@@ -1870,6 +1899,18 @@ mod tests {
         for (kind, target) in [("align", "../x"), ("align", ""), ("align", "01ABC --force"), ("summarize", "a/b"), ("transcribe", "/etc"), ("rm", "01ABC")] {
             assert!(job_args(home, kind, target).is_err(), "{kind} {target}");
         }
+    }
+
+    #[test]
+    fn polish_resolve_args_and_stdin() {
+        let ids = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let (args, input) = polish_resolve_args("01ABC", &ids(&["s0012", "s0013"]), true).unwrap();
+        assert_eq!(args, ["polish", "01ABC", "accept"]);
+        assert_eq!(serde_json::from_str::<Value>(&input).unwrap(), json!({"ids": ["s0012", "s0013"]}));
+        assert_eq!(polish_resolve_args("01ABC", &ids(&["s0001"]), false).unwrap().0, ["polish", "01ABC", "reject"]);
+        assert!(polish_resolve_args("../x", &ids(&["s0001"]), true).is_err());
+        assert!(polish_resolve_args("01ABC", &[], true).is_err());
+        assert!(polish_resolve_args("01ABC", &ids(&["m0001"]), true).is_err());
     }
 
     #[test]

@@ -13,6 +13,7 @@
  "9명 이상이 말한 노트에서 참석자를 더 정확히 나눕니다. 따로 빌드한 도우미 프로그램이 필요합니다.": "Separates speakers more accurately in notes with 9 or more speakers. Needs a separately built helper.",
  "AI 서비스를 지정하세요: --provider 또는 TRACTUS_LLM_PROVIDER ({choices})": "Choose an AI service: --provider or TRACTUS_LLM_PROVIDER ({choices})",
  "AI 응답이 형식에 맞지 않아 노트를 완성하지 못했습니다": "The AI response wasn’t in the expected format, so the note couldn’t be enhanced",
+ "AI 응답이 형식에 맞지 않아 다듬지 못했습니다": "Couldn't polish: the AI response wasn't in the expected format",
  "AI 응답이 형식에 맞지 않아 요약하지 못했습니다": "The AI response wasn’t in the expected format, so the summary couldn’t be made",
  "AI 응답이 형식에 맞지 않아 회의록을 만들지 못했습니다": "The AI response didn't match the expected format, so the minutes couldn't be created",
  "AI가 빈 답변을 보냈습니다. 다시 질문해 주세요.": "The AI sent an empty answer. Ask again.",
@@ -71,6 +72,7 @@
   "Enhancing with {provider}/{model}… ({n} line)",
   "Enhancing with {provider}/{model}… ({n} lines)"
  ],
+ "{provider}/{model}로 다듬는 중… (대화 {n}개)": "Polishing with {provider}/{model}… ({n} lines)",
  "{provider}/{model}로 요약 중… (세그먼트 {n}개)": [
   "Summarizing with {provider}/{model}… ({n} line)",
   "Summarizing with {provider}/{model}… ({n} lines)"
@@ -131,6 +133,7 @@
  "녹음된 소리가 없습니다: {files}": "No sound was recorded: {files}",
  "녹음에서 사람이 말하는 구간을 찾습니다.": "Finds the parts of a recording where people speak.",
  "녹음을 저장하지 못했습니다: {error}": "Couldn’t save the recording: {error}",
+ "녹음이 없는 노트는 AI로 다듬을 수 없습니다": "Notes without a recording can't be polished with AI",
  "녹음이 없는 노트는 노트 완성을 할 수 없습니다": "Notes without a recording can’t be enhanced",
  "녹음이 없는 노트는 회의록을 만들 수 없습니다": "Notes without a recording can't have minutes",
  "녹음이 없는 노트라 단어 싱크를 맞출 수 없습니다.": "This note has no recording, so words can’t be synced.",
@@ -280,6 +283,7 @@
  ],
  "완료: 세그먼트 {n}개, 반복 출력 보정 {repaired}건, {minutes}분": "Done: {n} lines, {repaired} repetition fixes, {minutes} min",
  "완료: 안건 {n}개, 할 일 {m}개 ({sec}초)": "Done: {n} topics, {m} to-dos ({sec}s)",
+ "완료: 제안 {n}개 ({sec}초)": "Done: {n} suggestions ({sec}s)",
  "완성된 노트": "Enhanced note",
  "요약": "Summary",
  "요약 · {name}": "Summary · {name}",
@@ -310,6 +314,7 @@
  "이어 할 변환 엔진이 없어 {name}(으)로 처음부터 다시 변환합니다": "The engine for this unfinished job is gone, so it restarts from the beginning with {name}",
  "이어서 진행합니다: {name} ({done}/{total} 청크 완료)": "Continuing: {name} ({done}/{total} chunks done)",
  "인식된 대화가 없어 노트를 완성할 수 없습니다": "No speech was recognized, so the note can’t be enhanced",
+ "인식된 대화가 없어 다듬을 수 없습니다": "Nothing to polish: no speech was recognized",
  "인식된 대화가 없어 요약할 수 없습니다": "No speech was recognized, so there’s nothing to summarize",
  "인식된 대화가 없어 회의록을 만들 수 없습니다": "No speech was recognized, so minutes can't be created",
  "일부만 받음": "Partially downloaded",

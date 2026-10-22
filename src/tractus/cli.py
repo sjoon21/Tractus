@@ -35,7 +35,7 @@ from tractus.asr import SR, Transcriber, note_terms  # noqa: E402
 from tractus.diarize import FLUID, FLUID_MIN_CLIP_S, MAX_SPEAKERS, NEMOTRON, MODEL_DIR as DIARIZER_DIR  # noqa: E402
 from tractus.diarize import fluid_hint, load_diarizer, load_fluid, split_chunks  # noqa: E402
 from tractus.export import FORMATS as EXPORT_FORMATS, UnsupportedFormat, render_export, write_bytes_atomic  # noqa: E402
-from tractus import attach, deferred, enhance, minutes, notes, obsidian, sample_note  # noqa: E402
+from tractus import attach, deferred, enhance, minutes, notes, obsidian, polish, sample_note  # noqa: E402
 from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_suggestions, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
 from tractus.store import IncompleteError, load_glossary, meeting_dir_name, new_ulid, save_transcript, seg_text, speaker_name, write_transcript  # noqa: E402
 from tractus.store import CHUNKS_FILE, JOB_FILE, edit_transcript, forget_person, note_lock, read_transcript, render_files  # noqa: E402
@@ -1385,6 +1385,106 @@ def segments_edit(ctx: typer.Context) -> None:
     if changed:
         _sync_index_quietly(embed=False)  # 바뀐 청크는 벡터 없이 키워드로만 찾힌다. 다음 `tractus index`나 전사·요약 때 임베딩
     print(json.dumps({"changed": changed}))
+
+
+polish_app = typer.Typer(help="AI 다듬기: 잘못 들은 말이 있는 문장의 고친 문장을 제안하고(run), 받거나(accept) 버린다(reject). 제안은 <노트>/polish.json (docs/design/transcript-polish.md)")
+app.add_typer(polish_app, name="polish")
+
+
+@polish_app.callback()
+def polish_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
+    ctx.obj = resolve_meeting(meeting)
+
+
+def _polish_note(d: Path) -> dict:
+    note = _read_transcript(d)
+    if is_memo(note):
+        _fail(t("녹음이 없는 노트는 AI로 다듬을 수 없습니다"), code="no_recording", exit_code=2)
+    if is_recorded(note):
+        _fail(NOT_CONVERTED, code="not_converted", exit_code=2)
+    return note
+
+
+def _polish_ids() -> set[str]:
+    try:
+        req = json.loads(sys.stdin.read())
+        ids = req.get("ids") if isinstance(req, dict) else None
+        if not (isinstance(ids, list) and all(isinstance(i, str) for i in ids)):
+            raise ValueError
+    except ValueError:
+        _fail(t("입력은 {shape} 형식이어야 합니다", shape='{"ids": ["s0012"]}'), code="bad_input", exit_code=2)  # words-ok: 앱 계약 오류
+    return set(ids)
+
+
+@polish_app.command("run")
+def polish_run(
+    ctx: typer.Context,
+    provider: str = typer.Option(None, "--provider", help="upstage | openai | claude | gemini | custom | gemma-local. 생략하면 TRACTUS_LLM_PROVIDER"),
+    model: str = typer.Option(None, "--model", help="모델 ID. 생략하면 TRACTUS_LLM_MODEL 또는 공급자 기본값"),
+    progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용). 창이 끝날 때마다 progress에 그 창의 suggestions와 range([첫 ID, 끝 ID])를 싣는다"),
+) -> None:
+    """대화 내용 전체를 범위마다 AI에 보내 제안을 만든다. 대화 내용·제목·메모·자주 쓰는 단어·확인한 참석자 이름만 공급자에 전송한다.
+    지난 제안은 새 제안으로 바뀐다. done 이벤트: {"suggestions": N}"""
+    Events.enabled = progress_json
+    d = ctx.obj
+    note = _polish_note(d)
+    if not note["segments"]:
+        _fail(t("인식된 대화가 없어 다듬을 수 없습니다"), code="no_segments")
+    try:
+        p, m = resolve_provider(provider, model)
+        t0 = time.perf_counter()
+        Events.emit("stage", stage="polish")
+        report = lambda done, total, got, span: Events.emit("progress", done=done, total=total, suggestions=got, range=list(span))  # noqa: E731
+        with console.status(t("{provider}/{model}로 다듬는 중… (대화 {n}개)", provider=p.name, model=m, n=len(note["segments"]))):
+            found = polish.suggest(make_client(p), p, m, note, load_glossary(home_dir() / "glossary.md"), on_window=report)
+    except LLMError as e:
+        if e.code == "llm_invalid":
+            console.print(f"[red]{escape(str(e))}[/red]")
+            _fail(t("AI 응답이 형식에 맞지 않아 다듬지 못했습니다"), code=e.code)
+        _fail(str(e), code=e.code)
+    with note_lock(d):
+        latest = read_transcript(d)  # AI를 기다리는 동안 고친 문장의 제안은 쓰지 않는다
+        now = {s["id"]: seg_text(s) for s in latest["segments"]}
+        found = [x for x in found if now.get(x["id"]) == x["before"]]
+        polish.write(d, latest, found, p.name, m)
+    Events.emit("done", meeting_id=note["meeting_id"], meeting_dir=str(d), suggestions=len(found))
+    console.print(t("완료: 제안 {n}개 ({sec}초)", n=len(found), sec=f"{time.perf_counter() - t0:.0f}"))
+
+
+@polish_app.command("show")
+def polish_show(ctx: typer.Context) -> None:
+    """아직 정하지 않은 제안 중 지금도 맞는 것. stdout: {"suggestions": [{id, start, before, text, kind, flags}]}"""
+    d = ctx.obj
+    print(json.dumps({"suggestions": polish.pending(d, _read_transcript(d))}, ensure_ascii=False))
+
+
+@polish_app.command("accept")
+def polish_accept(ctx: typer.Context) -> None:
+    """stdin {"ids": [...]}의 제안을 받는다: 고친 문장으로 바꾸고(원문은 남는다, corrected_by "ai") 제안에서 뺀다. stdout: {"changed": N, "remaining": M}"""
+    d = ctx.obj
+    note = _polish_note(d)
+    ids = _polish_ids()
+    edits = [{"id": x["id"], "text": x["text"], "by": "ai"} for x in polish.pending(d, note) if x["id"] in ids]
+    try:
+        changed = edit_transcript(d, lambda n: apply_text_edits(n, edits)) if edits else 0
+    except ValueError as e:
+        _fail(str(e), code="bad_input")
+    with note_lock(d):
+        remaining = polish.resolve(d, read_transcript(d), ids)
+    if changed:
+        _sync_index_quietly(embed=False)
+    print(json.dumps({"changed": changed, "remaining": remaining}))
+
+
+@polish_app.command("reject")
+def polish_reject(ctx: typer.Context) -> None:
+    """stdin {"ids": [...]}의 제안을 버린다. stdout: {"remaining": M}"""
+    d = ctx.obj
+    _polish_note(d)
+    ids = _polish_ids()
+    with note_lock(d):
+        remaining = polish.resolve(d, read_transcript(d), ids)
+    print(json.dumps({"remaining": remaining}))
 
 
 note_app = typer.Typer(help="직접 쓰는 메모 노트(오디오 없음)와 노트 제목. transcript.json·md를 쓰고 검색 색인을 갱신한다 (docs/desktop.md §2.10)")

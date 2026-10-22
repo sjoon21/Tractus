@@ -97,3 +97,83 @@ def test_write_saves_suggestions_beside_the_note(tmp_path):
 def test_rewrites_marks_multi_word_guesses():
     assert rewrites("김건지 너무 용롱만 초라는 코리를 짜야", "임계치 넘은 목록만 조회하는 쿼리를 짜야")
     assert not rewrites("로고를 보고 인계치를", "로그를 보고 임계치를")
+
+
+# ── CLI: tractus polish <노트> run|show|accept|reject ───────────────────
+
+from typer.testing import CliRunner  # noqa: E402
+
+from tractus import cli  # noqa: E402
+from tractus.store import save_transcript  # noqa: E402
+
+MID = "01K6X3POLISHMEETING0000000"
+
+
+@pytest.fixture
+def home_note(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    d = home / "meetings" / f"2026-10-02_온톨로지_{MID}"
+    d.mkdir(parents=True)
+    t = {"schema_version": 2, "meeting_id": MID, "title": "온톨로지 회의", "created_at": "2026-10-02T14:00:00+09:00",
+         "audio": {"file": "audio.ogg", "duration_sec": 20.0, "source": "a.m4a", "sha256": "x"},
+         "asr": {"model": "m", "track": "standard", "runtime": "mlx-audio", "language": "auto", "hotwords": []},
+         "speakers": {}, "diarization": None,
+         "segments": [seg(1, "원술로지 기반으로 묶어요"), seg(2, "인시덤 등록"), seg(3, "네 알겠습니다")]}
+    save_transcript(d, t)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TRACTUS_HOME", str(home))
+    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: None)
+    return d
+
+
+def invoke(*args, input=None):
+    return CliRunner().invoke(cli.app, [*map(str, args)], input=input)
+
+
+def run_with(monkeypatch, d, edits):
+    monkeypatch.setattr(cli, "resolve_provider", lambda p, m: (type("P", (), {"name": "gemini"})(), "m"))
+    monkeypatch.setattr(cli, "make_client", lambda p: None)
+    fake(monkeypatch, edits)
+    return invoke("polish", MID, "run", "--progress-json")
+
+
+def test_run_streams_window_suggestions_and_saves(home_note, monkeypatch):
+    r = run_with(monkeypatch, home_note, [{"id": "s0001", "text": "온톨로지 기반으로 묶어요", "kind": "term"},
+                                          {"id": "s0002", "text": "인시던트 등록", "kind": "term"}])
+    events = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+    assert r.exit_code == 0, r.output
+    prog = [e for e in events if e["event"] == "progress"]
+    assert prog[0]["done"] == 1 and prog[0]["total"] == 1 and [s["id"] for s in prog[0]["suggestions"]] == ["s0001", "s0002"]
+    assert prog[0]["range"] == ["s0001", "s0003"]
+    assert events[-1] == {"event": "done", "meeting_id": MID, "meeting_dir": str(home_note), "suggestions": 2}
+    shown = json.loads(invoke("polish", MID, "show").stdout)["suggestions"]
+    assert [s["text"] for s in shown] == ["온톨로지 기반으로 묶어요", "인시던트 등록"]
+
+
+def test_accept_marks_ai_edits_and_reject_clears(home_note, monkeypatch):
+    run_with(monkeypatch, home_note, [{"id": "s0001", "text": "온톨로지 기반으로 묶어요", "kind": "term"},
+                                      {"id": "s0002", "text": "인시던트 등록", "kind": "term"}])
+    r = invoke("polish", MID, "accept", input='{"ids": ["s0001"]}')
+    assert json.loads(r.stdout) == {"changed": 1, "remaining": 1}
+    t = json.loads((home_note / "transcript.json").read_text(encoding="utf-8"))
+    s1 = t["segments"][0]
+    assert (s1["text"], s1["corrected_text"], s1["corrected_by"]) == ("원술로지 기반으로 묶어요", "온톨로지 기반으로 묶어요", "ai")
+    assert json.loads(invoke("polish", MID, "reject", input='{"ids": ["s0002"]}').stdout) == {"remaining": 0}
+    assert not (home_note / "polish.json").exists()
+    # 사람이 다시 고치면 AI 표시가 지워진다
+    invoke("segments", MID, "edit", input='{"edits": [{"id": "s0001", "text": "온톨로지로 묶어요"}]}')
+    assert "corrected_by" not in json.loads((home_note / "transcript.json").read_text(encoding="utf-8"))["segments"][0]
+
+
+def test_suggestion_goes_stale_when_the_line_is_edited(home_note, monkeypatch):
+    run_with(monkeypatch, home_note, [{"id": "s0002", "text": "인시던트 등록", "kind": "term"}])
+    invoke("segments", MID, "edit", input='{"edits": [{"id": "s0002", "text": "인시던트 등록함"}]}')
+    assert json.loads(invoke("polish", MID, "show").stdout) == {"suggestions": []}
+    r = invoke("polish", MID, "accept", input='{"ids": ["s0002"]}')
+    assert json.loads(r.stdout) == {"changed": 0, "remaining": 0}  # 낡은 제안은 받지 않는다
+    assert json.loads((home_note / "transcript.json").read_text(encoding="utf-8"))["segments"][1]["corrected_text"] == "인시던트 등록함"
+
+
+def test_bad_input_is_rejected(home_note):
+    r = invoke("polish", MID, "accept", input='{"ids": "s0001"}')
+    assert r.exit_code == 2

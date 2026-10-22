@@ -104,6 +104,7 @@ const detail = (id: string): T => {
     note_memo: n.t.memo ?? null,
     audio_path: null,
     attendees: n.t.title?.includes(Q3) ? PEOPLE : [],
+    polish: polishPending.get(n.t.meeting_id) ?? [],
   };
 };
 
@@ -199,6 +200,56 @@ const ENHANCED_EN = {
   ],
 };
 const ENHANCED = EN ? ENHANCED_EN : ENHANCED_KO;
+
+// AI 다듬기 (docs/design/transcript-polish.md): 문장 몇 개의 낱말 하나를 잘못 들은 것처럼 바꿔 두고, 원래 문장을 제안한다. 구간 셋이 차례로 끝난다
+const polishPending = new Map<string, T[]>();
+const garble = (w: string) => (w.length > 1 ? w[1] + w[0] + w.slice(2) : w + w);
+const fakePolish = (a: T) => {
+  const n = notes.find((x) => x.t.meeting_id === a.id) ?? notes[0];
+  const segs = n.t.segments as T[];
+  const job = (payload: T) => void emit("job", { job: a.job, kind: "polish", ...payload });
+  const made: T[] = [];
+  segs.forEach((s, i) => {
+    if (i % 3 !== 1 || s.corrected_text) return;
+    const words = s.text.split(" ");
+    const k = Math.min(1, words.length - 1);
+    const original = s.text;
+    s.text = words.map((w: string, j: number) => (j === k ? garble(w) : w)).join(" ");
+    const flags = i % 9 === 4 ? ["number"] : i % 9 === 7 ? ["rewrite"] : [];
+    made.push({ id: s.id, start: s.start, before: s.text, text: original, kind: "term", flags });
+  });
+  polishPending.set(a.id, []);
+  const thirds = [0, 1, 2].map((w) => segs.slice(Math.floor((w * segs.length) / 3), Math.floor(((w + 1) * segs.length) / 3)));
+  setTimeout(() => job({ event: "stage", stage: "polish" }), 50);
+  [2, 0, 1].forEach((w, done) =>
+    setTimeout(() => {
+      const part = thirds[w];
+      if (!part.length) return;
+      const ids = new Set(part.map((s) => s.id));
+      job({ event: "progress", done: done + 1, total: 3, suggestions: made.filter((m) => ids.has(m.id)), range: [part[0].id, part[part.length - 1].id] });
+    }, 900 * (done + 1)),
+  );
+  setTimeout(() => {
+    polishPending.set(a.id, made);
+    job({ event: "done", meeting_id: a.id, meeting_dir: "/tmp", suggestions: made.length });
+    job({ event: "exit", code: 0 });
+  }, 3000);
+  return null;
+};
+const resolvePolish = (a: T) => {
+  const n = notes.find((x) => x.t.meeting_id === a.id) ?? notes[0];
+  const left: T[] = [];
+  let changed = 0;
+  for (const s of polishPending.get(a.id) ?? []) {
+    if (!a.ids.includes(s.id)) left.push(s);
+    else if (a.accept) {
+      const seg = (n.t.segments as T[]).find((x) => x.id === s.id);
+      if (seg) Object.assign(seg, { corrected_text: s.text === seg.text ? null : s.text, corrected_by: "ai" }), changed++;
+    }
+  }
+  polishPending.set(a.id, left);
+  return { changed, meeting: detail(a.id) };
+};
 const made = new Set<string>();
 const fakeSummary = (a: T) => {
   const job = (payload: T) => void emit("job", { job: a.job, kind: "summarize", ...payload });
@@ -251,6 +302,8 @@ const handlers: Record<string, (a: T) => unknown> = {
   list_recordings: () => [],
   list_folders: () => [{ id: "f1", name: EN ? "Customers" : "고객사", parent: null, order: 0, created_at: "2026-10-01T09:00:00+09:00" }],
   load_meeting: (a) => detail(a.id),
+  polish_start: fakePolish,
+  polish_resolve: resolvePolish,
   summaries_list: (a) => {
     const n = notes.find((x) => x.t.meeting_id === a.id);
     const extra = made.has(a.id) && n === notes[0] ? [ENHANCED] : [];
