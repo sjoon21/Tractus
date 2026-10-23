@@ -260,7 +260,7 @@ export default {
   "북마크 삭제": "Delete bookmark",
   // AI 다듬기 (PolishControls.tsx, polish.ts)
   "스마트 교정": "Smart fix",
-  "AI가 대화 내용 전체를 보고, 잘못 들은 말이 있는 문장의 고친 문장을 제안합니다. 받을지는 문장마다 정합니다": "AI reads the whole transcript and suggests fixes for lines with misheard words. You decide line by line",
+  "AI가 대화 내용 전체를 보고 잘못 들은 말, 군말, 문장부호와 띄어쓰기를 고친 문장을 제안합니다. 받을지는 문장마다 정합니다": "AI reads the whole transcript and suggests lines with misheard words, filler words, punctuation and spacing fixed. You decide line by line",
   "다시 교정하면 지금 남은 제안은 새 제안으로 바뀝니다": "Running Smart fix again replaces the suggestions still waiting",
   "스마트 교정 중… {done}/{total}": "Smart fixing… {done}/{total}",
   "스마트 교정 중…": "Smart fixing…",

@@ -1,6 +1,7 @@
 // AI 다듬기 (docs/design/transcript-polish.md): 제안 거르기·낱말 diff·문구. 화면과 무관한 순수 로직 (polish.test.ts).
 import { t } from "./i18n";
 import { segText, type Segment } from "./lib";
+import { termFromEdit } from "./vocab";
 
 /** 코어 polish.json의 제안 하나. flags: "number"(짐작한 숫자) · "rewrite"(여러 낱말을 다시 씀) */
 export interface PolishSuggestion {
@@ -13,7 +14,7 @@ export interface PolishSuggestion {
 }
 
 export const POLISH_LABEL = t("스마트 교정");
-export const POLISH_TITLE = t("AI가 대화 내용 전체를 보고, 잘못 들은 말이 있는 문장의 고친 문장을 제안합니다. 받을지는 문장마다 정합니다");
+export const POLISH_TITLE = t("AI가 대화 내용 전체를 보고 잘못 들은 말, 군말, 문장부호와 띄어쓰기를 고친 문장을 제안합니다. 받을지는 문장마다 정합니다");
 export const POLISH_AGAIN_TITLE = t("다시 교정하면 지금 남은 제안은 새 제안으로 바뀝니다");
 export const polishRunning = (done: number, total: number) => (total ? t("스마트 교정 중… {done}/{total}", { done, total }) : t("스마트 교정 중…"));
 export const ACCEPT = t("수락");
@@ -68,6 +69,21 @@ export function wordDiff(before: string, after: string): DiffPart[] {
   // 바꾼 자리는 지운 말 → 새 말 순서로 (읽는 순서)
   for (let k = 0; k + 1 < parts.length; k++) if (parts[k].op === "ins" && parts[k + 1].op === "del") [parts[k], parts[k + 1]] = [parts[k + 1], parts[k]];
   return parts;
+}
+
+/** 받은 제안에서 자주 쓰는 단어로 넘길 낱말: 용어·이름 제안(kind term·name)의 바꾼 자리마다 termFromEdit. 군말·문장부호를 함께 고친 문장도 자리별로 본다 */
+export function termsFromSuggestions(list: Pick<PolishSuggestion, "before" | "text" | "kind">[]): string[] {
+  const out = new Set<string>();
+  for (const x of list) {
+    if (x.kind !== "term" && x.kind !== "name") continue;
+    const parts = wordDiff(x.before, x.text);
+    for (let k = 0; k + 1 < parts.length; k++) {
+      if (parts[k].op !== "del" || parts[k + 1].op !== "ins") continue;
+      const term = termFromEdit(parts[k].text, parts[k + 1].text);
+      if (term) out.add(term);
+    }
+  }
+  return [...out];
 }
 
 /** 아직 AI가 보지 않은 문장 (빛나는 줄): 끝난 범위([첫 ID, 끝 ID]) 밖의 문장. 범위는 문장 순서로 본다 */

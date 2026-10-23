@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Segment } from "./lib";
-import { bulkAcceptIds, livePolish, pendingIds, wordDiff, type PolishSuggestion } from "./polish";
+import { bulkAcceptIds, livePolish, pendingIds, termsFromSuggestions, wordDiff, type PolishSuggestion } from "./polish";
 
 const seg = (id: string, text: string, corrected: string | null = null): Segment => ({ id, start: 0, end: 1, text, corrected_text: corrected });
 const sug = (id: string, before: string, text: string, flags: string[] = []): PolishSuggestion => ({ id, start: 0, before, text, kind: "term", flags });
@@ -46,5 +46,17 @@ describe("pendingIds", () => {
     const segs = ["s0001", "s0002", "s0003", "s0004"].map((i) => seg(i, i));
     expect([...pendingIds(segs, [])]).toEqual(["s0001", "s0002", "s0003", "s0004"]);
     expect([...pendingIds(segs, [["s0003", "s0004"]])]).toEqual(["s0001", "s0002"]);
+  });
+});
+
+describe("termsFromSuggestions", () => {
+  it("collects corrected terms from term and name suggestions, even with filler and punctuation fixes", () => {
+    const list = [
+      { before: "어 그 원술로지 기반으로 묶어요", text: "온톨로지 기반으로 묶어요.", kind: "term" },
+      { before: "인시덤 등록하고 쿠버 네티스도", text: "인시던트 등록하고 쿠버네티스도.", kind: "term" },
+      { before: "그 그러니까 되요", text: "그러니까 돼요.", kind: "style" },
+      { before: "원술로지 다시", text: "온톨로지 다시", kind: "term" },
+    ];
+    expect(termsFromSuggestions(list)).toEqual(["온톨로지", "인시던트", "쿠버네티스"]);
   });
 });

@@ -1,10 +1,12 @@
-"""대화 내용 다듬기 제안 (docs/design/transcript-polish.md): AI가 대화 내용 전체를 보고, 잘못 들은 말이 있는 문장만 고친 문장을 제안한다.
+"""녹취록 교정 제안 (docs/design/transcript-polish.md, 화면 이름 스마트 교정): AI가 녹취록 전체를 보고, 잘못 들은 말·군말·반복·문장부호·띄어쓰기·맞춤법을 고친 문장을 제안한다.
 
 - 문장(세그먼트) 단위다. 합치거나 나누지 않고, 고친 문장 전체를 받는다. 고친 글자 수 상한은 두지 않는다(소유자 결정).
-- 문맥: 고칠 범위(WINDOW_CHARS)마다 앞뒤 CONTEXT_SEGMENTS문장을 고치지 않는 문맥으로 붙인다. 대화 전체를 한 번에 맡기면 고칠 곳을 다 훑지 못한다.
+- 문맥: 녹취록 전체를 고치지 않는 문맥으로 붙이고, 고칠 범위만 WINDOW_CHARS씩 나눈다(한 번에 다 맡기면 고칠 곳을 다 훑지 못한다).
+  녹취록이 FULL_CONTEXT_CHARS를 넘으면 범위 앞뒤 CONTEXT_SEGMENTS문장만 문맥으로 붙인다.
 - 정답 후보로 참석자 이름·자주 쓰는 단어(변환 때 쓴 것 + 지금 목록)·노트 제목·내 메모를 함께 준다 (minutes.build_input과 같은 블록).
 - 사용자가 직접 고친 문장(corrected_text)은 고치지 않는다: 사람이 정한 것이 이긴다.
-- 문장부호·띄어쓰기만 다른 제안, 원문보다 크게 짧아진 제안(SHORTEN_MIN), 문장 앞·뒤에 낱말을 더하거나 뺀 제안(moves_edge: 경계 옮기기)은 버린다. 원문에 없던 숫자가 생긴 제안은 `number`, 한 자리에서 낱말 셋 이상을 바꾼 제안은 `rewrite` 표시를 단다(버리지 않는다)
+- 원문과 똑같은 제안, 원문보다 크게 짧아진 제안(SHORTEN_MIN: 내용 빼기), 문장 앞·뒤에 낱말을 더하거나 군말 아닌 낱말을 뺀 제안(moves_edge: 경계 옮기기)은 버린다.
+  원문에 없던 숫자가 생긴 제안은 `number`, 한 자리에서 낱말 셋 이상을 바꾼 제안은 `rewrite` 표시를 단다(버리지 않는다, 띄어쓰기만 바뀐 자리는 세지 않는다)
   (가상 회의에서 "옵이천" → "5억 2천"처럼 숫자를 짐작한 제안이 있었다: 정답은 5억 1천).
 - 제안은 <노트>/polish.json에만 쓴다. transcript.json은 바꾸지 않는다 (받기는 화면과 함께 정한다).
 """
@@ -34,12 +36,14 @@ SCHEMA_VERSION = 1
 # 고칠 범위. 한 번에 2만 자를 맡기면 고칠 곳을 일부만 돌려줘 실행마다 크게 달랐다(실제 노트 5개, 두 번 실행의 겹침 0.10–0.45).
 # 5천 자씩이면 제안이 2–3배이고 겹침 0.57–0.68 (docs/design/transcript-polish.md 측정)
 WINDOW_CHARS = 5_000
-CONTEXT_SEGMENTS = 30  # 범위 앞뒤로 붙이는 문맥 문장 수
+FULL_CONTEXT_CHARS = 60_000  # 녹취록이 이보다 짧으면 전체를 문맥으로 붙인다 (1시간 회의 약 1.5–2만 자)
+CONTEXT_SEGMENTS = 30  # 그보다 길면 범위 앞뒤로 붙이는 문맥 문장 수
 PARALLEL = 4  # 창을 동시에 보낸다 (서로 기다릴 필요가 없다)
 REWRITE_WORDS = 3  # 한 자리에서 낱말 이만큼 이상을 바꾸면 `rewrite` 표시: 잘못 들은 말을 고쳤다기보다 짐작해 다시 쓴 것일 수 있다 (버리지 않는다)
 EDGE_CHARS = 10  # 앞·뒤를 바꾼(replace) 경우는 글자 수 차이로 본다
-EDGE_WORDS = 3  # 문장 앞·뒤에 이만큼 이상 낱말을 더하거나 빼면 경계를 옮긴 것이다 (실제 노트: 앞 문장의 말을 끌어와 붙이거나 앞부분을 뺐다)
-SHORTEN_MIN = 0.75  # 고친 문장이 원문 글자의 이만큼도 안 되면 버린다: 고친 양이 아니라 "내용을 빼지 않는다" 규칙 위반이다 (가상 회의에서 첫 문장을 통째로 뺀 제안)
+EDGE_WORDS = 3  # 문장 앞·뒤에 이만큼 이상 낱말을 더하거나 (군말·되풀이 아닌 낱말을) 빼면 경계를 옮긴 것이다 (실제 노트: 앞 문장의 말을 끌어와 붙이거나 앞부분을 뺐다)
+SHORTEN_MIN = 0.5  # 고친 문장이 원문 글자의 이만큼도 안 되면 버린다: "내용을 빼지 않는다" 규칙 위반이다 (가상 회의에서 첫 문장을 통째로 뺀 제안). 군말을 지우면 줄어드니 v1의 0.75보다 낮다
+FILLERS = {"어", "음", "으음", "그", "저", "저기", "뭐", "이제", "아", "에", "막"}  # 문장 앞·뒤에서 지워도 경계 옮기기가 아닌 말  # i18n-ok: 한국어 처리 데이터
 
 PROMPTS = prompts.load("polish")  # 문구는 prompts/polish.md
 SYSTEM_PROMPT = PROMPTS["system"]
@@ -48,7 +52,7 @@ SYSTEM_PROMPT = PROMPTS["system"]
 class Edit(_Strict):
     id: str = Field(description="고칠 문장의 ID (예: s0012)")  # i18n-ok: AI 프롬프트
     text: str = Field(description="고친 문장 전체")  # i18n-ok: AI 프롬프트
-    kind: Literal["term", "name", "number", "word"]
+    kind: Literal["term", "name", "number", "word", "style"]
 
 
 class Polish(_Strict):
@@ -62,13 +66,17 @@ def _bare(s: str) -> str:
 
 
 def moves_edge(before: str, text: str) -> bool:
-    """문장 맨 앞이나 맨 뒤에 낱말을 EDGE_WORDS개 이상 더하거나 뺐으면 True (고친 것이 아니라 경계를 옮긴 것)."""
+    """문장 맨 앞이나 맨 뒤에 낱말을 EDGE_WORDS개 이상 더했거나, 군말·되풀이가 아닌 낱말을 그만큼 뺐으면 True (고친 것이 아니라 경계를 옮긴 것).
+    "어 그 저기 그래서" → "그래서"처럼 군말만 지운 것은 고친 것이다."""
     a, b = before.split(), text.split()
     ops = difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes()
     if not ops:
         return False
+    kept = {_bare(w) for w in b}
     for tag, i1, i2, j1, j2 in (ops[0], ops[-1]):
-        if tag in ("insert", "delete") and max(i2 - i1, j2 - j1) >= EDGE_WORDS:
+        if tag == "insert" and j2 - j1 >= EDGE_WORDS:
+            return True
+        if tag == "delete" and sum(_bare(w) not in FILLERS | kept for w in a[i1:i2]) >= EDGE_WORDS:
             return True
         if tag == "replace" and abs(len(_bare(" ".join(a[i1:i2]))) - len(_bare(" ".join(b[j1:j2])))) >= EDGE_CHARS:  # "I. W. S. 다." → "AWS다."는 고친 것
             return True
@@ -76,8 +84,10 @@ def moves_edge(before: str, text: str) -> bool:
 
 
 def rewrites(before: str, text: str) -> bool:
+    """한 자리에서 낱말 REWRITE_WORDS개 이상을 바꿨으면 True. 띄어쓰기·문장부호만 달라진 자리("할수있다" → "할 수 있다.")는 세지 않는다."""
     a, b = before.split(), text.split()
-    return any(tag == "replace" and max(i2 - i1, j2 - j1) >= REWRITE_WORDS for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes())
+    return any(tag == "replace" and max(i2 - i1, j2 - j1) >= REWRITE_WORDS and _bare(" ".join(a[i1:i2])) != _bare(" ".join(b[j1:j2]))
+               for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes())
 
 
 def windows(segments: list[dict], limit: int = WINDOW_CHARS) -> list[tuple[int, int]]:
@@ -107,7 +117,8 @@ def check(p: Polish, editable: set[str]) -> None:
 
 def _input(t: dict, lo: int, hi: int, glossary: list[str]) -> tuple[str, set[str]]:
     segs = t["segments"]
-    a, b = max(0, lo - CONTEXT_SEGMENTS), min(len(segs), hi + CONTEXT_SEGMENTS)
+    full = sum(len(seg_text(s)) + 30 for s in segs) <= FULL_CONTEXT_CHARS
+    a, b = (0, len(segs)) if full else (max(0, lo - CONTEXT_SEGMENTS), min(len(segs), hi + CONTEXT_SEGMENTS))
     window = {**t, "segments": segs[a:b]}
     editable = {s["id"] for s in segs[lo:hi] if s.get("corrected_text") is None}
     scope = f"고칠 수 있는 문장: {segs[lo]['id']}–{segs[hi - 1]['id']}"  # i18n-ok: AI 프롬프트
@@ -125,7 +136,7 @@ def _clean(t: dict, p: Polish, dropped: dict | None) -> list[dict]:
     for e in p.edits:
         s = by_id[e.id]
         before, text = seg_text(s), one_line(e.text)
-        why = ("same" if _bare(before) == _bare(text) else "short" if len(_bare(text)) < SHORTEN_MIN * len(_bare(before))
+        why = ("same" if before == text else "short" if len(_bare(text)) < SHORTEN_MIN * len(_bare(before))
                else "edge" if moves_edge(before, text) else None)
         if why:
             if dropped is not None:
