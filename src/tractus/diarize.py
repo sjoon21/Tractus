@@ -8,17 +8,22 @@ ARCHITECTURE.md §2.4. 2026-10-03 실측(AI Hub 한국어 회의 84분, 화자 7
 subprocess로 부른다. Nemotron은 8명이 상한이라, 9명 이상 회의는 이쪽으로 다시 돌린다 (cli._diarize).
 """
 
+from __future__ import annotations
+
 import json
 import os
 import subprocess
 import tempfile
 import wave
 from pathlib import Path
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from tractus.i18n import t
 from tractus.paths import REPO_ROOT, build_hint, in_repo, tool_bin  # noqa: F401 — REPO_ROOT는 테스트가 diarize에서 가져온다
+
+if TYPE_CHECKING:
+    import numpy as np
+
 
 SR = 16000
 MAX_CHUNK_S = 30.0  # vad.MAX_CHUNK_S와 같다. 청크를 나누기만 하므로 늘어나지 않는다
@@ -69,6 +74,8 @@ def smooth(probs: np.ndarray, stride: float, max_speakers: int | None = None) ->
     """프레임별 화자 확률 [T, K] → 겹치지 않는 turn 목록. 라벨은 처음 말한 순서대로 S1, S2, …
 
     max_speakers: 말한 시간이 많은 N명만 남기고, 나머지 프레임은 남은 화자 중 확률이 가장 높은 쪽에 붙인다."""
+    import numpy as np
+
     p = np.asarray(probs, np.float32)
     if p.size == 0:
         return []
@@ -133,6 +140,8 @@ class Diarizer:
 
     def diarize(self, pcm: np.ndarray, max_speakers: int | None = None) -> list[Turn]:
         """16kHz mono float32 → turn 목록. 회의 전체를 한 번에 넣는다 (모델이 긴 녹음을 내부에서 스트리밍 처리)."""
+        import numpy as np
+
         self.info = {**self.info, "params": params(max_speakers)}
         res = self.model.generate(pcm)
         return smooth(np.array(res.speaker_probs), self.stride, max_speakers)
@@ -189,6 +198,8 @@ def fluid_hint(models_dir: Path) -> str:
 
 
 def _write_wav(path: Path, pcm: np.ndarray) -> None:
+    import numpy as np
+
     x = (np.clip(np.asarray(pcm, np.float32), -1.0, 1.0) * 32767).astype("<i2")
     with wave.open(str(path), "wb") as w:
         w.setnchannels(1)

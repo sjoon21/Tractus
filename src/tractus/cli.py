@@ -21,10 +21,7 @@ from rich.markup import escape  # noqa: E402
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn  # noqa: E402
 
 from tractus import audio  # noqa: E402
-from tractus import live as live_mod  # noqa: E402
 from tractus import voices  # noqa: E402
-from tractus import summarize as summ  # noqa: E402
-from tractus import summaries as sums  # noqa: E402
 from tractus import summary_templates as tmpls  # noqa: E402
 from tractus.env import load_env_all  # noqa: E402
 from tractus.llm import LLMError, check_connection, list_models, make_client, resolve_provider  # noqa: E402
@@ -35,7 +32,7 @@ from tractus.asr import SR, Transcriber, note_terms  # noqa: E402
 from tractus.diarize import FLUID, FLUID_MIN_CLIP_S, MAX_SPEAKERS, NEMOTRON, MODEL_DIR as DIARIZER_DIR  # noqa: E402
 from tractus.diarize import fluid_hint, load_diarizer, load_fluid, split_chunks  # noqa: E402
 from tractus.export import FORMATS as EXPORT_FORMATS, UnsupportedFormat, render_export, write_bytes_atomic  # noqa: E402
-from tractus import attach, deferred, enhance, minutes, notes, obsidian, polish, sample_note  # noqa: E402
+from tractus import attach, deferred, notes  # noqa: E402
 from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_suggestions, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
 from tractus.store import IncompleteError, load_glossary, meeting_dir_name, new_ulid, save_transcript, seg_text, speaker_name, write_transcript  # noqa: E402
 from tractus.store import CHUNKS_FILE, JOB_FILE, edit_transcript, forget_person, note_lock, read_transcript, render_files  # noqa: E402
@@ -704,6 +701,8 @@ def live_cmd(
 
     # 프로세스 전체 핸들러라 끝나면 되돌린다 (테스트·다른 코드가 같은 프로세스에서 SIGINT를 받을 수 있다)
     previous = {sig: signal.signal(sig, lambda *_: stop.set()) for sig in (signal.SIGTERM, signal.SIGINT)}
+    from tractus import live as live_mod  # 모듈을 불러올 때 FIR 계수를 numpy로 만든다: 이 명령에서만
+
     try:
         live_mod.run(recording, emit, _warn, stop, vad_dir, asr_dir, models_dir() / DIARIZER_DIR if speakers else None, hotwords)
     except (live_mod.LiveError, ValueError, OSError) as e:
@@ -809,6 +808,8 @@ def summarize(
 ) -> None:
     """전사본으로 요약을 만든다. 기본(회의록)은 요약·결정 사항·할 일을 summary.md와 summary.json에, 다른 유형·직접 요약은 summaries/ 폴더에 저장한다. 전사 텍스트와 요약 지침만 공급자에 전송한다.
     done 이벤트의 summary_key는 저장한 요약의 key다 (`tractus summaries <노트> list`)."""
+    from tractus import enhance, minutes, summaries as sums, summarize as summ
+
     Events.enabled = progress_json
     try:
         d = resolve_meeting(meeting)
@@ -862,6 +863,8 @@ def summarize(
 
 def _enhance(d: Path, provider: str | None, model: str | None) -> None:
     """summarize --template enhanced: 내 메모를 뼈대로 대화 내용의 세부를 붙인 완성된 노트 (summaries/enhanced.json)."""
+    from tractus import enhance, summaries as sums
+
     transcript = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
     if is_memo(transcript):
         _fail(enhance.NO_RECORDING, code="no_recording", exit_code=2)
@@ -887,6 +890,8 @@ def _enhance(d: Path, provider: str | None, model: str | None) -> None:
 
 def _minutes(d: Path, provider: str | None, model: str | None) -> None:
     """summarize --template minutes: 회의록 (summaries/minutes.json). 녹음 노트만."""
+    from tractus import minutes, summaries as sums
+
     transcript = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
     if is_memo(transcript):
         _fail(t("녹음이 없는 노트는 회의록을 만들 수 없습니다"), code="no_recording", exit_code=2)  # words-ok: 회의록은 문서 이름
@@ -1425,6 +1430,8 @@ def polish_run(
 ) -> None:
     """대화 내용 전체를 범위마다 AI에 보내 제안을 만든다. 대화 내용·제목·메모·자주 쓰는 단어·확인한 참석자 이름만 공급자에 전송한다.
     지난 제안은 새 제안으로 바뀐다. done 이벤트: {"suggestions": N}"""
+    from tractus import polish
+
     Events.enabled = progress_json
     d = ctx.obj
     note = _polish_note(d)
@@ -1454,6 +1461,8 @@ def polish_run(
 @polish_app.command("show")
 def polish_show(ctx: typer.Context) -> None:
     """아직 정하지 않은 제안 중 지금도 맞는 것. stdout: {"suggestions": [{id, start, before, text, kind, flags}]}"""
+    from tractus import polish
+
     d = ctx.obj
     print(json.dumps({"suggestions": polish.pending(d, _read_transcript(d))}, ensure_ascii=False))
 
@@ -1461,6 +1470,8 @@ def polish_show(ctx: typer.Context) -> None:
 @polish_app.command("accept")
 def polish_accept(ctx: typer.Context) -> None:
     """stdin {"ids": [...]}의 제안을 받는다: 고친 문장으로 바꾸고(원문은 남는다, corrected_by "ai") 제안에서 뺀다. stdout: {"changed": N, "remaining": M}"""
+    from tractus import polish
+
     d = ctx.obj
     note = _polish_note(d)
     ids = _polish_ids()
@@ -1479,6 +1490,8 @@ def polish_accept(ctx: typer.Context) -> None:
 @polish_app.command("reject")
 def polish_reject(ctx: typer.Context) -> None:
     """stdin {"ids": [...]}의 제안을 버린다. stdout: {"remaining": M}"""
+    from tractus import polish
+
     d = ctx.obj
     _polish_note(d)
     ids = _polish_ids()
@@ -1537,6 +1550,8 @@ def note_new(title: str = typer.Option(None, "--title", help="제목. stdin의 t
 def note_sample() -> None:
     """예시 노트(첫 사용자 온보딩, 가상 회의)를 만든다. 이미 있으면 그것을 돌려준다. 모델·AI 키 없이 돈다.
     stdout: {"meeting_id": "…", "meeting_dir": "<절대 경로>", "created": bool}. 검색 색인·MCP 목록에는 들어가지 않는다."""
+    from tractus import sample_note
+
     d, created = sample_note.create(home_dir())
     t = read_transcript(d)
     print(json.dumps({"meeting_id": t["meeting_id"], "meeting_dir": str(d.resolve()), "created": created}, ensure_ascii=False))
@@ -1637,6 +1652,8 @@ def export_cmd(
     summary: str = typer.Option(None, "--summary", help="md·docx에 넣을 요약의 key (meeting·brief·u-…·c-…). 생략하면 기본 요약, 그것도 없으면 처음 있는 요약"),
 ) -> None:
     """노트를 파일로 내보낸다. 화자는 표시 이름, 본문은 교정본(corrected_text) 우선. stdout: {"path": "<절대 경로>"}"""
+    from tractus import summaries as sums
+
     d = resolve_meeting(meeting)
     if summary and sums.read_data(d, summary) is None:
         _fail(sums.NO_SUCH_SUMMARY, exit_code=2)
@@ -1667,6 +1684,8 @@ def obsidian_cmd(
 ) -> None:
     """노트를 Obsidian 볼트에 Markdown 하나로 보낸다 (docs/design/obsidian-export.md).
     stdout: {"status": "created|updated|unchanged|edited", "path", "audio"}. edited면 쓰지 않았다 (--force로 덮어쓴다)."""
+    from tractus import obsidian, summaries as sums
+
     d = resolve_meeting(meeting)
     if summary and sums.read_data(d, summary) is None:
         _fail(sums.NO_SUCH_SUMMARY, exit_code=2)
@@ -1740,6 +1759,8 @@ def summaries_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="
 @summaries_app.command("list")
 def summaries_list(ctx: typer.Context, as_json: bool = typer.Option(False, "--json", help='{"summaries": [{"key","template","name","title","generated_at","provider","model","custom"}]}')) -> None:
     """요약 목록. key meeting은 기본 요약(summary.json)이다."""
+    from tractus import summaries as sums
+
     items = sums.list_summaries(ctx.obj)
     if as_json:
         print(json.dumps({"summaries": items}, ensure_ascii=False))
@@ -1751,6 +1772,8 @@ def summaries_list(ctx: typer.Context, as_json: bool = typer.Option(False, "--js
 @summaries_app.command("delete")
 def summaries_delete(ctx: typer.Context, key: str = typer.Argument(..., metavar="KEY", help="지울 요약의 key (meeting이면 summary.json·summary.md)")) -> None:
     """요약 하나를 지운다. stdout: {"deleted": "<KEY>"}. 없으면 종료 코드 2."""
+    from tractus import summaries as sums
+
     try:
         sums.delete_summary(ctx.obj, key)
     except ValueError as e:
@@ -1774,12 +1797,16 @@ def _transcript(d: Path) -> dict:
 @minutes_app.command("show")
 def minutes_show(ctx: typer.Context) -> None:
     """stdout: {"minutes", "attendees", "title", "generated_at", "edited_at", "markdown", "short"}. 회의록이 없으면 {"minutes": null}."""  # words-ok: 회의록은 문서 이름
+    from tractus import minutes, summaries as sums
+
     print(json.dumps(minutes.show(sums.read_data(ctx.obj, minutes.KEY), _transcript(ctx.obj)), ensure_ascii=False))
 
 
 @minutes_app.command("save")
 def minutes_save(ctx: typer.Context) -> None:
     """칸을 고친 회의록 저장. stdin {"minutes": {...}} (show의 minutes 모양). 비운 줄은 지운다. stdout은 show와 같다. 형식이 틀리면 종료 코드 2."""  # words-ok: 회의록은 문서 이름
+    from tractus import minutes
+
     try:
         raw = json.loads(sys.stdin.read() or "{}")
         out = minutes.save_edit(ctx.obj, _transcript(ctx.obj), raw.get("minutes") if isinstance(raw, dict) else None)

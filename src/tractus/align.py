@@ -10,14 +10,18 @@ mlx-audio의 한국어 토크나이저(`tokenize_korean`)는 soynlp(LGPL-3)를 �
 words는 표시 텍스트에 단어가 없을 때만 None이다 (스키마·불변식은 그대로).
 """
 
+from __future__ import annotations
+
 import difflib
 import unicodedata
 from pathlib import Path
-from typing import Callable
-
-import numpy as np
+from typing import TYPE_CHECKING, Callable
 
 from tractus.store import seg_text
+
+if TYPE_CHECKING:
+    import numpy as np
+
 
 SR = 16000
 MODEL_REPO = "mlx-community/Qwen3-ForcedAligner-0.6B-8bit"
@@ -44,6 +48,8 @@ class Aligner:
     def align(self, pcm: np.ndarray, text: str) -> list[dict] | None:
         """슬라이스 기준 상대 시각(초)의 단어 목록. 60초 초과, 빈 텍스트, 모델 단어 수 불일치, 모두 길이 0이면 None.
         문장부호만 있는 토큰은 앞 단어 끝(첫 단어면 0)에 길이 0으로 둔다. 시각은 [0, 슬라이스 길이]로 자르고 줄지 않게 맞춘다."""
+        import numpy as np
+
         n = len(tokenize(text))
         if not n or len(pcm) > MAX_SLICE_S * SR:
             return None

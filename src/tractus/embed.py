@@ -8,14 +8,19 @@ mlx-embeddings는 GPL-3이라 쓰지 않는다 (이 변환본을 만들 때 쓰�
 - 400자 한국어 기준 약 11 문단/초, 피크 메모리 1.4–1.8 GiB, 질의 1건 약 50ms
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from dataclasses import replace
 from pathlib import Path
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from tractus.i18n import t
+
+if TYPE_CHECKING:
+    import numpy as np
+
 
 log = logging.getLogger("tractus.embed")
 
@@ -52,6 +57,8 @@ class Embedder:
         return [x if x and x[-1] == self.eos else x[: MAX_TOKENS - 1] + [self.eos] for x in ids]
 
     def embed(self, texts: list[str], is_query: bool = False) -> np.ndarray:
+        import numpy as np
+
         mx = self._mx
         if is_query:
             texts = [f"Instruct: {QUERY_TASK}\nQuery:{t}" for t in texts]
@@ -115,6 +122,7 @@ class UpstageEmbedder:
         self._client = None
 
     def embed(self, texts: list[str], is_query: bool = False) -> np.ndarray:
+        import numpy as np
         from tractus.llm import host_of, make_client
 
         self._client = self._client or make_client(self.provider, timeout=UPSTAGE_TIMEOUT_S)

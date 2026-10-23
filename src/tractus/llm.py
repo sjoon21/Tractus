@@ -4,6 +4,8 @@
 오류를 붙여 1회 재요청한다. `json_schema`를 지원하는 공급자에는 `response_format`(strict)을 추가로 붙인다.
 """
 
+from __future__ import annotations
+
 import copy
 import json
 import os
@@ -12,16 +14,16 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 from urllib.parse import urlsplit
-
-import httpx
-from pydantic import BaseModel, ValidationError
 
 from tractus import prompts
 from tractus.i18n import t
 
-T = TypeVar("T", bound=BaseModel)
+if TYPE_CHECKING:
+    from pydantic import BaseModel
+
+T = TypeVar("T", bound="BaseModel")  # pydantic은 구조화 응답을 받을 때만 불러온다 (CLI 시작 시간)
 TEMPERATURE = 0.2  # 0–1 범위만 사용 (Claude 호환 레이어는 1 초과를 잘라냄)
 TIMEOUT_S = 300
 TEST_TIMEOUT_S = 30  # `tractus llm test`: 재시도 없이 한 번
@@ -145,6 +147,7 @@ def local_only() -> bool:
 
 
 def make_client(provider: Provider, timeout: float = TIMEOUT_S, max_retries: int = 4):  # SDK가 408·409·429·5xx를 0.5→8초 간격으로 다시 보낸다 (Gemini의 일시적 503 "high demand"를 넘기려 4회)
+    import httpx
     from openai import OpenAI
 
     key = os.environ.get(provider.api_key_env, "") if provider.api_key_env else ""
@@ -308,6 +311,8 @@ def complete_json(
     validate: Callable[[T], None] | None = None,
 ) -> T:
     """구조화 응답을 받아 검증한다. 스키마·validate 실패 시 오류를 알려 주고 1회 재요청한다."""
+    from pydantic import ValidationError
+
     spec = strict_schema(schema)
     system = f"{system}\n\n{prompts.load('common')['json_schema']}\n{json.dumps(spec, ensure_ascii=False)}"
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]

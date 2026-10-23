@@ -4,6 +4,8 @@
 바뀐 회의만 다시 색인한다(증분 동기화). 스키마가 바뀌면 통째로 지우고 파일에서 다시 만든다.
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
@@ -13,11 +15,14 @@ import time
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from tractus.i18n import t
 from tractus.store import is_sample, memo_segments, seg_text, speaker_name
+
+if TYPE_CHECKING:
+    import numpy as np
+
 
 log = logging.getLogger("tractus.index")
 
@@ -322,6 +327,8 @@ class Index:
     def _ensure_vectors(self, report: SyncReport) -> None:
         """벡터를 모델과 맞춘다: 모델이 바뀌었으면 벡터 테이블을 새로 만들고, 같으면 빠진 벡터만 채운다.
         (임베딩 모델 없이 색인된 회의도 나중에 모델이 생기면 여기서 벡터를 얻는다.)"""
+        import numpy as np
+
         emb = self.embedder
         if not self._vectors_current():
             self.db.execute("BEGIN IMMEDIATE")
@@ -471,6 +478,8 @@ class Index:
 
     def _vector(self, query: str, date_from=None, date_to=None, meeting_id=None) -> dict[int, float] | None:
         """chunk_id → 코사인 거리 (가까운 순). 벡터를 쓸 수 없으면 None."""
+        import numpy as np
+
         if not self._vectors_current():
             return None
         try:
