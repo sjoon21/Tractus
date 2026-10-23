@@ -19,8 +19,6 @@ import subprocess
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterator
@@ -90,6 +88,8 @@ def _chain(exc: BaseException) -> Iterator[BaseException]:
 
 def classify(exc: BaseException) -> str:
     """예외 → 오류 코드: no_network | disk_full | auth | hash_mismatch | unknown (ModelError는 자기 코드)."""
+    import urllib.error  # urllib은 받을 때만 불러온다 (CLI 시작 시간)
+
     if isinstance(exc, ModelError):
         return exc.code
     names = {"ConnectError", "ConnectTimeout", "ReadTimeout", "TimeoutException", "NetworkError", "TransportError", "OfflineModeIsEnabled",
@@ -173,6 +173,8 @@ def _download_hf(m: reg.Model, root: Path, report: _Reporter, cancel: threading.
 
 
 def _download_url(m: reg.Model, root: Path, report: _Reporter, cancel: threading.Event) -> None:
+    import urllib.request
+
     d = root / m.local_dir
     d.mkdir(parents=True, exist_ok=True)
     name = next(iter(m.files))

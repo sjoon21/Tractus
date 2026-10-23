@@ -50,6 +50,8 @@ if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then ok "Apple S
 for t in uv swift cargo pnpm node codesign ditto file; do
   if command -v "$t" >/dev/null 2>&1; then ok "$t"; else fail "$t 이(가) 없습니다. scripts/bootstrap.sh 를 먼저 실행하세요"; fi
 done
+if grep -qx tractus.cli "$REPO/scripts/bundle_modules.txt" 2>/dev/null; then ok "앱이 불러오는 모듈 목록 scripts/bundle_modules.txt"
+else fail "scripts/bundle_modules.txt 가 없거나 비었습니다. uv run python scripts/bundle_trace.py 로 만드세요"; fi
 PY=""
 if command -v uv >/dev/null 2>&1; then
   # python-build-standalone: uv 가 받는 옮길 수 있는 파이썬. 없으면 uv python install 이 받는다 (인터넷)
@@ -137,7 +139,7 @@ uv pip install --python "$RT/bin/python$PY_SERIES" --target "$SP" --no-deps --li
 rm -rf "$STAGE/wheel" "$STAGE/requirements.txt"
 ok "site-packages $(kb "$SP")"
 
-step "4. 줄이기 (site-packages: tests·__pycache__·*.pyi)와 바이트코드 다시 만들기"
+step "4. 줄이기 (site-packages: tests·__pycache__·*.pyi·쓰지 않는 하위 패키지)와 바이트코드 다시 만들기"
 BEFORE_SP="$(kb "$SP")"
 find "$SP" -type d \( -name tests -o -name __pycache__ \) -prune -exec rm -rf {} +
 find "$SP" -type f -name '*.pyi' -delete
@@ -147,9 +149,11 @@ rm -rf "$SP/bin"   # 의존성의 콘솔 스크립트(typer·mlx_lm.* 등): 만�
 find "$SP" -type f \( -name '*.so' -o -name '*.dylib' \) | while read -r f; do
   case "$(lipo -archs "$f" 2>/dev/null)" in *x86_64*arm64*|*arm64*x86_64*) lipo -thin arm64 "$f" -output "$f.thin" && mv "$f.thin" "$f" ;; esac
 done
-# 앱 안은 서명으로 봉인되어 실행 중에 쓰면 안 된다(PYTHONDONTWRITEBYTECODE=1). 그래서 미리 만든다.
-# unchecked-hash: 원본 수정 시각을 보지 않는다 (복사하면 시각이 바뀌어 pyc 가 낡은 것으로 보이는 일을 막는다)
-"$RT/bin/python$PY_SERIES" -m compileall -q -j0 --invalidation-mode unchecked-hash "$LIB" >/dev/null
+# 쓰지 않는 하위 패키지(transformers 모델 정의 등)를 지우고, 실제로 불러오는 모듈만 바이트코드를 미리 만든다 (scripts/bundle_slim.py,
+# 목록은 scripts/bundle_trace.py 가 만든 scripts/bundle_modules.txt). 앱 안은 서명으로 봉인되어 실행 중에 쓰면 안 된다(PYTHONDONTWRITEBYTECODE=1).
+"$RT/bin/python$PY_SERIES" -I "$REPO/scripts/bundle_slim.py" "$SP" "$REPO/scripts/bundle_modules.txt"
+# 표준 라이브러리는 전부 미리 만든다. unchecked-hash: 원본 수정 시각을 보지 않는다 (복사하면 시각이 바뀌어 pyc 가 낡은 것으로 보이는 일을 막는다)
+"$RT/bin/python$PY_SERIES" -m compileall -q -j0 --invalidation-mode unchecked-hash -x '/site-packages/' "$LIB" >/dev/null
 ok "site-packages $BEFORE_SP → $(kb "$SP"), 전체 runtime $(kb "$RT")"
 
 step "5. 코어 실행 래퍼 runtime/bin/tractus"

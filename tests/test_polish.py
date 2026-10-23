@@ -42,16 +42,27 @@ def test_suggest_keeps_real_fixes_and_flags_new_numbers(monkeypatch):
     assert "온톨로지" in seen[0] and "고칠 수 있는 문장: s0001–s0003" in seen[0]  # 자주 쓰는 단어와 범위를 함께 보낸다
 
 
-def test_suggest_drops_spacing_only_shortened_and_boundary_moves(monkeypatch):
-    t = note("이 시장 노드를 찾아요", "그래서 이게 어떤 걸 할 수 있고 못하는지 봐야 해요", "되고 처리해야 됩니다. 아까 대시볼 번호 없는데", "쿠버 네티스 클러스터입니다")
+def test_suggest_drops_unchanged_shortened_and_boundary_moves(monkeypatch):
+    t = note("이 시장 노드를 찾아요", "그래서 이게 어떤 걸 할 수 있고 못하는지 봐야 해요", "되고 처리해야 됩니다. 아까 대시볼 번호 없는데", "쿠버 네티스 클러스터입니다",
+             "오늘 안건은 온톨로지 기반 자원 묶기와 비용 정리 두 가지입니다", "네 알겠습니다")
     fake(monkeypatch, [{"id": "s0002", "text": "얘가 지금 뭔가 기능 구현 관점보다는. 그래서 이게 어떤 걸 할 수 있고 못하는지 봐야 해요", "kind": "word"},
                        {"id": "s0003", "text": "아까 대시보드 권한 없는데", "kind": "word"},
-                       {"id": "s0004", "text": "쿠버네티스 클러스터입니다", "kind": "term"},
-                       {"id": "s0001", "text": "이 시작 노드를 찾아요", "kind": "word"}])
+                       {"id": "s0004", "text": "쿠버네티스 클러스터입니다.", "kind": "term"},
+                       {"id": "s0005", "text": "오늘 안건은 두 가지입니다.", "kind": "style"},
+                       {"id": "s0006", "text": "네 알겠습니다", "kind": "style"},
+                       {"id": "s0001", "text": "이 시작 노드를 찾아요.", "kind": "word"}])
     dropped: dict = {}
     out = polish.suggest(None, None, "m", t, dropped=dropped)
-    assert [x["id"] for x in out] == ["s0001"]  # 문장 순서로
-    assert dropped == {"edge": 1, "short": 1, "same": 1}
+    assert [x["id"] for x in out] == ["s0001", "s0004"]  # 문장 순서로. 띄어쓰기·문장부호를 고친 제안은 남는다
+    assert dropped == {"edge": 2, "short": 1, "same": 1}
+
+
+def test_suggest_keeps_filler_removal_and_spacing_fixes_without_rewrite_flag(monkeypatch):
+    t = note("어 그 저기 그래서 쿠버 네티스를 써요", "그 그 그러니까 할수있다고 그래서 쓰는거죠")
+    fake(monkeypatch, [{"id": "s0001", "text": "그래서 쿠버네티스를 써요.", "kind": "term"},
+                       {"id": "s0002", "text": "그러니까 할 수 있다고 그래서 쓰는 거죠.", "kind": "style"}])
+    out = polish.suggest(None, None, "m", t)
+    assert [(x["id"], x["kind"], x["flags"]) for x in out] == [("s0001", "term", []), ("s0002", "style", [])]
 
 
 def test_user_corrected_segments_are_context_only(monkeypatch):
@@ -76,6 +87,8 @@ def test_moves_edge_tells_fixes_from_boundary_moves():
     assert not moves_edge("일 개월분에 추가 시간.", "시계열 분해 추가 실험.")
     assert moves_edge("이게 어떤 걸 할 수 있고", "얘가 지금 뭔가 기능 구현 관점보다는. 이게 어떤 걸 할 수 있고")
     assert moves_edge("되고 처리해야 됩니다. 아까 대시볼 번호 없는데", "아까 대시보드 권한 없는데")
+    assert not moves_edge("어 그 저기 그래서 이건", "그래서 이건")  # 군말만 지웠다
+    assert not moves_edge("저희가 저희가 저희 팀이 할게요", "저희 팀이 할게요.")  # 되풀이만 지웠다
 
 
 def test_long_notes_are_split_into_windows_with_context(monkeypatch):
@@ -84,7 +97,17 @@ def test_long_notes_are_split_into_windows_with_context(monkeypatch):
     monkeypatch.setattr(polish, "WINDOW_CHARS", 1000)
     seen = fake(monkeypatch, *[[]] * 5)
     assert polish.suggest(None, None, "m", note(*texts)) == []
-    assert "고칠 수 있는 문장: s0008–s0014 (앞뒤 문장은 문맥으로만 본다)" in seen[1] and "[s0001 " in seen[1]  # 앞 문장도 문맥으로
+    assert "고칠 수 있는 문장: s0008–s0014 (앞뒤 문장은 문맥으로만 본다)" in seen[1] and "[s0001 " in seen[1] and "[s0030 " in seen[1]  # 녹취록 전체가 문맥
+
+
+def test_very_long_notes_get_only_nearby_context(monkeypatch):
+    texts = [f"문장 {i} " + "가" * 100 for i in range(30)]
+    monkeypatch.setattr(polish, "WINDOW_CHARS", 1000)
+    monkeypatch.setattr(polish, "FULL_CONTEXT_CHARS", 2000)
+    monkeypatch.setattr(polish, "CONTEXT_SEGMENTS", 2)
+    seen = fake(monkeypatch, *[[]] * 5)
+    polish.suggest(None, None, "m", note(*texts))
+    assert "[s0006 " in seen[1] and "[s0016 " in seen[1] and "[s0001 " not in seen[1] and "[s0017 " not in seen[1]
 
 
 def test_write_saves_suggestions_beside_the_note(tmp_path):
@@ -97,6 +120,7 @@ def test_write_saves_suggestions_beside_the_note(tmp_path):
 def test_rewrites_marks_multi_word_guesses():
     assert rewrites("김건지 너무 용롱만 초라는 코리를 짜야", "임계치 넘은 목록만 조회하는 쿼리를 짜야")
     assert not rewrites("로고를 보고 인계치를", "로그를 보고 임계치를")
+    assert not rewrites("이건 할수있다고 봐요", "이건 할 수 있다고 봐요.")  # 띄어쓰기만
 
 
 # ── CLI: tractus polish <노트> run|show|accept|reject ───────────────────

@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
-from tractus import cli
+from tractus import cli, summarize
 from tractus.asr import Segment
 
 SR = 16000
@@ -131,7 +131,7 @@ def test_summarize_writes_summary_files(env, fake_asr, monkeypatch):
         calls.append((provider.name, model, len(transcript["segments"])))
         return summ.MeetingSummary.model_validate(reply)
 
-    monkeypatch.setattr(cli.summ, "summarize", fake_summarize)
+    monkeypatch.setattr(summarize, "summarize", fake_summarize)
     monkeypatch.setattr(cli, "make_client", lambda p: None)
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
     result = CliRunner().invoke(cli.app, ["summarize", meeting_id[-6:], "--provider", "upstage", "--progress-json"])
@@ -161,7 +161,7 @@ def test_error_text_with_brackets_is_printed_verbatim(env, fake_asr, monkeypatch
     def boom(*a, **k):
         raise cli.LLMError("검증 실패 [type=missing, input_value={}] [/x]")
 
-    monkeypatch.setattr(cli.summ, "summarize", boom)
+    monkeypatch.setattr(summarize, "summarize", boom)
     monkeypatch.setattr(cli, "make_client", lambda p: None)
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
     result = CliRunner().invoke(cli.app, ["summarize", str(d), "--provider", "upstage"])
@@ -176,7 +176,7 @@ def test_summarize_invalid_llm_reply_emits_code_and_keeps_detail_on_stderr(env, 
     def boom(*a, **k):
         raise cli.LLMError("upstage/m 응답이 2회 연속 검증에 실패했습니다: 전사에 없는 segment_ids: ['s0099']", code="llm_invalid")
 
-    monkeypatch.setattr(cli.summ, "summarize", boom)
+    monkeypatch.setattr(summarize, "summarize", boom)
     monkeypatch.setattr(cli, "make_client", lambda p: None)
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
     result = CliRunner().invoke(cli.app, ["summarize", str(d), "--provider", "upstage", "--progress-json"])
@@ -753,3 +753,12 @@ def test_voices_list_flags_profiles_from_another_model(env):
     listed = json.loads(voices_cmd("list", "--json").stdout)
     assert listed["reenroll"] is True and listed["people"][0]["samples"] == 1
     assert "다시 등록" in voices_cmd("list").stderr
+
+
+def test_cli_starts_without_heavy_libraries():
+    """앱은 제목·태그·텍스트를 고칠 때마다 CLI를 띄운다: numpy·httpx·pydantic은 쓰는 명령 안에서만 불러온다 (v3.69)."""
+    import subprocess
+    import sys
+
+    code = "import sys, tractus.cli; print(sorted(m for m in ('numpy', 'httpx', 'pydantic', 'openai', 'mlx', 'urllib.request') if m in sys.modules))"
+    assert subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout.strip() == "[]"

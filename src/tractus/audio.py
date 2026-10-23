@@ -1,13 +1,18 @@
 """FFmpeg 호출. 번들하지 않고 외부 바이너리로 실행한다(LGPL/GPL을 Apache-2.0 배포물과 분리)."""
 
+from __future__ import annotations
+
 import hashlib
 import shutil
 import subprocess
 from pathlib import Path
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from tractus.i18n import t
+
+if TYPE_CHECKING:
+    import numpy as np
+
 
 SR = 16000
 
@@ -42,6 +47,8 @@ def _inputs(paths: list[Path]) -> list[str]:
 
 def decode(paths: Path | list[Path]) -> np.ndarray:
     """임의 형식(m4a/mp3/wav/webm/mp4/mov…)을 16kHz mono float32로 디코딩한다. 여러 파일이면 섞는다."""
+    import numpy as np
+
     paths = [paths] if isinstance(paths, Path) else paths
     try:
         raw = _run([*_inputs(paths), "-vn", "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"], capture=True)  # -vn: 동영상(mp4·mov)은 소리만

@@ -13,6 +13,8 @@ import re
 from functools import cache
 from pathlib import Path
 
+from tractus import prompts
+
 _VAR = re.compile(r"\{(\w+)\}")
 
 
@@ -37,7 +39,7 @@ def t(ko: str, **vars: object) -> str:
 
 
 # 영어 화면에서 AI 결과(요약·노트 완성)의 언어 규칙. 프롬프트는 한국어 그대로 두고 언어 규칙 한 줄만 바꾼다 (ARCHITECTURE v3.46)
-EN_OUTPUT_RULE = "- 결과는 모두 영어(English)로 쓴다. 노트가 다른 언어여도 영어로 옮겨 쓰고, 영어 기술 용어는 원문 표기를 살린다."  # i18n-ok: AI 프롬프트
+EN_OUTPUT_RULE = prompts.load("common")["lang_en"]
 
 
 def ai_prompt(prompt: str, ko_rule: str) -> str:

@@ -3,9 +3,15 @@
 MLX 포팅은 Phase 0에서 쓴 torch 버전과 발화 구간이 100% 일치했다(10분 구간 비교). torch 의존성을 피하려고 이쪽을 쓴다.
 """
 
-from pathlib import Path
+from __future__ import annotations
 
-import numpy as np
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
+
+
 
 SR = 16000
 MAX_CHUNK_S = 30.0  # Phase 0 E4: 15/30/60초 CER 차이 0.3%p 이내

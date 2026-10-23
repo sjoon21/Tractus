@@ -5,15 +5,20 @@ mlx-audio를 프로세스 안에서 호출한다. `mlx_audio.server`의 HTTP 엔
 계열마다 다른 것은 `Engine`(호출 인자·자주 쓰는 단어·언어 오감지 재시도)뿐이고, 반복 루프 재시도·접기는 공통이다.
 """
 
+from __future__ import annotations
+
 import json
 import math
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from tractus import itn
+
+if TYPE_CHECKING:
+    import numpy as np
+
 
 SR = 16000
 
@@ -147,6 +152,7 @@ class Transcriber:
 
     def _generate(self, audio, language: str | None, hotwords: list[str] | None, max_tokens: int, temperature: float = 0.0):
         """language: 계열의 표기 (_lang_arg). 계열마다 generate 인자가 다르다."""
+        import numpy as np
         import mlx.core as mx
 
         x = mx.array(np.asarray(audio, dtype=np.float32))

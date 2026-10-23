@@ -14,7 +14,6 @@ from datetime import datetime
 from pathlib import Path
 
 from tractus.i18n import t
-from tractus.summaries import DEFAULT_KEY, NO_DETAIL, list_summaries, read_data, read_markdown
 from tractus.store import MEMOS_FILE, _hms, _vtt_time, is_memo, is_recorded, load_memos, memo_lines, one_line, render_markdown, render_vtt, seg_text, speaker_display
 
 FORMATS = ("txt", "md", "srt", "vtt", "csv", "docx", "bundle")
@@ -85,6 +84,8 @@ def _csv(note: dict) -> bytes:
 def pick_summary(d: Path, key: str | None) -> str | None:
     """내보낼 요약의 key. key를 주면 그대로(없으면 None이 아니라 호출한 쪽이 먼저 확인한다), 안 주면 기본 요약(meeting),
     기본 요약이 없으면 처음 있는 요약(핵심 요약 같은 다른 유형만 있는 노트). 요약이 없으면 None."""
+    from tractus.summaries import DEFAULT_KEY, list_summaries
+
     if key:
         return key
     have = [x["key"] for x in list_summaries(d)]
@@ -92,6 +93,8 @@ def pick_summary(d: Path, key: str | None) -> str | None:
 
 
 def _md(d: Path, note: dict, key: str | None) -> str:
+    from tractus.summaries import read_markdown
+
     md = render_markdown(note, load_memos(d))
     summary = read_markdown(d, key) if key else None
     if summary is None:
@@ -102,6 +105,8 @@ def _md(d: Path, note: dict, key: str | None) -> str:
 
 def _docx_summary(doc, s: dict, key: str) -> None:
     """요약 한 개를 문서에 쓴다. 기본 요약(예전 스키마)은 요약·결정 사항·할 일, 유형별 요약은 개요와 섹션(목록 모양대로)."""
+    from tractus.summaries import NO_DETAIL
+
     if "sections" not in s:
         doc.add_heading(t("요약"), 1)
         doc.add_paragraph(str(s.get("summary") or ""))
@@ -135,6 +140,8 @@ def _docx(d: Path, note: dict, key: str | None) -> bytes:
     import docx
     from docx.oxml.ns import qn
     from docx.shared import Pt, RGBColor
+
+    from tractus.summaries import read_data
 
     doc = docx.Document()
     for name in ("Normal", "Title", "Heading 1"):

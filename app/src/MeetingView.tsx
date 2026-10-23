@@ -85,7 +85,7 @@ import { CHIP } from "@/components/panel/chip";
 import { EnhancedNote } from "./EnhancedNote";
 import { MinutesPanel } from "./MinutesPanel";
 import { PolishBar, PolishButton, PolishDiff, usePolish } from "./PolishControls";
-import { AI_EDITED, livePolish, NO_SUGGESTIONS, pendingIds, type PolishSuggestion } from "./polish";
+import { AI_EDITED, livePolish, NO_SUGGESTIONS, pendingIds, termsFromSuggestions, type PolishSuggestion } from "./polish";
 
 const RATE_KEY = "tractus.playbackRate";
 const VOLUME_KEY = "tractus.volume";
@@ -356,18 +356,20 @@ export function MeetingView({
   const undoStack = useRef<TextEdit[][]>([]);
   // 저장 한 묶음 (serial 안에서 부른다). 되돌리기 묶음은 저장이 성공한 뒤 코어가 확인한 직전 상태로 만든다:
   // 화면(낙관적 반영)으로 만들면 앞 묶음이 실패했을 때 저장된 적 없는 문장으로 되돌린다
-  // 고친 낱말을 자주 쓰는 단어로 제안한다 (vocab.ts). 한 번 물은 낱말은 이 화면에서 다시 묻지 않는다
+  // 고친 낱말을 자주 쓰는 단어로 제안한다 (vocab.ts). 여러 개면 한 알림으로 묻는다. 한 번 물은 낱말은 이 화면에서 다시 묻지 않는다
   const askedTerms = useRef(new Set<string>());
-  const suggestTerm = useCallback(
-    (term: string) => {
-      if (askedTerms.current.has(term)) return;
-      askedTerms.current.add(term);
+  const suggestTerms = useCallback(
+    (all: string[]) => {
+      const terms = all.filter((x) => !askedTerms.current.has(x));
+      if (!terms.length) return;
+      for (const x of terms) askedTerms.current.add(x);
+      const term = terms.join(", ");
       notify({
         text: t("자주 쓰는 단어에 추가할까요? — {term} (다음 녹음부터 더 정확하게 인식합니다)", { term }),
         action: {
           label: t("추가"),
           run: () =>
-            void api.glossaryAdd([term]).then(
+            void api.glossaryAdd(terms).then(
               (n) => notify({ text: n ? t("자주 쓰는 단어에 추가했습니다 — {term} (다음 녹음부터 더 정확하게 인식합니다)", { term }) : t("이미 자주 쓰는 단어에 있습니다 — {term}", { term }) }),
               (e) => notify({ text: t("자주 쓰는 단어에 추가하지 못했습니다: {error}", { error: errText(e) }), error: true }),
             ),
@@ -389,7 +391,7 @@ export function MeetingView({
           if (!isUndo && before) undoStack.current.push(inverseEdits(before.segments, edits));
           const old = suggest && edits.length === 1 ? before?.segments.find((s) => s.id === edits[0].id) : undefined;
           const term = old ? termFromEdit(segText(old), edits[0].text) : null;
-          if (term) suggestTerm(term);
+          if (term) suggestTerms([term]);
         }
       } catch (e) {
         // 아무것도 쓰이지 않았다(코어 계약). 화면은 원래 문장으로 돌아가므로 고친 문장을 메시지에 남긴다
@@ -403,7 +405,7 @@ export function MeetingView({
         setPending((p) => p.filter((x) => x !== edits));
       }
     },
-    [id, commit, bumpEdit, onEdited, suggestTerm],
+    [id, commit, bumpEdit, onEdited, suggestTerms],
   );
   /** suggestTerm: 대화 한 줄을 직접 고쳤을 때 (찾아 바꾸기는 '자주 쓰는 단어에 추가' 체크가 따로 있다) */
   const saveText = useCallback(
@@ -423,12 +425,15 @@ export function MeetingView({
     if (!d.polish?.length) notify({ text: NO_SUGGESTIONS });
   });
   const [deciding, setDeciding] = useState<ReadonlySet<string>>(new Set());
-  /** 제안 받기·버리기: 줄에 세워 코어가 고친 회의를 돌려준다. 받은 문장은 ⌘Z로 되돌릴 수 있고, 하나만 받았으면 자주 쓰는 단어를 제안한다 */
+  // 지금 보이는 제안 (아래 렌더에서 채운다): 받은 제안의 용어를 자주 쓰는 단어로 넘길 때 kind·원문을 본다
+  const polishLive = useRef<Map<string, PolishSuggestion>>(new Map());
+  /** 제안 받기·버리기: 줄에 세워 코어가 고친 회의를 돌려준다. 받은 문장은 ⌘Z로 되돌릴 수 있고, 받은 용어·이름 교정은 모아서 자주 쓰는 단어로 제안한다 */
   const decidePolish = useCallback(
     (ids: string[], accept: boolean) => {
       if (!ids.length) return;
       if (editQueue.isBlocked(id)) return setEditError(EDIT_BLOCKED);
       setDeciding((d) => new Set([...d, ...ids]));
+      const chosen = ids.flatMap((i) => polishLive.current.get(i) ?? []);
       void serial(async () => {
         const before = confirmed.current;
         try {
@@ -441,9 +446,7 @@ export function MeetingView({
             const now = new Map(meeting.segments.map((s) => [s.id, s]));
             const edits = ids.flatMap((i) => (now.has(i) ? [{ id: i, text: segText(now.get(i)!) }] : []));
             if (before) undoStack.current.push(inverseEdits(before.segments, edits));
-            const old = edits.length === 1 ? before?.segments.find((s) => s.id === edits[0].id) : undefined;
-            const term = old ? termFromEdit(segText(old), edits[0].text) : null;
-            if (term) suggestTerm(term);
+            suggestTerms(termsFromSuggestions(chosen.filter((x) => now.has(x.id) && segText(now.get(x.id)!) === x.text)));
           }
         } catch (e) {
           notify({ text: errText(e), detail: errDetail(e), error: true });
@@ -452,7 +455,7 @@ export function MeetingView({
         }
       });
     },
-    [id, serial, commit, onEdited, bumpEdit, suggestTerm, notify],
+    [id, serial, commit, onEdited, bumpEdit, suggestTerms, notify],
   );
   // 되돌리기도 줄에 선다: 앞선 저장이 끝나 스택에 오른 뒤에 꺼낸다(저장 중에 ⌘Z를 눌러도 순서가 맞다)
   const undo = useCallback(() => {
@@ -829,6 +832,7 @@ export function MeetingView({
   const bodyChars = (detail.body ?? "").length;
   // AI 다듬기: 돌아가는 동안은 끝난 구간의 제안, 끝나면 polish.json. 지금 문장과 맞는 것만, 정하는 중인 것은 빼고
   const polishMap = new Map([...livePolish(segments, polish.running ? polish.live : (detail.polish ?? []))].filter(([k]) => !deciding.has(k)));
+  polishLive.current = polishMap;
   const glowing = polish.running ? pendingIds(segments, polish.ranges) : null;
   const polishOff = recorded ? CONVERT_FIRST : editing || memoBusy ? t("저장이 끝난 뒤에 교정할 수 있습니다") : null;
 

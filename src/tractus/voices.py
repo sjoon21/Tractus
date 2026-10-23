@@ -4,16 +4,21 @@ ARCHITECTURE.md §2.5. 임베딩은 생체정보다(개인정보보호법 제23�
 회의 폴더·MCP·LLM 프롬프트·색인·내보내기·로그로 내보내지 않는다. 모델은 onnxruntime(CPU)과 kaldi-native-fbank로 돌린다.
 """
 
+from __future__ import annotations
+
 import fcntl
 import json
 import os
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from tractus.i18n import t
+
+if TYPE_CHECKING:
+    import numpy as np
+
 
 SR = 16000
 # 3D-Speaker CAM++ zh_en advanced (192차원, Apache-2.0: modelscope iic/speech_campplus_sv_zh_en_16k-common_advanced)
@@ -37,6 +42,8 @@ VERSION = 1
 
 
 def _unit(v: np.ndarray) -> np.ndarray:
+    import numpy as np
+
     v = np.asarray(v, np.float32)
     n = float(np.linalg.norm(v))
     return v / n if n > 0 else v
@@ -46,6 +53,7 @@ def fbank(pcm: np.ndarray) -> np.ndarray:
     """16kHz mono float32([-1, 1]) → 80차원 Kaldi fbank [프레임, 80], 프레임 평균을 뺀 값 (3D-Speaker 학습과 같은 입력).
     25ms 창, 10ms 이동, povey 창, dither 0, snip_edges=False, 20Hz~(나이퀴스트-400Hz). 모델 메타데이터
     normalize_samples=1(입력을 32768배 하지 않음), feature_normalize_type=global-mean과 맞춘다."""
+    import numpy as np
     import kaldi_native_fbank as knf
 
     o = knf.FbankOptions()
@@ -132,6 +140,8 @@ def clips(segments: list[dict], label: str) -> list[tuple[float, float]]:
 
 def speaker_embedding(embedder, pcm: np.ndarray, segments: list[dict], label: str) -> np.ndarray | None:
     """구간 임베딩의 정규화 평균. 쓸 만한 구간이 없으면 None."""
+    import numpy as np
+
     embs = [embedder.embed(pcm[round(s * SR): round(e * SR)]) for s, e in clips(segments, label)]
     return _unit(np.mean(embs, axis=0)) if embs else None
 
@@ -146,6 +156,7 @@ def match(speaker_embs: dict[str, np.ndarray], people: list[dict], dismissed: di
     """사람 중심 벡터(표본 정규화 평균)와 코사인 → 헝가리안 1:1 배정. 점수가 THRESHOLD 이상이고 그 화자의 2위 사람보다
     MARGIN 이상 높을 때만 제안한다. dismissed[label]에 든 사람은 그 화자에 배정하지 않는다(거절한 사람을 다시 제안하지 않는다).
     거절한 사람도 2위 비교에는 남겨 둔다: 비슷한 두 사람 중 아무나 고르지 않는다는 기준은 그대로다."""
+    import numpy as np
     from scipy.optimize import linear_sum_assignment
 
     people = [p for p in people if p.get("samples")]
