@@ -116,6 +116,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `live.py` | 실시간 자막(미리보기): `WavTail`(커지는 WAV 꼬리 읽기), `Mixer`(트랙 합산·클립), `Resampler`(48k → 16k FIR), `Segmenter`(Silero feed, 0.5초 무음·8초 상한·3초 미리보기·쉼 미리 전사), `Live`(ASR·뒤처짐·정지), `SpeakerTrack`(선택) |
 | `voices.py` | 목소리 프로필: CAM++ 임베딩(onnxruntime + kaldi-native-fbank), 화자 구간 고르기, `voices.json`(0600, 원자적 쓰기), `match`(헝가리안 + 임계값 + 2위와 차이) |
 | `export.py` | 내보내기 txt·md·srt·vtt·csv(utf-8-sig)·docx(python-docx, `w:eastAsia`)·bundle(zip) |
+| `prompts/` | AI 프롬프트 문구(`<기능>.md`: summarize·summaries·minutes·enhance·ask·polish·common). `## 이름` 블록, `{{이름}}`은 같은 파일 블록으로 바뀐다(`prompts.load`). 조립·값 채우기는 각 기능 모듈 |
 | `llm.py` | 공급자 표(`PROVIDERS`: 서비스 주소·온도 정책 포함), `resolve_provider`(주소 덮어쓰기·호스트 기반 로컬 전용), `map_error`(SDK 오류 → `LLMError` 코드), `check_connection`(`tractus llm test`), `list_models`(`tractus llm models`), `complete_json`: strict JSON + Pydantic 검증 + 1회 재요청, `stream_chat`: 평문 스트리밍 |
 | `summarize.py` | 요약 스키마, segment_ids 검증, summary.md/json |
 | `summary_templates.py` | 요약 유형: 기본(`templates/*.md`)·내 유형(`$TRACTUS_HOME/templates/u-*.md`) 로더·CRUD·검증 |
@@ -183,6 +184,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - **코어는 HTTP 3xx를 따라가지 않는다**(`make_client`). 앱은 서비스를 정하면 주소도 정한다(비면 서비스 기본 주소를 `TRACTUS_LLM_BASE_URL`로 싣는다): 노트 폴더 `.env`·셸의 주소가 키를 받지 못하게. 연결 테스트는 코어 30초(총 시간)·앱 35초(프로세스 kill) 제한이 있다. 공급자를 더하면 온도 정책을 표에 적는다.
 - **로컬 전용 모드(`TRACTUS_LOCAL_ONLY`)는 이름이 아니라 주소의 호스트로 판단한다.** `urlsplit`으로 파싱한 호스트가 정확히 `localhost`·`127.0.0.1`·`::1`이 아니면 `llm_local_only`다(부분 문자열 비교 금지: `localhost.evil.com`, `user@host`). 앱(`llm_key.rs`)·화면(`llmKey.ts`)에도 같은 규칙이 있다: 셋을 함께 바꾼다.
 - **SDK 오류는 `llm.map_error`가 `LLMError`로 바꾼다**(`llm_auth` 401·403 / `llm_rate` 429 / `llm_busy` 503·529·`UNAVAILABLE`·`overloaded` / `llm_model` 404(서버 안내 문장을 키 가리고 200자로 `자세히`에 싣는다) / `llm_context` / `llm_conn` 연결·시간 초과 / `llm_api`). 실제 호출은 SDK가 408·409·429·5xx를 4회 지수 백오프로 다시 보낸다. `cli.py`는 `LLMError`만 잡고 `code`를 오류 이벤트에 싣는다. 새 코드를 더하면 `app/src/lib.ts` `ERROR_TEXT`·WORDS.md·docs/desktop.md 표도 고친다. `tractus llm test`는 같은 해석·환경으로 짧은 요청 한 번(`max_tokens` 256, 재시도 없음)을 보내고 HTTP 200이면 성공이다(`empty: true`: 생각하는 AI가 토큰을 생각에 다 써 답이 비어도 연결은 된 것). `tractus llm models [--provider P]`는 `GET /models`로 `{"models": [ID…]}`를 낸다(앞의 `models/` 제거).
+- **프롬프트 문구는 `src/tractus/prompts/<기능>.md`에 둔다**(v3.67). 코드에 프롬프트 문장을 새로 쓰지 않는다(스키마 `Field(description=…)`·검증 재요청 문구는 코드에 둔다). 문구를 바꾸면 결과 파일의 `prompt_hash`가 바뀐다.
 - 모든 추출 항목은 근거 `segment_ids`가 필수다. 프롬프트·스키마를 바꾸면 `uv run pytest -m llm`으로 확인한다.
 - **노트 완성(`enhance.py`, docs/design/enhanced-notes.md).** 녹음 중 메모·북마크는 노트 완성에만 쓰고 기존 요약 프롬프트에는 넣지 않는다(넣으려면 요약 품질을 따로 잰다). 메모 원문은 모델이 아니라 코어가 제목으로 쓴다. 프롬프트·스키마를 바꾸면 `uv run pytest -m llm -k enhance`를 돌린다.
 - **요약 유형·직접 프롬프트(v3.21).** 기본 유형(회의록)은 옛 스키마의 `summary.json`이고 다른 유형·직접 요약은 `summaries/<key>.json`(스키마 v2)이다. 요약 지침(유형 본문·내가 쓴 방법)은 시스템 규칙(`summaries.SYSTEM_PROMPT`)이 항상 이기고 `<요약 지침>`으로 감싼다. 새 유형 파일이나 시스템 프롬프트를 바꾸면 `uv run pytest -m llm -k template`을 돌린다(유형마다 스키마·근거·owner 라벨·한국어를 본다). 직접 요약이 내 유형으로 저장되는 것은 요약이 성공한 뒤다.

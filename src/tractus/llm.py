@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from tractus import prompts
 from tractus.i18n import t
 
 T = TypeVar("T", bound=BaseModel)
@@ -308,7 +309,7 @@ def complete_json(
 ) -> T:
     """구조화 응답을 받아 검증한다. 스키마·validate 실패 시 오류를 알려 주고 1회 재요청한다."""
     spec = strict_schema(schema)
-    system = f"{system}\n\n반드시 아래 JSON Schema를 따르는 JSON 객체 하나만 출력한다. 설명이나 코드 펜스를 붙이지 않는다.\n{json.dumps(spec, ensure_ascii=False)}"  # i18n-ok: AI 프롬프트
+    system = f"{system}\n\n{prompts.load('common')['json_schema']}\n{json.dumps(spec, ensure_ascii=False)}"
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     extra = {"response_format": {"type": "json_schema", "json_schema": {"name": schema.__name__, "strict": True, "schema": spec}}} if provider.json_schema else {}
 
@@ -329,7 +330,7 @@ def complete_json(
             messages = [
                 *messages,
                 {"role": "assistant", "content": text},
-                {"role": "user", "content": f"응답이 검증에 실패했습니다:\n{error}\n스키마와 조건에 맞는 JSON만 다시 출력하세요."},  # i18n-ok: AI 프롬프트
+                {"role": "user", "content": prompts.load("common")["retry"].replace("{error}", error)},
             ]
     raise LLMError(t("{name}/{model} 응답이 2회 연속 검증에 실패했습니다: {error}", name=provider.name, model=model, error=error), code="llm_invalid")
 

@@ -23,6 +23,7 @@ from typing import Callable, Literal
 
 from pydantic import Field
 
+from tractus import prompts
 from tractus.llm import Provider, complete_json
 from tractus.minutes import build_input
 from tractus.store import _write_atomic, one_line, seg_text
@@ -40,18 +41,8 @@ EDGE_CHARS = 10  # 앞·뒤를 바꾼(replace) 경우는 글자 수 차이로 �
 EDGE_WORDS = 3  # 문장 앞·뒤에 이만큼 이상 낱말을 더하거나 빼면 경계를 옮긴 것이다 (실제 노트: 앞 문장의 말을 끌어와 붙이거나 앞부분을 뺐다)
 SHORTEN_MIN = 0.75  # 고친 문장이 원문 글자의 이만큼도 안 되면 버린다: 고친 양이 아니라 "내용을 빼지 않는다" 규칙 위반이다 (가상 회의에서 첫 문장을 통째로 뺀 제안)
 
-SYSTEM_PROMPT = """너는 음성 인식 결과를 교정하는 사람이다. 입력은 회의 녹음을 음성 인식으로 받아 적은 대화 내용이다(문장마다 [ID 시각 참석자]).
-대화 전체의 흐름과 아래의 정답 후보(참석자 이름, 자주 쓰는 단어, 노트 제목, 사용자가 적은 메모)를 보고, 음성 인식이 잘못 들은 말이 있는 문장만 고친다.
-
-규칙:
-- 잘못 들은 말만 고친다: 비슷한 소리의 다른 낱말, 틀리게 적힌 전문 용어·제품 이름·사람 이름, 앞뒤 문맥과 맞지 않는 낱말.
-- 말한 그대로를 남긴다. 문장을 매끄럽게 다시 쓰지 않는다. 말버릇·군말("어", "음", "그")·반복·문법이 틀린 말투는 그대로 둔다.
-- 띄어쓰기와 문장부호만 다른 것은 고치지 않는다.
-- 내용을 더하거나 빼지 않는다. 말하지 않은 숫자·이름·낱말을 지어내지 않는다. 확실하지 않으면 고치지 않는다.
-- 문장의 경계를 옮기지 않는다: 앞뒤 문장의 말을 가져와 붙이거나, 문장의 앞·뒤 말을 빼서 앞뒤 문장으로 넘기지 않는다. 문장이 중간에서 끊겨 있어도 그대로 둔다.
-- 고칠 문장만 돌려준다. 고칠 것이 없으면 edits는 빈 목록이다. 문장마다 고친 문장 전체를 text에 쓴다(합치거나 나누지 않는다).
-- kind는 고친 까닭이다: term(전문 용어·제품 이름), name(사람·회사·지명), number(숫자), word(그 밖에 잘못 들은 말).
-- "고칠 수 있는 문장" 범위 밖의 ID는 쓰지 않는다."""  # i18n-ok: AI 프롬프트
+PROMPTS = prompts.load("polish")  # 문구는 prompts/polish.md
+SYSTEM_PROMPT = PROMPTS["system"]
 
 
 class Edit(_Strict):
