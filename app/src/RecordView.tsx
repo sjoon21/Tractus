@@ -156,7 +156,8 @@ export function RecordView({
             <p className="m-0 text-[13px]">{AFTER_ASK.pending}</p>
           </div>
         )}
-        {!choosing && !(unconverted && rec.phase === "stopped" && !job.running) && (rec.phase === "stopped" || job.running || job.error) && <JobProgress job={job} retry={retry} kind={progressKind} />}
+        {/* 녹음하는 동안에는 앞선 녹음의 변환이 함께 돌 수 있다(recordBusy.ts): 그 진행은 사이드바에 있고, 여기서는 이 녹음이 끝난 뒤에만 보인다 */}
+        {!choosing && !live && rec.phase !== "starting" && rec.phase !== "stopping" && !(unconverted && rec.phase === "stopped" && !job.running) && (rec.phase === "stopped" || job.running || job.error) && <JobProgress job={job} retry={retry} kind={progressKind} />}
 
         {rec.marks.length > 0 && (
           <ol className="m-0 flex list-none flex-col gap-1 p-0">

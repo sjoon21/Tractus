@@ -414,7 +414,7 @@ export const STAGE_LABEL: Record<string, string> = {
   index: t("스마트 검색 준비 중…"),
   summarize: t("핵심 내용 요약 중…"),
   // 앱 안 상태: 녹음 전사가 파일 가져오기가 끝나길 기다린다 (App.tsx waitDir)
-  wait_import: t("앞선 파일 변환이 끝나면 시작합니다"),
+  wait_convert: t("앞선 변환이 끝나면 시작합니다"), // 녹음 화면: 앞선 녹음·파일·변환 전 노트의 변환을 기다린다
   // 실시간 자막 (Phase 7.2, `tractus live`)
   live_load: t("실시간 변환 준비 중…"),
   live: t("실시간 텍스트 변환"),
