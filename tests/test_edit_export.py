@@ -376,6 +376,15 @@ def test_minutes_docx_keeps_details_and_points_only_topics(full, tmp_path):
     assert "☐ 견적 받기 — 재무팀 · 김민수 · 기한 금요일" in texts and "대화 내용" not in texts
 
 
+def test_minutes_docx_with_empty_label_does_not_crash(full, tmp_path):
+    f = full / "summaries" / "minutes.json"
+    data = json.loads(f.read_text(encoding="utf-8"))
+    data["minutes"]["topics"][0]["points"].append({"label": "", "details": [_line("이름표 없는 줄", [])]})
+    f.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    paras = _docx_paras(export("docx", tmp_path / "o.docx", "--summary", "minutes", "--parts", ""))
+    assert ("List Bullet 2", "이름표 없는 줄") in paras
+
+
 def test_export_parts_only_and_no_summary(full, tmp_path):
     md = export("md", tmp_path / "o.md", "--parts", "memo").read_text(encoding="utf-8")
     assert md.endswith("# 주간회의\n\n---\n\n## 메모\n\n첫 메모\n\n둘째\n") and "안녕하십니까" not in md and "요약" not in md

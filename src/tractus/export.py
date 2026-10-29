@@ -173,7 +173,7 @@ def _docx_minutes(doc, s: dict, key: str) -> None:
     for n, tp in enumerate(m.get("topics") or [], 1):
         doc.add_heading(_topic_title(tp, n), 1)
         for p in tp["points"]:
-            doc.add_paragraph(p["label"], style="List Bullet").runs[0].bold = True
+            doc.add_paragraph(style="List Bullet").add_run(p["label"]).bold = True  # 빈 이름표는 run이 없어 runs[0]이 깨진다
             for x in p["details"]:
                 doc.add_paragraph(x["text"], style="List Bullet 2")
                 for c in x["children"]:

@@ -23,6 +23,7 @@ export function ExportDialog({ label, items, onDone }: { label: string; items: E
   }, []);
   const toggle = (id: string, on: boolean) => setChecked((s) => (on ? new Set(s).add(id) : new Set([...s].filter((x) => x !== id))));
   const done = () => {
+    if (checked.size === 0) return;
     savePicks(items, checked);
     onDone(exportSelection(items, checked));
   };
@@ -58,7 +59,7 @@ export function ExportDialog({ label, items, onDone }: { label: string; items: E
         <Button variant="outline" onClick={() => onDone(null)}>
           {t("취소")}
         </Button>
-        <Button autoFocus disabled={checked.size === 0} title={checked.size === 0 ? t("넣을 내용을 하나 이상 고르세요") : undefined} onClick={done}>
+        <Button autoFocus aria-disabled={checked.size === 0 || undefined} title={checked.size === 0 ? t("넣을 내용을 하나 이상 고르세요") : undefined} onClick={done}>
           {t("내보내기")}
         </Button>
       </div>
