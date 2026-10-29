@@ -7,6 +7,7 @@ dependencies = [
     "inflect>=7.5.0",
     "jiwer>=4.0.0",
     "mlx-audio>=0.5.7",
+    "mlx-vlm==0.7.11",
     "pandas>=3.0.6",
     "pyarrow>=25.0.1",
     "regex>=2026.9.29",

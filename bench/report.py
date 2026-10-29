@@ -7,14 +7,15 @@ import json
 from pathlib import Path
 
 ROWS = [json.loads(line) for line in (Path(__file__).resolve().parent / "results/summary.jsonl").open()]
-MODELS = ["qwen3-1.7b", "qwen3-0.6b", "whisper-turbo", "nemotron-0.6b"]
+MODELS = ["qwen3-1.7b", "qwen3-0.6b", "whisper-turbo", "nemotron-0.6b", "lfm3-audio-2b"]
 
 
-def pick(model: str, dataset: str, lang: str = "fixed", chunk: float | None = 30.0, glossary: bool = False) -> dict | None:
+def pick(model: str, dataset: str, lang: str = "fixed", chunk: float | None = 30.0, glossary: bool = False,
+         segments: str = "vad") -> dict | None:
     hits = [
         r for r in ROWS
         if r["model"] == model and r["dataset"] == dataset and r["lang"] == lang and r["glossary"] == glossary
-        and (dataset != "aihub" or r["chunk_s"] == chunk)
+        and (dataset != "aihub" or r["chunk_s"] == chunk) and r.get("segments", "vad") == segments
     ]
     return hits[-1] if hits else None
 
@@ -85,6 +86,16 @@ def main():
     for c in (15.0, 30.0, 60.0):
         a = pick("qwen3-1.7b", "aihub", chunk=c)
         print(f"| {int(c)}초 | {fmt(a, lambda r: r['cer'])} | {fmt(a, lambda r: r['term_recall'], '.1f')}% | {fmt(a, lambda r: r['rtf'], '.3f')} |")
+
+    print("\n## E5 자르기 방식 (AI Hub, 언어 고정, 30초 이하)\n")
+    print("vad: 제품과 같은 Silero 청크, label: 정답 발화 경계로 묶음, utt: 정답 발화 하나씩.\n")
+    print("| 모델 | 자르기 | CER | 발음전사 CER | 반복 출력 | RTF | 피크 메모리 MLX |")
+    print("| --- | --- | --- | --- | --- | --- | --- |")
+    for m in ("qwen3-1.7b", "lfm3-audio-2b"):
+        for seg in ("vad", "label", "utt"):
+            a = pick(m, "aihub", segments=seg)
+            if a:
+                print(f"| {m} | {seg} | {a['cer']:.2f} | {a['cer_pron']:.2f} | {a['repetitions']} | {a['rtf']:.3f} | {a['peak_mlx_gb']:.2f} GB |")
 
 
 if __name__ == "__main__":
