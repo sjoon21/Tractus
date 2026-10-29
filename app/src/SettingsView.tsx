@@ -27,7 +27,7 @@ import { TRAY_KEEP_HINT, TRAY_KEEP_LABEL, TRAY_SHOW_HINT, TRAY_SHOW_LABEL } from
 import { getVersion } from "@tauri-apps/api/app";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
-import { CHECK_LABEL, INSTALL_LABEL, NOTES_LABEL, notesVersion, RELAUNCH_LABEL, RELAUNCH_WAIT, remembered, REPO_NOTE, UPDATE_HINT, updateReduce, updateText, versionLine, type UpdateEvent, type UpdateState } from "./update";
+import { UPDATE_SECTION_ID, CHECK_LABEL, INSTALL_LABEL, NOTES_LABEL, notesVersion, RELAUNCH_LABEL, RELAUNCH_WAIT, remembered, REPO_NOTE, UPDATE_HINT, updateReduce, updateText, versionLine, type UpdateEvent, type UpdateState } from "./update";
 
 // 변환 엔진 위치는 모델 화면에서 바꾼다 (옮기기까지 함께 한다). 실행 파일 경로는 BinField (자동 / 직접 지정)
 const FIELDS: { key: "home"; label: string; hint: string }[] = [{ key: "home", label: t("데이터 위치"), hint: t("노트와 녹음이 저장되는 폴더") }];
@@ -36,7 +36,8 @@ const FORM_KEYS = ["home", "tractus_bin", "rec_bin", "fake_recorder", "live_capt
 const LIVE_FULL = t("미리보기는 저장하지 않고, 녹음을 끝내면 정식으로 변환합니다. 메모리 16 GB 미만 Mac에서는 켜지지 않습니다.");
 
 /** relaunchBlocked: 녹음·변환·가져오기 중(App의 idleBlockers와 같은 조건). 업데이트 절의 `다시 열기`를 잠근다 */
-export function SettingsView({ onSaved, relaunchBlocked, onBack }: { onSaved: () => void; relaunchBlocked: boolean; onBack: () => void }) {
+/** toUpdate: 값이 바뀔 때마다 업데이트 절로 내려가 초점을 준다 (시작 때 새 버전 창·알림) */
+export function SettingsView({ onSaved, relaunchBlocked, onBack, toUpdate }: { onSaved: () => void; relaunchBlocked: boolean; onBack: () => void; toUpdate?: number }) {
   const [s, setS] = useState<Settings | null>(null);
   const [base, setBase] = useState<Settings | null>(null); // 마지막으로 읽거나 저장한 값 (바뀐 것이 있는지 본다)
   const [msg, setMsg] = useState<string | null>(null);
@@ -244,7 +245,7 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack }: { onSaved: ()
 
         <HelpSection />
 
-        <UpdateSection relaunchBlocked={relaunchBlocked} />
+        <UpdateSection relaunchBlocked={relaunchBlocked} toUpdate={toUpdate} />
       </PageBody>
 
       {(dirty || msg) && (
@@ -367,7 +368,7 @@ function ThemeSection() {
 }
 
 /** 업데이트 (v3.34, docs/desktop.md §3.5). 자동 설치는 없다: 확인·설치·다시 열기 모두 단추로만. 미리 만든 앱(번들)에서만 확인한다 */
-function UpdateSection({ relaunchBlocked }: { relaunchBlocked: boolean }) {
+function UpdateSection({ relaunchBlocked, toUpdate }: { relaunchBlocked: boolean; toUpdate?: number }) {
   const [linkError, setLinkError] = useState<string | null>(null);
   const [version, setVersion] = useState<string | null>(null);
   const [bundle, setBundle] = useState<boolean | null>(null); // null: 아직 모른다 (단추를 그리지 않는다)
@@ -378,6 +379,15 @@ function UpdateSection({ relaunchBlocked }: { relaunchBlocked: boolean }) {
   // installed: 디스크의 앱은 이미 새 버전이라 다시 확인하면 같은 버전을 또 받게 된다. `다시 열기`만 남긴다
   const busy = st.phase === "checking" || st.phase === "downloading" || st.phase === "installed";
 
+  // 단추·릴리스 노트가 그려진 뒤(bundle을 안 뒤) 내려간다: 먼저 내려가면 늘어난 아래쪽이 잘린다
+  useEffect(() => {
+    if (!toUpdate) return;
+    setStRaw(remembered.state); // 설정이 이미 열려 있었으면 시작 때 찾은 결과(update.remembered)를 여기서 받는다: 처음 그릴 때만 읽으면 `업데이트 설치`가 안 보인다
+    if (bundle === null) return;
+    const el = document.getElementById(UPDATE_SECTION_ID);
+    el?.scrollIntoView({ block: "start" });
+    el?.focus({ preventScroll: true });
+  }, [toUpdate, bundle]);
   useEffect(() => {
     getVersion().then(setVersion, () => setVersion("?"));
     api.updateAvailable().then(setBundle, () => setBundle(false));
@@ -420,7 +430,7 @@ function UpdateSection({ relaunchBlocked }: { relaunchBlocked: boolean }) {
     </span>
   );
   return (
-    <Section title={t("업데이트")}>
+    <Section id={UPDATE_SECTION_ID} tabIndex={-1} className="scroll-mt-4 outline-none" title={t("업데이트")}>
       <Row
         label={<span className="tabular-nums">{versionLine(version)}</span>}
         hint={bundle === false ? REPO_NOTE : bundle ? UPDATE_HINT : undefined}

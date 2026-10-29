@@ -13,6 +13,7 @@ import modelsEn from "./data/models-en.json";
 import templatesEn from "./data/templates-en.json";
 
 const EN = new URLSearchParams(location.search).get("lang") === "en";
+const UPDATE = new URLSearchParams(location.search).get("update") === "1";
 const [data, doctor, models, templates] = EN ? [dataEn, doctorEn, modelsEn, templatesEn] : [dataKo, doctorKo, modelsKo, templatesKo];
 const Q3 = EN ? "Q3" : "3분기"; // 예시 노트(3분기 예산 회의)를 찾는 제목 조각
 const PEOPLE = EN ? ["Daniel Kim", "Sophie Park", "Ryan Choi", "Hannah Jung"] : ["김지훈", "박소연", "최도윤", "정하은"];
@@ -334,7 +335,9 @@ const handlers: Record<string, (a: T) => unknown> = {
   llm_config: () => ({ provider: "upstage", model: "solar-pro2", host: "api.upstage.ai", remote: true, key_present: true }),
   llm_key_status: (a) => ({ saved: a.provider === "upstage" || a.provider === "claude" }),
   voices_list: () => ({ people: [], needs_reenroll: false, model_present: true }),
-  update_available: () => false,
+  // ?update=1: 시작 때 새 버전 창 확인용 (약 10초 뒤, update.START_DELAY_MS)
+  update_available: () => UPDATE,
+  "plugin:updater|check": () => (UPDATE ? { rid: 1, currentVersion: "0.4.4", version: "0.4.5", date: null, body: EN ? "- Bigger notice when a new version is out\n- Faster transcription\n- Bug fixes" : "- 새 버전이 나오면 큰 창으로 알립니다\n- 텍스트 변환이 빨라졌습니다\n- 버그를 고쳤습니다", rawJson: {} } : null),
   ui_lang: () => ({ pref: "system", lang: EN ? "en" : "ko" }), // ?lang=en으로 영어 화면 확인
   set_ui_lang: () => null,
   tray_hides_on_close: () => true,

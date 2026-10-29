@@ -25,8 +25,53 @@ export function notesVersion(s: UpdateState, current: string | null): string | n
 }
 
 export const versionLine = (v: string | null): string => (v ? t("지금 버전 {version}", { version: v }) : t("지금 버전을 읽는 중…"));
-/** 시작 때 확인에서 새 버전이 있을 때의 알림 (같은 실행에서 한 번만) */
+/** 시작 때 확인에서 새 버전이 있을 때의 작은 알림: 그 버전의 큰 창을 이미 닫았거나, 녹음 중이거나 다른 창이 열려 있을 때 */
 export const newVersionToast = (version: string): string => t("새 버전이 있습니다: {version}", { version });
+
+/** 시작 때 큰 창 (버전마다 한 번). 조사가 어긋나지 않게 버전 뒤에 조사를 붙이지 않는다 */
+export const NEW_VERSION_DIALOG = {
+  title: (version: string) => t("새 버전이 나왔습니다: {version}", { version }),
+  body: t("무엇이 바뀌었는지 확인해 보세요. 설정에서 ‘업데이트 설치’를 누를 때만 받아 설치합니다."),
+  open: t("업데이트 보기"),
+  later: t("나중에"),
+};
+
+/** 설정 화면의 업데이트 절 id (시작 때 창·알림에서 그 절로 내려간다) */
+export const UPDATE_SECTION_ID = "settings-update";
+
+/** 큰 창을 닫은 버전 (이 창의 localStorage). 막히거나 비면 큰 창이 다시 보일 뿐이다 */
+export const SEEN_KEY = "tractus.update.seen";
+
+/** 시작 때 찾은 새 버전을 어떻게 알릴지: 처음 보는 버전이고 한가하면 큰 창, 아니면 작은 알림 (busy: 녹음 중·녹음 화면·다른 모달) */
+export function updateNotice(version: string | null, seen: string | null, busy: boolean): "dialog" | "toast" | null {
+  if (!version) return null;
+  return busy || seen === version ? "toast" : "dialog";
+}
+
+type Store = Pick<Storage, "getItem" | "setItem">;
+const localStore = (): Store | null => {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+};
+
+export function seenVersion(store: Store | null = localStore()): string | null {
+  try {
+    return store?.getItem(SEEN_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function markSeen(version: string, store: Store | null = localStore()): void {
+  try {
+    store?.setItem(SEEN_KEY, version);
+  } catch {
+    // 저장하지 못하면 다음 실행에 큰 창이 다시 보인다
+  }
+}
 
 export type UpdateState =
   | { phase: "idle" }

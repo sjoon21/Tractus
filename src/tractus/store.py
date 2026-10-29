@@ -652,13 +652,18 @@ def render_markdown(t: dict, memos: list[dict] | None = None, folder: str | None
     """사람·에이전트용 전사. 줄마다 `[HH:MM:SS] **화자**: 텍스트` (화자를 모르면 생략).
     frontmatter는 Obsidian 등에서 그대로 읽힌다. 메모·북마크는 시각 순으로 끼워 넣는다.
     직접 쓴 메모 노트는 시각·길이 없이 줄마다 문단으로 쓴다. 사용자 메모가 있는 녹음 노트는 끝에 `## 메모` 절이 붙는다.
-    문서의 말(메모·북마크·이름 없는 참석자)은 쓰는 때의 화면 언어다."""
+    문서의 말(메모·북마크·이름 없는 참석자)은 쓰는 때의 화면 언어다. 조각(머리·본문·메모 절)은 내보내기도 쓴다."""
+    if is_memo(t):
+        return "\n".join(markdown_head(t, folder) + markdown_body(t)) + "\n"
+    return "\n".join(markdown_head(t, folder) + markdown_body(t, memos) + markdown_memo(t)) + "\n"
+
+
+def markdown_head(t: dict, folder: str | None = None) -> list[str]:
+    """frontmatter + `# 제목` (+ 변환 전 안내). 빈 줄로 끝난다."""
     words = _doc_words()
     if is_memo(t):
-        head = ["---", f"meeting_id: {t['meeting_id']}", f"title: {_yaml_scalar(t['title'])}", f"created_at: {t['created_at']}", "kind: memo", *_meta_lines(t, folder), "---", "", f"# {t['title']}", ""]
-        paras = [seg_text(s) for s in t["segments"] if seg_text(s)]
-        return "\n".join(head + [x for p in paras for x in (p, "")][:-1]) + "\n"
-    head = [
+        return ["---", f"meeting_id: {t['meeting_id']}", f"title: {_yaml_scalar(t['title'])}", f"created_at: {t['created_at']}", "kind: memo", *_meta_lines(t, folder), "---", "", f"# {t['title']}", ""]
+    return [
         "---",
         f"meeting_id: {t['meeting_id']}",
         f"title: {_yaml_scalar(t['title'])}",
@@ -673,19 +678,40 @@ def render_markdown(t: dict, memos: list[dict] | None = None, folder: str | None
         "",
         *([words["not_converted"], ""] if is_recorded(t) else []),
     ]
+
+
+def markdown_body(t: dict, memos: list[dict] | None = None) -> list[str]:
+    """대화 내용 줄 (메모 노트는 줄마다 문단). memos(녹음 중 메모·북마크)는 시각 순으로 끼워 넣는다."""
+    if is_memo(t):
+        paras = [seg_text(s) for s in t["segments"] if seg_text(s)]
+        return [x for p in paras for x in (p, "")][:-1]
+    words = _doc_words()
+
     def who(s: dict) -> str:
         name = speaker_display(t, s.get("speaker"), words["speaker"])
         return f"**{name}**: " if name else ""
 
     rows = [(s["start"], 0, f"[{_hms(s['start'])}] {who(s)}{seg_text(s)}") for s in t["segments"] if seg_text(s)]
-    for m in memos or []:
-        label = words["bookmark"] if m.get("kind") == "bookmark" else words["memo"]
-        text = f" {m['text']}" if m.get("text") else ""
-        rows.append((m["t"], 1, f"[{_hms(m['t'])}] ({label}){text}"))
-    lines = [r[2] for r in sorted(rows, key=lambda r: (r[0], r[1]))]
-    if memo := memo_lines(t):  # 사용자가 적은 메모: 대화 내용 뒤에 줄마다 문단으로
-        lines += ["", f"## {words['memo']}", ""] + [x for m in memo for x in (m["text"], "")][:-1]
-    return "\n".join(head + lines) + "\n"
+    rows += [(m["t"], 1, mark_line(m, words)) for m in memos or []]
+    return [r[2] for r in sorted(rows, key=lambda r: (r[0], r[1]))]
+
+
+def mark_line(m: dict, words: dict[str, str]) -> str:
+    """녹음 중 메모·북마크 한 줄: `[HH:MM:SS] (메모) 글`."""
+    return f"[{_hms(m['t'])}] {mark_text(m, words)}"
+
+
+def mark_text(m: dict, words: dict[str, str]) -> str:
+    """`(메모) 글`, 글이 없으면 `(북마크)`."""
+    label = words["bookmark"] if m.get("kind") == "bookmark" else words["memo"]
+    return f"({label}) {m['text']}" if m.get("text") else f"({label})"
+
+
+def markdown_memo(t: dict) -> list[str]:
+    """사용자가 적은 메모 절: 대화 내용 뒤에 줄마다 문단으로. 없으면 빈 목록."""
+    if not (memo := memo_lines(t)):
+        return []
+    return ["", f"## {_doc_words()['memo']}", ""] + [x for m in memo for x in (m["text"], "")][:-1]
 
 
 def _write_atomic(path: Path, text: str) -> None:

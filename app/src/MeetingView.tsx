@@ -66,9 +66,11 @@ import { sendToObsidian } from "./obsidian";
 import { CoachMark } from "./CoachMark";
 import { markOnboard } from "./onboarding";
 import { ExportMenu, FindBar, SegmentEditor, type FindState } from "./TranscriptTools";
+import { ExportDialog, type ExportPick } from "./ExportDialog";
+import { exportItems, PICK_FORMATS, type ExportItem } from "./exportPick";
 import { MemoEditor, TitleEditor, type MemoTarget } from "./MemoView";
 import { NoteOrganizer } from "./NoteOrganizer";
-import { ADD_FILE, ADD_FILE_TITLE, ADD_RECORDING, ADD_TITLE, LOCK_NOTICE, type AttachControls } from "./attach";
+import { ADD_FILE, ADD_FILE_TITLE, LOCK_NOTICE, type AttachControls } from "./attach";
 import { ConvertPanel } from "./ConvertPanel";
 import { useConvertJob } from "./convertJobs";
 import { CONVERT_FIRST, deleteBlockedWhileConverting, isRecorded, keptNotice, railNotice, RECORDED_BADGE, recordedStats, type ConvertControls } from "./recorded";
@@ -76,7 +78,7 @@ import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments
 import { RAIL_LABEL, railKey, railLabel, railTabs, validTab, type RailTab } from "./rail";
 import { PanelResizer, PanelToggle, usePanels } from "./PanelToggle";
 import { releaseVoiceBoost, resumeVoiceBoost, setPlaybackVolume, setVoiceBoost, voiceBoostSupported } from "./voice";
-import { AudioLines, FastForward, LocateFixed, Mic, Pause, Play, TextSearch, Trash2, Upload, Volume2, VolumeX } from "lucide-react";
+import { AudioLines, FastForward, LocateFixed, Pause, Play, TextSearch, Trash2, Upload, Volume2, VolumeX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { selectClass } from "@/components/ui/select";
@@ -85,6 +87,7 @@ import { CHIP } from "@/components/panel/chip";
 import { EnhancedNote } from "./EnhancedNote";
 import { MinutesPanel } from "./MinutesPanel";
 import { PolishBar, PolishButton, PolishDiff, usePolish } from "./PolishControls";
+import { RecordPill } from "./RecordPill";
 import { AI_EDITED, livePolish, NO_SUGGESTIONS, pendingIds, termsFromSuggestions, type PolishSuggestion } from "./polish";
 
 const RATE_KEY = "tractus.playbackRate";
@@ -767,7 +770,27 @@ export function MeetingView({
     return () => window.removeEventListener("keydown", onKey);
   }, [seekTo, undo]);
 
+  // Markdown·Word는 넣을 내용을 고르는 창을 먼저 연다 (exportPick.ts). 다른 형식은 바로 저장 대화상자
+  const [exportPick, setExportPick] = useState<{ f: (typeof EXPORT_FORMATS)[number]; items: ExportItem[] } | null>(null);
   const exportAs = async (f: (typeof EXPORT_FORMATS)[number]) => {
+    if (!detail) return;
+    if (!PICK_FORMATS.includes(f.format)) return saveExport(f, null);
+    let items: ExportItem[];
+    try {
+      const [docs, templates] = await Promise.all([api.summariesList(id), api.templatesList().catch(() => [])]);
+      items = exportItems(docs, templates, {
+        memoNote,
+        transcript: detail.segments.some((s) => segText(s).trim()),
+        memo: !memoNote && (detail.note_memo?.lines ?? []).some((l) => l.text.trim()),
+        marks: detail.memos.length > 0,
+      });
+    } catch (e) {
+      return notify({ text: t("내보내지 못했습니다: {error}", { error: errText(e) }), error: true });
+    }
+    if (items.length === 0) return saveExport(f, { summaries: [], parts: [] }); // 고를 것이 없다 (빈 변환 전 노트): 제목만
+    setExportPick({ f, items });
+  };
+  const saveExport = async (f: (typeof EXPORT_FORMATS)[number], pick: ExportPick | null) => {
     if (!detail) return;
     let out: string | null;
     try {
@@ -781,7 +804,7 @@ export function MeetingView({
     // 저장 중인 편집이 끝난 뒤에 내보낸다
     void serial(async () => {
       try {
-        const path = await api.exportMeeting(id, f.format, target, selectedSummary?.key); // md·docx에는 요약 탭에서 고른 요약이 들어간다
+        const path = await api.exportMeeting(id, f.format, target, pick);
         notify({ text: t("내보냈습니다 — {file}", { file: baseName(path) }) });
       } catch (e) {
         notify({ text: t("내보내지 못했습니다: {error}", { error: errText(e) }), error: true });
@@ -865,16 +888,10 @@ export function MeetingView({
               </GatedButton>
             )}
             {memoNote && attach && (
-              <>
-                <Button variant="ghost" size="sm" disabled={!!attach.blocked} title={attach.blocked ?? ADD_TITLE} onClick={() => attach.onRecord({ id, title: info.title })}>
-                  <Mic aria-hidden />
-                  {ADD_RECORDING}
-                </Button>
-                <GatedButton gate={attach.convert ?? OK} className={buttonVariants({ variant: "ghost", size: "sm" })} disabled={!!attach.blocked} title={attach.blocked ?? ADD_FILE_TITLE} onClick={() => attach.onFile({ id, title: info.title })}>
-                  <Upload aria-hidden />
-                  {ADD_FILE}
-                </GatedButton>
-              </>
+              <GatedButton gate={attach.convert ?? OK} className={buttonVariants({ variant: "ghost", size: "sm" })} disabled={!!attach.blocked} title={attach.blocked ?? ADD_FILE_TITLE} onClick={() => attach.onFile({ id, title: info.title })}>
+                <Upload aria-hidden />
+                {ADD_FILE}
+              </GatedButton>
             )}
             {!memoNote && !recorded && (
               <Button variant="ghost" size="icon-sm" aria-label={t("찾아 바꾸기")} title={t("찾아 바꾸기 (⌘F)")} onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
@@ -890,6 +907,16 @@ export function MeetingView({
                 void flushMemos().then((ok) => ok && setPrintNonce((n) => n + 1));
               }}
             />
+            {exportPick && (
+              <ExportDialog
+                label={exportPick.f.label}
+                items={exportPick.items}
+                onDone={(pick) => {
+                  setExportPick(null);
+                  if (pick) void saveExport(exportPick.f, pick);
+                }}
+              />
+            )}
             <Button
               variant="ghost"
               size="icon-sm"
@@ -1156,6 +1183,7 @@ export function MeetingView({
             onAskMerge={setMerge}
           />
         )}
+        <RecordPill memoNote={memoNote} attach={attach} target={{ id, title: info.title }} />
       </article>
       {polish.running && <div aria-hidden className="polish-frame pointer-events-none col-start-1 row-start-1 max-[1180px]:hidden" />}
 

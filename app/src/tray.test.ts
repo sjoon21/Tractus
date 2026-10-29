@@ -63,14 +63,17 @@ describe("deriveTrayState", () => {
     expect(p).not.toHaveProperty("started_at_ms");
   });
 
-  test("변환 중: 진행률을 싣고 새 녹음은 막는다 (창의 녹음 단추와 같다)", () => {
-    expect(deriveTrayState(input({ job: { running: true, done: 9, total: 20 } }))).toMatchObject({ phase: "converting", progress_pct: 45, can_record: false });
+  test("변환 중: 진행률을 싣고, 새 녹음은 창처럼 막는 일이 있을 때만 막는다 (recordBusy.ts)", () => {
+    expect(deriveTrayState(input({ job: { running: true, done: 9, total: 20 } }))).toMatchObject({ phase: "converting", progress_pct: 45, can_record: true });
+    // 실시간 텍스트 변환을 켜 두었거나 묻는 창·저장 중이면 창의 recordBlocked가 막는다
+    expect(deriveTrayState(input({ job: { running: true, done: 9, total: 20 }, recordBlocked: true })).can_record).toBe(false);
+    expect(deriveTrayState(input({ job: { running: true, done: 9, total: 20 }, recordOk: false })).can_record).toBe(false);
     expect(deriveTrayState(input({ job: { running: true, done: 1, total: 3 } })).progress_pct).toBe(33);
     expect(deriveTrayState(input({ job: { running: true, done: 30, total: 20 } })).progress_pct).toBe(100);
-    // 총량을 모르는 단계, 기다리는 중, 마무리하는 중은 진행률 없이 변환 중
-    for (const i of [input({ job: { running: true, done: 0, total: 0 } }), input({ waiting: true }), input({ rec: { phase: "stopping" } })]) {
+    // 총량을 모르는 단계, 기다리는 중, 마무리하는 중은 진행률 없이 변환 중. 마무리하는 중(녹음이 아직 끝나지 않았다)은 새 녹음을 막는다
+    for (const [i, canRecord] of [[input({ job: { running: true, done: 0, total: 0 } }), true], [input({ waiting: true }), true], [input({ rec: { phase: "stopping" } }), false]] as const) {
       const p = deriveTrayState(i);
-      expect(p).toMatchObject({ phase: "converting", can_record: false });
+      expect(p).toMatchObject({ phase: "converting", can_record: canRecord });
       expect(p).not.toHaveProperty("progress_pct");
     }
     // 끝난 작업의 마지막 진행률은 남아 있어도 쉬는 중으로 본다
@@ -85,8 +88,8 @@ describe("deriveTrayState", () => {
     expect(p).not.toHaveProperty("progress_pct");
     // 녹음 프로그램이 없으면 가져오는 중에도 녹음은 막힌다
     expect(deriveTrayState(input({ importing: { active: true, done: 1, total: 2 }, recordOk: false })).can_record).toBe(false);
-    // 녹음 변환이 있으면 그쪽이 먼저다 (새 녹음 막힘)
-    expect(deriveTrayState(input({ importing: { active: true, done: 1, total: 2 }, job: { running: true, done: 9, total: 20 } }))).toMatchObject({ progress_pct: 45, can_record: false });
+    // 녹음 변환이 있으면 그 진행률이 먼저다
+    expect(deriveTrayState(input({ importing: { active: true, done: 1, total: 2 }, job: { running: true, done: 9, total: 20 } }))).toMatchObject({ progress_pct: 45, can_record: true });
     expect(deriveTrayState(input({ importing: { active: false, done: 2, total: 2 } })).phase).toBe("idle");
   });
 

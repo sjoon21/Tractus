@@ -64,10 +64,13 @@ export interface TrayInput {
   importing: { active: boolean; done: number; total: number };
   /** 녹음 프로그램을 쓸 수 있는가 (caps `record`) */
   recordOk: boolean;
+  /** 새 녹음을 막는 일이 있는가 (recordBusy.recordBlock: 묻는 창·저장 중·실시간 텍스트 변환을 켠 채 녹음 변환 중). 없으면 막지 않는다 */
+  recordBlocked?: boolean;
   notes: readonly NoteLike[];
 }
 
-/** 화면 상태 → 메뉴 막대 상태. 창의 녹음 단추와 같은 규칙: 녹음하거나 녹음을 변환하는 동안에는 새 녹음을 시작하지 않는다(파일 가져오기는 막지 않는다) */
+/** 화면 상태 → 메뉴 막대 상태. 창의 녹음 단추와 같은 규칙: 녹음하는 동안·마무리하는 동안에는 새 녹음을 시작하지 않는다.
+ * 녹음 변환 중에는 창과 같은 규칙(recordBlocked: 묻는 창·저장 중·실시간 텍스트 변환을 켜 둔 때)으로만 막는다(파일 가져오기는 막지 않는다) */
 export function deriveTrayState(i: TrayInput): TrayPayload {
   const recent = recentNotes(i.notes);
   const { phase } = i.rec;
@@ -81,7 +84,7 @@ export function deriveTrayState(i: TrayInput): TrayPayload {
   // 마무리하는 중(정지를 보냈고 변환이 곧 시작된다)도 변환으로 본다
   if (phase === "stopping" || i.job.running || i.waiting) {
     const pct = i.job.running && i.job.total > 0 ? Math.min(100, Math.round((i.job.done / i.job.total) * 100)) : undefined;
-    return { phase: "converting", ...(pct !== undefined && { progress_pct: pct }), can_record: false, can_bookmark: false, recent };
+    return { phase: "converting", ...(pct !== undefined && { progress_pct: pct }), can_record: phase !== "stopping" && !i.recordBlocked && i.recordOk, can_bookmark: false, recent };
   }
   // 가져오기 변환 중에도 창처럼 녹음은 시작할 수 있다: 상태 줄만 `변환 중`으로 보이고 can_record는 그대로다
   if (i.importing.active) {
