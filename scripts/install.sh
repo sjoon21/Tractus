@@ -173,6 +173,7 @@ if [ "$COPY_APP" -eq 1 ]; then
   mkdir -p "$HOME/Applications"
   rm -rf "$HOME/Applications/Tractus.app"
   ditto "$APP_BUNDLE" "$HOME/Applications/Tractus.app"
+  rm -rf "$APP_BUNDLE"   # 빌드 사본을 남기면 Spotlight에 Tractus가 둘 뜬다
   ok "복사했습니다: ~/Applications/Tractus.app"
 fi
 
