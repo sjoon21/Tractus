@@ -70,7 +70,7 @@ import { ExportDialog, type ExportPick } from "./ExportDialog";
 import { exportItems, PICK_FORMATS, type ExportItem } from "./exportPick";
 import { MemoEditor, TitleEditor, type MemoTarget } from "./MemoView";
 import { NoteOrganizer } from "./NoteOrganizer";
-import { ADD_FILE, ADD_FILE_TITLE, ADD_RECORDING, ADD_TITLE, LOCK_NOTICE, type AttachControls } from "./attach";
+import { ADD_FILE, ADD_FILE_TITLE, LOCK_NOTICE, type AttachControls } from "./attach";
 import { ConvertPanel } from "./ConvertPanel";
 import { useConvertJob } from "./convertJobs";
 import { CONVERT_FIRST, deleteBlockedWhileConverting, isRecorded, keptNotice, railNotice, RECORDED_BADGE, recordedStats, type ConvertControls } from "./recorded";
@@ -78,7 +78,7 @@ import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments
 import { RAIL_LABEL, railKey, railLabel, railTabs, validTab, type RailTab } from "./rail";
 import { PanelResizer, PanelToggle, usePanels } from "./PanelToggle";
 import { releaseVoiceBoost, resumeVoiceBoost, setPlaybackVolume, setVoiceBoost, voiceBoostSupported } from "./voice";
-import { AudioLines, FastForward, LocateFixed, Mic, Pause, Play, TextSearch, Trash2, Upload, Volume2, VolumeX } from "lucide-react";
+import { AudioLines, FastForward, LocateFixed, Pause, Play, TextSearch, Trash2, Upload, Volume2, VolumeX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { selectClass } from "@/components/ui/select";
@@ -87,6 +87,7 @@ import { CHIP } from "@/components/panel/chip";
 import { EnhancedNote } from "./EnhancedNote";
 import { MinutesPanel } from "./MinutesPanel";
 import { PolishBar, PolishButton, PolishDiff, usePolish } from "./PolishControls";
+import { RecordPill } from "./RecordPill";
 import { AI_EDITED, livePolish, NO_SUGGESTIONS, pendingIds, termsFromSuggestions, type PolishSuggestion } from "./polish";
 
 const RATE_KEY = "tractus.playbackRate";
@@ -887,16 +888,10 @@ export function MeetingView({
               </GatedButton>
             )}
             {memoNote && attach && (
-              <>
-                <Button variant="ghost" size="sm" disabled={!!attach.blocked} title={attach.blocked ?? ADD_TITLE} onClick={() => attach.onRecord({ id, title: info.title })}>
-                  <Mic aria-hidden />
-                  {ADD_RECORDING}
-                </Button>
-                <GatedButton gate={attach.convert ?? OK} className={buttonVariants({ variant: "ghost", size: "sm" })} disabled={!!attach.blocked} title={attach.blocked ?? ADD_FILE_TITLE} onClick={() => attach.onFile({ id, title: info.title })}>
-                  <Upload aria-hidden />
-                  {ADD_FILE}
-                </GatedButton>
-              </>
+              <GatedButton gate={attach.convert ?? OK} className={buttonVariants({ variant: "ghost", size: "sm" })} disabled={!!attach.blocked} title={attach.blocked ?? ADD_FILE_TITLE} onClick={() => attach.onFile({ id, title: info.title })}>
+                <Upload aria-hidden />
+                {ADD_FILE}
+              </GatedButton>
             )}
             {!memoNote && !recorded && (
               <Button variant="ghost" size="icon-sm" aria-label={t("찾아 바꾸기")} title={t("찾아 바꾸기 (⌘F)")} onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
@@ -1188,6 +1183,7 @@ export function MeetingView({
             onAskMerge={setMerge}
           />
         )}
+        <RecordPill memoNote={memoNote} attach={attach} target={{ id, title: info.title }} />
       </article>
       {polish.running && <div aria-hidden className="polish-frame pointer-events-none col-start-1 row-start-1 max-[1180px]:hidden" />}
 
