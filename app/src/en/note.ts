@@ -152,6 +152,13 @@ export default {
   "바꾼 말을 자주 쓰는 단어에 추가": "Add the replacement to custom vocabulary",
   "다음 녹음부터 이 단어를 더 정확하게 인식합니다": "Recognized more accurately in future recordings",
   "내보내기 형식": "Export format",
+
+  // ExportDialog, exportPick
+  "내보낼 내용 고르기": "Choose what to export",
+  "{format} 파일 하나에 위에서부터 차례로 담습니다.": "Checked items go into one {format} file, top to bottom.",
+  "넣을 내용을 하나 이상 고르세요": "Check at least one item",
+  "이전 형식의 회의록": "Minutes (old format)", // words-ok: 회의록은 문서 이름
+  "녹음 중 메모": "Memos during recording",
   "인쇄 → PDF로 저장": "Print → Save as PDF",
 
   // PrintSheet

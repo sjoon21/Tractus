@@ -66,6 +66,8 @@ import { sendToObsidian } from "./obsidian";
 import { CoachMark } from "./CoachMark";
 import { markOnboard } from "./onboarding";
 import { ExportMenu, FindBar, SegmentEditor, type FindState } from "./TranscriptTools";
+import { ExportDialog, type ExportPick } from "./ExportDialog";
+import { exportItems, PICK_FORMATS, type ExportItem } from "./exportPick";
 import { MemoEditor, TitleEditor, type MemoTarget } from "./MemoView";
 import { NoteOrganizer } from "./NoteOrganizer";
 import { ADD_FILE, ADD_FILE_TITLE, ADD_RECORDING, ADD_TITLE, LOCK_NOTICE, type AttachControls } from "./attach";
@@ -767,7 +769,27 @@ export function MeetingView({
     return () => window.removeEventListener("keydown", onKey);
   }, [seekTo, undo]);
 
+  // Markdown·Word는 넣을 내용을 고르는 창을 먼저 연다 (exportPick.ts). 다른 형식은 바로 저장 대화상자
+  const [exportPick, setExportPick] = useState<{ f: (typeof EXPORT_FORMATS)[number]; items: ExportItem[] } | null>(null);
   const exportAs = async (f: (typeof EXPORT_FORMATS)[number]) => {
+    if (!detail) return;
+    if (!PICK_FORMATS.includes(f.format)) return saveExport(f, null);
+    let items: ExportItem[];
+    try {
+      const [docs, templates] = await Promise.all([api.summariesList(id), api.templatesList().catch(() => [])]);
+      items = exportItems(docs, templates, {
+        memoNote,
+        transcript: detail.segments.some((s) => segText(s).trim()),
+        memo: !memoNote && (detail.note_memo?.lines ?? []).some((l) => l.text.trim()),
+        marks: detail.memos.length > 0,
+      });
+    } catch (e) {
+      return notify({ text: t("내보내지 못했습니다: {error}", { error: errText(e) }), error: true });
+    }
+    if (items.length === 0) return saveExport(f, { summaries: [], parts: [] }); // 고를 것이 없다 (빈 변환 전 노트): 제목만
+    setExportPick({ f, items });
+  };
+  const saveExport = async (f: (typeof EXPORT_FORMATS)[number], pick: ExportPick | null) => {
     if (!detail) return;
     let out: string | null;
     try {
@@ -781,7 +803,7 @@ export function MeetingView({
     // 저장 중인 편집이 끝난 뒤에 내보낸다
     void serial(async () => {
       try {
-        const path = await api.exportMeeting(id, f.format, target, selectedSummary?.key); // md·docx에는 요약 탭에서 고른 요약이 들어간다
+        const path = await api.exportMeeting(id, f.format, target, pick);
         notify({ text: t("내보냈습니다 — {file}", { file: baseName(path) }) });
       } catch (e) {
         notify({ text: t("내보내지 못했습니다: {error}", { error: errText(e) }), error: true });
@@ -890,6 +912,16 @@ export function MeetingView({
                 void flushMemos().then((ok) => ok && setPrintNonce((n) => n + 1));
               }}
             />
+            {exportPick && (
+              <ExportDialog
+                label={exportPick.f.label}
+                items={exportPick.items}
+                onDone={(pick) => {
+                  setExportPick(null);
+                  if (pick) void saveExport(exportPick.f, pick);
+                }}
+              />
+            )}
             <Button
               variant="ghost"
               size="icon-sm"

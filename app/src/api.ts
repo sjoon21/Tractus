@@ -304,8 +304,9 @@ export const api = {
   foldersDelete: (id: string) => invoke<Folder[]>("folders_delete", { id }),
   /** 노트 목록 순서를 설정에 저장한다 (다른 설정은 건드리지 않는다) */
   setListPrefs: (sort: SortKey, order: SortOrder) => invoke<void>("set_list_prefs", { sort, order }),
-  /** `tractus export` 후 Finder에서 보여 준다. 저장한 절대 경로 */
-  exportMeeting: (id: string, format: string, out: string, summary?: string) => invoke<string>("export_meeting", { id, format, out, summary: summary ?? null }),
+  /** `tractus export` 후 Finder에서 보여 준다. 저장한 절대 경로. pick: md·docx 내보내기 창에서 고른 요약·부분 (다른 형식은 없음) */
+  exportMeeting: (id: string, format: string, out: string, pick: { summaries: string[]; parts: string[] } | null) =>
+    invoke<string>("export_meeting", { id, format, out, summaries: pick?.summaries ?? [], parts: pick?.parts ?? null }),
   /** 예시 노트를 만들고(이미 있으면 그것) ID를 돌려준다 */
   noteSample: () => invoke<string>("note_sample"),
   setObsidian: (vault: string, audio: boolean) => invoke<void>("set_obsidian", { vault, audio }),

@@ -1286,25 +1286,34 @@ async fn note_title(state: State<'_, AppState>, id: String, title: String) -> Re
 
 const EXPORT_FORMATS: &[&str] = &["txt", "md", "srt", "vtt", "csv", "docx", "bundle"];
 
+/// 내보내기 창에서 고를 수 있는 부분 (코어 export.PARTS): 대화 내용(메모는 메모 내용) · 메모 탭의 메모 · 녹음 중 메모
+const EXPORT_PARTS: &[&str] = &["transcript", "memo", "marks"];
+
 /// `tractus export`. 경로는 저장 대화상자가 고른 절대 경로이고, 덮어쓰기는 대화상자가 이미 물었으므로 --force
-/// summary: md·docx에 넣을 요약의 key (화면에서 고른 요약). 없으면 코어가 기본 요약을 쓴다
-fn export_args(id: &str, format: &str, out: &Path, summary: Option<&str>) -> Result<Vec<String>, String> {
-    if !is_meeting_id(id) || !EXPORT_FORMATS.contains(&format) || !out.is_absolute() || out.file_name().is_none() || summary.is_some_and(|k| !summaries::is_summary_key(k)) {
+/// parts: md·docx 내보내기 창에서 고른 부분(`--parts`). 주면 summaries(고른 요약 key, 그 순서)만 넣고, 비면 요약 없음.
+/// 다른 형식은 parts·summaries 없이 부른다
+fn export_args(id: &str, format: &str, out: &Path, summaries: &[String], parts: Option<&[String]>) -> Result<Vec<String>, String> {
+    let picks_ok = match parts {
+        Some(p) => ["md", "docx"].contains(&format) && p.iter().all(|x| EXPORT_PARTS.contains(&x.as_str())) && summaries.iter().all(|k| summaries::is_summary_key(k)),
+        None => summaries.is_empty(),
+    };
+    if !is_meeting_id(id) || !EXPORT_FORMATS.contains(&format) || !out.is_absolute() || out.file_name().is_none() || !picks_ok {
         return Err(tv("잘못된 내보내기: {id} {format} {path}", &[("id", id.to_string()), ("format", format.to_string()), ("path", out.display().to_string())]));
     }
     let out = out.to_string_lossy();
     let mut args: Vec<String> = ["export", id, "--format", format, "--out", &out, "--force"].map(String::from).to_vec();
-    if let Some(k) = summary {
-        args.push(format!("--summary={k}"));
+    args.extend(summaries.iter().map(|k| format!("--summary={k}")));
+    if let Some(p) = parts {
+        args.push(format!("--parts={}", p.join(",")));
     }
     Ok(args)
 }
 
 /// 내보내고 Finder에서 그 파일을 보여 준다. 반환값은 코어가 쓴 절대 경로
 #[tauri::command]
-async fn export_meeting(state: State<'_, AppState>, id: String, format: String, out: String, summary: Option<String>) -> Result<String, String> {
+async fn export_meeting(state: State<'_, AppState>, id: String, format: String, out: String, summaries: Vec<String>, parts: Option<Vec<String>>) -> Result<String, String> {
     let s = state.settings();
-    let args = export_args(&id, &format, Path::new(&out), summary.as_deref())?;
+    let args = export_args(&id, &format, Path::new(&out), &summaries, parts.as_deref())?;
     let guard = BusyGuard::new(&state.busy, &id);
     blocking(move || {
         let _guard = guard;
@@ -1989,15 +1998,29 @@ mod tests {
     fn export_command_args() {
         let out = Path::new("/Users/me/Desktop/2026-10-02_주간회의.docx");
         assert_eq!(
-            export_args("01ABC", "docx", out, None).unwrap(),
+            export_args("01ABC", "docx", out, &[], None).unwrap(),
             ["export", "01ABC", "--format", "docx", "--out", out.to_str().unwrap(), "--force"] // 덮어쓰기는 저장 대화상자가 이미 물었다
         );
-        assert!(export_args("01ABC", "pdf", out, None).is_err());
-        assert!(export_args("01ABC", "--force", out, None).is_err());
-        assert!(export_args("01ABC", "txt", Path::new("rel.txt"), None).is_err());
-        assert!(export_args("../x", "txt", out, None).is_err());
-        assert_eq!(export_args("01ABC", "md", out, Some("brief")).unwrap().last().unwrap(), "--summary=brief");
-        assert!(export_args("01ABC", "md", out, Some("../x")).is_err() && export_args("01ABC", "md", out, Some("--force")).is_err());
+        assert!(export_args("01ABC", "pdf", out, &[], None).is_err());
+        assert!(export_args("01ABC", "--force", out, &[], None).is_err());
+        assert!(export_args("01ABC", "txt", Path::new("rel.txt"), &[], None).is_err());
+        assert!(export_args("../x", "txt", out, &[], None).is_err());
+    }
+
+    #[test]
+    fn export_picks_summaries_and_parts() {
+        let out = Path::new("/Users/me/Desktop/a.md");
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let args = export_args("01ABC", "md", out, &s(&["minutes", "brief"]), Some(&s(&["transcript", "marks"]))).unwrap();
+        assert_eq!(args[7..], ["--summary=minutes", "--summary=brief", "--parts=transcript,marks"]);
+        assert_eq!(export_args("01ABC", "docx", out, &s(&["meeting"]), Some(&[])).unwrap().last().unwrap(), "--parts="); // 요약만
+        assert_eq!(export_args("01ABC", "md", out, &[], Some(&s(&["memo"]))).unwrap()[7..], ["--parts=memo"]); // 요약 없음
+        assert!(export_args("01ABC", "md", out, &s(&["../x"]), Some(&[])).is_err());
+        assert!(export_args("01ABC", "md", out, &s(&["--force"]), Some(&[])).is_err());
+        assert!(export_args("01ABC", "md", out, &[], Some(&s(&["audio"]))).is_err());
+        assert!(export_args("01ABC", "md", out, &[], Some(&s(&["transcript,memo"]))).is_err()); // 쉼표를 끼워 넣지 못한다
+        assert!(export_args("01ABC", "txt", out, &[], Some(&s(&["transcript"]))).is_err()); // 고르기는 md·docx만
+        assert!(export_args("01ABC", "md", out, &s(&["brief"]), None).is_err()); // 요약은 parts와 함께만
     }
 
     #[test]

@@ -258,6 +258,7 @@ uv run tractus notes list --json [--favorite] [--tag T] [--folder ID|이름|none
 uv run tractus models prune [--yes] [--json]         # 등록되지 않은 모델 폴더(옛 버전 등) 지우기 → {removed: [{name, bytes}], freed_bytes}
 uv run tractus models move <새 폴더> [--yes]         # 등록된 모델만 모델 폴더에서 옮김 → {moved, freed_bytes}
 uv run tractus export <meeting_id> --format docx --out 회의.docx [--force] [--summary KEY]   # txt|md|srt|vtt|csv|docx|bundle → {"path": …}. md·docx에 넣을 요약(기본: meeting, 없으면 있는 것)
+uv run tractus export <meeting_id> --format md --out 노트.md --summary minutes --summary brief --parts transcript,memo,marks   # md·docx만: 고른 것만 머리 → 요약(준 순서) → 대화 내용 → 메모 → 녹음 중 메모 (--parts 없으면 예전 그대로)
 uv run tractus obsidian <meeting_id> --vault <볼트> [--summary KEY] [--audio] [--force]   # Obsidian으로 보내기 → {"status": created|updated|unchanged|edited, "path", "audio"}
 uv run python bench/search_eval.py                  # 검색 평가 (가상)
 uv run python bench/ask_eval.py [--memo]            # 질의 평가 (가상 회의만 원격 LLM으로, --memo: 메모가 달린 가상 노트 3건 + 메모 질문 6개)
