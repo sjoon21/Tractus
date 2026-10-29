@@ -6,17 +6,17 @@ import { NEW_VERSION_DIALOG, NOTES_LABEL } from "./update";
 
 /**
  * 시작 때 새 버전을 찾았을 때의 큰 창 (WORDS.md §4.21, docs/desktop.md §3.5). 받지도 설치하지도 않는다: `업데이트 보기`는 설정의 업데이트 절로 간다.
- * ConfirmDialog처럼 네이티브 모달 `<dialog>`이고, Esc는 `나중에`다. 처음 초점은 `업데이트 보기`.
+ * ConfirmDialog처럼 네이티브 모달 `<dialog>`이고, Esc는 `나중에`다. 처음 초점은 `나중에`: 저절로 뜨는 창이라 쓰던 글의 스페이스·엔터가 `업데이트 보기`를 누르지 않게(ConfirmDialog의 안전한 단추와 같다).
  */
 export function UpdateDialog({ version, notes, onOpen, onLater }: { version: string; notes: string | null; onOpen: () => void; onLater: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const first = useRef<HTMLButtonElement>(null);
+  const safe = useRef<HTMLButtonElement>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
   useEffect(() => {
     const d = dialog.current;
     if (!d) return;
     if (!d.open) d.showModal();
-    first.current?.focus();
+    safe.current?.focus();
     return () => d.close();
   }, []);
   return (
@@ -46,10 +46,10 @@ export function UpdateDialog({ version, notes, onOpen, onLater }: { version: str
         </span>
       </div>
       <div className={DIALOG_FOOTER}>
-        <Button variant="outline" onClick={onLater}>
+        <Button ref={safe} variant="outline" onClick={onLater}>
           {NEW_VERSION_DIALOG.later}
         </Button>
-        <Button ref={first} onClick={onOpen}>
+        <Button onClick={onOpen}>
           {NEW_VERSION_DIALOG.open}
         </Button>
       </div>
