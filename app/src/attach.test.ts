@@ -1,6 +1,9 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { MeetingInfo, PendingRecording } from "./api";
-import { ADD_BADGE, addBlocked, attachReduce, BUSY_CONVERTING, BUSY_JOB, BUSY_RECORDING, DROP_LABEL, IDLE_ATTACH, lockOf, LOCK_NOTICE, PENDING_LABEL, pendingTarget, RECORD_LABEL, resolveTarget, type AttachState } from "./attach";
+import { ADD_BADGE, ADD_RECORDING, ADD_TITLE, addBlocked, attachReduce, BUSY_CONVERTING, BUSY_JOB, BUSY_RECORDING, DROP_LABEL, IDLE_ATTACH, lockOf, LOCK_NOTICE, PENDING_LABEL, pendingTarget, RECORD_LABEL, resolveTarget, type AttachControls, type AttachState } from "./attach";
+import { RecordPill } from "./RecordPill";
 import { ERROR_TEXT, WARNING_TEXT } from "./lib";
 
 const note = (id: string, kind?: "memo" | "recording", title = "장보기"): MeetingInfo => ({ id, dir: `/h/meetings/${id}`, title, created_at: "2026-10-13T09:30:00+09:00", duration_sec: 0, segments: 1, has_summary: false, kind });
@@ -89,5 +92,29 @@ describe("문구 (WORDS.md §4.11)", () => {
     expect(ERROR_TEXT.append_has_audio).toBe("이미 녹음이 있는 노트에는 녹음을 추가할 수 없습니다.");
     expect(ERROR_TEXT.append_note_missing).toContain("노트를 찾을 수 없습니다");
     expect(WARNING_TEXT.append_remap_failed).toContain("옮기지 못했습니다");
+  });
+});
+
+describe("떠 있는 녹음 추가 단추 (RecordPill)", () => {
+  const controls = (o: Partial<AttachControls> = {}): AttachControls => ({ lock: null, blocked: null, onRecord: () => {}, onFile: () => {}, ...o });
+  const html = (memoNote: boolean, attach?: AttachControls) => renderToStaticMarkup(createElement(RecordPill, { memoNote, attach, target: T }));
+
+  it("글만 있는 노트에 제어가 있으면 보인다", () => {
+    const h = html(true, controls());
+    expect(h).toMatch(new RegExp(`<button[^>]*title="${ADD_TITLE}"[^>]*>.*${ADD_RECORDING}</button>`));
+    expect(h).not.toContain(`disabled=""`);
+  });
+
+  it("못 쓰는 이유가 있으면 단추가 꺼지고 이유가 title로 붙는다", () => {
+    const h = html(true, controls({ blocked: BUSY_RECORDING }));
+    expect(h).toContain(`disabled=""`);
+    expect(h).toContain(`title="${BUSY_RECORDING}"`);
+  });
+
+  it("녹음 노트, 제어 없음, 녹음·변환 중(잠김)에는 없다", () => {
+    expect(html(false, controls())).toBe("");
+    expect(html(true)).toBe("");
+    expect(html(true, controls({ lock: "recording" }))).toBe("");
+    expect(html(true, controls({ lock: "converting" }))).toBe("");
   });
 });
