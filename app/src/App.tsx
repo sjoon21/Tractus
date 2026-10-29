@@ -57,6 +57,7 @@ import { cn } from "@/components/ui/utils";
 import { FlickeringGrid } from "@/components/ui/flickering-grid";
 import { JOB_CARD, NOTE_LINK, SIDE_HEAD, SIDE_ITEM } from "@/components/sidebar";
 import { SparklesIcon } from "@/components/ui/sparkles-icon";
+import logo from "./assets/logo.png";
 import { newVersionToast, OPEN_SETTINGS_LABEL, START_DELAY_MS } from "./update";
 
 export type Seek = { segId?: string; t?: number; nonce: number };
@@ -817,9 +818,10 @@ export function App() {
           </span>
         )}
         <div id="sidebar-body" className="flex min-h-0 flex-1 flex-col" hidden={panels.state.left}>
-        <header className="sr-only">
-          <span>Tractus</span>
-          <span>{t("노트와 녹음")}</span>
+        <header data-tauri-drag-region className="-mt-1 flex items-center gap-2 px-4 pb-3">
+          <img src={logo} alt="" width={20} height={20} className="pointer-events-none size-5 select-none" draggable={false} />
+          <span className="pointer-events-none select-none text-[15px] font-semibold tracking-tight">Tractus</span>
+          <span className="sr-only">{t("노트와 녹음")}</span>
         </header>
 
         <div className="flex flex-col gap-1.5 px-3">
