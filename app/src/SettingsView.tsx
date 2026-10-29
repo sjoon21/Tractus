@@ -381,7 +381,9 @@ function UpdateSection({ relaunchBlocked, toUpdate }: { relaunchBlocked: boolean
 
   // 단추·릴리스 노트가 그려진 뒤(bundle을 안 뒤) 내려간다: 먼저 내려가면 늘어난 아래쪽이 잘린다
   useEffect(() => {
-    if (!toUpdate || bundle === null) return;
+    if (!toUpdate) return;
+    setStRaw(remembered.state); // 설정이 이미 열려 있었으면 시작 때 찾은 결과(update.remembered)를 여기서 받는다: 처음 그릴 때만 읽으면 `업데이트 설치`가 안 보인다
+    if (bundle === null) return;
     const el = document.getElementById(UPDATE_SECTION_ID);
     el?.scrollIntoView({ block: "start" });
     el?.focus({ preventScroll: true });

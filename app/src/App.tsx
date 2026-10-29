@@ -544,7 +544,8 @@ export function App() {
         if (!(await api.updateAvailable())) return;
         const u = await check();
         if (!u) return;
-        const busy = recordingRef.current || viewRef.current.kind === "record" || !!document.querySelector("dialog[open]");
+        // 시작 점검(첫 실행)은 바쁜 것으로 치지 않는다: 큰 창을 남겨 두었다가 점검을 닫으면 띄운다 (점검 뒤의 알림은 모달 아래라 누를 수 없다)
+        const busy = recordingRef.current || viewRef.current.kind === "record" || (!checkupOpenRef.current && !!document.querySelector("dialog[open]"));
         if (updateNotice(u.version, seenVersion(), busy) === "dialog") setUpdateAsk({ version: u.version, notes: noteExcerpt(u.body) });
         else notify({ text: newVersionToast(u.version), action: { label: OPEN_SETTINGS_LABEL, run: openUpdate } });
         // 설정의 업데이트 절이 이 결과로 시작하게 넘긴다: 가서 `업데이트 확인`을 다시 누르지 않아도 `업데이트 설치`가 보인다 (받지는 않는다). 이미 그 절에서 확인했으면 놓는다
@@ -1113,7 +1114,7 @@ export function App() {
         />
       )}
       {checkupOpen && <Checkup onClose={closeCheckup} />}
-      {updateAsk && <UpdateDialog version={updateAsk.version} notes={updateAsk.notes} onOpen={() => closeUpdate(true)} onLater={() => closeUpdate(false)} />}
+      {updateAsk && !checkupOpen && !asking && <UpdateDialog version={updateAsk.version} notes={updateAsk.notes} onOpen={() => closeUpdate(true)} onLater={() => closeUpdate(false)} />}
       {dropping && (
         <div className="pointer-events-none fixed inset-3 z-50 grid place-content-center gap-2 rounded-2xl border-2 border-dashed border-ring bg-background/85 text-center backdrop-blur-sm animate-in fade-in-0 zoom-in-[0.98]" aria-hidden>
           <Upload className="mx-auto size-8 text-ring" />
