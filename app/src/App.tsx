@@ -58,7 +58,8 @@ import { FlickeringGrid } from "@/components/ui/flickering-grid";
 import { JOB_CARD, NOTE_LINK, SIDE_HEAD, SIDE_ITEM } from "@/components/sidebar";
 import { SparklesIcon } from "@/components/ui/sparkles-icon";
 import logo from "./assets/logo.png";
-import { newVersionToast, OPEN_SETTINGS_LABEL, START_DELAY_MS } from "./update";
+import { markSeen, newVersionToast, noteExcerpt, OPEN_SETTINGS_LABEL, remembered, seenVersion, START_DELAY_MS, updateNotice, updateReduce } from "./update";
+import { UpdateDialog } from "./UpdateDialog";
 
 export type Seek = { segId?: string; t?: number; nonce: number };
 export type View =
@@ -66,7 +67,7 @@ export type View =
   | { kind: "meeting"; id: string; seek?: Seek }
   | { kind: "search"; q: string }
   | { kind: "record" }
-  | { kind: "settings" }
+  | { kind: "settings"; toUpdate?: number } // toUpdate: 업데이트 절로 내려간다 (누를 때마다 새 값)
   | { kind: "models" };
 
 const GLOBAL = { kind: "global" } as const;
@@ -528,22 +529,34 @@ export function App() {
   // 시작할 때 한 번 갱신한다: 지난번에 고친 뒤 5분 안에 앱을 끝냈어도 그 변경이 검색에 따라온다 (갱신은 증분이라 바뀐 것이 없으면 가볍다)
   useEffect(() => indexer.touch(), []);
 
-  // 업데이트 확인 (update.ts): 미리 만든 앱(번들)에서만, 시작 약 10초 뒤 한 번. 새 버전이 있으면 알림과 `설정 열기`뿐이다 (받지도 설치하지도 않는다).
-  // 실패는 조용히 무시한다 (오프라인이 흔하다). 설정 화면의 `업데이트 확인`은 따로 돈다
+  // 업데이트 확인 (update.ts): 미리 만든 앱(번들)에서만, 시작 약 10초 뒤 한 번. 받지도 설치하지도 않는다: 처음 보는 버전이면 큰 창, 이미 닫은 버전이거나
+  // 녹음 중·다른 창이 열려 있으면 작은 알림이고, 둘 다 설정의 업데이트 절로 간다. 실패는 조용히 무시한다 (오프라인이 흔하다). 설정 화면의 `업데이트 확인`은 따로 돈다
+  const [updateAsk, setUpdateAsk] = useState<{ version: string; notes: string | null } | null>(null);
+  const openUpdate = useCallback(() => void go({ kind: "settings", toUpdate: Date.now() }), [go]);
+  const closeUpdate = (open: boolean) => {
+    if (updateAsk) markSeen(updateAsk.version);
+    setUpdateAsk(null);
+    if (open) openUpdate();
+  };
   useEffect(() => {
     const id = setTimeout(async () => {
       try {
         if (!(await api.updateAvailable())) return;
         const u = await check();
         if (!u) return;
-        notify({ text: newVersionToast(u.version), action: { label: OPEN_SETTINGS_LABEL, run: () => void go({ kind: "settings" }) } });
-        void u.close().catch(() => {});
+        const busy = recordingRef.current || viewRef.current.kind === "record" || !!document.querySelector("dialog[open]");
+        if (updateNotice(u.version, seenVersion(), busy) === "dialog") setUpdateAsk({ version: u.version, notes: noteExcerpt(u.body) });
+        else notify({ text: newVersionToast(u.version), action: { label: OPEN_SETTINGS_LABEL, run: openUpdate } });
+        // 설정의 업데이트 절이 이 결과로 시작하게 넘긴다: 가서 `업데이트 확인`을 다시 누르지 않아도 `업데이트 설치`가 보인다 (받지는 않는다). 이미 그 절에서 확인했으면 놓는다
+        if (remembered.state.phase !== "idle") return void u.close().catch(() => {});
+        remembered.update = u;
+        remembered.state = updateReduce(remembered.state, { type: "found", version: u.version, body: u.body });
       } catch {
         // 오프라인·서버 오류: 아무것도 보이지 않는다
       }
     }, START_DELAY_MS);
     return () => clearTimeout(id);
-  }, [notify, go]);
+  }, [notify, openUpdate]);
 
   // 앱 밖(터미널 `tractus transcribe` 등)에서 만든 노트도 질문 답의 인용 칩이 '삭제됨'으로 보이지 않게: 창으로 돌아올 때와 질문 창을 열 때 목록을 다시 읽는다
   useEffect(() => {
@@ -1043,7 +1056,7 @@ export function App() {
         )}
         {view.kind === "search" && <SearchView key={view.q} query={view.q} onOpen={openMeeting} memoIds={memoIds} />}
         {view.kind === "record" && <RecordView rec={rec} captions={live} job={progressKind === "save" ? finish.job : waitDir ? { ...IDLE_JOB, running: true, stage: "wait_convert" } : transcribe.job} progressKind={progressKind} choosing={afterAsk !== null} send={sendRec} retry={() => (progressKind === "save" ? finishDir.current && finishRecording(finishDir.current) : transcribeDir.current && startTranscribe(transcribeDir.current, transcribeTarget.current))} unconverted={unconverted ? UNCONVERTED_SAVED : null} attachTitle={attach.phase !== "idle" ? (attach.target?.title ?? null) : null} />}
-        {view.kind === "settings" && <SettingsView onBack={goBack} onSaved={() => void Promise.all([refresh(), caps.refresh(), readLive()])} relaunchBlocked={recording || transcribing || imp.job.running || queue.length > 0} />}
+        {view.kind === "settings" && <SettingsView toUpdate={view.toUpdate} onBack={goBack} onSaved={() => void Promise.all([refresh(), caps.refresh(), readLive()])} relaunchBlocked={recording || transcribing || imp.job.running || queue.length > 0} />}
         {view.kind === "models" && <ModelsView onBack={goBack} />}
       </main>
 
@@ -1100,6 +1113,7 @@ export function App() {
         />
       )}
       {checkupOpen && <Checkup onClose={closeCheckup} />}
+      {updateAsk && <UpdateDialog version={updateAsk.version} notes={updateAsk.notes} onOpen={() => closeUpdate(true)} onLater={() => closeUpdate(false)} />}
       {dropping && (
         <div className="pointer-events-none fixed inset-3 z-50 grid place-content-center gap-2 rounded-2xl border-2 border-dashed border-ring bg-background/85 text-center backdrop-blur-sm animate-in fade-in-0 zoom-in-[0.98]" aria-hidden>
           <Upload className="mx-auto size-8 text-ring" />
