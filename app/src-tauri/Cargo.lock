@@ -4426,7 +4426,7 @@ dependencies = [
 
 [[package]]
 name = "tractus-app"
-version = "0.4.4"
+version = "0.5.0"
 dependencies = [
  "base64 0.22.1",
  "minisign-verify",
