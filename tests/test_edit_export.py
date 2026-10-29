@@ -286,3 +286,131 @@ def test_summary_prompt_and_owners_never_use_suggested_name():
     s = MeetingSummary(title="t", summary="s", topics=[], decisions=[], action_items=[
         ActionItem(task="a", owner="홍길동", due=None, segment_ids=["s0002"]), ActionItem(task="b", owner="김민수", due=None, segment_ids=["s0001"])])
     assert [a.owner for a in clean_owners(s, t).action_items] == [None, "김민수"]
+
+
+# ── export: 넣을 내용 고르기 (--summary 여러 번 + --parts) ─────────────────────
+
+MEMO_BLOCK = {"body": "첫 메모\n\n둘째", "lines": [{"id": "m0001", "line": 1, "text": "첫 메모"}, {"id": "m0002", "line": 3, "text": "둘째"}], "seq": 2}
+
+
+def _docx_paras(path: Path) -> list[tuple[str, str]]:
+    import docx
+
+    return [(p.style.name, p.text) for p in docx.Document(str(path)).paragraphs]
+
+
+def _write_v2(d: Path, key: str, data: dict) -> None:
+    from tractus.summaries import render_md
+
+    data = {"schema_version": 2, "meeting_id": MID, "template": key, "provider": "p", "model": "m", "generated_at": "g", "overview": "", **data}
+    (d / "summaries").mkdir(exist_ok=True)
+    (d / "summaries" / f"{key}.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    (d / "summaries" / f"{key}.md").write_text(render_md(data, read_t(d)), encoding="utf-8")
+
+
+def _line(text: str, children: list | None = None) -> dict:
+    return {"text": text, "segment_ids": ["s0002"], **({"children": children} if children is not None else {})}
+
+
+@pytest.fixture
+def full(meeting):
+    """기본 요약 + 핵심 요약 + 회의록 + 노트 완성 + 메모 탭 메모 + 녹음 중 메모·북마크가 모두 있는 노트."""
+    from tractus.minutes import to_sections
+
+    save_transcript(meeting, {**_transcript(), "memo": MEMO_BLOCK})
+    (meeting / "summary.md").write_text("---\nmeeting_id: x\n---\n\n# 주간회의 요약\n\n예산을 검토했다.\n", encoding="utf-8")
+    (meeting / "memos.json").write_text('[{"t": 1.0, "kind": "memo", "text": "메모"}, {"t": 70.0, "kind": "bookmark"}]', encoding="utf-8")
+    _write_v2(meeting, "brief", {"template_name": "핵심 요약", "title": "핵심 요약 제목", "overview": "짧은 개요",
+                                 "sections": [{"heading": "핵심 포인트", "style": "bullets", "items": [{**_line("포인트 하나"), "owner": None, "due": None}]}]})
+    m = {"agenda": "예산 검토", "next_meeting": [_line("다음 주 월요일")],
+         "topics": [{"title": "예산", "open": False, "discussed": [_line("예산 논의")], "agreed": [_line("동결")], "approach": [_line("분기별로 본다")],
+                     "points": [{"label": "현황", "details": [_line("세부 줄", [_line("하위 줄")])]}]},
+                    {"title": "채용", "open": True, "discussed": [], "agreed": [], "approach": [], "points": [{"label": "인원", "details": [_line("두 명", [])]}]}],
+         "actions": [{**_line("견적 받기"), "team": "재무팀", "owner": "김민수", "due": "금요일", "note": None}]}
+    _write_v2(meeting, "minutes", {"kind": "minutes", "template_name": "회의록", "title": "주간회의", "overview": m["agenda"], "minutes": m,
+                                   "attendees": ["김민수", "이영희"], "edited_at": None, "sections": to_sections(m)})
+    _write_v2(meeting, "enhanced", {"kind": "enhanced", "template_name": "노트 완성", "title": "완성 제목",
+                                    "sections": [{"heading": "첫 메모", "style": "bullets", "part": "memo", "source": "m0001", "items": []}]})
+    return meeting
+
+
+def test_export_without_new_flags_is_byte_identical(full, tmp_path):
+    md = (
+        "---\nmeeting_id: 01K6X3TESTMEETING000000000\ntitle: 주간회의\ncreated_at: 2026-10-02T14:00:00+09:00\nduration: 01:01:42\nasr_model: m\n---\n\n# 주간회의\n\n"
+        "[00:00:00] **김민수**: 안녕하십니까\n[00:00:01] (메모) 메모\n[00:00:03] **참석자 2**: 예산, 보겠습니다\n[00:01:10] (북마크)\n[01:01:40] 마무리\n\n"
+        "## 메모\n\n첫 메모\n\n둘째\n\n---\n\n# 주간회의 요약\n\n예산을 검토했다.\n"
+    )
+    assert export("md", tmp_path / "a.md").read_text(encoding="utf-8") == md
+    assert export("md", tmp_path / "b.md", "--summary", "meeting").read_text(encoding="utf-8") == md
+    paras = [
+        ("Title", "주간회의"), ("Normal", "일시 2026-10-02 14:00 · 길이 01:01:42"), ("Normal", "참석자 2명 (김민수, 참석자 2)"),
+        ("Heading 1", "요약"), ("Normal", "예산을 검토했다."), ("Heading 1", "결정 사항"), ("List Bullet", "예산 동결"), ("Heading 1", "할 일"),
+        ("List Bullet", "견적 받기 — 김민수, 금요일"), ("Heading 1", "대화 내용"), ("Normal", "00:00:00  김민수  안녕하십니까"),
+        ("Normal", "00:00:03  참석자 2  예산, 보겠습니다"), ("Normal", "01:01:40  마무리"), ("Heading 1", "메모"), ("Normal", "첫 메모"), ("Normal", "둘째"),
+    ]
+    assert _docx_paras(export("docx", tmp_path / "a.docx")) == paras
+
+
+def test_export_selected_summaries_and_parts_in_order(full, tmp_path):
+    sel = ["--summary", "minutes", "--summary", "enhanced", "--summary", "meeting", "--summary", "brief", "--parts", "marks,memo,transcript"]
+    md = export("md", tmp_path / "o.md", *sel).read_text(encoding="utf-8")
+    order = ["# 주간회의\n", "# [26.10.02] 주간회의", "# 완성 제목", "# 주간회의 요약", "# 핵심 요약 제목", "## 대화 내용", "## 메모\n", "## 녹음 중 메모"]
+    assert [md.index(x) for x in order] == sorted(md.index(x) for x in order)
+    assert "meeting_id: x" not in md and "provider: p" not in md and md.count("\n---\n") == 8  # 요약의 frontmatter는 뺀다 (머리 frontmatter 끝 1 + 부분 사이 7)
+    assert md.endswith("## 녹음 중 메모\n\n[00:00:01] (메모) 메모\n[00:01:10] (북마크)\n")
+    assert "[00:00:03] **참석자 2**: 예산, 보겠습니다\n[01:01:40] 마무리" in md  # 녹음 중 메모는 대화 사이에 끼우지 않는다
+
+    paras = _docx_paras(export("docx", tmp_path / "o.docx", *sel))
+    texts = [x for _, x in paras]
+    heads = ["요약 · 회의록", "요약 · 노트 완성", "요약", "요약 · 핵심 요약", "대화 내용", "메모", "녹음 중 메모"]
+    at = [next(i for i, p in enumerate(paras) if p == ("Heading 1", h)) for h in heads]
+    assert at == sorted(at) and texts[-2:] == ["00:00:01  (메모) 메모", "00:01:10  (북마크)"]
+
+
+def test_minutes_docx_keeps_details_and_points_only_topics(full, tmp_path):
+    paras = _docx_paras(export("docx", tmp_path / "o.docx", "--summary", "minutes", "--parts", ""))
+    assert ("Heading 1", "1) 예산") in paras and ("Heading 1", "2) [추가 논의 필요] 채용") in paras  # 이름표만 있는 안건도 빠지지 않는다
+    assert ("List Bullet", "현황") in paras and ("List Bullet 2", "세부 줄") in paras and ("List Bullet 3", "하위 줄") in paras and ("List Bullet 2", "두 명") in paras
+    texts = [x for _, x in paras]
+    assert "참석: 김민수, 이영희" in texts and "주요 안건: 예산 검토" in texts and "접근 방식 정리: 분기별로 본다" in texts and "다음에 볼 날: 다음 주 월요일" in texts
+    assert "☐ 견적 받기 — 재무팀 · 김민수 · 기한 금요일" in texts and "대화 내용" not in texts
+
+
+def test_export_parts_only_and_no_summary(full, tmp_path):
+    md = export("md", tmp_path / "o.md", "--parts", "memo").read_text(encoding="utf-8")
+    assert md.endswith("# 주간회의\n\n---\n\n## 메모\n\n첫 메모\n\n둘째\n") and "안녕하십니까" not in md and "요약" not in md
+    md = export("md", tmp_path / "p.md", "--summary", "brief", "--parts", "").read_text(encoding="utf-8")
+    assert "포인트 하나" in md and "안녕하십니까" not in md and "## 메모" not in md
+
+
+def test_export_select_memo_and_recorded_notes(meeting, tmp_path):
+    memo = {"schema_version": 2, "kind": "memo", "meeting_id": MID, "title": "메모", "created_at": "2026-10-02T14:00:00+09:00", "body": "가\n\n나",
+            "audio": {"file": None}, "speakers": {}, "segments": [{"id": "s0001", "start": 0, "end": 0, "line": 1, "text": "가"}, {"id": "s0002", "start": 0, "end": 0, "line": 3, "text": "나"}]}
+    save_transcript(meeting, memo)
+    (meeting / "memos.json").unlink()
+    md = export("md", tmp_path / "m.md", "--parts", "transcript,memo,marks").read_text(encoding="utf-8")
+    assert md.endswith("# 메모\n\n---\n\n## 메모 내용\n\n가\n\n나\n") and "kind: memo" in md
+    assert _docx_paras(export("docx", tmp_path / "m.docx", "--parts", "transcript"))[-3:] == [("Heading 1", "메모 내용"), ("Normal", "가"), ("Normal", "나")]
+
+    recorded = {**_transcript(), "state": "recorded", "segments": []}
+    del recorded["asr"]
+    save_transcript(meeting, recorded)
+    (meeting / "memos.json").write_text('[{"t": 5.0, "kind": "memo", "text": "중요"}]', encoding="utf-8")
+    md = export("md", tmp_path / "r.md", "--parts", "transcript,marks").read_text(encoding="utf-8")
+    assert "아직 텍스트로 변환하지 않았습니다." in md and "## 대화 내용" not in md and md.endswith("## 녹음 중 메모\n\n[00:00:05] (메모) 중요\n")
+    texts = [x for _, x in _docx_paras(export("docx", tmp_path / "r.docx", "--parts", "transcript,marks"))]
+    assert "대화 내용" not in texts and texts[-2:] == ["녹음 중 메모", "00:00:05  (메모) 중요"]
+
+
+def test_export_select_errors(full, tmp_path):
+    from tractus import summaries as sums
+    from tractus.export import NO_SELECT
+
+    for fmt in ("txt", "srt", "vtt", "csv", "bundle"):  # 다른 형식에 --parts를 주면 거절한다 (--summary 하나는 예전처럼 무시)
+        r = invoke("export", MID, "--format", fmt, "--out", tmp_path / f"o.{fmt}", "--parts", "transcript")
+        assert r.exit_code == 2 and NO_SELECT in r.output and not (tmp_path / f"o.{fmt}").exists()
+    assert invoke("export", MID, "--format", "md", "--out", tmp_path / "a.md", "--parts", "transcript,audio").exit_code == 2
+    r = invoke("export", MID, "--format", "md", "--out", tmp_path / "b.md", "--summary", "brief", "--summary", "todo", "--parts", "transcript")
+    assert r.exit_code == 2 and sums.NO_SUCH_SUMMARY in r.output
+    assert invoke("export", MID, "--format", "md", "--out", tmp_path / "c.md", "--summary", "brief", "--summary", "meeting").exit_code == 2  # 여럿은 --parts와 함께
+    assert not any((tmp_path / f).exists() for f in ("a.md", "b.md", "c.md"))

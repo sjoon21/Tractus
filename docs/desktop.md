@@ -249,7 +249,7 @@ stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없
 
 `$TRACTUS_HOME/glossary.md`에 `- 용어` 줄로 덧붙인다(없으면 머리말 `# 자주 쓰는 단어`와 안내 한 줄로 만든다). 앱은 찾아 바꾸기의 `바꾼 말을 자주 쓰는 단어에 추가`와, 대화 한 줄을 직접 고쳤을 때의 제안(v3.53, `vocab.termFromEdit`: 바뀐 낱말 1~2개, 자모로 비교해 소리가 비슷함, 동사·어미로 끝나지 않음, 숫자만 바뀐 것 제외, 한 번 물은 낱말은 그 화면에서 다시 묻지 않음)에서 부른다. 앞뒤 공백을 지우고, 빈 값과 이미 있는 용어(대소문자 구분)는 건너뛴다. stdout: `{"added":N}`. 용어가 `-`로 시작할 수 있으므로 앱은 `tractus glossary add -- <용어>…`처럼 `--`를 앞에 둔다. 다음 전사부터 hotwords로 들어간다.
 
-### 2.4 `tractus export <회의> --format <형식> --out <경로> [--force]`
+### 2.4 `tractus export <회의> --format <형식> --out <경로> [--force] [--summary KEY …] [--parts transcript,memo,marks]`
 
 파일을 쓰고 stdout에 `{"path":"<절대 경로>"}`를 출력한다. `--out`이 이미 있으면 `--force`일 때만 덮어쓰고, 아니면 종료 코드 1이다. 모든 형식이 화자는 `store.speaker_display`(이름, 없으면 `S3` → `참석자 3`, 화자를 모르면 비움), 본문은 `corrected_text ?? text`를 쓴다. transcript.md·vtt도 같다.
 
@@ -262,6 +262,10 @@ stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없
 | `csv` | UTF-8 BOM(utf-8-sig), 열 `시작,끝,참석자,내용`, 시각은 `HH:MM:SS` |
 | `docx` | 제목, 일시·길이, `참석자 N명 (김민수, 참석자 2)`, summary.json이 있으면 요약·결정 사항·할 일, 그다음 제목 `대화 내용` 아래 시각 + **참석자** + 대화 내용. 한글 글꼴 `w:eastAsia = Apple SD Gothic Neo` |
 | `bundle` | 회의 폴더의 audio.ogg(또는 audio.opus), transcript.json/md/vtt, summary.md/json, memos.json 중 있는 것을 `<회의 폴더 이름>/…`로 묶은 zip. `tracks/`는 넣지 않는다 |
+
+**넣을 내용 고르기 (md·docx, v3.72).** `--parts`를 주면 md·docx에 고른 것만 이 순서로 넣는다: 머리(md는 frontmatter + 제목, docx는 제목·일시·참석자) → `--summary`로 준 요약들(준 순서, 여러 번 줄 수 있다. 하나도 안 주면 요약 없음) → 대화 내용(`transcript`, 메모 노트는 `메모 내용`) → 메모 탭의 메모(`memo`, 제목 `메모`) → 녹음 중 메모·북마크(`marks`, 제목 `녹음 중 메모`, 대화 사이에 끼우지 않고 따로 `[HH:MM:SS] (메모) 글`). `--parts ""`는 머리와 요약만이다. 내용이 없는 부분은 제목째 뺀다(변환 전 노트의 대화 내용 등). md는 부분 사이에 `---`를 넣고 요약의 frontmatter는 뺀다. `--parts` 없이 부르면 예전과 바이트까지 같다(`--summary` 하나 또는 없음, 녹음 중 메모는 md에서 대화 사이에 끼운다: `tests/test_edit_export.py`가 고정한다). 예외는 회의록 docx 하나로, 빠지던 칸을 채우도록 고쳤다(§2.17.1). 오류는 모두 종료 코드 2이고 파일을 쓰지 않는다: 없는 요약 key(`요약을 찾을 수 없습니다.`), 모르는 부분, `--parts` 없이 `--summary` 여러 개, 다른 형식(txt·srt·vtt·csv·bundle)에 `--parts`(`요약과 넣을 내용은 Markdown·Word에서만 고를 수 있습니다.`. `--summary` 하나는 예전처럼 무시한다).
+
+앱(`ExportDialog.tsx`·`exportPick.ts`): 내보내기 메뉴에서 Markdown·Word를 고르면 먼저 `내보낼 내용 고르기` 창이 열린다. 항목은 이 노트에 있는 것만: 요약(`회의록` → `완성된 노트` → `이전 형식의 회의록`(옛 summary.json) → 요약 탭의 요약, 탭 순서·이름) → `대화 내용`(메모 노트는 `메모 내용`) → `메모` → `녹음 중 메모`. 처음에는 모두 고른 상태이고, 지난번에 끈 종류(요약 유형·부분. 한 번만 쓴 직접 요약은 한 종류)는 끈 채로 연다(localStorage `tractus.export`, 막히면 모두 고른 상태). 하나도 고르지 않으면 `내보내기`가 막힌다. 그다음은 예전처럼 저장 대화상자다. 다른 형식은 창 없이 바로 저장한다. Rust `export_meeting(id, format, out, summaries, parts)`는 key마다 `summaries::is_summary_key`, 부분은 `transcript|memo|marks`, `parts`는 md·docx에서만, `summaries`는 `parts`와 함께만 받는다.
 
 ### 2.5 `tractus ask` (회의 질의, Phase 6)
 
@@ -626,7 +630,7 @@ MCP: `list_meetings`는 `favorite`·`tags`·`folder`(이름)·`folder_id`를 싣
 - `summaries/<key>.json`(+`.md`) 스키마 v2: `{"schema_version": 2, "meeting_id", "template", "template_name", "prompt_hash", "prompt"?, "provider", "model", "generated_at", "title", "overview", "sections": [{"heading", "style": "bullets"|"checklist"|"numbered", "items": [{"text", "segment_ids", "owner"|null, "due"|null}]}]}`. `prompt`는 기본 유형이 아닐 때만(직접 요약·내 유형: 앱이 `다시 만들기`·`템플릿으로 저장`에 쓴다), `prompt_hash`는 지침의 sha256 앞 12자. 모든 항목에 근거 ID(`s####` 대화, `m####` 메모, 노트에 있는 것만)가 필수이고 `clean_owners`(이름을 붙인 참석자만, `S1`·`참석자 N`·ID·확정되지 않은 목소리 제안 이름은 null)가 모든 섹션에 적용된다. 내용이 하나도 없는 응답(개요도 항목도 없음)은 재요청 대상이다. md는 `## 섹션`, 항목 끝 ` [00:00:03]`·` [메모 3번째 줄]`, 체크리스트 `- [ ] … — 담당, 기한`.
 - 제목 바꾸기(`note title`)는 모든 요약 파일의 `title`·md 첫 제목을 함께 바꾼다. 검색 색인에는 들어가지 않고(변경 없음), `bundle` 내보내기에는 `summaries/`의 json·md가 들어간다. 노트를 삭제하면 폴더째 휴지통이라 요약도 함께 간다. 노트 목록의 `요약 없음` 배지(`has_summary`)는 어느 요약이든 있으면 사라진다(Rust `summaries::any_summary`). MCP `list_meetings`의 `has_summary`도 같다(`summaries.has_any_summary`).
 - MCP: `get_summary(meeting_id, template?)`는 기본 요약 또는 지정한 key의 md(없으면 가진 key 목록과 함께 `ToolError`). 기본 요약이 없어도 다른 유형의 요약이 있으면 "없다" 대신 그 key들과 `template=<key>`로 읽을 수 있다고 알려 준다(에이전트가 `save_summary`로 덮어쓰지 않게). `save_summary`는 기본 요약만 쓴다. `list_action_items`는 **기본 요약만** 읽는다(유형별 요약의 체크리스트는 모으지 않는다 — 같은 할 일이 유형마다 되풀이될 수 있어서).
-- md·docx 내보내기는 요약 하나를 싣는다: `tractus export … --summary KEY`(앱은 요약 탭에서 고른 요약의 key를 넘긴다), 안 주면 기본 요약, 기본 요약이 없으면 처음 있는 요약. 없는 key는 종료 코드 2(`요약을 찾을 수 없습니다.`). docx는 기본 요약을 `요약`·`결정 사항`·`할 일`로, 유형별 요약을 `요약 · 이름`과 섹션(번호·체크 모양대로)으로 쓴다. txt·srt·vtt·csv에는 요약이 없고 bundle은 모든 요약을 싣는다.
+- md·docx 내보내기는 `--parts` 없이는 요약 하나를 싣는다: `tractus export … --summary KEY`, 안 주면 기본 요약, 기본 요약이 없으면 처음 있는 요약. 앱은 v3.72부터 내보내기 창에서 고른 요약들을 `--summary` 여러 번 + `--parts`로 넘긴다(§2.4). 없는 key는 종료 코드 2(`요약을 찾을 수 없습니다.`). docx는 기본 요약을 `요약`·`결정 사항`·`할 일`로, 유형별 요약을 `요약 · 이름`과 섹션(번호·체크 모양대로)으로, 회의록을 `요약 · 회의록`과 위키용 Markdown과 같은 칸(참석·주요 안건·안건마다 이름표와 세부 줄·접근 방식·향후 예정 작업·다음에 볼 날)으로 쓴다. txt·srt·vtt·csv에는 요약이 없고 bundle은 모든 요약을 싣는다.
 
 **개인정보.** 원격 AI 서비스로 나가는 것은 전과 같은 노트 내용(대화 내용 + 메모)에 요약 지침(내가 쓴 방법 포함)이 더해진 것뿐이다. 오디오·다른 노트·질문 기록은 나가지 않는다. 노트 안의 지시문은 요약할 내용일 뿐이다(모든 유형에서 주입 문구가 시스템 프롬프트에 섞이지 않음을 테스트로 고정).
 
@@ -865,7 +869,7 @@ tractus transcribe --into <노트> [--track …] [--language …] [--term …] [
 - **코어 `minutes.py`:** 녹음 노트만(메모 노트 `no_recording`, 변환 전 `not_converted`, 대화 없음 `no_segments`). AI는 근거가 달린 칸만 낸다(strict JSON, 근거 ID 검사 1회 재요청). 담당·팀·기한·다음에 볼 날은 근거 문장과 대조해 없으면 지우고, 근거에 없는 숫자는 `unverified`로 표시한다. 결과는 `summaries/minutes.json`(요약 v2 + `kind: minutes`·`minutes`·`attendees`·`edited_at`, 기존 소비자용 `sections`)과 `minutes.md`(위키용 Markdown)다. 다시 만들면 `edited_at`이 지워진다.
 - **`minutes <노트> show`** → `{"minutes", "attendees", "title", "generated_at", "edited_at", "markdown", "short"}` (없으면 `{"minutes": null}`). **`minutes <노트> save`**(stdin `{"minutes": …}`, show의 `minutes` 모양): 비운 줄은 지우고, 근거 ID는 노트에 있는 것만 받고, 숫자 표시를 새 문장으로 다시 잰다. 사람이 고친 담당·기한은 대조하지 않는다. 형식이 틀리면 종료 코드 2. 출력은 show와 같다.
 - **앱:** `회의록` 탭(`MinutesPanel`, 녹음 노트만, 처음 열 때 만든다). `summary_start`(template `minutes`)로 만들고 Rust `minutes_show`·`minutes_save`로 읽고 고친다(저장은 차례로, 실패하면 화면을 되돌린다). `복사`는 `markdown`, `짧게 복사`는 `short`를 클립보드에 넣는다. 고친 적이 있으면 다시 만들기 전에 묻는다. 만드는 동안 노트 삭제를 막는다. 요약 탭은 `summaryTabDocs`·`summaryTemplates`로 회의록(옛 `summary.json`과 `minutes`)과 유형 `회의록`을 뺀다.
-- 내보내기·MCP·Obsidian은 요약 key `minutes`로 읽는다(md는 `minutes.md`, docx·MCP 구조는 `sections`).
+- 내보내기·MCP·Obsidian은 요약 key `minutes`로 읽는다(md는 `minutes.md`, docx는 `minutes` 칸(v3.72, 예전에는 `sections`라 이름표만 있는 안건과 세부 줄이 빠졌다), MCP 구조는 `sections`).
 
 ### 2.18 Obsidian으로 보내기: `tractus obsidian <노트> --vault <폴더>` (v3.37)
 

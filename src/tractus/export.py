@@ -14,13 +14,19 @@ from datetime import datetime
 from pathlib import Path
 
 from tractus.i18n import t
-from tractus.store import MEMOS_FILE, _hms, _vtt_time, is_memo, is_recorded, load_memos, memo_lines, one_line, render_markdown, render_vtt, seg_text, speaker_display
+from tractus.store import (
+    MEMOS_FILE, _doc_words, _hms, _vtt_time, is_memo, is_recorded, load_memos, mark_line, mark_text, markdown_body, markdown_head, markdown_memo, memo_lines, one_line, render_markdown,
+    render_vtt, seg_text, speaker_display,
+)
 
 FORMATS = ("txt", "md", "srt", "vtt", "csv", "docx", "bundle")
 BUNDLE_FILES = ("audio.ogg", "audio.opus", "transcript.json", "transcript.md", "transcript.vtt", "summary.md", "summary.json", MEMOS_FILE, "event.json")
 MEMO_FORMATS = ("txt", "md", "csv", "docx", "bundle")  # 메모는 시각이 없어 자막(srt·vtt)으로 내보낼 수 없다
 NO_SUBTITLES = t("메모는 자막 파일로 내보낼 수 없습니다.")
 NO_SUBTITLES_RECORDED = t("아직 텍스트로 변환하지 않아 자막 파일로 내보낼 수 없습니다. 먼저 텍스트로 변환하세요.")  # "변환 전" 노트: 대화 내용이 없다
+PARTS = ("transcript", "memo", "marks")  # --parts: 대화 내용(메모 노트는 메모 내용) · 메모 탭의 메모 · 녹음 중 메모·북마크
+SELECT_FORMATS = ("md", "docx")  # 요약·넣을 내용을 고를 수 있는 형식
+NO_SELECT = t("요약과 넣을 내용은 Markdown·Word에서만 고를 수 있습니다.")
 EAST_ASIA_FONT = "Apple SD Gothic Neo"  # Word·Pages(macOS)에서 한글이 대체 글꼴로 깨지지 않게 w:eastAsia에 지정
 
 
@@ -92,21 +98,39 @@ def pick_summary(d: Path, key: str | None) -> str | None:
     return DEFAULT_KEY if DEFAULT_KEY in have else (have[0] if have else None)
 
 
-def _md(d: Path, note: dict, key: str | None) -> str:
+def _summary_md(d: Path, key: str) -> str | None:
     from tractus.summaries import read_markdown
 
+    summary = read_markdown(d, key)
+    return None if summary is None else re.sub(r"\A---\n.*?\n---\n+", "", summary, flags=re.S)  # frontmatter는 문서 맨 앞에서만 frontmatter다
+
+
+def _md(d: Path, note: dict, key: str | None) -> str:
     md = render_markdown(note, load_memos(d))
-    summary = read_markdown(d, key) if key else None
-    if summary is None:
-        return md
-    body = re.sub(r"\A---\n.*?\n---\n+", "", summary, flags=re.S)  # frontmatter는 문서 맨 앞에서만 frontmatter다
-    return md + "\n---\n\n" + body
+    body = _summary_md(d, key) if key else None
+    return md if body is None else md + "\n---\n\n" + body
+
+
+def _md_select(d: Path, note: dict, keys: list[str], parts: set[str]) -> str:
+    """고른 것만: 머리 → 요약(준 순서) → 대화 내용 → 메모 → 녹음 중 메모. 빈 부분은 뺀다. 부분 사이는 구분선."""
+    words = _doc_words()
+    blocks = ["\n".join(markdown_head(note)).rstrip("\n")]
+    blocks += [body.rstrip("\n") for k in keys if (body := _summary_md(d, k))]
+    if "transcript" in parts and (lines := markdown_body(note)):
+        blocks.append("\n".join([f"## {t('메모 내용') if is_memo(note) else t('대화 내용')}", "", *lines]))
+    if "memo" in parts and (memo := markdown_memo(note)):
+        blocks.append("\n".join(memo).lstrip("\n"))
+    if "marks" in parts and (marks := load_memos(d)):
+        blocks.append("\n".join([f"## {t('녹음 중 메모')}", "", *(mark_line(m, words) for m in marks)]))
+    return "\n\n---\n\n".join(blocks) + "\n"
 
 
 def _docx_summary(doc, s: dict, key: str) -> None:
     """요약 한 개를 문서에 쓴다. 기본 요약(예전 스키마)은 요약·결정 사항·할 일, 유형별 요약은 개요와 섹션(목록 모양대로)."""
     from tractus.summaries import NO_DETAIL
 
+    if s.get("kind") == "minutes" and isinstance(s.get("minutes"), dict):
+        return _docx_minutes(doc, s, key)
     if "sections" not in s:
         doc.add_heading(t("요약"), 1)
         doc.add_paragraph(str(s.get("summary") or ""))
@@ -136,7 +160,40 @@ def _docx_summary(doc, s: dict, key: str) -> None:
             doc.add_paragraph(f"{mark}{i.get('text') or ''}{' — ' + who if who else ''}", style=style)
 
 
-def _docx(d: Path, note: dict, key: str | None) -> bytes:
+def _docx_minutes(doc, s: dict, key: str) -> None:
+    """회의록: 위키용 Markdown(minutes.markdown)과 같은 칸. 요약 v2 섹션(to_sections)은 안건의 세부(이름표·세부 줄)가 빠져 쓰지 않는다."""
+    from tractus.minutes import _topic_title, _who
+
+    m = s["minutes"]
+    doc.add_heading(t("요약 · {name}", name=s.get("template_name") or key), 1)
+    if people := s.get("attendees"):
+        doc.add_paragraph(f"{t('참석')}: {', '.join(people)}")
+    if m.get("agenda"):
+        doc.add_paragraph(f"{t('주요 안건')}: {m['agenda']}")
+    for n, tp in enumerate(m.get("topics") or [], 1):
+        doc.add_heading(_topic_title(tp, n), 1)
+        for p in tp["points"]:
+            doc.add_paragraph(p["label"], style="List Bullet").runs[0].bold = True
+            for x in p["details"]:
+                doc.add_paragraph(x["text"], style="List Bullet 2")
+                for c in x["children"]:
+                    doc.add_paragraph(c["text"], style="List Bullet 3")
+        if tp["approach"]:
+            doc.add_paragraph(f"{t('접근 방식 정리')}: {tp['approach'][0]['text']}")
+        if not tp["points"]:  # 이름표 없이 논의만 있는 안건
+            for x in tp["discussed"] + tp["agreed"]:
+                doc.add_paragraph(x["text"], style="List Bullet")
+    if m.get("actions"):
+        doc.add_heading(t("향후 예정 작업"), 1)
+        for a in m["actions"]:
+            meta = " · ".join(x for x in (_who(a) or t("담당 미정"), a.get("due") and t("기한 {due}", due=a["due"]), a.get("note")) if x)
+            doc.add_paragraph(f"☐ {a['text']} — {meta}", style="List Bullet")
+    if nxt := m.get("next_meeting"):
+        doc.add_paragraph(f"{t('다음에 볼 날')}: {nxt[0]['text']}")
+
+
+def _docx(d: Path, note: dict, key: str | None, keys: list[str] | None = None, parts: set[str] | None = None) -> bytes:
+    """keys·parts가 없으면 예전 모양(요약 key 하나 → 대화 내용 → 메모). 있으면 고른 것만 머리 → 요약 → 대화 내용 → 메모 → 녹음 중 메모."""
     import docx
     from docx.oxml.ns import qn
     from docx.shared import Pt, RGBColor
@@ -157,11 +214,17 @@ def _docx(d: Path, note: dict, key: str | None) -> bytes:
     if names:
         doc.add_paragraph(t("참석자 {n}명 ({names})", n=len(names), names=", ".join(names)))
 
-    if key and (s := read_data(d, key)):
-        _docx_summary(doc, s, key)
+    legacy = parts is None
+    if legacy:
+        keys, parts = ([key] if key else []), {"transcript", "memo"}
+    for k in keys:
+        if s := read_data(d, k):
+            _docx_summary(doc, s, k)
 
-    doc.add_heading(t("메모 내용") if memo else t("대화 내용"), 1)
-    for seg, who, text in _rows(note):
+    rows = _rows(note) if "transcript" in parts else []
+    if rows or legacy:  # 예전 모양은 대화가 없어도 제목을 쓴다
+        doc.add_heading(t("메모 내용") if memo else t("대화 내용"), 1)
+    for seg, who, text in rows:
         p = doc.add_paragraph()
         if memo:
             p.add_run(text)
@@ -171,10 +234,17 @@ def _docx(d: Path, note: dict, key: str | None) -> bytes:
             p.add_run(who).bold = True
             p.add_run("  ")
         p.add_run(text)
-    if memo_rows := _memo_rows(note):
+    if "memo" in parts and (memo_rows := _memo_rows(note)):
         doc.add_heading(t("메모"), 1)
         for _, text in memo_rows:
             doc.add_paragraph(text)
+    if "marks" in parts and (marks := load_memos(d)):
+        doc.add_heading(t("녹음 중 메모"), 1)
+        words = _doc_words()
+        for m in marks:
+            p = doc.add_paragraph()
+            p.add_run(f"{_hms(m['t'])}  ").font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+            p.add_run(mark_text(m, words))
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
@@ -197,14 +267,17 @@ def _bundle(d: Path) -> bytes:
     return buf.getvalue()
 
 
-def render_export(d: Path, fmt: str, summary: str | None = None) -> bytes:
+def render_export(d: Path, fmt: str, summary: str | None = None, keys: list[str] | None = None, parts: set[str] | None = None) -> bytes:
     """회의 폴더 d를 fmt 형식(FORMATS)의 바이트로 만든다. md·docx에는 요약이 들어간다: summary(요약 key)를 주면 그 요약,
-    안 주면 기본 요약(없으면 처음 있는 요약). 있는지는 호출한 쪽이 먼저 확인한다 (summaries.read_data)."""
+    안 주면 기본 요약(없으면 처음 있는 요약). 있는지는 호출한 쪽이 먼저 확인한다 (summaries.read_data).
+    parts(PARTS의 부분집합)를 주면 md·docx에 고른 것만 넣는다: 요약은 keys(순서대로, 비면 요약 없음)이고 summary는 쓰지 않는다.
+    다른 형식에 parts를 주면 UnsupportedFormat."""
     note = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
-    key = pick_summary(d, summary)
+    key = pick_summary(d, summary) if parts is None else None
+    md = (lambda: _md(d, note, key)) if parts is None else (lambda: _md_select(d, note, keys or [], parts))
     writers = {
-        "txt": lambda: _txt(note).encode("utf-8"), "md": lambda: _md(d, note, key).encode("utf-8"), "srt": lambda: _srt(note).encode("utf-8"),
-        "vtt": lambda: render_vtt(note).encode("utf-8"), "csv": lambda: _csv(note), "docx": lambda: _docx(d, note, key), "bundle": lambda: _bundle(d),
+        "txt": lambda: _txt(note).encode("utf-8"), "md": lambda: md().encode("utf-8"), "srt": lambda: _srt(note).encode("utf-8"),
+        "vtt": lambda: render_vtt(note).encode("utf-8"), "csv": lambda: _csv(note), "docx": lambda: _docx(d, note, key, keys or [], parts), "bundle": lambda: _bundle(d),
     }
     if fmt not in writers:
         raise ValueError(t("지원하지 않는 형식입니다: {format} ({formats})", format=fmt, formats=", ".join(FORMATS)))
@@ -212,6 +285,8 @@ def render_export(d: Path, fmt: str, summary: str | None = None) -> bytes:
         raise UnsupportedFormat(NO_SUBTITLES)
     if is_recorded(note) and fmt in ("srt", "vtt"):
         raise UnsupportedFormat(NO_SUBTITLES_RECORDED)
+    if parts is not None and fmt not in SELECT_FORMATS:
+        raise UnsupportedFormat(NO_SELECT)
     return writers[fmt]()
 
 

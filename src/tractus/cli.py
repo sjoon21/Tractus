@@ -31,7 +31,7 @@ from tractus.align import align_segments, is_approximate, load_aligner  # noqa: 
 from tractus.asr import SR, Transcriber, note_terms  # noqa: E402
 from tractus.diarize import FLUID, FLUID_MIN_CLIP_S, MAX_SPEAKERS, NEMOTRON, MODEL_DIR as DIARIZER_DIR  # noqa: E402
 from tractus.diarize import fluid_hint, load_diarizer, load_fluid, split_chunks  # noqa: E402
-from tractus.export import FORMATS as EXPORT_FORMATS, UnsupportedFormat, render_export, write_bytes_atomic  # noqa: E402
+from tractus.export import FORMATS as EXPORT_FORMATS, PARTS as EXPORT_PARTS, UnsupportedFormat, render_export, write_bytes_atomic  # noqa: E402
 from tractus import attach, deferred, notes  # noqa: E402
 from tractus.store import MEMOS_FILE, Job, add_glossary_terms, apply_speaker_edit, apply_suggestions, apply_text_edits, find_job, find_meeting_dir, find_transcribed  # noqa: E402
 from tractus.store import IncompleteError, load_glossary, meeting_dir_name, new_ulid, save_transcript, seg_text, speaker_name, write_transcript  # noqa: E402
@@ -1649,20 +1649,27 @@ def export_cmd(
     fmt: ExportFormat = typer.Option(..., "--format", help="txt | md | srt | vtt | csv | docx | bundle(노트 폴더 zip)"),
     out: Path = typer.Option(..., "--out", help="저장할 파일 경로"),
     force: bool = typer.Option(False, "--force", help="--out 파일이 있으면 덮어쓴다"),
-    summary: str = typer.Option(None, "--summary", help="md·docx에 넣을 요약의 key (meeting·brief·u-…·c-…). 생략하면 기본 요약, 그것도 없으면 처음 있는 요약"),
+    summary: list[str] = typer.Option(None, "--summary", help="md·docx에 넣을 요약의 key (meeting·brief·u-…·c-…). 생략하면 기본 요약, 그것도 없으면 처음 있는 요약. --parts와 함께면 여러 번 줄 수 있고(그 순서), 생략하면 요약 없음"),
+    parts: str = typer.Option(None, "--parts", help="md·docx에 넣을 내용만 고른다: transcript,memo,marks 중 쉼표로 (빈 값이면 요약만). 주면 순서가 머리 → 요약 → 대화 내용 → 메모 → 녹음 중 메모"),
 ) -> None:
     """노트를 파일로 내보낸다. 화자는 표시 이름, 본문은 교정본(corrected_text) 우선. stdout: {"path": "<절대 경로>"}"""
     from tractus import summaries as sums
 
     d = resolve_meeting(meeting)
-    if summary and sums.read_data(d, summary) is None:
+    keys = list(dict.fromkeys(summary or []))
+    picked = None if parts is None else {p.strip() for p in parts.split(",") if p.strip()}
+    if picked is not None and (bad := sorted(picked - set(EXPORT_PARTS))):
+        _fail(t("넣을 내용은 {parts} 중에서 고릅니다: {bad}", parts=", ".join(EXPORT_PARTS), bad=", ".join(bad)), exit_code=2)
+    if picked is None and len(keys) > 1:
+        _fail(t("요약을 여러 개 넣으려면 --parts도 줍니다."), exit_code=2)
+    if any(sums.read_data(d, k) is None for k in keys):
         _fail(sums.NO_SUCH_SUMMARY, exit_code=2)
     if out.exists() and not force:
         console.print(f"[red]{t('이미 있는 파일입니다 (덮어쓰려면 --force):')}[/red] {escape(str(out))}")
         raise typer.Exit(1)
     try:
-        write_bytes_atomic(out, render_export(d, fmt.value, summary))
-    except UnsupportedFormat as e:  # 메모를 srt·vtt로
+        write_bytes_atomic(out, render_export(d, fmt.value, keys[0] if keys else None) if picked is None else render_export(d, fmt.value, keys=keys, parts=picked))
+    except UnsupportedFormat as e:  # 메모를 srt·vtt로, --parts를 md·docx 밖에서
         _fail(str(e), exit_code=2)
     except OSError as e:  # 임시 파일(.tmp) 경로 대신 사용자가 고른 경로를 알린다
         console.print(f"[red]{escape(t('{path}에 저장할 수 없습니다 ({error})', path=out, error=e.strerror or e))}[/red]")
