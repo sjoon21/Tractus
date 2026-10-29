@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # 저장소 없이 도는 Tractus.app 만들기: 옮길 수 있는 파이썬 + tractus 코어와 의존성 + tractus-rec 을 앱 안(Contents/Resources)에 넣는다.
-# 쓰는 곳: --out 폴더(기본 dist/bundle)와 app/src-tauri/target, app/dist(프런트 빌드). 저장소의 .venv·recorder/.build 는 건드리지 않는다.
+# 쓰는 곳: --out 폴더(기본 dist/bundle.noindex)와 app/src-tauri/target, app/dist(프런트 빌드). 저장소의 .venv·recorder/.build 는 건드리지 않는다.
 # 서명은 ad-hoc(-)이다: 받은 사람은 첫 실행에서 Gatekeeper 경고를 거친다 (docs/setup.md "미리 만든 앱 받기").
 # 인터넷: uv.lock 에 고정된 PyPI wheel 만 받고(sdist 는 거부), 그 밖에는 이미 있는 uv·pnpm·cargo 캐시를 쓴다. 안내서는 docs/setup.md.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-OUT="$REPO/dist/bundle"
+OUT="$REPO/dist/bundle.noindex"   # .noindex: Spotlight가 사본을 앱으로 띄우지 않게
 CHECK_ONLY=0
 WITH_FLUID=0
 PY_SERIES="3.12"   # pyproject 의 requires-python(>=3.12)과 uv.lock 의 wheel(cp312) 기준
@@ -16,7 +16,7 @@ usage() {
 사용법: scripts/build_app_bundle.sh [옵션]
 
   --check          아무것도 만들지 않고 필요한 도구만 확인합니다
-  --out <폴더>     결과를 둘 폴더 (기본: dist/bundle). 결과: <폴더>/Tractus.app
+  --out <폴더>     결과를 둘 폴더 (기본: dist/bundle.noindex). 결과: <폴더>/Tractus.app
   --with-fluid     9명 이상 참석자 구분용 tractus-diar 도 넣습니다 (Swift 6.2 이상, Xcode 26)
   -h, --help
 
@@ -199,6 +199,7 @@ APP_BUILT="$REPO/app/src-tauri/target/release/bundle/macos/Tractus.app"
 [ -d "$APP_BUILT/Contents/Resources/runtime" ] || { echo "번들에 runtime/ 이 들어가지 않았습니다" >&2; exit 1; }
 rm -rf "$OUT/Tractus.app"
 ditto "$APP_BUILT" "$OUT/Tractus.app"
+rm -rf "$APP_BUILT"   # 중간 산출물: 남기면 Spotlight에 Tractus가 하나 더 뜬다 (install.sh로 쓰던 앱이면 install.sh를 다시 돌린다)
 APP="$OUT/Tractus.app"
 
 step "8. 서명 (ad-hoc): 안쪽 Mach-O 전부 → 앱"

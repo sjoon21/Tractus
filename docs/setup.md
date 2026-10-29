@@ -343,8 +343,8 @@ tccutil reset All dev.tractus.app                       # 권한 초기화 (선�
 
 ```bash
 scripts/build_app_bundle.sh --check               # 도구만 확인
-scripts/build_app_bundle.sh [--out dist/bundle] [--with-fluid]   # → <out>/Tractus.app
-scripts/make_dmg.sh dist/bundle/Tractus.app       # → dist/Tractus-<버전>[-<날짜>]-arm64.dmg (버전은 tauri.conf.json, 날짜는 만든 날. --version으로 정하면 날짜 없이 그 이름)
+scripts/build_app_bundle.sh [--out dist/bundle.noindex] [--with-fluid]   # → <out>/Tractus.app
+scripts/make_dmg.sh dist/bundle.noindex/Tractus.app       # → dist/Tractus-<버전>[-<날짜>]-arm64.dmg (버전은 tauri.conf.json, 날짜는 만든 날. --version으로 정하면 날짜 없이 그 이름)
 ```
 
 - `build_app_bundle.sh`는 `uv`의 Python 3.12(python-build-standalone)를 앱 안 `Contents/Resources/runtime/`에 복사해 줄이고(tkinter·idle·테스트·pip·헤더 삭제, universal2 wheel의 x86_64 조각 제거, `tests`·`*.pyi` 삭제), `uv.lock`에 고정된 의존성을 **wheel만**(`--only-binary :all:`, 소스 빌드는 거부) **해시를 검증하며**(`--require-hashes`) 설치합니다. macOS용 wheel이 여럿인 패키지(`mlx` 등)는 uv가 만든 Mac의 macOS 버전으로 고르면 너무 새 것이 걸리므로, `uv.lock`에 있는 가장 낮은 macOS용 wheel의 URL과 해시로 고정합니다. 빌드는 14.4보다 새 시스템을 요구하는 Mach-O가 하나라도 있으면 멈춥니다. 인터넷은 PyPI의 그 wheel을 받을 때만 쓰고(캐시가 있으면 쓰지 않습니다), 처음 한 번 `uv python install 3.12`가 Python을 받을 수 있습니다. `tractus-rec`를 빌드해 `Resources/bin/`에 넣고(`--with-fluid`면 `tractus-diar`도, Swift 6.2 이상), `pnpm tauri build --bundles app`의 `--config`로 `runtime/`·`bin/`을 `bundle.resources`에 합칩니다(`tauri.conf.json`에 고정하지 않은 것은 `install.sh`의 일반 빌드가 깨지지 않게 하려는 것입니다). 마지막에 안쪽 Mach-O를 모두 ad-hoc 서명하고 앱을 `Entitlements.plist`로 서명해 `codesign --verify --deep --strict`까지 합니다.

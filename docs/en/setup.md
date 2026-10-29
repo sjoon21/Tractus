@@ -347,8 +347,8 @@ To remove the app, move it to the Trash and delete the data folders yourself as 
 
 ```bash
 scripts/build_app_bundle.sh --check               # check tools only
-scripts/build_app_bundle.sh [--out dist/bundle] [--with-fluid]   # → <out>/Tractus.app
-scripts/make_dmg.sh dist/bundle/Tractus.app       # → dist/Tractus-<version>[-<date>]-arm64.dmg (version from tauri.conf.json, date = build day; --version sets the name without a date)
+scripts/build_app_bundle.sh [--out dist/bundle.noindex] [--with-fluid]   # → <out>/Tractus.app
+scripts/make_dmg.sh dist/bundle.noindex/Tractus.app       # → dist/Tractus-<version>[-<date>]-arm64.dmg (version from tauri.conf.json, date = build day; --version sets the name without a date)
 ```
 
 (The `make_dmg.sh` output name takes the version from `tauri.conf.json` and the build date; with `--version`, it uses that name without a date.)

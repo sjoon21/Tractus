@@ -93,8 +93,8 @@ mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd -P)"
 
 if [ -z "$APP" ]; then
   step "1. 앱 만들기 (scripts/build_app_bundle.sh)"
-  "$REPO/scripts/build_app_bundle.sh" --out "$OUT/app" $WITH_FLUID
-  APP="$OUT/app/Tractus.app"
+  "$REPO/scripts/build_app_bundle.sh" --out "$OUT/app.noindex" $WITH_FLUID   # .noindex: Spotlight가 사본을 앱으로 띄우지 않게
+  APP="$OUT/app.noindex/Tractus.app"
 fi
 APP="$(cd "$APP" && pwd -P)"
 BUILT="$(sed -n '/CFBundleShortVersionString/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' "$APP/Contents/Info.plist")"
