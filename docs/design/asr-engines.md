@@ -84,7 +84,7 @@
 `LiquidAI/LFM3-Audio-2B-MLX-8bit`(2026-10-27 공개, 커밋 `22d29921`, 가중치 2.33GB + 코덱 0.15GB)를 `bench/`에서만 쟀다. 앱 목록에는 넣지 않는다.
 
 - **어떻게:** mlx-vlm 0.7.11(MIT, `mlx_vlm.models.lfm3_audio`)을 프로세스 안에서 부른다(`bench/asr.py`의 `lfm3` 계열). 모델 카드대로 시스템 프롬프트 `Perform ASR in Korean.`(자동 감지는 `Perform ASR.`), 사용자 글은 비우고 오디오만, 온도 0. 토큰 상한은 앱과 같은 식(오디오 1초당 16 + 32). 자주 쓰는 단어를 넣는 방법이 없어 무시한다.
-- **조건:** Apple M3 16GB, 지난 Qwen3 행과 같은 `run.py` 명령(AI Hub 4세션 311.5분, VAD 캐시 같음). 다른 작업(테스트·빌드)이 같은 Mac에서 돌던 중이라 RTF는 ±10% 정도로 본다. mlx-vlm이 `mlx-audio>=0.6.2`·`mlx>=0.32.4`를 요구해 벤치 환경의 mlx-audio가 0.5.7 → 0.6.3으로 올랐다. Qwen3 행은 예전 환경에서 잰 그대로다(다시 돌리지 않았다).
+- **조건:** Apple M3 16GB, 지난 Qwen3 행과 같은 `run.py` 명령(AI Hub 4세션 311.5분, VAD 캐시 같음). 다른 작업(테스트·빌드)이 같은 Mac에서 돌던 중이라 RTF는 ±10% 정도로 본다. mlx-vlm이 `mlx-audio>=0.6.2`·`mlx>=0.32.4`를 요구해 LFM3 행만 mlx-audio 0.6.3·mlx 0.32.4에서 쟀다. 벤치 기본 환경은 앱과 같은 mlx-audio 0.5.7·mlx 0.32.3 그대로이고(`bench/pyproject.toml`의 `app` 그룹), mlx-vlm은 서로 겹치지 않는 `lfm3` 그룹에만 있다. Qwen3 행은 기본 환경에서 잰 그대로다(다시 돌리지 않았다).
 
 | 조건 (AI Hub) | 모델 | CER | 발음전사 CER | 반복 | 용어 재현율 | RTF | 피크 MLX | 최대 RSS |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -110,4 +110,4 @@
   - 자주 쓰는 단어(hotwords)를 넣는 방법이 문서에 없다. Qwen3에서 용어 재현율을 72% → 84%로 올린 수단을 잃는다.
   - 의존성: mlx-vlm이 opencv-python(약 120MB)·fastapi·uvicorn·starlette·datasets·aiohttp·cryptography·llguidance 등 31개 패키지를 끌어온다(벤치 `uv.lock` 기준). 앱 번들을 늘리고 `scripts/bundle_modules.txt`를 다시 만들어야 한다. mlx-audio도 0.6.x로 올려야 한다.
   - 실시간: 모델 카드의 LiveASR(스트리밍)은 영어만이라 실시간 텍스트 변환(0.6B)을 대신할 수 없다.
-- 다시 볼 때: 한국어 파인튜닝판이 나오거나 라이선스가 바뀌면 같은 `run.py` 명령으로 다시 잰다(`uv run python run.py lfm3-audio-2b aihub --lang fixed`).
+- 다시 볼 때: 한국어 파인튜닝판이 나오거나 라이선스가 바뀌면 같은 `run.py` 명령으로 다시 잰다(`uv run --no-default-groups --group lfm3 python run.py lfm3-audio-2b aihub --lang fixed`).

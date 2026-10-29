@@ -32,6 +32,7 @@ def pair(model: str, dataset: str, fn, spec: str = ".2f") -> str:
 def main():
     print("## E1 기본 비교\n")
     print("한 칸에 두 값이 있으면 `언어 고정 / 자동 감지`다. 낮을수록 좋다.\n")
+    print("lfm3-audio-2b 행만 mlx-audio 0.6.3(`uv run --no-default-groups --group lfm3`)에서 쟀다. 다른 행은 앱과 같은 기본 환경(mlx-audio 0.5.7)이다.\n")
     print("| 모델 | FLEURS-ko CER | HiKE MER | HiKE PIER | HiKE MER 중앙값 | HiKE 반복 루프 | AI Hub CER | AMI WER |")
     print("| --- | --- | --- | --- | --- | --- | --- | --- |")
     for m in MODELS:

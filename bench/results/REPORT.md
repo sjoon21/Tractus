@@ -2,6 +2,8 @@
 
 한 칸에 두 값이 있으면 `언어 고정 / 자동 감지`다. 낮을수록 좋다.
 
+lfm3-audio-2b 행만 mlx-audio 0.6.3(`uv run --no-default-groups --group lfm3`)에서 쟀다. 다른 행은 앱과 같은 기본 환경(mlx-audio 0.5.7)이다.
+
 | 모델 | FLEURS-ko CER | HiKE MER | HiKE PIER | HiKE MER 중앙값 | HiKE 반복 루프 | AI Hub CER | AMI WER |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | qwen3-1.7b | 2.62 | 28.3 / 24.1 | 35.4 / 36.1 | 15.4 / 19.1 | 2 / 1 | 9.49 / 9.48 | 9.50 |

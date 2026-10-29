@@ -7,10 +7,20 @@ dependencies = [
     "inflect>=7.5.0",
     "jiwer>=4.0.0",
     "mlx-audio>=0.5.7",
-    "mlx-vlm==0.7.11",
     "pandas>=3.0.6",
     "pyarrow>=25.0.1",
     "regex>=2026.9.29",
     "silero-vad>=6.2.3",
     "soundfile>=0.14.0",
 ]
+
+# 기본 환경은 앱(저장소 루트 uv.lock)과 같은 mlx-audio로 잰다.
+# lfm3(mlx-vlm)는 mlx-audio>=0.6.2를 요구하므로 따로 고른다:
+#   uv run --no-default-groups --group lfm3 python run.py lfm3-audio-2b ...
+[dependency-groups]
+app = ["mlx-audio==0.5.7", "mlx==0.32.3"]
+lfm3 = ["mlx-vlm==0.7.11"]
+
+[tool.uv]
+default-groups = ["app"]
+conflicts = [[{ group = "app" }, { group = "lfm3" }]]
