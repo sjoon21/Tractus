@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { IDLE_UPDATE, newVersionToast, noteExcerpt, progressPct, updateErrorView, updateReduce, updateText, versionLine, type UpdateEvent, type UpdateState, notesVersion } from "./update";
+import { IDLE_UPDATE, markSeen, newVersionToast, SEEN_KEY, seenVersion, updateNotice, noteExcerpt, progressPct, updateErrorView, updateReduce, updateText, versionLine, type UpdateEvent, type UpdateState, notesVersion } from "./update";
 
 const run = (events: UpdateEvent[], from: UpdateState = IDLE_UPDATE) => events.reduce(updateReduce, from);
 
@@ -88,5 +88,38 @@ describe("notesVersion", () => {
     expect(notesVersion({ phase: "installed", version: "0.4.2" }, "0.4.1")).toBe("0.4.2");
     expect(notesVersion({ phase: "latest" }, "0.4.2")).toBe("0.4.2");
     expect(notesVersion({ phase: "idle" }, null)).toBeNull();
+  });
+});
+
+describe("시작 때 새 버전 알림", () => {
+  test("처음 보는 버전은 큰 창, 닫은 버전은 작은 알림, 더 새 버전은 다시 큰 창", () => {
+    expect(updateNotice("0.4.5", null, false)).toBe("dialog");
+    expect(updateNotice("0.4.5", "0.4.5", false)).toBe("toast");
+    expect(updateNotice("0.4.6", "0.4.5", false)).toBe("dialog");
+  });
+
+  test("녹음 중이거나 다른 창이 열려 있으면 작은 알림, 새 버전이 없으면 아무것도", () => {
+    expect(updateNotice("0.4.5", null, true)).toBe("toast");
+    expect(updateNotice(null, null, false)).toBeNull();
+  });
+
+  test("닫은 버전을 기억하고, 저장소가 막혀도 던지지 않는다", () => {
+    const m = new Map<string, string>();
+    const store = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) };
+    expect(seenVersion(store)).toBeNull();
+    markSeen("0.4.5", store);
+    expect(m.get(SEEN_KEY)).toBe("0.4.5");
+    expect(seenVersion(store)).toBe("0.4.5");
+    const broken = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    expect(seenVersion(broken)).toBeNull();
+    expect(() => markSeen("0.4.5", broken)).not.toThrow();
+    expect(seenVersion(null)).toBeNull();
   });
 });
