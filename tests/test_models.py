@@ -882,8 +882,8 @@ def test_engine_option_picks_an_installed_engine_and_falls_back_with_a_warning(r
     assert (cli.track_name(reg.get("asr-std")), cli.track_name(reg.get("asr-lite"))) == ("standard", "lite")
 
 
-def test_convert_needs_any_one_transcription_engine():
+def test_convert_needs_any_one_transcription_engine(tmp_path):  # 빈 폴더: 개발 Mac의 직접 추가 엔진이 끼지 않게
     assert reg.get("vad").engine is None
     groups = next(c for c in reg.CAPABILITIES if c.id == "convert").models
-    assert groups[1] == tuple(reg.asr_ids()) and {"asr-std", "asr-lite"} <= set(groups[1])
+    assert groups[1] == tuple(reg.asr_ids(tmp_path)) and {"asr-std", "asr-lite"} <= set(groups[1])
     assert all(reg.get(i).engine for i in groups[1])

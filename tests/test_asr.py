@@ -173,3 +173,11 @@ def test_transcribe_writes_sino_korean_numbers_as_digits():
     model = FakeModel({None: FakeOut("점유율이 삼십 프로이고 이번 주에 칠 명이 옵니다")})
     seg = Transcriber(model).transcribe(AUDIO, language=None)
     assert seg.text == "점유율이 30프로이고 이번 주에 7명이 옵니다"
+
+
+def test_empty_auto_detect_output_is_retried_in_korean_for_qwen_only():
+    model = FakeModel({None: FakeOut("", language=["English"], generation_tokens=0), "Korean": FakeOut("리뷰를 지금 하기에는 일정이 빡빡합니다")})
+    seg = Transcriber(model).transcribe(AUDIO, language=None)
+    assert seg.text == "리뷰를 지금 하기에는 일정이 빡빡합니다" and seg.lang == "ko" and seg.repaired
+    whisper = FakeModel({None: FakeOut("", language="en", generation_tokens=0)})
+    assert Transcriber(whisper, "whisper").transcribe(AUDIO).text == "" and len(whisper.calls) == 1
