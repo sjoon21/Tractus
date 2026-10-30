@@ -1,12 +1,13 @@
 // 사이드바의 노트 목록 전체 (docs/desktop.md §2.12): 제목 거르기·순서 → 즐겨찾기 → 폴더 → 태그 → 전체 노트.
-// 폴더·태그를 고르면 `전체 노트`가 그 노트만 보인다 (태그를 여럿 고르면 모두 붙은 노트). 즐겨찾기·폴더·태그 구역은 접을 수 있고 접은 상태는 이 Mac의 브라우저 저장소에 둔다.
+// 폴더·태그를 고르면 `전체 노트`가 그 노트만 보인다 (태그를 여럿 고르면 모두 붙은 노트). 즐겨찾기·폴더·태그 구역과 `전체 노트`의 달은 접을 수 있고 접은 상태는 이 Mac의 브라우저 저장소에 둔다.
+// 노트가 많아져도 길어지지 않게: 이번 달·지난달만 펼쳐 두고(`monthIsOpen`), 검색창과 달 머리글은 스크롤해도 위에 붙어 있다.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { MeetingInfo } from "./api";
 import { FolderTree } from "./FolderTree";
 import { t } from "./i18n";
 import { dayParts } from "./lib";
 import { NoteRow } from "./NoteRow";
-import { DEFAULT_FOLD, filterNotes, folderPath, groupForList, isFiltered, parseFold, SORTS, sortNotes, type ListGroup, type SidebarFold, type SortKey } from "./organize";
+import { DEFAULT_FOLD, filterNotes, folderPath, groupByMonth, groupForList, isFiltered, monthIsOpen, parseFold, SORTS, sortNotes, type ListGroup, type MonthGroup, type SidebarFold, type SortKey } from "./organize";
 import { useOrganize } from "./useOrganize";
 import { ArrowDown, ArrowUp, ChevronRight, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -76,25 +77,35 @@ export function NoteLibrary({
   const folderLabel = org.filter.folder === "none" ? t("폴더 없음") : org.filter.folder ? folderPath(org.folders, org.filter.folder) : "";
 
   const rows = (items: readonly MeetingInfo[]) => items.map((m) => <NoteRow key={m.id} m={m} active={m.id === activeId} onOpen={onOpen} slot={convertSlots?.get(m.id) ?? null} onConvert={onConvert} />);
-  const renderGroup = (g: ListGroup<MeetingInfo>, i: number, all: ListGroup<MeetingInfo>[]) => {
-    if (g.day === null)
-      return (
-        <ul key="flat">
-          {rows(g.items)}
-        </ul>
-      );
-    const p = dayParts(g.day);
-    const newMonth = i === 0 || dayParts(all[i - 1].day ?? "").month !== p.month;
+  const months = useMemo(() => groupByMonth(groups), [groups]);
+  const toggleMonth = (key: string, open: boolean) => setFold((f) => ({ ...f, months: { ...f.months, [key]: !open } }));
+  const renderDay = (g: ListGroup<MeetingInfo>) => {
+    const p = dayParts(g.day ?? "");
     return (
-      <section key={g.day}>
-        {newMonth && <h3 className={cn(SIDE_HEAD, "m-0 mt-2")}>{p.month}</h3>}
-        <div className="grid grid-cols-[30px_minmax(0,1fr)]">
-          <div className="flex flex-col items-center pt-2 leading-none" aria-label={t("{day}일 {weekday}요일", { day: p.day, weekday: p.weekday })}>
-            <span className="text-[13px] font-semibold tabular-nums">{p.day}</span>
-            <small className="mt-1 text-[10px] text-subtle-foreground">{p.weekday}</small>
-          </div>
-          <ul>{rows(g.items)}</ul>
+      <div key={g.day} className="grid grid-cols-[30px_minmax(0,1fr)]">
+        <div className="flex flex-col items-center pt-2 leading-none" aria-label={t("{day}일 {weekday}요일", { day: p.day, weekday: p.weekday })}>
+          <span className="text-[13px] font-semibold tabular-nums">{p.day}</span>
+          <small className="mt-1 text-[10px] text-subtle-foreground">{p.weekday}</small>
         </div>
+        <ul>{rows(g.items)}</ul>
+      </div>
+    );
+  };
+  const renderMonth = (m: MonthGroup<MeetingInfo>) => {
+    const label = dayParts(`${m.key}-01`).month || m.key;
+    // 걸러 낸 결과는 모두 보인다. 직접 정한 값이 없으면 열어 둔 노트가 든 달과 이번 달·지난달을 편다
+    const open = filtered || (m.key in fold.months ? fold.months[m.key] : m.days.some((d) => d.items.some((n) => n.id === activeId)) || monthIsOpen(fold, m.key));
+    const id = `side-month-${m.key}`;
+    return (
+      <section key={m.key} className="mt-1">
+        <h3 className="sticky top-8 z-10 m-0 bg-sidebar">
+          <button type="button" className={cn(SIDE_HEAD, "group/head w-full rounded-md outline-none hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/40")} aria-expanded={open} aria-controls={id} aria-label={t("{month}, 노트 {n}개", { month: label, n: m.count })} onClick={() => !filtered && toggleMonth(m.key, open)}>
+            <span>{label}</span>
+            <ChevronRight className={cn("size-3 opacity-0 transition group-hover/head:opacity-100", !open && "opacity-60", open && "rotate-90")} aria-hidden />
+            <span className={COUNT}>{m.count}</span>
+          </button>
+        </h3>
+        {open && <div id={id}>{m.days.map(renderDay)}</div>}
       </section>
     );
   };
@@ -102,7 +113,7 @@ export function NoteLibrary({
   if (notes.length === 0 && org.folders.length === 0) return null; // 아무것도 없을 때는 도구도 보이지 않는다 (App의 빈 상태 안내만)
   return (
     <>
-      <div className="px-1 pb-1">
+      <div className="sticky -top-2 z-20 -mt-2 bg-sidebar px-1 pt-2 pb-1">
         <Input
           type="search"
           className="h-7 bg-background/70 text-xs"
@@ -203,7 +214,10 @@ export function NoteLibrary({
           </div>
         )}
         {filtered && shown.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">{t("조건에 맞는 노트가 없습니다.")}</p>}
-        {groups.map(renderGroup)}
+        {groups.filter((g) => g.day === null).map((g) => (
+          <ul key="flat">{rows(g.items)}</ul>
+        ))}
+        {months.map(renderMonth)}
       </section>
     </>
   );

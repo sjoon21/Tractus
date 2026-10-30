@@ -14,11 +14,14 @@ import {
   folderOf,
   folderPath,
   foldKey,
+  groupByMonth,
   groupForList,
   isFiltered,
   metaOf,
+  monthIsOpen,
   NO_FILTER,
   normalizeTag,
+  DEFAULT_FOLD,
   parseFold,
   readSortPrefs,
   removeTag,
@@ -282,10 +285,27 @@ describe("optimistic meta patch", () => {
 
 describe("sidebar fold", () => {
   test("reads the saved state and falls back to the default for anything odd", () => {
-    expect(parseFold('{"favorites":false,"folders":true,"tags":false,"open":["a",3]}')).toEqual({ favorites: false, folders: true, tags: false, open: ["a"] });
+    expect(parseFold('{"favorites":false,"folders":true,"tags":false,"open":["a",3],"months":{"2026-01":false,"2026-02":"x"}}')).toEqual({ favorites: false, folders: true, tags: false, open: ["a"], months: { "2026-01": false } });
     for (const raw of [null, "", "{", "[]", "3", '{"favorites":"no","open":"x"}']) {
-      expect(parseFold(raw)).toEqual({ favorites: true, folders: true, tags: true, open: [] });
+      expect(parseFold(raw)).toEqual({ favorites: true, folders: true, tags: true, open: [], months: {} });
     }
+  });
+});
+
+describe("month groups", () => {
+  const g = (day: string, n: number) => ({ day, items: Array.from({ length: n }, (_, i) => i) });
+  test("groups the day groups by month and counts the notes", () => {
+    expect(groupByMonth([g("2026-10-03", 2), g("2026-10-01", 1), g("2026-09-30", 4), { day: null, items: [9] }]).map((m) => [m.key, m.days.length, m.count])).toEqual([["2026-10", 2, 3], ["2026-09", 1, 4]]);
+    expect(groupByMonth([])).toEqual([]);
+  });
+
+  test("opens this month and last month by default; a saved choice wins", () => {
+    const now = new Date(2026, 0, 15); // 1월: 지난달은 작년 12월
+    expect(monthIsOpen(DEFAULT_FOLD, "2026-01", now)).toBe(true);
+    expect(monthIsOpen(DEFAULT_FOLD, "2025-12", now)).toBe(true);
+    expect(monthIsOpen(DEFAULT_FOLD, "2025-11", now)).toBe(false);
+    expect(monthIsOpen({ ...DEFAULT_FOLD, months: { "2025-11": true, "2026-01": false } }, "2025-11", now)).toBe(true);
+    expect(monthIsOpen({ ...DEFAULT_FOLD, months: { "2026-01": false } }, "2026-01", now)).toBe(false);
   });
 });
 

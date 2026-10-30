@@ -62,8 +62,13 @@ export function engineSummary(models: Pick<ModelRow, "level" | "level_note" | "i
 // ── 기본 변환 엔진 (docs/design/asr-engines.md) ──
 
 export const ENGINE_IN_USE = t("기본 엔진");
-export const ENGINE_USE = t("기본으로 쓰기");
-export const ENGINE_AUTO = t("자동으로 고르기");
+export const ENGINE_PICK_TITLE = t("변환 엔진");
+export const ENGINE_PICK_LABEL = t("텍스트로 변환할 때 쓸 엔진");
+export const ENGINE_PICK_HINT = t("다른 엔진은 아래 모델 목록에서 받으면 여기에 나타납니다.");
+export const ENGINE_NONE_INSTALLED = t("받아 둔 변환 엔진이 없습니다. 아래 모델 목록에서 받으세요.");
+export const ENGINE_AUTO_OPTION = t("자동 (이 Mac에 맞게)");
+export const engineAutoOption = (name: string) => t("자동 (이 Mac에 맞게: {name})", { name });
+export const engineNowUsing = (name: string) => t("지금은 ‘{name}’을(를) 씁니다.", { name });
 export const ENGINE_ADD_TITLE = t("변환 엔진 직접 추가");
 export const ENGINE_ADD_HINT = t("Hugging Face 저장소 ID를 넣으면 모델 목록에 추가합니다. Qwen3-ASR·Whisper·SenseVoice 계열을 쓸 수 있습니다. 추가한 뒤 받기를 누르세요.");
 export const ENGINE_ADD_PLACEHOLDER = t("예: mlx-community/whisper-large-v3-turbo");

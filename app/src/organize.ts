@@ -366,9 +366,11 @@ export interface SidebarFold {
   tags: boolean;
   /** 펼친 폴더 ID */
   open: string[];
+  /** 사용자가 직접 펼치거나 접은 달(`YYYY-MM`). 없는 달은 `monthIsOpen`의 기본 규칙 */
+  months: Record<string, boolean>;
 }
 
-export const DEFAULT_FOLD: SidebarFold = { favorites: true, folders: true, tags: true, open: [] };
+export const DEFAULT_FOLD: SidebarFold = { favorites: true, folders: true, tags: true, open: [], months: {} };
 
 /** 저장된 글을 읽는다: 깨졌거나 모양이 다르면 기본값 (true = 펼침) */
 export function parseFold(raw: string | null): SidebarFold {
@@ -381,8 +383,40 @@ export function parseFold(raw: string | null): SidebarFold {
       folders: bool(v.folders, true),
       tags: bool(v.tags, true),
       open: Array.isArray(v.open) ? v.open.filter((x): x is string => typeof x === "string") : [],
+      months: v.months && typeof v.months === "object" && !Array.isArray(v.months) ? Object.fromEntries(Object.entries(v.months).filter(([, x]) => typeof x === "boolean")) : {},
     };
   } catch {
     return DEFAULT_FOLD;
   }
+}
+
+// ── 달 묶음 (노트가 많아져도 목록이 길어지지 않게) ──
+
+export interface MonthGroup<T> {
+  /** `YYYY-MM` (날짜가 없는 노트는 그 문구) */
+  key: string;
+  days: ListGroup<T>[];
+  count: number;
+}
+
+/** 날짜별 묶음을 달별로 다시 묶는다 (날짜 없는 묶음 `day: null`은 호출하는 쪽이 따로 다룬다) */
+export function groupByMonth<T>(groups: readonly ListGroup<T>[]): MonthGroup<T>[] {
+  const months: MonthGroup<T>[] = [];
+  for (const g of groups) {
+    if (g.day === null) continue;
+    const key = g.day.slice(0, 7);
+    const last = months[months.length - 1];
+    if (last?.key === key) {
+      last.days.push(g);
+      last.count += g.items.length;
+    } else months.push({ key, days: [g], count: g.items.length });
+  }
+  return months;
+}
+
+/** 이 달을 펼쳐 보이는가: 직접 정한 값이 먼저, 아니면 이번 달과 지난달만 펼친다 */
+export function monthIsOpen(fold: SidebarFold, key: string, now: Date = new Date()): boolean {
+  if (key in fold.months) return fold.months[key];
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return key >= `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
 }

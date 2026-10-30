@@ -187,6 +187,11 @@ class Transcriber:
         repaired = False
         if hw and echoes_hotwords(out.text, hw):  # 목록을 받아 적었다: 이 청크만 단어 없이 다시
             out, hw, repaired = self._generate(audio, name, None, cap), [], True
+        if self.engine.misdetect_retry and name is None and not out.text.strip():
+            # 자동 감지가 영어로 오감지하며 토큰 0개로 끝났다(한국어 파인튜닝판 실측: 30초 청크의 27%): 한국어로 한 번 더
+            ko = self._generate(audio, self._lang_arg("ko"), hw, cap)
+            if not self._capped(ko, cap):
+                return Segment(text=ko.text.strip(), lang="ko", repaired=True)
         looped = self._capped(out, cap)
         if looped and name is not None:
             # 언어 고정 시 영어 발화를 번역하다 루프에 빠지는 경우가 많다(Phase 0). 자동 감지로 한 번 더 시도한다.
