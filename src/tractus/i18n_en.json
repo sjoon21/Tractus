@@ -414,5 +414,8 @@
  "화자가 {n}명을 넘을 수 있지만 fluid 헬퍼나 모델이 없어 {n}명으로 나눕니다:\n{hint}": "There may be more than {n} speakers, but the fluid helper or model is missing, so up to {n} are detected:\n{hint}",
  "회의 내용": "Details",
  "회의록": "Minutes",
- "회의록을 저장하지 못했습니다: 형식이 맞지 않습니다": "Couldn't save the minutes: the format is invalid"
+ "회의록을 저장하지 못했습니다: 형식이 맞지 않습니다": "Couldn't save the minutes: the format is invalid",
+ "변환 엔진 (한국어 파인튜닝)": "Transcription engine (Korean fine-tune)",
+ "Qwen3-ASR 1.7B를 한국어로 더 학습한 엔진입니다. 양자화하지 않아 용량이 크고(4.7GB) 간이 점검만 했습니다. 자주 쓰는 단어를 쓸 수 있습니다.": "Qwen3-ASR 1.7B trained further on Korean. Not quantized, so it is large (4.7GB), and it has only had a quick check. Custom vocabulary works.",
+ "Qwen3-ASR 1.7B 한국어 (bf16)": "Qwen3-ASR 1.7B Korean (bf16)"
 }

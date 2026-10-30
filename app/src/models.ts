@@ -63,14 +63,16 @@ export function engineSummary(models: Pick<ModelRow, "level" | "level_note" | "i
 
 export const ENGINE_IN_USE = t("기본 엔진");
 export const ENGINE_PICK_TITLE = t("변환 엔진");
-export const ENGINE_PICK_LABEL = t("텍스트로 변환할 때 쓸 엔진");
-export const ENGINE_PICK_HINT = t("다른 엔진은 아래 모델 목록에서 받으면 여기에 나타납니다.");
-export const ENGINE_NONE_INSTALLED = t("받아 둔 변환 엔진이 없습니다. 아래 모델 목록에서 받으세요.");
+export const ENGINE_PICK_HINT = t("받지 않은 엔진을 고르면 바로 받기 시작합니다.");
+export const ENGINE_NONE_INSTALLED = t("받아 둔 변환 엔진이 없습니다. 아래 목록에서 엔진을 고르면 받습니다.");
+export const engineDownloading = (name: string) => t("‘{name}’을(를) 받는 중입니다. 다 받으면 이 엔진으로 텍스트로 변환합니다.", { name });
+export const ENGINE_AUTO_NOTE = t("받아 둔 엔진 가운데 메모리에 맞는 것을 알아서 씁니다.");
+export const OTHER_MODELS_TITLE = t("다른 기능의 모델");
 export const ENGINE_AUTO_OPTION = t("자동 (이 Mac에 맞게)");
 export const engineAutoOption = (name: string) => t("자동 (이 Mac에 맞게: {name})", { name });
 export const engineNowUsing = (name: string) => t("지금은 ‘{name}’을(를) 씁니다.", { name });
 export const ENGINE_ADD_TITLE = t("변환 엔진 직접 추가");
-export const ENGINE_ADD_HINT = t("Hugging Face 저장소 ID를 넣으면 모델 목록에 추가합니다. Qwen3-ASR·Whisper·SenseVoice 계열을 쓸 수 있습니다. 추가한 뒤 받기를 누르세요.");
+export const ENGINE_ADD_HINT = t("Hugging Face 저장소 ID를 넣으면 이 목록에 추가합니다. Qwen3-ASR·Whisper·SenseVoice 계열을 쓸 수 있습니다. 추가한 뒤 받기를 누르세요.");
 export const ENGINE_ADD_PLACEHOLDER = t("예: mlx-community/whisper-large-v3-turbo");
 export const ENGINE_ADD = t("추가");
 export const engineAdded = (repo: string) => t("‘{repo}’을(를) 추가했습니다. 받기를 누르면 받습니다.", { repo });
