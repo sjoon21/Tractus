@@ -42,15 +42,15 @@ import { convertAdvance, convertEnqueue, convertProgress, convertSlot, IDLE_CONV
 import { recButton } from "./pause";
 import { BULK_MIN, CONVERT_ALL, CONVERT_PAUSED, CONVERT_ALL_LINE, CONVERT_ALL_TITLE, CONVERT_FAIL, CONVERTED, isRecorded, noteLabel, recordedIds, SAVE_NOTE, SAVE_NOTE_TITLE, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
 import { NoteLibrary } from "./NoteLibrary";
+import { QuickFind } from "./QuickFind";
 import { touchNote as touchNoteIn, type Folder } from "./organize";
 import { OrganizeContext, useOrganizeState } from "./useOrganize";
 import { PanelResizer, PanelToggle, usePanels } from "./PanelToggle";
 import { RAIL_REC_LABEL, railPendingLabel, railRecState } from "./panels";
 import { check } from "@tauri-apps/plugin-updater";
-import { AudioLines, Box, CalendarClock, ChevronRight, CircleAlert, FileText, House, Mic, Search, Settings, Sparkles, SquarePen, Stethoscope, Upload, X } from "lucide-react";
+import { AudioLines, Box, CalendarClock, ChevronRight, CircleAlert, FileText, House, Mic, Settings, Sparkles, SquarePen, Stethoscope, Upload, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/components/ui/utils";
@@ -881,19 +881,7 @@ export function App() {
         </div>
 
         <div className="mt-3 flex flex-col gap-px px-2">
-          <form
-            className="relative mb-1 px-1"
-            role="search"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const q = searchRef.current?.value.trim();
-              if (q) void go({ kind: "search", q });
-            }}
-          >
-            <Search className="pointer-events-none absolute top-1/2 left-3.5 size-3.5 -translate-y-1/2 text-subtle-foreground" aria-hidden />
-            <Input ref={searchRef} type="search" placeholder={t("노트 검색")} aria-label={t("노트 검색")} className="h-7 bg-background/70 pr-10 pl-7" />
-            <Kbd className="absolute top-1/2 right-2.5 -translate-y-1/2">⌘K</Kbd>
-          </form>
+          <QuickFind notes={meetings} inputRef={searchRef} onOpen={openMeeting} onSearch={(q) => void go({ kind: "search", q })} />
           <button className={SIDE_ITEM} aria-current={view.kind === "home"} onClick={() => void go({ kind: "home" })}>
             <House aria-hidden />
             {t("홈")}

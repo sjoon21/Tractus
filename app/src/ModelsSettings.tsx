@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { PageBody, PageHeader } from "@/components/ui/page";
 import { Progress } from "@/components/ui/progress";
 import { Row, Section } from "@/components/ui/section";
+import { Select } from "@/components/ui/select";
 import { cn } from "@/components/ui/utils";
 import { api, errDetail, errText } from "./api";
 import { trackOf } from "./caps";
@@ -34,10 +35,15 @@ import {
   ENGINE_ADD_HINT,
   ENGINE_ADD_PLACEHOLDER,
   ENGINE_ADD_TITLE,
-  ENGINE_AUTO,
   ENGINE_AUTO_CHOSEN,
+  ENGINE_AUTO_OPTION,
   ENGINE_IN_USE,
-  ENGINE_USE,
+  ENGINE_NONE_INSTALLED,
+  ENGINE_PICK_HINT,
+  ENGINE_PICK_LABEL,
+  ENGINE_PICK_TITLE,
+  engineAutoOption,
+  engineNowUsing,
   validRepo,
   levelLabel,
   moveDialog,
@@ -257,6 +263,10 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
   const [repo, setRepo] = useState("");
   const [adding, setAdding] = useState(false);
   const inUse = list ? engineInUse(list.models, asrEngine, caps.report?.doctor?.recommended_track) : null;
+  // 드롭다운: 받아 둔 엔진만 고를 수 있다(받지 않은 엔진은 아래 목록에서 받으면 나타난다). 빈 값 = 자동
+  const engines = list ? list.models.filter((m) => m.engine && m.installed) : [];
+  const autoEngine = list ? list.models.find((m) => m.id === engineInUse(list.models, null, caps.report?.doctor?.recommended_track)) : undefined;
+  const pickValue = asrEngine && engines.some((m) => m.id === asrEngine) ? asrEngine : "";
   const choose = async (m: ModelRow | null) => {
     try {
       await api.setAsrEngine(m?.id ?? null);
@@ -416,6 +426,26 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
         )}
 
         {list && (
+          <Section title={ENGINE_PICK_TITLE}>
+            <Row
+              htmlFor="asr-engine"
+              label={ENGINE_PICK_LABEL}
+              hint={inUse ? engineNowUsing(list.models.find((m) => m.id === inUse)?.name ?? inUse) + " " + ENGINE_PICK_HINT : ENGINE_NONE_INSTALLED}
+              control={
+                <Select id="asr-engine" className="max-w-[18rem]" value={pickValue} disabled={busy || engines.length === 0} aria-label={ENGINE_PICK_TITLE} onChange={(e) => void choose(engines.find((m) => m.id === e.target.value) ?? null)}>
+                  <option value="">{autoEngine ? engineAutoOption(autoEngine.name) : ENGINE_AUTO_OPTION}</option>
+                  {engines.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </Select>
+              }
+            />
+          </Section>
+        )}
+
+        {list && (
           <section className="flex flex-col gap-2" aria-label={t("모델 구성")}>
             <h2 className="m-0 px-1 text-[13px] font-semibold">{t("모델 구성")}</h2>
             <PresetButtons list={list} dl={dl} />
@@ -473,16 +503,6 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
                       </div>
                       {(m.state !== "installed" && !unusedHere) || m.state !== "missing" ? (
                         <div className="flex items-center gap-1">
-                          {m.engine && m.installed && m.id !== inUse && (
-                            <Button variant="ghost" size="sm" disabled={busy} onClick={() => void choose(m)} aria-label={t("{name}을(를) 기본 변환 엔진으로", { name: m.name })}>
-                              {ENGINE_USE}
-                            </Button>
-                          )}
-                          {m.engine && m.id === inUse && asrEngine === m.id && (
-                            <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={busy} onClick={() => void choose(null)}>
-                              {ENGINE_AUTO}
-                            </Button>
-                          )}
                           {m.state !== "missing" && (
                             <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={busy || removing} onClick={() => setAsking(m)} aria-label={t("{name} 삭제", { name: m.name })}>
                               {t("삭제")}

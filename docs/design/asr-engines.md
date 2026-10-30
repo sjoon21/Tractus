@@ -75,7 +75,7 @@
 
 - **왜:** HF에 BuzzASR의 MLX 판이 없어 직접 추가로는 쓸 수 없었다(`BuzzASR/korean`은 transformers 형식). 측정(위 표)에서 한·영 혼용과 영어 용어가 가장 좋았다.
 - **어떻게:** `BuzzASR/korean` @ `411b6854`를 mlx-audio 0.5.7 `mlx_audio.convert --quantize --q-bits 8`로 바꿔 소유자 계정 [`voyagar/BuzzASR-korean-mlx-8bit`](https://huggingface.co/voyagar/BuzzASR-korean-mlx-8bit)에 공개로 올렸다(커밋 `b73fdad4`, `model.safetensors` sha256 `51e3f340…5d78`, MIT 원작자 표기와 측정표를 모델 카드에 적음). 다시 바꾼 것이 지난 측정본과 같은지는 FLEURS 50문장으로 봤다: 47개가 글자까지 같고, 나머지 3개는 같은 모델로도 돌릴 때마다 달랐다(Whisper 온도 재시도).
-- **목록:** `asr-ko-mix` = `변환 엔진 (영어 섞인 한국어)`, `required` + `one_of`(직접 추가한 엔진과 같다), 계열 `whisper`(자주 쓰는 단어 없음). 기본 엔진 순서(`pick_asr`)는 그대로라 사용자가 `기본으로 쓰기`를 누를 때만 쓴다. 구성: 앱의 표준·저사양·필수에는 넣지 않고, 명령줄 `--preset all`(약 7.3GB)에만 들어간다.
+- **목록:** `asr-ko-mix` = `변환 엔진 (영어 섞인 한국어)`, `required` + `one_of`(직접 추가한 엔진과 같다), 계열 `whisper`(자주 쓰는 단어 없음). 기본 엔진 순서(`pick_asr`)는 그대로라 사용자가 모델 화면의 `변환 엔진` 드롭다운에서 고를 때만 쓴다. 구성: 앱의 표준·저사양·필수에는 넣지 않고, 명령줄 `--preset all`(약 7.3GB)에만 들어간다.
 - **확인:** 빈 모델 폴더에서 `tractus models download asr-ko-mix` → `transcribe --engine asr-ko-mix`(가상 `say` 음성): `asr.model`이 이 저장소, 영어 용어·숫자(`30만원`)를 그대로 적었다.
 - 바꾸지 않은 것: 실시간 텍스트 변환(0.6B), 자주 쓰는 단어(Whisper 계열은 넣지 않는다, 다시 넣으려면 재서 정한다).
 

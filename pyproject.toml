@@ -1,6 +1,6 @@
 [project]
 name = "tractus"
-version = "0.5.0"
+version = "0.5.1"
 description = "Local-first 노트·녹음 도구"
 readme = "README.md"
 license = "Apache-2.0"
