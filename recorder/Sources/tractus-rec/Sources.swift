@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreAudio
 import Foundation
+import ObjCCatch
 import RecorderKit
 
 typealias SampleSink = ([Int16]) -> Void
@@ -48,12 +49,16 @@ final class MonoConverter {
 /// 입력 장치가 바뀌면(AirPods 연결 등) 엔진이 스스로 멈추므로 `onChange`로 알려 다시 열게 한다.
 /// `echoCancel`이면 macOS 음성 처리(에코 제거 + AGC·잡음 억제)를 켠다. 스피커로 나간 상대방 목소리가 마이크 트랙에 다시 들어가지 않게 한다.
 final class MicSource: AudioSource {
-    private let engine = AVAudioEngine()
+    /// 장치가 바뀌면 같은 엔진의 입력 노드가 낡은 포맷을 쥔 채 남을 수 있어, `stop()`마다 새 엔진으로 바꾼다.
+    private var engine = AVAudioEngine()
+    private var observer: NSObjectProtocol?
+    private let onChange: () -> Void
     /// 실제로 켜졌는지. 켜지 못하면 경고 후 false로 녹음한다.
     private(set) var echoCancel: Bool
 
     init(echoCancel: Bool, onChange: @escaping () -> Void) {
         self.echoCancel = echoCancel
+        self.onChange = onChange
         // 음성 처리를 켜면 입력 구성이 바뀌므로 관찰자를 걸기 전에 켠다.
         if echoCancel {
             do {
@@ -63,8 +68,13 @@ final class MicSource: AudioSource {
                 warning("echo_cancel_failed", "에코 제거를 켜지 못해 에코 제거 없이 녹음합니다: \(error)")
             }
         }
-        // ponytail: 관찰자는 프로세스가 끝날 때까지 둔다(녹음 1회 = 프로세스 1개).
-        NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { _ in onChange() }
+        attach()
+    }
+
+    /// 지금 엔진의 구성 변경 알림을 받는다 (엔진을 바꿀 때 이전 엔진의 관찰자는 뗀다).
+    private func attach() {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [onChange] _ in onChange() }
     }
 
     /// 엔진이 멈춘 상태에서만 부른다. 덕킹 설정 변경도 구성 변경 알림을 부를 수 있으므로 켤 때만 넣는다.
@@ -98,10 +108,19 @@ final class MicSource: AudioSource {
         let input = engine.inputNode
         // 음성 처리는 입력 포맷(채널 수 등)을 바꾸므로 켠 뒤에 포맷을 읽는다.
         let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, let converter = MonoConverter(from: format, firstChannelOnly: input.isVoiceProcessingEnabled) else {
+        let hardware = input.inputFormat(forBus: 0)
+        if let problem = micFormatProblem(tapRate: format.sampleRate, tapChannels: Int(format.channelCount), hardwareRate: hardware.sampleRate, hardwareChannels: Int(hardware.channelCount), voiceProcessing: input.isVoiceProcessingEnabled) {
+            throw WavError.io(problem)  // 던지면 Recorder.restart가 경고를 내고 watchdog이 2초 뒤 다시 연다
+        }
+        guard let converter = MonoConverter(from: format, firstChannelOnly: input.isVoiceProcessingEnabled) else {
             throw WavError.io("입력 장치가 없거나 포맷을 변환할 수 없습니다 (\(format))")
         }
-        input.installTap(onBus: 0, bufferSize: 4800, format: format) { buffer, _ in sink(converter.convert(buffer)) }
+        do {
+            // 위 검사로 못 거른 조건에서도 AVFAudio가 NSException을 던질 수 있다: 녹음 프로세스가 죽지 않게 오류로 바꾼다
+            try TractusObjC.catching { input.installTap(onBus: 0, bufferSize: 4800, format: format) { buffer, _ in sink(converter.convert(buffer)) } }
+        } catch {
+            throw WavError.io("마이크 입력을 열지 못했습니다: \(error.localizedDescription)")
+        }
         do {
             try engine.start()
         } catch {
@@ -113,6 +132,8 @@ final class MicSource: AudioSource {
     func stop() {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        engine = AVAudioEngine()
+        attach()
     }
 }
 

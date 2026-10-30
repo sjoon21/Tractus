@@ -1,5 +1,6 @@
 import Foundation
 @testable import RecorderKit
+import ObjCCatch
 import XCTest
 
 /// WAV 헤더를 읽어 테스트에서 확인한다.
@@ -232,5 +233,28 @@ final class CalendarPickTests: XCTestCase {
         XCTAssertThrowsError(try NextOptions.parse(["--ahead", "0"]))
         XCTAssertThrowsError(try NextOptions.parse(["--exclude"]))
         XCTAssertThrowsError(try NextOptions.parse(["--x"]))
+    }
+}
+
+final class MicFormatTests: XCTestCase {
+    func testReadyFormatsPass() {
+        XCTAssertNil(micFormatProblem(tapRate: 48000, tapChannels: 1, hardwareRate: 48000, hardwareChannels: 1, voiceProcessing: false))
+        XCTAssertNil(micFormatProblem(tapRate: 24000, tapChannels: 1, hardwareRate: 48000, hardwareChannels: 2, voiceProcessing: true), "음성 처리 중에는 포맷이 달라도 된다")
+    }
+
+    func testTransitionalFormatsAreRejectedInsteadOfCrashing() {
+        XCTAssertNotNil(micFormatProblem(tapRate: 48000, tapChannels: 0, hardwareRate: 48000, hardwareChannels: 1, voiceProcessing: false), "채널 0")
+        XCTAssertNotNil(micFormatProblem(tapRate: 0, tapChannels: 1, hardwareRate: 48000, hardwareChannels: 1, voiceProcessing: false), "표본 속도 0")
+        XCTAssertNotNil(micFormatProblem(tapRate: 48000, tapChannels: 1, hardwareRate: 0, hardwareChannels: 0, voiceProcessing: true), "하드웨어 포맷이 아직 없다")
+        XCTAssertNotNil(micFormatProblem(tapRate: 44100, tapChannels: 1, hardwareRate: 48000, hardwareChannels: 1, voiceProcessing: false), "낡은 표본 속도")
+    }
+}
+
+final class ObjCCatchTests: XCTestCase {
+    func testObjectiveCExceptionBecomesASwiftError() {
+        XCTAssertThrowsError(try TractusObjC.catching { NSException(name: .invalidArgumentException, reason: "required condition is false: format.sampleRate == hwFormat.sampleRate", userInfo: nil).raise() }) { error in
+            XCTAssertTrue(error.localizedDescription.contains("required condition is false"))
+        }
+        XCTAssertNoThrow(try TractusObjC.catching {})
     }
 }

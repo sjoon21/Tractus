@@ -15,15 +15,17 @@ let package = Package(
     ],
     targets: [
         .target(name: "RecorderKit"),
+        // Swift do/catch가 못 잡는 Objective-C 예외(AVAudioNode.installTap 등)를 NSError로 바꾸는 작은 C 계열 타깃
+        .target(name: "ObjCCatch"),
         .executableTarget(
             name: "tractus-rec",
-            dependencies: ["RecorderKit"],
+            dependencies: ["RecorderKit", "ObjCCatch"],
             linkerSettings: [
                 .unsafeFlags(["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", infoPlist]),
             ]
         ),
         // tractus-rec에 의존해 swift test가 실행 파일도 빌드하게 한다(fake 모드 E2E 테스트용).
-        .testTarget(name: "RecorderKitTests", dependencies: ["RecorderKit", "tractus-rec"]),
+        .testTarget(name: "RecorderKitTests", dependencies: ["RecorderKit", "ObjCCatch", "tractus-rec"]),
     ],
     swiftLanguageVersions: [.v5]
 )
