@@ -64,8 +64,10 @@ export function engineSummary(models: Pick<ModelRow, "level" | "level_note" | "i
 export const ENGINE_IN_USE = t("기본 엔진");
 export const ENGINE_PICK_TITLE = t("변환 엔진");
 export const ENGINE_PICK_LABEL = t("텍스트로 변환할 때 쓸 엔진");
-export const ENGINE_PICK_HINT = t("다른 엔진은 아래 모델 목록에서 받으면 여기에 나타납니다.");
-export const ENGINE_NONE_INSTALLED = t("받아 둔 변환 엔진이 없습니다. 아래 모델 목록에서 받으세요.");
+export const ENGINE_PICK_HINT = t("받지 않은 엔진을 고르면 바로 받기 시작합니다.");
+export const ENGINE_NONE_INSTALLED = t("받아 둔 변환 엔진이 없습니다. 위 목록에서 엔진을 고르면 받습니다.");
+export const engineToDownload = (name: string, size: string) => t("{name} — 받기 ({size})", { name, size });
+export const engineDownloading = (name: string) => t("‘{name}’을(를) 받는 중입니다. 다 받으면 이 엔진으로 텍스트로 변환합니다.", { name });
 export const ENGINE_AUTO_OPTION = t("자동 (이 Mac에 맞게)");
 export const engineAutoOption = (name: string) => t("자동 (이 Mac에 맞게: {name})", { name });
 export const engineNowUsing = (name: string) => t("지금은 ‘{name}’을(를) 씁니다.", { name });

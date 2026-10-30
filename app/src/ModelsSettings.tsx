@@ -43,6 +43,8 @@ import {
   ENGINE_PICK_LABEL,
   ENGINE_PICK_TITLE,
   engineAutoOption,
+  engineDownloading,
+  engineToDownload,
   engineNowUsing,
   validRepo,
   levelLabel,
@@ -263,10 +265,11 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
   const [repo, setRepo] = useState("");
   const [adding, setAdding] = useState(false);
   const inUse = list ? engineInUse(list.models, asrEngine, caps.report?.doctor?.recommended_track) : null;
-  // 드롭다운: 받아 둔 엔진만 고를 수 있다(받지 않은 엔진은 아래 목록에서 받으면 나타난다). 빈 값 = 자동
-  const engines = list ? list.models.filter((m) => m.engine && m.installed) : [];
+  // 드롭다운: 모든 변환 엔진이 보이고, 받지 않은 엔진을 고르면 받기를 시작한다. 빈 값 = 자동
+  const engines = list ? list.models.filter((m) => m.engine) : [];
   const autoEngine = list ? list.models.find((m) => m.id === engineInUse(list.models, null, caps.report?.doctor?.recommended_track)) : undefined;
   const pickValue = asrEngine && engines.some((m) => m.id === asrEngine) ? asrEngine : "";
+  const engineLabel = (m: ModelRow) => (m.installed ? m.name : engineToDownload(m.name, fmtBytes(m.size_bytes)));
   const choose = async (m: ModelRow | null) => {
     try {
       await api.setAsrEngine(m?.id ?? null);
@@ -314,6 +317,19 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
     } catch (e) {
       setMsg({ text: errText(e), detail: errDetail(e), error: true });
     }
+  };
+  // 드롭다운에서 고른 엔진: 고른 것은 바로 저장하고, 받지 않은 엔진이면 이어서 받는다(다 받기 전에는 받아 둔 다른 엔진으로 변환한다)
+  const pickEngine = async (m: ModelRow | null) => {
+    if (!m || m.installed) return void (await choose(m));
+    try {
+      await api.setAsrEngine(m.id);
+      setAsrEngine(m.id);
+    } catch (e) {
+      return void setMsg({ text: errText(e), detail: errDetail(e), error: true });
+    }
+    if (m.state === "corrupt") await reinstall(m);
+    else install(m);
+    setMsg({ text: engineDownloading(m.name), detail: null });
   };
   const remove = async (m: ModelRow) => {
     setRemoving(true);
@@ -432,11 +448,11 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
               label={ENGINE_PICK_LABEL}
               hint={inUse ? engineNowUsing(list.models.find((m) => m.id === inUse)?.name ?? inUse) + " " + ENGINE_PICK_HINT : ENGINE_NONE_INSTALLED}
               control={
-                <Select id="asr-engine" className="max-w-[18rem]" value={pickValue} disabled={busy || engines.length === 0} aria-label={ENGINE_PICK_TITLE} onChange={(e) => void choose(engines.find((m) => m.id === e.target.value) ?? null)}>
+                <Select id="asr-engine" className="max-w-[18rem]" value={pickValue} disabled={busy || engines.length === 0} aria-label={ENGINE_PICK_TITLE} onChange={(e) => void pickEngine(engines.find((m) => m.id === e.target.value) ?? null)}>
                   <option value="">{autoEngine ? engineAutoOption(autoEngine.name) : ENGINE_AUTO_OPTION}</option>
                   {engines.map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.name}
+                      {engineLabel(m)}
                     </option>
                   ))}
                 </Select>

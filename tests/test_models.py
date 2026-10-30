@@ -72,6 +72,7 @@ def test_every_model_says_what_it_is_and_agrees_with_download_constants():
     consts = {"vad": (cli.VAD_MODEL, reg.get("vad").revision), "asr-std": (cli.MODELS[cli.Track.standard], reg.get("asr-std").revision),
               "asr-lite": (cli.MODELS[cli.Track.lite], reg.get("asr-lite").revision),
               "asr-ko-mix": ("voyagar/BuzzASR-korean-mlx-8bit", "b73fdad446cfa19ad50dd919d06d7f96af1726ff"),
+              "asr-ko-univa": ("TeamUNIVA/qwen3_asr_1.7b_ko", "3e66f586033753589c3effeb2c8cbce46a1ddabb"),
               "diarizer": (diarize.MODEL_REPO, diarize.MODEL_REVISION), "aligner": (align.MODEL_REPO, align.MODEL_REVISION),
               "embedding": (embed.MODEL_REPO, embed.MODEL_REVISION), "voices": (voices.MODEL_URL, None), "fluid": (diarize.FLUID_REPO, None)}
     assert set(consts) == {m.id for m in reg.MODELS}
@@ -89,10 +90,10 @@ def test_every_model_says_what_it_is_and_agrees_with_download_constants():
 
 def test_levels_and_needed_by():
     assert {m.id: m.level for m in reg.MODELS} == {
-        "vad": "required", "asr-std": "required", "asr-lite": "required", "asr-ko-mix": "required", "diarizer": "recommended",
+        "vad": "required", "asr-std": "required", "asr-lite": "required", "asr-ko-mix": "required", "asr-ko-univa": "required", "diarizer": "recommended",
         "aligner": "optional", "embedding": "optional", "voices": "optional", "fluid": "optional"}
     assert reg.get("asr-lite").needed_by == ("convert", "live")  # 표준 엔진이 있어도 실시간은 0.6B가 필요하다
-    assert reg.get("asr-std").needed_by == ("convert",) and reg.get("asr-ko-mix").needed_by == ("convert",)  # 실시간은 0.6B만
+    assert reg.get("asr-std").needed_by == ("convert",) and reg.get("asr-ko-mix").needed_by == ("convert",) and reg.get("asr-ko-univa").needed_by == ("convert",)  # 실시간은 0.6B만
     assert reg.get("vad").needed_by == ("convert", "live")
     assert reg.get("diarizer").needed_by == ("diarize",) and reg.get("fluid").needed_by == ("diarize-many",)
     known = {m.id for m in reg.MODELS}
@@ -102,7 +103,7 @@ def test_levels_and_needed_by():
 def test_level_note_one_of_marks_exactly_the_either_or_models():
     """`필수 (엔진 중 하나)`: 등록된 변환 엔진에만 붙고, level은 그대로 required다 (옛 소비자 호환). 실시간 텍스트 변환은 가벼운 엔진만 쓴다 (docs/desktop.md §2.8)."""
     either_or = {i for c in reg.CAPABILITIES for g in c.models if len(g) > 1 for i in g}
-    assert either_or == {"asr-std", "asr-lite", "asr-ko-mix"}
+    assert either_or == {"asr-std", "asr-lite", "asr-ko-mix", "asr-ko-univa"}
     assert {m.id for m in reg.MODELS if m.level_note == reg.ONE_OF} == either_or
     assert all(m.level == "required" for m in reg.MODELS if m.level_note)
     assert all(m.level_note is None for m in reg.MODELS if m.id not in either_or)
@@ -208,7 +209,7 @@ def test_fluid_needs_models_and_helper(root, tmp_path, monkeypatch):
     ("required", 8 * GB, False, ["vad", "asr-lite"]),
     ("standard", 8 * GB, False, ["vad", "asr-std", "diarizer", "aligner", "embedding", "voices"]),
     ("lite", 32 * GB, False, ["vad", "asr-lite", "diarizer"]),
-    ("all", 16 * GB, False, ["vad", "asr-std", "asr-lite", "asr-ko-mix", "diarizer", "aligner", "embedding", "voices"]),
+    ("all", 16 * GB, False, ["vad", "asr-std", "asr-lite", "asr-ko-mix", "asr-ko-univa", "diarizer", "aligner", "embedding", "voices"]),
     ("all", 16 * GB, True, [m.id for m in reg.MODELS]),
 ])
 def test_presets(preset, memory, helper, expected):

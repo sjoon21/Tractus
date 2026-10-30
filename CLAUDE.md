@@ -27,6 +27,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - 런타임은 `mlx-audio`(`mlx_audio.stt.utils.load`)를 **프로세스 안에서** 호출한다. `mlx_audio.server` HTTP 엔드포인트는 `hotwords`를 전달하지 않으므로 쓰지 않는다. 두 트랙은 모델 경로만 다르고 코드는 같다.
 - VAD는 `mlx-community/silero-vad-v6`(`models/silero-vad-v6`). torch를 의존성에 넣지 않는다.
 - Whisper·Nemotron은 Phase 0에서 탈락했다(`ARCHITECTURE.md` §8 "Phase 0 결과"). 새 벤치마크(`bench/`) 없이 ASR 모델을 바꾸거나 **등록 목록에** 추가하지 않는다. 사용자가 앱에서 직접 추가하는 엔진(`tractus models add`)은 사용자의 선택이라 측정을 요구하지 않는다.
+- **등록 목록 면제 기록 (2026-10-30, 소유자 결정).** `asr-ko-univa`(`TeamUNIVA/qwen3_asr_1.7b_ko` bf16, 4.7GB)를 **벤치마크(`bench/`) 없이** 등록 목록에 올렸다. 확인한 것은 스프린트 회의 5분 구간의 간이 비교(반복 루프 없음, 자동 감지에서 빈 청크가 나와 `asr.py`가 한국어로 다시 변환)뿐이다. 즉 FLEURS·HiKE·AI Hub 품질은 검증되지 않았다. 다음에 이 엔진을 기본으로 권하거나 설명을 바꿀 때 `bench/run.py`로 셋 다 잰다.
 - **변환 엔진은 계열 어댑터로 돈다(v3.59, docs/design/asr-engines.md)**: `asr.ENGINES`(qwen3·whisper·sensevoice), 계열은 모델 폴더 `config.json`의 `model_type`. 새 계열을 더하면 `ENGINES`·`models_install.NEEDED_FILES`·`bench/asr.py`를 함께 고친다. 자주 쓰는 단어는 Qwen만 넣는다(Whisper는 Phase 0에서 프롬프트가 CER을 크게 나쁘게 했다: 다시 넣으려면 측정한다). 고르기는 `transcribe --engine <ID>`(앱 설정 `asr_engine`)이고 실시간 텍스트 변환은 0.6B 그대로다.
 
 ## 화자 분리 모델 (2026-10-04 확정)
