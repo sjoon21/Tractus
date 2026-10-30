@@ -1,7 +1,7 @@
 // 모델 화면 (docs/desktop.md §2.15): 구성 단추, 모델 표(이름·용도·크기·필수/권장/선택·상태·이 기능에 필요), 받기 진행, 지우기.
 // 시작 점검(Checkup.tsx)도 구성 단추와 진행 표시를 같이 쓴다. 문구는 WORDS.md §4.14.
 import { AlertTriangle, CheckCircle2, FolderOpen } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { OK_BADGE, OK_TEXT, WARN_TEXT } from "@/components/settings/tone";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { PageBody, PageHeader } from "@/components/ui/page";
 import { Progress } from "@/components/ui/progress";
 import { Row, Section } from "@/components/ui/section";
-import { Select } from "@/components/ui/select";
+import { checkClass } from "@/components/ui/switch";
 import { cn } from "@/components/ui/utils";
 import { api, errDetail, errText } from "./api";
 import { trackOf } from "./caps";
@@ -36,16 +36,16 @@ import {
   ENGINE_ADD_PLACEHOLDER,
   ENGINE_ADD_TITLE,
   ENGINE_AUTO_CHOSEN,
+  ENGINE_AUTO_NOTE,
   ENGINE_AUTO_OPTION,
   ENGINE_IN_USE,
   ENGINE_NONE_INSTALLED,
   ENGINE_PICK_HINT,
-  ENGINE_PICK_LABEL,
   ENGINE_PICK_TITLE,
   engineAutoOption,
   engineDownloading,
-  engineToDownload,
   engineNowUsing,
+  OTHER_MODELS_TITLE,
   validRepo,
   levelLabel,
   moveDialog,
@@ -228,6 +228,27 @@ function ModelDetails({ m, rows }: { m: ModelRow; rows: DetailRow[] }) {
   );
 }
 
+/** 변환 엔진 한 줄: 라디오(고르기) + 이름·설명 + 오른쪽 크기·상태·받기/삭제. 받지 않은 엔진도 고를 수 있다(고르면 받기 시작) */
+function EngineChoice({ id, checked, busy, title, note, meta, badge, label, actions, details, onPick }: { id: string; checked: boolean; busy: boolean; title: string; note: string; meta?: string | null; badge?: ReactNode; label?: string; actions?: ReactNode; details?: ReactNode; onPick: () => void }) {
+  return (
+    <div className={cn("px-4 py-3", checked && "bg-secondary/60")}>
+      <div className="flex items-start gap-3">
+        <input type="radio" id={id} name="asr-engine" className={cn(checkClass, "mt-[3px]")} checked={checked} disabled={busy} aria-label={label ?? title} onChange={onPick} />
+        <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer">
+          <span className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[13px] font-medium">{title}</span>
+            {meta && <span className="text-xs text-subtle-foreground">· {meta}</span>}
+            {badge}
+          </span>
+          <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">{note}</span>
+        </label>
+        {actions}
+      </div>
+      {details && <div className="ml-7">{details}</div>}
+    </div>
+  );
+}
+
 const STATE_TONE: Record<ModelRow["state"], string> = { installed: OK_BADGE, missing: "", partial: "bg-memo-wash text-memo", corrupt: "bg-rec-wash text-rec" };
 
 /** 스마트 검색에 쓰는 이 Mac의 모델 ID (코어 models_registry) */
@@ -245,6 +266,9 @@ function useViaUpstage(): boolean {
   }, []);
   return on;
 }
+
+/** 변환 엔진을 부르는 이름: 모델 이름(없으면 등록 이름). 줄 제목·안내·알림이 같은 이름을 쓴다 */
+const engineName = (m: Pick<ModelRow, "model_name" | "name">) => m.model_name || m.name;
 
 const needsHelperNote = (m: ModelRow, helperFound: boolean | undefined) => m.id === "fluid" && helperFound === false;
 
@@ -269,12 +293,11 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
   const engines = list ? list.models.filter((m) => m.engine) : [];
   const autoEngine = list ? list.models.find((m) => m.id === engineInUse(list.models, null, caps.report?.doctor?.recommended_track)) : undefined;
   const pickValue = asrEngine && engines.some((m) => m.id === asrEngine) ? asrEngine : "";
-  const engineLabel = (m: ModelRow) => (m.installed ? m.name : engineToDownload(m.name, fmtBytes(m.size_bytes)));
   const choose = async (m: ModelRow | null) => {
     try {
       await api.setAsrEngine(m?.id ?? null);
       setAsrEngine(m?.id ?? null);
-      setMsg({ text: m ? engineChosen(m.name) : ENGINE_AUTO_CHOSEN, detail: null });
+      setMsg({ text: m ? engineChosen(engineName(m)) : ENGINE_AUTO_CHOSEN, detail: null });
     } catch (e) {
       setMsg({ text: errText(e), detail: errDetail(e), error: true });
     }
@@ -329,8 +352,36 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
     }
     if (m.state === "corrupt") await reinstall(m);
     else install(m);
-    setMsg({ text: engineDownloading(m.name), detail: null });
+    setMsg({ text: engineDownloading(engineName(m)), detail: null });
   };
+  // 모델 줄 오른쪽: 크기 · 상태 · 삭제/받기를 한 줄에 (모든 줄이 같은 자리)
+  const renderActions = (m: ModelRow, unusedHere: boolean) => (
+    <div className="flex shrink-0 items-center justify-end gap-2">
+      <span className="text-xs tabular-nums text-muted-foreground">
+        {m.state === "partial" && m.installed_bytes > 0 ? t("{size} 받음", { size: fmtBytes(m.installed_bytes) }) + " / " : ""}
+        {fmtBytes(m.size_bytes)}
+      </span>
+      {unusedHere ? (
+        <Badge>{NOT_IN_USE}</Badge>
+      ) : (
+        m.state !== "missing" && (
+          <Badge variant="default" className={STATE_TONE[m.state]}>
+            {STATE_LABEL[m.state]}
+          </Badge>
+        )
+      )}
+      {m.state !== "missing" && (
+        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={busy || removing} onClick={() => setAsking(m)} aria-label={t("{name} 삭제", { name: m.name })}>
+          {t("삭제")}
+        </Button>
+      )}
+      {m.state !== "installed" && !unusedHere && (
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => (m.state === "corrupt" ? void reinstall(m) : install(m))}>
+          {installLabel(m.state)}
+        </Button>
+      )}
+    </div>
+  );
   const remove = async (m: ModelRow) => {
     setRemoving(true);
     try {
@@ -442,26 +493,6 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
         )}
 
         {list && (
-          <Section title={ENGINE_PICK_TITLE}>
-            <Row
-              htmlFor="asr-engine"
-              label={ENGINE_PICK_LABEL}
-              hint={inUse ? engineNowUsing(list.models.find((m) => m.id === inUse)?.name ?? inUse) + " " + ENGINE_PICK_HINT : ENGINE_NONE_INSTALLED}
-              control={
-                <Select id="asr-engine" className="max-w-[18rem]" value={pickValue} disabled={busy || engines.length === 0} aria-label={ENGINE_PICK_TITLE} onChange={(e) => void pickEngine(engines.find((m) => m.id === e.target.value) ?? null)}>
-                  <option value="">{autoEngine ? engineAutoOption(autoEngine.name) : ENGINE_AUTO_OPTION}</option>
-                  {engines.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {engineLabel(m)}
-                    </option>
-                  ))}
-                </Select>
-              }
-            />
-          </Section>
-        )}
-
-        {list && (
           <section className="flex flex-col gap-2" aria-label={t("모델 구성")}>
             <h2 className="m-0 px-1 text-[13px] font-semibold">{t("모델 구성")}</h2>
             <PresetButtons list={list} dl={dl} />
@@ -476,72 +507,26 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
         )}
 
         {list && (
-          <Section title={t("모델 목록")}>
-            {list.models.map((m) => {
-              const detailRows = modelDetailRows(m);
-              const unusedHere = m.id === EMBEDDING_ID && viaUpstage;
-              return (
-                <article key={m.id} className="px-4 py-3" aria-label={m.name}>
-                  <div className="flex items-start gap-4">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[13px] font-medium">{m.name}</span>
-                        <Badge variant="outline" className={cn(m.level === "required" && "border-border-strong text-foreground")}>
-                          {levelLabel(m)}
-                        </Badge>
-                      </div>
-                      <ModelSubtitle m={m} />
-                      <p className="m-0 mt-1 text-xs leading-relaxed text-muted-foreground">{m.purpose}</p>
-                      {needsHelperNote(m, helperFound) && <p className={cn("m-0 mt-1 text-xs leading-relaxed", WARN_TEXT)}>{t("먼저 recorder/diar 폴더에서 swift build -c release로 tractus-diar를 만들어야 합니다.")}</p>}
-                      <ul className="m-0 mt-2 flex list-none flex-wrap gap-1 p-0" aria-label={t("{name}이(가) 필요한 기능", { name: m.name })}>
-                        {m.needed_by.length === 0 && <li className="text-xs text-subtle-foreground">—</li>}
-                        {m.needed_by.map((c) => (
-                          <li key={c}>
-                            <Badge>{capChip(c)}</Badge>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs tabular-nums text-muted-foreground">
-                          {m.state === "partial" && m.installed_bytes > 0 ? t("{size} 받음", { size: fmtBytes(m.installed_bytes) }) + " / " : ""}
-                          {fmtBytes(m.size_bytes)}
-                        </span>
-                        {m.engine && m.id === inUse && <Badge className={OK_BADGE}>{ENGINE_IN_USE}</Badge>}
-                        {unusedHere ? (
-                          <Badge>{NOT_IN_USE}</Badge>
-                        ) : (
-                          <Badge variant={m.state === "missing" ? "outline" : "default"} className={STATE_TONE[m.state]}>
-                            {STATE_LABEL[m.state]}
-                          </Badge>
-                        )}
-                      </div>
-                      {(m.state !== "installed" && !unusedHere) || m.state !== "missing" ? (
-                        <div className="flex items-center gap-1">
-                          {m.state !== "missing" && (
-                            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={busy || removing} onClick={() => setAsking(m)} aria-label={t("{name} 삭제", { name: m.name })}>
-                              {t("삭제")}
-                            </Button>
-                          )}
-                          {m.state !== "installed" && !unusedHere && (
-                            <Button variant="outline" size="sm" disabled={busy} onClick={() => (m.state === "corrupt" ? void reinstall(m) : install(m))}>
-                              {installLabel(m.state)}
-                            </Button>
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                  {detailRows.length > 0 && <ModelDetails m={m} rows={detailRows} />}
-                </article>
-              );
-            })}
-          </Section>
-        )}
-
-        {list && (
-          <Section title={ENGINE_ADD_TITLE}>
+          <Section title={ENGINE_PICK_TITLE} description={inUse ? engineNowUsing(engineName(list.models.find((m) => m.id === inUse) ?? { name: inUse, model_name: null })) + " " + ENGINE_PICK_HINT : ENGINE_NONE_INSTALLED}>
+            <div role="radiogroup" aria-label={ENGINE_PICK_TITLE} className="divide-y divide-border">
+              <EngineChoice id="asr-engine-auto" checked={pickValue === ""} busy={busy} title={autoEngine ? engineAutoOption(engineName(autoEngine)) : ENGINE_AUTO_OPTION} note={ENGINE_AUTO_NOTE} onPick={() => void pickEngine(null)} />
+              {engines.map((m) => (
+                <EngineChoice
+                  key={m.id}
+                  id={`asr-engine-${m.id}`}
+                  checked={pickValue === m.id}
+                  busy={busy}
+                  label={m.name}
+                  title={engineName(m)}
+                  note={m.purpose}
+                  meta={m.publisher}
+                  badge={m.id === inUse ? <Badge className={OK_BADGE}>{ENGINE_IN_USE}</Badge> : null}
+                  actions={renderActions(m, false)}
+                  details={<ModelDetails m={m} rows={modelDetailRows(m)} />}
+                  onPick={() => void pickEngine(m)}
+                />
+              ))}
+            </div>
             <form
               className="flex flex-col gap-2 px-4 py-3"
               onSubmit={(e) => {
@@ -557,6 +542,44 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
                 </Button>
               </div>
             </form>
+          </Section>
+        )}
+
+        {list && (
+          <Section title={OTHER_MODELS_TITLE}>
+            {list.models
+              .filter((m) => !m.engine)
+              .map((m) => {
+                const detailRows = modelDetailRows(m);
+                const unusedHere = m.id === EMBEDDING_ID && viaUpstage;
+                return (
+                  <article key={m.id} className="px-4 py-3" aria-label={m.name}>
+                    <div className="flex items-start gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[13px] font-medium">{m.name}</span>
+                          <Badge variant="outline" className={cn(m.level === "required" && "border-border-strong text-foreground")}>
+                            {levelLabel(m)}
+                          </Badge>
+                        </div>
+                        <ModelSubtitle m={m} />
+                        <p className="m-0 mt-1 text-xs leading-relaxed text-muted-foreground">{m.purpose}</p>
+                        {needsHelperNote(m, helperFound) && <p className={cn("m-0 mt-1 text-xs leading-relaxed", WARN_TEXT)}>{t("먼저 recorder/diar 폴더에서 swift build -c release로 tractus-diar를 만들어야 합니다.")}</p>}
+                        <ul className="m-0 mt-2 flex list-none flex-wrap gap-1 p-0" aria-label={t("{name}이(가) 필요한 기능", { name: m.name })}>
+                          {m.needed_by.length === 0 && <li className="text-xs text-subtle-foreground">—</li>}
+                          {m.needed_by.map((c) => (
+                            <li key={c}>
+                              <Badge>{capChip(c)}</Badge>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      {renderActions(m, unusedHere)}
+                    </div>
+                    {detailRows.length > 0 && <ModelDetails m={m} rows={detailRows} />}
+                  </article>
+                );
+              })}
           </Section>
         )}
       </PageBody>
