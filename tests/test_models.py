@@ -72,7 +72,7 @@ def test_every_model_says_what_it_is_and_agrees_with_download_constants():
     consts = {"vad": (cli.VAD_MODEL, reg.get("vad").revision), "asr-std": (cli.MODELS[cli.Track.standard], reg.get("asr-std").revision),
               "asr-lite": (cli.MODELS[cli.Track.lite], reg.get("asr-lite").revision),
               "asr-ko-mix": ("voyagar/BuzzASR-korean-mlx-8bit", "b73fdad446cfa19ad50dd919d06d7f96af1726ff"),
-              "asr-ko-univa": ("TeamUNIVA/qwen3_asr_1.7b_ko", "3e66f586033753589c3effeb2c8cbce46a1ddabb"),
+              "asr-ko-univa": ("voyagar/Qwen3-ASR-1.7B-ko-mlx-8bit", "8fcc32c42a93394b8c822487e2d595670edae23f"),
               "diarizer": (diarize.MODEL_REPO, diarize.MODEL_REVISION), "aligner": (align.MODEL_REPO, align.MODEL_REVISION),
               "embedding": (embed.MODEL_REPO, embed.MODEL_REVISION), "voices": (voices.MODEL_URL, None), "fluid": (diarize.FLUID_REPO, None)}
     assert set(consts) == {m.id for m in reg.MODELS}

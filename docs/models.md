@@ -10,7 +10,7 @@ uv run tractus models download --preset standard    # required | standard | lite
 uv run tractus models remove aligner                # 하나 지우기
 ```
 
-구성은 `standard`(약 4.6GB, 메모리 16GB 이상), `lite`(약 1.2GB, 메모리 8GB), `required`(1.0~2.5GB, 변환에 꼭 필요한 것만), `all`(약 12GB, 변환 엔진 넷 모두)입니다. 기본 흐름(녹음·가져오기 → 변환 → 요약)은 `required`로 됩니다. 실시간 텍스트 변환(미리보기)은 메모리 16GB 이상에서만 켜지고 가벼운 엔진(`asr-lite`)이 따로 필요하므로, 8GB Mac(`lite` 구성)에서는 쓸 수 없습니다. 변환 엔진(`asr-std`·`asr-lite`·`asr-ko-mix`·`asr-ko-univa`)은 **필수 (엔진 중 하나)** 입니다: 하나만 받아도 텍스트 변환이 되고, 모델 화면에는 `변환 엔진: 설치됨`으로 보입니다.
+구성은 `standard`(약 4.6GB, 메모리 16GB 이상), `lite`(약 1.2GB, 메모리 8GB), `required`(1.0~2.5GB, 변환에 꼭 필요한 것만), `all`(약 10GB, 변환 엔진 넷 모두)입니다. 기본 흐름(녹음·가져오기 → 변환 → 요약)은 `required`로 됩니다. 실시간 텍스트 변환(미리보기)은 메모리 16GB 이상에서만 켜지고 가벼운 엔진(`asr-lite`)이 따로 필요하므로, 8GB Mac(`lite` 구성)에서는 쓸 수 없습니다. 변환 엔진(`asr-std`·`asr-lite`·`asr-ko-mix`·`asr-ko-univa`)은 **필수 (엔진 중 하나)** 입니다: 하나만 받아도 텍스트 변환이 되고, 모델 화면에는 `변환 엔진: 설치됨`으로 보입니다.
 
 모델이 없는 기능은 단추를 눌러 보면 이유와 설치 방법을 알려 줍니다. 녹음은 모델 없이 되고, 변환 엔진이 없으면 `변환 대기 중인 녹음`으로 남습니다.
 

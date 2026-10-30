@@ -120,15 +120,24 @@ MODELS: tuple[Model, ...] = (
         # BuzzASR/korean(411b6854, MIT, Whisper large-v3 한국어 파인튜닝, arXiv 2609.09554)을 mlx-audio 0.5.7로 8bit 변환해 소유자 계정에 올린 것(2026-10-22).
         # 측정(docs/design/asr-engines.md): AI Hub CER 10.29(표준 9.49), HiKE MER 22.79(표준 28.3), 영어 용어 재현율 86.3%(단어 없이). Whisper 계열이라 자주 쓰는 단어를 넣지 않는다(asr.ENGINES)
         model_name=t("BuzzASR Korean (8bit 양자화)"), publisher="BuzzASR", converted_by=t("Tractus (MLX 변환본)"), license="MIT", languages=t("한국어"), params="1.5B"),
-    _hf("asr-ko-univa", t("변환 엔진 (한국어 파인튜닝)"), t("Qwen3-ASR 1.7B를 한국어로 더 학습한 엔진입니다. 양자화하지 않아 용량이 크고(4.7GB) 간이 점검만 했습니다. 자주 쓰는 단어를 쓸 수 있습니다."), "required", "convert",
-        "TeamUNIVA/qwen3_asr_1.7b_ko", "3e66f586033753589c3effeb2c8cbce46a1ddabb", "qwen3-asr-1.7b-ko-bf16",
-        {"added_tokens.json": 1566, "chat_template.jinja": 1099, "config.json": 5971, "generation_config.json": 143, "merges.txt": 1671853,
-         "model.safetensors": 4698521600, "preprocessor_config.json": 357, "special_tokens_map.json": 1008, "tokenizer.json": 11429499,
-         "tokenizer_config.json": 12517, "vocab.json": 2776833},
+    _hf("asr-ko-univa", t("변환 엔진 (한국어 파인튜닝)"), t("Qwen3-ASR 1.7B를 한국어로 더 학습한 엔진입니다. 간이 점검만 했습니다. 자주 쓰는 단어를 쓸 수 있습니다."), "required", "convert",
+        "voyagar/Qwen3-ASR-1.7B-ko-mlx-8bit", "8fcc32c42a93394b8c822487e2d595670edae23f", "qwen3-asr-1.7b-ko-8bit",
+        {"added_tokens.json": 1566,
+         "chat_template.jinja": 1099,
+         "config.json": 7425,
+         "generation_config.json": 143,
+         "merges.txt": 1671853,
+         "model.safetensors": 2463307541,
+         "model.safetensors.index.json": 78928,
+         "preprocessor_config.json": 357,
+         "special_tokens_map.json": 1008,
+         "tokenizer.json": 11429499,
+         "tokenizer_config.json": 12517,
+         "vocab.json": 2776833},
         level_note=ONE_OF, engine="qwen3",
-        # TeamUNIVA/qwen3_asr_1.7b_ko(3e66f586, Apache-2.0, Qwen/Qwen3-ASR-1.7B 한국어 SFT 두 번 + GSPO 강화학습, bf16 원본). 소유자가 2026-10-30 목록에 올림(벤치마크 없이: CLAUDE.md 면제 기록).
-        # 간이 점검(docs/design/asr-engines.md): 노트 5분 구간에서 반복 루프 없음, 자동 감지가 영어로 오감지해 빈 글을 내면 asr.py가 한국어로 다시 변환한다. FLEURS·HiKE·AI Hub는 재지 않았다
-        model_name=t("Qwen3-ASR 1.7B 한국어 (bf16)"), publisher="TeamUNIVA", license="Apache-2.0", languages=t("한국어"), params="1.7B"),
+        # TeamUNIVA/qwen3_asr_1.7b_ko(3e66f586, Apache-2.0, Qwen/Qwen3-ASR-1.7B 한국어 SFT 두 번 + GSPO 강화학습)를 mlx_audio.convert로 8bit(affine, 그룹 64: 표준 엔진과 같은 설정) 변환해 소유자 계정에 올린 것(2026-10-30).
+        # 원본 bf16(4.7GB) 대비 같은 5분 구간 출력 차이 CER 2.5, 스마트 교정본 대비 25.4 → 26.9, 처리 시간 약 30% 단축(docs/design/asr-engines.md). 벤치마크 없이 올렸다(CLAUDE.md 면제 기록). 자동 감지가 영어로 오감지해 빈 글을 내면 asr.py가 한국어로 다시 변환한다
+        model_name=t("Qwen3-ASR 1.7B 한국어 (8bit 양자화)"), publisher="TeamUNIVA", converted_by=t("Tractus (MLX 변환본)"), license="Apache-2.0", languages=t("한국어"), params="1.7B"),
     _hf("diarizer", t("참석자 구분"), t("누가 말했는지 나눕니다. 8명까지 구분합니다."), "recommended", "speakers",
         diarize.MODEL_REPO, diarize.MODEL_REVISION, diarize.MODEL_DIR,
         {"config.json": 1521, "model.safetensors": 198632220},

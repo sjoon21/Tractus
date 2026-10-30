@@ -89,7 +89,7 @@ If a download is interrupted, run the same command again to resume.
 | `asr-std` | Standard transcription engine (Qwen3-ASR 1.7B) | 2.5GB | Required (any one engine) | Transcription |
 | `asr-lite` | Lite transcription engine (Qwen3-ASR 0.6B) | 1.0GB | Required (any one engine) | Transcription, **live transcription (needs this engine even if the standard engine is installed)** |
 | `asr-ko-mix` | Korean-with-English transcription engine (BuzzASR Korean, Whisper large-v3 fine-tuned for Korean) | 1.7GB | Required (any one engine) | Transcription |
-| `asr-ko-univa` | Korean fine-tuned transcription engine (TeamUNIVA Qwen3-ASR 1.7B Korean, bf16) | 4.7GB | Required (any one engine) | Transcription (custom vocabulary works) |
+| `asr-ko-univa` | Korean fine-tuned transcription engine (TeamUNIVA Qwen3-ASR 1.7B Korean, 8-bit conversion) | 2.5GB | Required (any one engine) | Transcription (custom vocabulary works) |
 | `diarizer` | Speaker detection (Nemotron 3 Diarization) | 199MB | Recommended | Speaker detection (without it, transcripts have no speakers) |
 | `aligner` | Word sync (Qwen3 ForcedAligner 0.6B) | 1.3GB | Optional | Word sync, word highlighting during playback |
 | `embedding` | Smart search (Qwen3 Embedding 0.6B, 8bit) | 0.6GB | Optional | Smart search (word match search still works) |
