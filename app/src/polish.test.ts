@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Segment } from "./lib";
-import { bulkAcceptIds, livePolish, pendingIds, termsFromSuggestions, wordDiff, type PolishSuggestion } from "./polish";
+import { bulkAcceptIds, livePolish, nextSuggestion, pendingIds, suggestionMarks, termsFromSuggestions, wordDiff, type PolishSuggestion } from "./polish";
 
 const seg = (id: string, text: string, corrected: string | null = null): Segment => ({ id, start: 0, end: 1, text, corrected_text: corrected });
 const sug = (id: string, before: string, text: string, flags: string[] = []): PolishSuggestion => ({ id, start: 0, before, text, kind: "term", flags });
@@ -58,5 +58,25 @@ describe("termsFromSuggestions", () => {
       { before: "원술로지 다시", text: "온톨로지 다시", kind: "term" },
     ];
     expect(termsFromSuggestions(list)).toEqual(["온톨로지", "인시던트", "쿠버네티스"]);
+  });
+});
+
+describe("nextSuggestion·suggestionMarks", () => {
+  const segs = ["a", "b", "c", "d"].map((x, i) => seg(`s000${i + 1}`, x));
+  const live = livePolish(segs, [sug("s0002", "b", "B"), sug("s0004", "d", "D")]);
+  it("정한 줄 다음 제안으로 가고, 끝이면 처음으로 돌아간다", () => {
+    expect(nextSuggestion(segs, live)).toBe("s0002");
+    expect(nextSuggestion(segs, live, "s0002")).toBe("s0004");
+    expect(nextSuggestion(segs, live, "s0003")).toBe("s0004"); // 방금 정해 목록에서 빠진 줄 기준
+    expect(nextSuggestion(segs, live, "s0004")).toBe("s0002");
+  });
+  it("남은 제안이 없으면 undefined", () => {
+    expect(nextSuggestion(segs, new Map(), "s0001")).toBeUndefined();
+  });
+  it("눈금은 문장 순서의 상대 위치", () => {
+    expect(suggestionMarks(segs, live)).toEqual([
+      { id: "s0002", at: 0.375 },
+      { id: "s0004", at: 0.875 },
+    ]);
   });
 });
