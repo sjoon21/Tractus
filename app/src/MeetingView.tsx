@@ -87,8 +87,9 @@ import { CHIP } from "@/components/panel/chip";
 import { EnhancedNote } from "./EnhancedNote";
 import { MinutesPanel } from "./MinutesPanel";
 import { PolishBar, PolishButton, PolishDiff, usePolish } from "./PolishControls";
+import { LlmServicePicker } from "./LlmServicePicker";
 import { RecordPill } from "./RecordPill";
-import { AI_EDITED, livePolish, NO_SUGGESTIONS, pendingIds, termsFromSuggestions, type PolishSuggestion } from "./polish";
+import { AI_EDITED, livePolish, nextSuggestion, NO_SUGGESTIONS, pendingIds, suggestionMarks, termsFromSuggestions, type PolishSuggestion } from "./polish";
 
 const RATE_KEY = "tractus.playbackRate";
 const VOLUME_KEY = "tractus.volume";
@@ -430,6 +431,23 @@ export function MeetingView({
   const [deciding, setDeciding] = useState<ReadonlySet<string>>(new Set());
   // 지금 보이는 제안 (아래 렌더에서 채운다): 받은 제안의 용어를 자주 쓰는 단어로 넘길 때 kind·원문을 본다
   const polishLive = useRef<Map<string, PolishSuggestion>>(new Map());
+  // 제안으로 이동: 가운데로 스크롤하고 수락 단추에 초점을 둔다 (Enter로 바로 받을 수 있다). polishAt은 '다음 제안'의 기준
+  const [jump, setJump] = useState<{ id: string } | null>(null);
+  const polishAt = useRef<string | undefined>(undefined);
+  const jumpTo = useCallback((to: string) => {
+    polishAt.current = to;
+    setJump({ id: to });
+  }, []);
+  useEffect(() => {
+    if (!jump) return;
+    setFollow(false);
+    const row = list.current?.querySelector<HTMLElement>(`[data-seg-id="${jump.id}"]`);
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    row?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+    row?.querySelector<HTMLButtonElement>(".seg-polish button")?.focus({ preventScroll: true });
+    // 어디로 왔는지 보이게 제안 상자를 잠깐 밝힌다
+    if (!reduce) row?.querySelector(".seg-polish")?.animate([{ boxShadow: "0 0 0 4px color-mix(in srgb, var(--ring) 60%, transparent)" }, { boxShadow: "0 0 0 0 transparent" }], { duration: 1400, easing: "ease-out" });
+  }, [jump]);
   /** 제안 받기·버리기: 줄에 세워 코어가 고친 회의를 돌려준다. 받은 문장은 ⌘Z로 되돌릴 수 있고, 받은 용어·이름 교정은 모아서 자주 쓰는 단어로 제안한다 */
   const decidePolish = useCallback(
     (ids: string[], accept: boolean) => {
@@ -442,6 +460,10 @@ export function MeetingView({
         try {
           const { changed, meeting } = await api.polishResolve(id, ids, accept);
           commit(meeting);
+          // 정한 줄 다음의 제안으로 (여럿을 한꺼번에 정했으면 남은 것의 처음으로)
+          const rest = new Map([...polishLive.current].filter(([k]) => !ids.includes(k)));
+          const to = nextSuggestion(meeting.segments, rest, ids.length === 1 ? ids[0] : undefined);
+          if (to) jumpTo(to);
           if (accept && changed > 0) {
             onEdited?.(id, meeting.info.updated_at ?? "");
             bumpEdit("text");
@@ -458,7 +480,7 @@ export function MeetingView({
         }
       });
     },
-    [id, serial, commit, onEdited, bumpEdit, suggestTerms, notify],
+    [id, serial, commit, onEdited, bumpEdit, suggestTerms, notify, jumpTo],
   );
   // 되돌리기도 줄에 선다: 앞선 저장이 끝나 스택에 오른 뒤에 꺼낸다(저장 중에 ⌘Z를 눌러도 순서가 맞다)
   const undo = useCallback(() => {
@@ -870,6 +892,7 @@ export function MeetingView({
             {recorded && <Badge variant="memo">{RECORDED_BADGE}</Badge>}
           </p>
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
+            {!memoNote && !recorded && segments.length > 0 && <LlmServicePicker services={polish.services} disabled={polish.running} />}
             {!memoNote && !recorded && segments.length > 0 && (
               <PolishButton running={polish.running} done={polish.done} total={polish.total} disabled={polishOff} again={(detail.polish?.length ?? 0) > 0} onClick={() => void polish.start(flushMemos)} />
             )}
@@ -1022,7 +1045,7 @@ export function MeetingView({
             <p className="mt-1.5 mb-0 text-xs leading-relaxed text-muted-foreground">{t("이 녹음에서 말소리를 찾지 못했습니다. 아래 플레이어로 녹음된 소리를 확인해 보세요. 마이크가 멀었거나 녹음이 너무 짧았을 수 있습니다.")}</p>
           </div>
         )}
-        {!memoNote && <PolishBar live={polishMap} running={polish.running} busy={deciding.size > 0} onDecide={decidePolish} />}
+        {!memoNote && <PolishBar live={polishMap} marks={suggestionMarks(segments, polishMap)} running={polish.running} busy={deciding.size > 0} onDecide={decidePolish} onJump={(to) => { const n = to ?? nextSuggestion(segments, polishMap, polishAt.current); if (n) jumpTo(n); }} />}
         {!memoNote && <ol className={`transcript ${diarized ? "has-speakers" : ""} ${polish.running ? "is-polishing" : ""}`} ref={list}>
           {rows.map((r, i) =>
             r.kind === "seg" ? (

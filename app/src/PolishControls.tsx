@@ -1,6 +1,6 @@
 // AI 다듬기 화면 부품 (docs/design/transcript-polish.md): 실행(구간별 제안을 그때그때 모은다)·제안 막대(모두 받기·버리기)·줄 안의 diff.
 import { useCallback, useEffect, useState } from "react";
-import { Check, Sparkles, X } from "lucide-react";
+import { Check, ChevronDown, Sparkles, X } from "lucide-react";
 import { useJob } from "./api";
 import type { Notify } from "./App";
 import { t } from "./i18n";
@@ -12,6 +12,9 @@ import {
   ACCEPT_ALL_TITLE,
   bulkAcceptIds,
   FLAG_LABEL,
+  GO_SUGGESTION,
+  NEXT_SUGGESTION,
+  NEXT_SUGGESTION_TITLE,
   POLISH_AGAIN_TITLE,
   POLISH_LABEL,
   POLISH_TITLE,
@@ -58,7 +61,7 @@ export function usePolish(id: string, notify: Notify, onDone: () => Promise<void
     },
     [running, job, id, services.provider],
   );
-  return { running, done: job.job.done, total: job.job.total, live, ranges, start };
+  return { running, done: job.job.done, total: job.job.total, live, ranges, start, services };
 }
 
 /** 대화 내용 위쪽 툴바의 단추 */
@@ -71,15 +74,24 @@ export function PolishButton({ running, done, total, disabled, again, onClick }:
   );
 }
 
-/** 제안이 있을 때 대화 내용 위에 붙는 막대: 개수 + 모두 받기(표시 없는 것만)·모두 버리기 */
-export function PolishBar({ live, running, busy, onDecide }: { live: Map<string, PolishSuggestion>; running: boolean; busy: boolean; onDecide: (ids: string[], accept: boolean) => void }) {
+/** 제안이 있을 때 대화 내용 위에 붙는 막대: 개수 + 남은 제안의 위치 눈금(누르면 이동) + 다음 제안 + 모두 받기(표시 없는 것만)·모두 버리기 */
+export function PolishBar({ live, marks, running, busy, onDecide, onJump }: { live: Map<string, PolishSuggestion>; marks: { id: string; at: number }[]; running: boolean; busy: boolean; onDecide: (ids: string[], accept: boolean) => void; onJump: (id?: string) => void }) {
   if (live.size === 0) return null;
   const all = [...live.keys()];
   const bulk = bulkAcceptIds(live);
   return (
     <div className="polish-bar sticky top-[52px] z-10 mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background/95 px-3 py-2 text-[13px] backdrop-blur-md" role="status">
       <Sparkles aria-hidden className="size-4 text-muted-foreground" />
-      <span className="mr-auto tabular-nums">{suggestionCount(live.size, live.size - bulk.length)}</span>
+      <span className="tabular-nums">{suggestionCount(live.size, live.size - bulk.length)}</span>
+      <span className="polish-marks relative mr-auto h-3 min-w-20 flex-1 rounded-full bg-muted" aria-hidden>
+        {marks.map((m) => (
+          <button key={m.id} type="button" tabIndex={-1} title={GO_SUGGESTION} className="polish-mark absolute top-0 h-3 w-1.5 -translate-x-1/2 cursor-pointer rounded-full bg-ring p-0" style={{ left: `${m.at * 100}%` }} onClick={() => onJump(m.id)} />
+        ))}
+      </span>
+      <Button variant="ghost" size="sm" title={NEXT_SUGGESTION_TITLE} onClick={() => onJump()}>
+        <ChevronDown aria-hidden />
+        {NEXT_SUGGESTION}
+      </Button>
       <Button variant="outline" size="sm" disabled={running || busy || bulk.length === 0} title={ACCEPT_ALL_TITLE} onClick={() => onDecide(bulk, true)}>
         <Check aria-hidden />
         {ACCEPT_ALL}

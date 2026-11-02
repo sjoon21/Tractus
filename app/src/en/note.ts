@@ -284,6 +284,9 @@ export default {
   "교정 제안 {n}개 · 확인할 것 {flagged}개": ["{n} fix suggestion · {flagged} to check", "{n} fix suggestions · {flagged} to check"],
   "교정 제안 {n}개": ["{n} fix suggestion", "{n} fix suggestions"],
   "교정 제안": "Fix suggestion",
+  "다음 제안": "Next",
+  "다음 교정 제안으로 이동합니다": "Jump to the next fix suggestion",
+  "이 교정 제안으로 이동": "Go to this fix suggestion",
   "저장이 끝난 뒤에 교정할 수 있습니다": "You can run Smart fix after saving finishes",
   "교정하지 못했습니다": "Couldn’t fix",
 } satisfies Dict;

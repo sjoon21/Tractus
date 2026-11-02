@@ -22,6 +22,9 @@ export const REJECT = t("거절");
 export const ACCEPT_ALL = t("모두 수락");
 export const REJECT_ALL = t("모두 거절");
 export const ACCEPT_ALL_TITLE = t("숫자 확인·다시 쓴 문장 표시가 있는 제안은 하나씩 정하세요");
+export const NEXT_SUGGESTION = t("다음 제안");
+export const NEXT_SUGGESTION_TITLE = t("다음 교정 제안으로 이동합니다");
+export const GO_SUGGESTION = t("이 교정 제안으로 이동");
 export const AI_EDITED = t("스마트 교정됨");
 export const NO_SUGGESTIONS = t("고칠 곳을 찾지 못했습니다");
 export const FLAG_LABEL: Record<string, { text: string; title: string }> = {
@@ -41,6 +44,19 @@ export function livePolish(segments: Segment[], list: PolishSuggestion[]): Map<s
 
 /** 모두 받기의 대상: 표시(number·rewrite)가 없는 제안 */
 export const bulkAcceptIds = (live: Map<string, PolishSuggestion>): string[] => [...live.values()].filter((x) => x.flags.length === 0).map((x) => x.id);
+
+/** afterId 다음(대화 순서)의 제안 ID. 끝이면 처음 것, 없으면 undefined */
+export function nextSuggestion(segments: Segment[], live: Map<string, PolishSuggestion>, afterId?: string): string | undefined {
+  const at = new Map(segments.map((s, i) => [s.id, i]));
+  const k = afterId === undefined ? -1 : (at.get(afterId) ?? -1);
+  const ids = segments.map((s) => s.id).filter((i) => live.has(i));
+  return ids.find((i) => at.get(i)! > k) ?? ids[0];
+}
+
+/** 남은 제안이 대화 내용의 어디쯤인지 (0~1, 문장 순서 기준): 막대의 눈금 */
+export function suggestionMarks(segments: Segment[], live: Map<string, PolishSuggestion>): { id: string; at: number }[] {
+  return segments.flatMap((s, i) => (live.has(s.id) ? [{ id: s.id, at: (i + 0.5) / segments.length }] : []));
+}
 
 export type DiffPart = { text: string; op: "same" | "del" | "ins" };
 
