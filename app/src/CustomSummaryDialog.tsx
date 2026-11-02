@@ -46,7 +46,7 @@ export function CustomSummaryDialog({ onCancel, onSubmit }: { onCancel: () => vo
   return (
     <dialog
       ref={dialog}
-      className={cn(DIALOG, "w-[min(540px,calc(100vw-32px))]")}
+      className={cn(DIALOG, "w-[min(680px,calc(100vw-48px))]")}
       aria-labelledby="custom-summary-title"
       aria-describedby={ids.hint}
       onCancel={(e) => {

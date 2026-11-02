@@ -80,7 +80,7 @@ export function Checkup({ onClose }: { onClose: () => void }) {
   return (
     <dialog
       ref={dialog}
-      className={cn(DIALOG, "max-h-[min(780px,calc(100vh-48px))] w-[min(620px,calc(100vw-32px))] flex-col overflow-hidden open:flex")}
+      className={cn(DIALOG, "max-h-[min(780px,calc(100vh-48px))] w-[min(760px,calc(100vw-48px))] flex-col overflow-hidden open:flex")}
       aria-labelledby="checkup-title"
       aria-busy={checking || caps.loading}
       onCancel={(e) => {
@@ -88,7 +88,7 @@ export function Checkup({ onClose }: { onClose: () => void }) {
         onClose();
       }}
     >
-      <header className="flex flex-col gap-1 border-b border-border px-5 pt-5 pb-4">
+      <header className="flex flex-col gap-1 border-b border-border px-6 pt-6 pb-5">
         <h2 id="checkup-title" ref={title} tabIndex={-1} className={cn(DIALOG_TITLE, "outline-none")}>
           {t("시작 점검")}
         </h2>
@@ -97,7 +97,7 @@ export function Checkup({ onClose }: { onClose: () => void }) {
           <span className="mt-0.5 block text-xs text-muted-foreground">{t("점검 결과와 상관없이 앱은 계속 쓸 수 있습니다. 설정이나 홈 화면에서 언제든 다시 열 수 있습니다.")}</span>
         </p>
       </header>
-      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 py-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-4">
         {pathNote && (
           <p className="m-0 text-xs text-muted-foreground" role="status">
             {pathNote}

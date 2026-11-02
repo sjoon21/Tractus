@@ -37,7 +37,7 @@ export function UpdateDialog({ version, notes, onOpen, onLater }: { version: str
         <p id="update-body" className={DIALOG_TEXT}>
           {NEW_VERSION_DIALOG.body}
         </p>
-        {notes && <pre className="m-0 mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-secondary px-3 py-2 font-sans text-xs leading-relaxed text-muted-foreground">{notes}</pre>}
+        {notes && <pre className="m-0 mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-secondary px-3 py-2.5 font-sans text-[13px] leading-relaxed text-muted-foreground">{notes}</pre>}
         <span className="text-xs">
           <Button variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => void api.openReleaseNotes(version).then(() => setLinkError(null), (e) => setLinkError(errText(e)))}>
             {NOTES_LABEL} ({version})
