@@ -1,4 +1,3 @@
-import { save } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAlign } from "./alignJobs";
 import { api, errDetail, errText } from "./api";
@@ -8,8 +7,6 @@ import { GatedButton } from "./GatedButton";
 import { dismiss, isDismissed, speakerHintKey } from "./hintDismiss";
 import { useCapabilities } from "./useCapabilities";
 import {
-  baseName,
-  exportFilename,
   fmtTime,
   isImeKey,
   isMemoLineId,
@@ -25,25 +22,21 @@ import {
   stepRate,
   transcriptRows,
   replayStart,
-  type EXPORT_FORMATS,
   type Segment,
 } from "./lib";
 import { AskPanel } from "./AskPanel";
 import { ErrorDetail } from "./ErrorDetail";
 import { clock, getLang, locale, t } from "./i18n";
-import { printDoc } from "./print";
 import type { DeleteTarget } from "./remove";
 import { deleteMark, editMark } from "./marks";
 import { PrintSheet } from "./PrintSheet";
 import { SummariesPanel } from "./SummariesPanel";
 import type { SummaryDoc } from "./summaries";
 import { SpeakerMenu, SpeakersBar, type MenuTarget, type MergeAsk } from "./Speakers";
-import { sendToObsidian } from "./obsidian";
 import { CoachMark } from "./CoachMark";
 import { markOnboard } from "./onboarding";
 import { ExportMenu, FindBar } from "./TranscriptTools";
-import { ExportDialog, type ExportPick } from "./ExportDialog";
-import { exportItems, PICK_FORMATS, type ExportItem } from "./exportPick";
+import { ExportDialog } from "./ExportDialog";
 import { MemoEditor, TitleEditor, type MemoTarget } from "./MemoView";
 import { NoteOrganizer } from "./NoteOrganizer";
 import { ADD_FILE, ADD_FILE_TITLE, LOCK_NOTICE, type AttachControls } from "./attach";
@@ -65,6 +58,7 @@ import { RecordPill } from "./RecordPill";
 import { usePlayback } from "./note/usePlayback";
 import { useNoteEditing } from "./note/useNoteEditing";
 import { useFind } from "./note/useFind";
+import { useNoteExport } from "./note/useNoteExport";
 import { usePolishReview } from "./note/usePolishReview";
 import { useReadingHighlights } from "./note/useReadingHighlights";
 import { useRail } from "./note/useRail";
@@ -198,18 +192,7 @@ export function MeetingView({
   const starts = useMemo(() => new Map(segments.map((s) => [s.id, s.start])), [detail]);
   const active = segmentIndexAt(segments, pos);
 
-  // PDF (6.5): 인쇄용 문서를 body 아래에 두고 macOS 인쇄 대화상자를 연다. 대화상자의 미리보기가 나중에 그리므로
-  // 한 번 만든 인쇄 문서는 회의 화면을 닫을 때까지 둔다 (화면에는 보이지 않는다)
-  const [printNonce, setPrintNonce] = useState(0);
-  useEffect(() => {
-    if (!printNonce) return;
-    const id = requestAnimationFrame(() =>
-      // Tauri는 macOS에서 window.print()를 webview print 명령(Promise)으로 바꿔 둔다
-      Promise.resolve(window.print() as unknown).catch((e) => notify({ text: t("인쇄 창을 열지 못했습니다: {error}", { error: errText(e) }), error: true })),
-    );
-    return () => cancelAnimationFrame(id);
-  }, [printNonce, notify]);
-  const printable = useMemo(() => (printNonce && detail ? printDoc(detail, selectedSummary) : null), [printNonce > 0, detail, selectedSummary]);
+  const { setPrintNonce, printable, exportPick, setExportPick, exportAs, saveExport, toObsidian } = useNoteExport({ id, detail, memoNote, selectedSummary, serial, notify });
 
   const railState = useRail(memoNote, memoRef, setMemoPick);
   const { tabNow, askSeen, memoSeen, minutesSeen, railCollapsed, openMemoLine } = railState;
@@ -283,56 +266,9 @@ export function MeetingView({
     return () => window.removeEventListener("keydown", onKey);
   }, [seekTo, undo]);
 
-  // Markdown·Word는 넣을 내용을 고르는 창을 먼저 연다 (exportPick.ts). 다른 형식은 바로 저장 대화상자
-  const [exportPick, setExportPick] = useState<{ f: (typeof EXPORT_FORMATS)[number]; items: ExportItem[] } | null>(null);
-  const exportAs = async (f: (typeof EXPORT_FORMATS)[number]) => {
-    if (!detail) return;
-    if (!PICK_FORMATS.includes(f.format)) return saveExport(f, null);
-    let items: ExportItem[];
-    try {
-      const [docs, templates] = await Promise.all([api.summariesList(id), api.templatesList().catch(() => [])]);
-      items = exportItems(docs, templates, {
-        memoNote,
-        transcript: detail.segments.some((s) => segText(s).trim()),
-        memo: !memoNote && (detail.note_memo?.lines ?? []).some((l) => l.text.trim()),
-        marks: detail.memos.length > 0,
-      });
-    } catch (e) {
-      return notify({ text: t("내보내지 못했습니다: {error}", { error: errText(e) }), error: true });
-    }
-    if (items.length === 0) return saveExport(f, { summaries: [], parts: [] }); // 고를 것이 없다 (빈 변환 전 노트): 제목만
-    setExportPick({ f, items });
-  };
-  const saveExport = async (f: (typeof EXPORT_FORMATS)[number], pick: ExportPick | null) => {
-    if (!detail) return;
-    let out: string | null;
-    try {
-      out = await save({ defaultPath: exportFilename(detail.info.created_at, detail.info.title, f.ext), filters: [{ name: f.label, extensions: [f.ext] }] });
-    } catch (e) {
-      return notify({ text: t("저장 위치를 고르지 못했습니다: {error}", { error: errText(e) }), error: true });
-    }
-    if (!out) return;
-    const target = out;
-    if (!(await flushMemos())) return; // 쓰던 글까지 내보낸다. 저장하지 못하면 내보내지 않는다 (오류는 편집기가 보인다)
-    // 저장 중인 편집이 끝난 뒤에 내보낸다
-    void serial(async () => {
-      try {
-        const path = await api.exportMeeting(id, f.format, target, pick);
-        notify({ text: t("내보냈습니다 — {file}", { file: baseName(path) }) });
-      } catch (e) {
-        notify({ text: t("내보내지 못했습니다: {error}", { error: errText(e) }), error: true });
-      }
-    });
-  };
-
   useEffect(() => {
     if (detail?.info.sample) markOnboard("sampleOpened"); // 온보딩: 예시 노트를 열었다
   }, [detail?.info.sample]);
-
-  const toObsidian = async () => {
-    if (!(await flushMemos())) return; // 쓰던 글까지 보낸다
-    void serial(() => sendToObsidian(id, selectedSummary?.key, notify)); // 요약 탭에서 고른 요약이 들어간다
-  };
 
   if (error)
     return (
