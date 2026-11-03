@@ -1,5 +1,5 @@
 // 파일 가져오기 줄 (Phase 5.5): 끌어 놓거나 고른 파일을 줄에 세우고 한 번에 하나씩 텍스트로 변환한다.
-// 가져오기는 녹음 변환·변환 전 노트의 변환이 모두 끝난 뒤에 시작한다 (jobSchedule.canStartImport).
+// 이 훅은 줄의 상태와 동작만 맡는다. 언제 시작하는가(녹음 변환·변환 전 노트의 변환이 모두 끝난 뒤)는 useWorkScheduler가 정한다 (jobSchedule.canStartImport).
 // (vibe use-drop-target.ts, meetily layout.tsx — 둘 다 MIT — 참고)
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useJob } from "./api";
@@ -7,11 +7,9 @@ import type { Notify } from "./App";
 import { ADDED, failedFile, type AttachTarget } from "./attach";
 import type { Decision } from "./caps";
 import { t } from "./i18n";
-import { canStartImport, type Activity } from "./jobSchedule";
 import { baseName, errorView, isImportable, JOB_ERROR } from "./lib";
 
 export function useImportQueue({
-  others,
   convertGate,
   notify,
   notifyBlocked,
@@ -19,8 +17,6 @@ export function useImportQueue({
   openMeeting,
   markNoteStale,
 }: {
-  /** 가져오기를 뺀 나머지 작업의 상태 */
-  others: Omit<Activity, "importRunning" | "importWaiting">;
   /** 지금 변환할 수 있는지 (모델·도구가 있는지): 끌어 놓은 파일은 실패하지 않고 이유를 알린다 */
   convertGate: () => Decision;
   notify: Notify;
@@ -46,16 +42,15 @@ export function useImportQueue({
     }
     notify({ text: dup ? t("이미 텍스트로 변환한 파일입니다 — {name}", { name }) : t("텍스트 변환을 마쳤습니다 — {name}", { name }), action: { label: t("열기"), run: () => openMeeting(meetingId) } });
   });
-  const activity: Activity = { ...others, importRunning: imp.job.running, importWaiting: queue.length > 0 };
-
-  useEffect(() => {
-    if (!canStartImport(activity)) return;
+  /** 줄의 첫 파일을 시작한다. 언제 시작하는지는 useWorkScheduler가 정한다 (jobSchedule.canStartImport) */
+  const startNext = useCallback(() => {
     const [next, ...rest] = queue;
+    if (next === undefined) return;
     setQueue(rest);
     setImporting(next);
     importTarget.current = null;
     void imp.startJob("import", next);
-  }, [queue, imp.job.running, activity.transcribeRunning, activity.transcribeWaiting, activity.finishRunning, activity.converting, imp.startJob]);
+  }, [queue, imp.startJob]);
 
   // 실패는 알림으로 남긴다 (다음 파일이 시작되면 진행 표시는 그 파일로 바뀐다)
   useEffect(() => {
@@ -91,5 +86,5 @@ export function useImportQueue({
   );
 
   const importPct = imp.job.total ? imp.job.done / imp.job.total : null;
-  return { imp, queue, importing, importPct, activity, enqueue, startAttach };
+  return { imp, queue, importing, importPct, enqueue, startAttach, startNext };
 }

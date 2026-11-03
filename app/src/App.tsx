@@ -1,6 +1,8 @@
 import { ToastItem } from "@/components/Toast";
-import { canStartConvert, canStartTranscribe, isTranscribing } from "./jobSchedule";
+import { isTranscribing, type Activity } from "./jobSchedule";
+import { useConvertQueue } from "./useConvertQueue";
 import { useImportQueue } from "./useImportQueue";
+import { useWorkScheduler } from "./useWorkScheduler";
 import { SidebarJobs } from "@/components/sidebar/SidebarJobs";
 import { LeftoverRecordings } from "@/components/sidebar/LeftoverRecordings";
 import { SidebarFooter } from "@/components/sidebar/SidebarFooter";
@@ -27,7 +29,7 @@ import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
 import { t } from "./i18n";
 import { bindIndexer, indexer } from "./indexer";
-import { baseName, errorView, isImeKey, isRecLive, IDLE_JOB, JOB_ERROR, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, warningText, type RecMode } from "./lib";
+import { baseName, errorView, isImeKey, isRecLive, IDLE_JOB, JOB_ERROR, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, type RecMode } from "./lib";
 import { MeetingView } from "./MeetingView";
 import type { NewNoteAction } from "./menu";
 import { NewNoteMenu } from "./NewNoteMenu";
@@ -40,10 +42,8 @@ import { createTraySender, deriveTrayState, routeTrayAction } from "./tray";
 import { AfterRecordDialog } from "./AfterRecordDialog";
 import { afterRecord, ASK_BLOCKS_RECORD, effectiveChoice, rememberedChoice, stopAction, type AskChoice } from "./afterRecord";
 import { LIVE_BLOCKS_RECORD, recordBlock } from "./recordBusy";
-import { attachConvertJobs, convertStore, useConvertJob } from "./convertJobs";
-import { convertAdvance, convertEnqueue, convertProgress, convertSlot, IDLE_CONVERT, type ConvertQueue } from "./convertQueue";
 import { recButton } from "./pause";
-import { BULK_MIN, CONVERT_ALL, CONVERT_PAUSED, CONVERT_ALL_TITLE, CONVERT_FAIL, CONVERTED, isRecorded, recordedIds, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
+import { BULK_MIN, CONVERT_ALL, CONVERT_ALL_TITLE, CONVERTED, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
 import { NoteLibrary } from "./NoteLibrary";
 import { QuickFind } from "./QuickFind";
 import { touchNote as touchNoteIn, type Folder } from "./organize";
@@ -244,11 +244,17 @@ export function App() {
     },
     [finish.runJob],
   );
-  // 변환 전 노트의 변환 줄 (convertQueue.ts): 노트 하나를 변환하는 것도, 모두 변환도 같은 줄이다. 한 번에 하나씩 (변환 엔진이 한 번에 하나만 올라간다)
-  const [convQ, setConvQ] = useState<ConvertQueue>(IDLE_CONVERT);
-  const convJob = useConvertJob(convQ.current);
-  const converting = convQ.current !== null;
-  const convertRunning = converting && convJob.running;
+  // 변환 전 노트의 변환 줄 (useConvertQueue.ts): 언제 시작하는가는 아래 useWorkScheduler가 정한다
+  const convert = useConvertQueue({
+    meetings,
+    convertGate: () => capsRef.current.can("convert"),
+    notify,
+    notifyBlocked,
+    refresh,
+    openMeeting,
+    isViewing: (noteId) => viewRef.current.kind === "meeting" && viewRef.current.id === noteId,
+  });
+  const { converting, running: convertRunning, job: convJob, bulkIds, convertNote, convertAll, slots: convertSlots, title: convTitle, pct: convPct, progress: convProgress } = convert;
   // 지금(마지막으로) 도는 전사 대상. "다시 전사"는 방금 녹음뿐 아니라 사이드바의 남은 녹음에도 쓴다. 전사를 시작할 때 정한다
   // 바로 시작하지 않고 대기 줄(waitList)에 둔다: 앞선 전사·파일 가져오기·변환 전 노트의 변환이 끝난 뒤에 시작한다(변환 엔진이 한 번에 하나만 올라가게).
   // 변환 중에도 녹음할 수 있으므로(recordBusy.ts) 변환이 도는 동안 다음 녹음이 끝나 줄에 설 수 있다
@@ -350,10 +356,8 @@ export function App() {
     api.setRecMode(m).catch((e) => setListError({ text: t("녹음 방식을 저장하지 못했습니다: {error}", { error: errText(e) }), detail: errDetail(e) }));
   };
 
-  // 파일 가져오기 줄 (useImportQueue.ts). 무거운 작업은 한 번에 하나씩 순서대로 시작한다 (jobSchedule.ts)
-  const others = { recording, liveRec, asking, transcribeRunning: transcribe.job.running, transcribeWaiting: waitDir !== null, finishRunning: finish.job.running, converting, convertRunning };
-  const { imp, queue, importing, importPct, activity, enqueue, startAttach } = useImportQueue({
-    others,
+  // 파일 가져오기 줄 (useImportQueue.ts)
+  const importQ = useImportQueue({
     convertGate: () => capsRef.current.can("convert"),
     notify,
     notifyBlocked,
@@ -361,65 +365,45 @@ export function App() {
     openMeeting,
     markNoteStale: (id) => setNoteEpoch((e) => ({ id, n: e.n + 1, stale: true })),
   });
-  useEffect(() => {
-    // 실시간 텍스트 변환이 도는 녹음 중에는 변환 엔진을 올리지 않는다 (자막이 밀린다). 자막이 없으면 녹음과 함께 돈다
-    if (!canStartTranscribe(activity)) return;
+  const { imp, queue, importing, importPct, enqueue, startAttach } = importQ;
+  // 무거운 작업은 한 번에 하나씩 순서대로 시작한다: 규칙은 jobSchedule.ts(테스트), 시작은 useWorkScheduler가 한다
+  const activity: Activity = {
+    recording,
+    liveRec,
+    asking,
+    transcribeRunning: transcribe.job.running,
+    transcribeWaiting: waitDir !== null,
+    finishRunning: finish.job.running,
+    converting,
+    convertRunning,
+    importRunning: imp.job.running,
+    importWaiting: queue.length > 0,
+  };
+  // 대기 줄의 첫 녹음을 변환하기 시작한다
+  const startNextTranscribe = useCallback(() => {
     const [next, ...rest] = waitList;
+    if (!next) return;
     setWaitList(rest);
     transcribeDir.current = next.dir;
     transcribeTarget.current = next.target;
     void transcribe.startJob("transcribe", next.dir, next.target?.id);
-  }, [waitList, transcribe.job.running, imp.job.running, convertRunning, recording, liveRec, transcribe.startJob]);
+  }, [waitList, transcribe.startJob]);
+  useWorkScheduler({
+    activity,
+    listLoaded,
+    startNextTranscribe,
+    tryStartConvert: convert.tryStart,
+    convertWatch: meetings,
+    startNextImport: importQ.startNext,
+    waitKey: waitList,
+    importKey: queue,
+  });
   // 노트로 저장하는 중·변환 전 노트를 변환하는 중도 `변환 중`으로 본다: 새 녹음·가져오기·창 닫기 확인이 같은 규칙을 쓴다
   const transcribing = isTranscribing(activity);
   // 새 녹음을 막는 일 (recordBusy.ts): 묻는 창·저장 중, 그리고 실시간 텍스트 변환을 켜 둔 채 녹음을 변환하는 중. 그 밖의 변환은 녹음과 함께 돈다.
   // 변환 전 노트의 변환 줄은 막지 않는다: 자막을 켠 녹음이면 도는 변환을 멈추고(멈춘 곳부터 이어 할 수 있다) 녹음이 끝나면 이어서 한다 (pauseConvert)
   const recordBlockKind = recordBlock({ converting: transcribe.job.running || waitDir !== null, saving: finish.job.running, asking, liveOn });
   const recordBlocked = recordBlockKind !== null;
-  const preempted = useRef<string | null>(null); // 새 녹음이 멈춘 변환의 노트
-  // 변환 줄의 첫 노트를 시작한다: 녹음·다른 변환·가져오기가 끝난 뒤에. 지워졌거나 다른 곳에서 이미 변환한 노트는 건너뛴다
-  const meetingsRef = useRef(meetings);
-  meetingsRef.current = meetings;
-  const startedConv = useRef<string | null>(null);
-  useEffect(() => {
-    const id = convQ.current;
-    if (id === null) {
-      startedConv.current = null;
-      return;
-    }
-    if (startedConv.current === id || !listLoaded) return;
-    const note = meetings.find((m) => m.id === id);
-    if (!note || !isRecorded(note)) return setConvQ(convertAdvance);
-    if (!canStartConvert(activity)) return;
-    startedConv.current = id;
-    void convertStore.start(id);
-  }, [convQ.current, meetings, listLoaded, recording, liveRec, asking, transcribe.job.running, waitDir, finish.job.running, imp.job.running, convJob.running]);
-  // 변환이 끝나면(성공이든 실패든) 알리고 줄을 넘긴다. 실패해도 줄은 이어진다. 노트가 열려 있지 않아도 알린다
-  useEffect(
-    () =>
-      attachConvertJobs(({ noteId, ok, state }) => {
-        // 새 녹음이 멈춘 변환: 실패로 알리지 않고 줄도 넘기지 않는다. 녹음이 끝나면 같은 노트를 이어서 시작한다
-        if (preempted.current === noteId) {
-          preempted.current = null;
-          if (!ok) {
-            startedConv.current = null;
-            return;
-          }
-        }
-        const title = meetingsRef.current.find((m) => m.id === noteId)?.title ?? "";
-        if (ok) {
-          const open = viewRef.current.kind === "meeting" && viewRef.current.id === noteId;
-          notify({ text: CONVERTED(title), action: open ? undefined : { label: t("열기"), run: () => openMeeting(noteId) } });
-          state.warnings.forEach((w) => notify({ text: warningText(w) }));
-        } else {
-          const e = errorView(state.error, state.errorCode, JOB_ERROR.convert);
-          notify({ text: CONVERT_FAIL(title, e.text === JOB_ERROR.convert ? "" : `. ${e.text}`), detail: e.detail, error: true });
-        }
-        void refresh();
-        setConvQ((q) => (q.current === noteId ? convertAdvance(q) : q));
-      }),
-    [notify, refresh, openMeeting],
-  );
   const pickFiles = async () => {
     if (!convertGate.ok) return notifyBlocked(convertGate);
     try {
@@ -574,10 +558,7 @@ export function App() {
   // 자막이 없으면 변환은 녹음과 함께 계속 돈다. 이번 녹음의 자막 여부도 여기서 정한다
   const pauseConvert = () => {
     setLiveRec(liveOn);
-    if (!liveOn || !convertRunning || convQ.current === null) return;
-    preempted.current = convQ.current;
-    convertStore.cancel(convQ.current);
-    notify({ text: CONVERT_PAUSED });
+    if (liveOn) convert.preempt();
   };
   /** event: 홈의 `곧 시작하는 일정` 카드에서 시작한 녹음 (일정 제목·참석자를 녹음 폴더에 남긴다) */
   const onRecordButton = (event?: CalendarEvent) => {
@@ -701,33 +682,8 @@ export function App() {
     else void pickFiles();
   };
 
-  // 변환 전 노트의 변환 (recorded.ts): 한 노트도, 모두도 같은 줄에 올린다. 못 쓰면 이유와 고치는 길을 알린다
-  const convertNote = useCallback(
-    (id: string) => {
-      const gate = capsRef.current.can("convert");
-      if (!gate.ok) return notifyBlocked(gate);
-      setConvQ((q) => convertEnqueue(q, [id]));
-    },
-    [notifyBlocked],
-  );
-  const bulkIds = useMemo(() => recordedIds(meetings), [meetings]);
-  const convertAll = () => {
-    if (!convertGate.ok) return notifyBlocked(convertGate);
-    setConvQ((q) => convertEnqueue(q, bulkIds));
-  };
-  const convertSlots = useMemo(() => {
-    const slots = new Map<string, "running" | "queued">();
-    for (const id of [convQ.current, ...convQ.pending]) {
-      const slot = id === null ? null : convertSlot(convQ, id, convertRunning);
-      if (id !== null && slot) slots.set(id, slot);
-    }
-    return slots;
-  }, [convQ, convertRunning]);
   const waitReason = recording && liveRec ? WAIT_RECORDING : WAIT_OTHER;
-  const convertControls: ConvertControls | undefined = view.kind === "meeting" ? { slot: convertSlot(convQ, view.id, convertRunning), waitReason, gate: convertGate, onConvert: convertNote } : undefined;
-  const convTitle = converting ? (meetings.find((m) => m.id === convQ.current)?.title ?? "") : "";
-  const convPct = convJob.total ? convJob.done / convJob.total : null;
-  const convProgress = convertProgress(convQ);
+  const convertControls: ConvertControls | undefined = view.kind === "meeting" ? { slot: convert.slotOf(view.id), waitReason, gate: convertGate, onConvert: convertNote } : undefined;
   // 녹음 단추는 녹음을 막는 동안에만 변환 상태를 보인다. 막지 않는 변환(자막이 꺼진 녹음 변환·가져오기)의 진행은 사이드바 카드에 있다
   const liveBlock = recordBlockKind === "live";
   const railRec = railRecState({ recording, asking, busy: finish.job.running || liveBlock });
