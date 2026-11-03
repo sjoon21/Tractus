@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAlign } from "./alignJobs";
 import { api, errDetail, errText } from "./api";
 import type { Notify, Seek } from "./App";
-import { OK, SPEAKER_HINT, SPEAKER_HINT_DISMISS, speakerHintVisible } from "./caps";
-import { GatedButton } from "./GatedButton";
+import { SPEAKER_HINT, SPEAKER_HINT_DISMISS, speakerHintVisible } from "./caps";
 import { dismiss, isDismissed, speakerHintKey } from "./hintDismiss";
 import { useCapabilities } from "./useCapabilities";
 import {
@@ -18,7 +17,6 @@ import {
   segText,
   speakerName,
   speakerStats,
-  STAGE_LABEL,
   stepRate,
   transcriptRows,
   replayStart,
@@ -26,7 +24,7 @@ import {
 } from "./lib";
 import { AskPanel } from "./AskPanel";
 import { ErrorDetail } from "./ErrorDetail";
-import { clock, getLang, locale, t } from "./i18n";
+import { locale, t } from "./i18n";
 import type { DeleteTarget } from "./remove";
 import { deleteMark, editMark } from "./marks";
 import { PrintSheet } from "./PrintSheet";
@@ -35,21 +33,17 @@ import type { SummaryDoc } from "./summaries";
 import { SpeakerMenu, SpeakersBar, type MenuTarget, type MergeAsk } from "./Speakers";
 import { CoachMark } from "./CoachMark";
 import { markOnboard } from "./onboarding";
-import { ExportMenu, FindBar } from "./TranscriptTools";
-import { ExportDialog } from "./ExportDialog";
+import { FindBar } from "./TranscriptTools";
 import { MemoEditor, TitleEditor, type MemoTarget } from "./MemoView";
 import { NoteOrganizer } from "./NoteOrganizer";
-import { ADD_FILE, ADD_FILE_TITLE, LOCK_NOTICE, type AttachControls } from "./attach";
+import { LOCK_NOTICE, type AttachControls } from "./attach";
 import { ConvertPanel } from "./ConvertPanel";
 import { useConvertJob } from "./convertJobs";
-import { CONVERT_FIRST, deleteBlockedWhileConverting, isRecorded, keptNotice, railNotice, RECORDED_BADGE, recordedStats, type ConvertControls } from "./recorded";
-import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type SaveState } from "./memo";
+import { CONVERT_FIRST, deleteBlockedWhileConverting, isRecorded, keptNotice, railNotice, recordedStats, type ConvertControls } from "./recorded";
+import { flushMemos, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type SaveState } from "./memo";
 import { RAIL_LABEL, railLabel } from "./rail";
 import { PanelResizer, PanelToggle } from "./PanelToggle";
-import { AudioLines, MoreHorizontal, Upload } from "lucide-react";
-import { ItemMenu, Popover } from "./Popover";
-import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import { EnhancedNote } from "./EnhancedNote";
 import { MinutesPanel } from "./MinutesPanel";
@@ -64,6 +58,7 @@ import { useReadingHighlights } from "./note/useReadingHighlights";
 import { useRail } from "./note/useRail";
 import { NotePlayer } from "@/components/note/NotePlayer";
 import { NoteDock } from "@/components/note/NoteDock";
+import { NoteHeader } from "@/components/note/NoteHeader";
 import { SegmentRow } from "@/components/note/SegmentRow";
 import { MemoRow } from "@/components/note/MemoRow";
 import { TimeChip } from "@/components/note/TimeChip";
@@ -192,12 +187,11 @@ export function MeetingView({
   const starts = useMemo(() => new Map(segments.map((s) => [s.id, s.start])), [detail]);
   const active = segmentIndexAt(segments, pos);
 
-  const { setPrintNonce, printable, exportPick, setExportPick, exportAs, saveExport, toObsidian } = useNoteExport({ id, detail, memoNote, selectedSummary, serial, notify });
+  const exp = useNoteExport({ id, detail, memoNote, selectedSummary, serial, notify });
 
   const railState = useRail(memoNote, memoRef, setMemoPick);
   const { tabNow, askSeen, memoSeen, minutesSeen, railCollapsed, openMemoLine } = railState;
   const memoSegs = useMemo(() => memoLineSegments(detail?.note_memo), [detail?.note_memo]);
-  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
   const onCite = useCallback(
     (_m: string, segId: string, sec: number) => (memoRef.current || isMemoLineId(segId) ? openMemoLine(segId) : seekTo(sec)),
     [seekTo, openMemoLine],
@@ -306,81 +300,28 @@ export function MeetingView({
   const polishMap = new Map([...livePolish(segments, polish.running ? polish.live : (detail.polish ?? []))].filter(([k]) => !deciding.has(k)));
   polishLive.current = polishMap;
   const glowing = polish.running ? pendingIds(segments, polish.ranges) : null;
+  const deleteWhy = convertBlock ?? (align.job.running || summaryRunning || enhanceRunning || minutesRunning || polish.running || attach?.lock ? t("작업이 끝난 뒤에 삭제할 수 있습니다") : null);
   const polishOff = recorded ? CONVERT_FIRST : editing || memoBusy ? t("저장이 끝난 뒤에 교정할 수 있습니다") : null;
 
   return (
     <div className={cn("meeting grid h-full max-[1180px]:block max-[1180px]:overflow-y-auto", railCollapsed ? "is-rail-collapsed grid-cols-[minmax(0,1fr)_52px]" : "grid-cols-[minmax(0,1fr)_var(--rail)]")}>
       <article className="transcript-col relative col-start-1 row-start-1 flex min-h-0 flex-col overflow-y-auto max-[1180px]:overflow-visible" onWheel={() => playing && setFollow(false)} onScroll={() => menu && setMenu(null)}>
-        <div data-tauri-drag-region className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-2 bg-background/90 pr-3 pl-6 backdrop-blur-md">
-          <p className="m-0 flex min-w-0 items-center gap-2 truncate text-xs text-muted-foreground tabular-nums" data-tauri-drag-region>
-            {created?.toLocaleDateString(locale(), { year: "numeric", month: "long", day: "numeric", weekday: "short" })}
-            {created && " · "}
-            {created && (getLang() === "en" ? clock(created.getHours(), created.getMinutes()) : created.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }))}
-            {recorded && <Badge variant="memo">{RECORDED_BADGE}</Badge>}
-          </p>
-          <div className="ml-auto flex shrink-0 items-center gap-0.5">
-            {!memoNote && segments.length > 0 && !hasWords && detail.audio_path && (
-              <GatedButton
-                gate={alignGate}
-                className={buttonVariants({ variant: "ghost", size: "sm" })}
-                disabled={align.job.running}
-                onClick={align.startAlign}
-                title={t("음성과 대화 내용을 단어 단위로 맞춥니다. 재생 중인 단어가 강조되고, 단어를 누르면 그 단어부터 재생합니다")}
-              >
-                <AudioLines aria-hidden />
-                {align.job.running
-                  ? (STAGE_LABEL[align.job.stage ?? ""] ?? t("시작하는 중…")) + (align.job.total ? ` ${Math.round((align.job.done / align.job.total) * 100)}%` : "")
-                  : t("단어 싱크 맞추기")}
-              </GatedButton>
-            )}
-            {memoNote && attach && (
-              <GatedButton gate={attach.convert ?? OK} className={buttonVariants({ variant: "ghost", size: "sm" })} disabled={!!attach.blocked} title={attach.blocked ?? ADD_FILE_TITLE} onClick={() => attach.onFile({ id, title: info.title })}>
-                <Upload aria-hidden />
-                {ADD_FILE}
-              </GatedButton>
-            )}
-            <ExportMenu
-              formats={exportFormatsFor(memoNote, recorded)}
-              onPick={(f) => void exportAs(f)}
-              onObsidian={() => void toObsidian()}
-              onPrint={() => {
-                // 메모는 쓰던 글까지 인쇄한다
-                void flushMemos().then((ok) => ok && setPrintNonce((n) => n + 1));
-              }}
-            />
-            {exportPick && (
-              <ExportDialog
-                label={exportPick.f.label}
-                items={exportPick.items}
-                onDone={(pick) => {
-                  setExportPick(null);
-                  if (pick) void saveExport(exportPick.f, pick);
-                }}
-              />
-            )}
-            <Button variant="ghost" size="icon-sm" aria-label={t("더 보기")} title={t("더 보기")} aria-haspopup="menu" aria-expanded={!!moreAnchor} onClick={(e) => setMoreAnchor((a) => (a ? null : e.currentTarget))}>
-              <MoreHorizontal aria-hidden />
-            </Button>
-            {moreAnchor && (
-              <Popover anchor={moreAnchor} label={t("더 보기")} align="end" onClose={() => setMoreAnchor(null)}>
-                {(close) => (
-                  <ItemMenu
-                    close={close}
-                    entries={[
-                      {
-                        id: "delete",
-                        label: t("삭제…"),
-                        danger: true,
-                        disabled: convertBlock ?? (align.job.running || summaryRunning || enhanceRunning || minutesRunning || polish.running || attach?.lock ? t("작업이 끝난 뒤에 삭제할 수 있습니다") : undefined),
-                        onSelect: () => onDelete({ kind: "note", id, title: info.title, dir: info.dir, memo: memoNote, withMemo: !memoNote && memoLines.size > 0 }),
-                      },
-                    ]}
-                  />
-                )}
-              </Popover>
-            )}
-          </div>
-        </div>
+        <NoteHeader
+          id={id}
+          created={created}
+          title={info.title}
+          memoNote={memoNote}
+          recorded={recorded}
+          hasSegments={segments.length > 0}
+          hasWords={hasWords}
+          hasAudio={!!detail.audio_path}
+          align={align}
+          alignGate={alignGate}
+          attach={attach}
+          exp={exp}
+          deleteWhy={deleteWhy}
+          onDelete={() => onDelete({ kind: "note", id, title: info.title, dir: info.dir, memo: memoNote, withMemo: !memoNote && memoLines.size > 0 })}
+        />
         {find && (
           <FindBar
             state={find}
@@ -633,7 +574,7 @@ export function MeetingView({
         </div>
         </div>
       </aside>
-      {printable && <PrintSheet doc={printable} />}
+      {exp.printable && <PrintSheet doc={exp.printable} />}
     </div>
   );
 }
