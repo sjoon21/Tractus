@@ -10,13 +10,11 @@ import { useCapabilities } from "./useCapabilities";
 import {
   baseName,
   exportFilename,
-  findMatches,
   fmtTime,
   isImeKey,
   isMemoLineId,
   isTypingTarget,
   oneLine,
-  replaceEdits,
   SEEK_STEP,
   SEEK_STEP_BIG,
   segmentIndexAt,
@@ -25,14 +23,9 @@ import {
   speakerStats,
   STAGE_LABEL,
   stepRate,
-  tokenOffsets,
   transcriptRows,
-  usableWords,
   replayStart,
-  wordClock,
-  wordIndexAt,
   type EXPORT_FORMATS,
-  type Match,
   type Segment,
 } from "./lib";
 import { AskPanel } from "./AskPanel";
@@ -48,7 +41,7 @@ import { SpeakerMenu, SpeakersBar, type MenuTarget, type MergeAsk } from "./Spea
 import { sendToObsidian } from "./obsidian";
 import { CoachMark } from "./CoachMark";
 import { markOnboard } from "./onboarding";
-import { ExportMenu, FindBar, type FindState } from "./TranscriptTools";
+import { ExportMenu, FindBar } from "./TranscriptTools";
 import { ExportDialog, type ExportPick } from "./ExportDialog";
 import { exportItems, PICK_FORMATS, type ExportItem } from "./exportPick";
 import { MemoEditor, TitleEditor, type MemoTarget } from "./MemoView";
@@ -71,7 +64,9 @@ import { PolishBar } from "./PolishControls";
 import { RecordPill } from "./RecordPill";
 import { usePlayback } from "./note/usePlayback";
 import { useNoteEditing } from "./note/useNoteEditing";
+import { useFind } from "./note/useFind";
 import { usePolishReview } from "./note/usePolishReview";
+import { useReadingHighlights } from "./note/useReadingHighlights";
 import { useRail } from "./note/useRail";
 import { NotePlayer } from "@/components/note/NotePlayer";
 import { NoteDock } from "@/components/note/NoteDock";
@@ -237,118 +232,9 @@ export function MeetingView({
     seekTo(sec, false);
   }, [detail, seek, starts, seekTo, openMemoLine]);
 
-  // 찾기·바꾸기 (5.4)
-  const [find, setFind] = useState<FindState | null>(null);
-  const [cur, setCur] = useState(0);
-  const findInput = useRef<HTMLInputElement>(null);
-  const matches = useMemo(() => (find ? findMatches(visible, find.q) : []), [visible, find?.q]);
-  const curMatch: Match | null = matches.length ? matches[Math.min(cur, matches.length - 1)] : null;
-  const curIndex = curMatch ? matches.indexOf(curMatch) : 0;
-  useEffect(() => setCur(0), [find?.q]);
-  const replace = (all: boolean) => {
-    if (!find || !curMatch) return;
-    const edits = replaceEdits(visible, find.q, find.r, all ? undefined : curMatch);
-    if (!edits.length) return setEditError(t("바꿔도 내용이 같거나 비게 되어 바꾸지 않았습니다"));
-    saveText(edits);
-    const term = find.r.trim();
-    if (find.glossary && term) {
-      api.glossaryAdd([term]).then(
-        (n) => notify({ text: n ? t("자주 쓰는 단어에 추가했습니다 — {term} (다음 녹음부터 더 정확하게 인식합니다)", { term }) : t("이미 자주 쓰는 단어에 있습니다 — {term}", { term }) }),
-        (e) => notify({ text: t("자주 쓰는 단어에 추가하지 못했습니다: {error}", { error: errText(e) }), error: true }),
-      );
-    }
-  };
-
-  // 강조: CSS Custom Highlight API. 지원하지 않으면 현재 일치 행의 테두리(is-find)만 보인다.
-  // 문장 노드는 한 번에 모아 둔다(일치마다 querySelector를 부르면 1000세그먼트에서 키 입력마다 100ms 넘게 걸린다)
-  useEffect(() => {
-    if (!("highlights" in CSS)) return;
-    const nodes = new Map<string, Node>();
-    if (matches.length)
-      for (const el of list.current?.querySelectorAll<HTMLElement>(".seg-text:not(.seg-editor)") ?? []) {
-        const segId = el.closest<HTMLElement>("[data-seg-id]")?.dataset.segId;
-        if (segId && el.firstChild) nodes.set(segId, el.firstChild);
-      }
-    const range = (m: Match) => {
-      const node = nodes.get(m.id);
-      if (!node) return [];
-      try {
-        const r = new Range();
-        r.setStart(node, m.start);
-        r.setEnd(node, m.start + m.length);
-        return [r];
-      } catch {
-        return [];
-      }
-    };
-    CSS.highlights.set("find", new Highlight(...matches.flatMap(range)));
-    CSS.highlights.set("find-current", new Highlight(...(curMatch ? range(curMatch) : [])));
-    return () => {
-      CSS.highlights.delete("find");
-      CSS.highlights.delete("find-current");
-    };
-  }, [matches, curMatch, rows, editingId]);
-  // 가라오케 (6.2): 재생 중인 단어 하나를 Highlight API로 칠한다 (단어마다 span을 만들지 않는다).
-  // 재생 중에만 rAF로 돌고, 멈춘 동안은 이동할 때 한 번 칠한다. (세그먼트, 단어)가 바뀔 때만 Range를 바꾼다.
-  // 찾기 강조가 위에 보이게 우선순위를 낮추고, 등록은 한 번만 한다(같은 우선순위면 나중에 등록한 것이 위)
-  const karaoke = useRef<Highlight | null>(null);
-  const usable = useMemo(() => new Map(segments.map((s) => [s.id, usableWords(s)])), [detail]);
-  const pausedT = playing ? -1 : pos;
-  useEffect(() => {
-    if (!("highlights" in CSS)) return;
-    const h = (karaoke.current ??= Object.assign(new Highlight(), { priority: -1 }));
-    if (!CSS.highlights.has("karaoke")) CSS.highlights.set("karaoke", h);
-    let last: string | null = null;
-    let raf = 0;
-    const paint = () => {
-      const now = audio.current?.currentTime ?? pos;
-      const seg = segments[segmentIndexAt(segments, now)];
-      // 발화가 끝난 뒤의 공백과 고치는 중인 세그먼트는 칠하지 않는다. 끝 시각에 겹친 단어(길이 0)는 wordClock의 끝까지 칠한다
-      const cand = seg && seg.id !== editingId ? usable.get(seg.id) : null;
-      const words = cand && now <= Math.max(seg.end, wordClock(cand).end) ? cand : null;
-      const k = words ? wordIndexAt(words, now) : -1;
-      const key = k < 0 ? "" : `${seg.id}:${k}`;
-      if (key !== last) {
-        last = key;
-        h.clear();
-        const node = k < 0 ? null : list.current?.querySelector(`[data-seg-id="${seg.id}"] .seg-text:not(.seg-editor)`)?.firstChild;
-        const o = node ? tokenOffsets(segText(seg))[k] : undefined;
-        if (node && o) {
-          try {
-            const r = new Range();
-            r.setStart(node, o.start);
-            r.setEnd(node, o.end);
-            h.add(r);
-          } catch {
-            // 글자 노드가 방금 바뀌었다. 다음 갱신에 다시 칠한다
-          }
-        }
-      }
-      if (playing) raf = requestAnimationFrame(paint);
-    };
-    paint();
-    return () => cancelAnimationFrame(raf);
-  }, [playing, pausedT, usable, rows, editingId]);
-  useEffect(() => () => void ("highlights" in CSS && CSS.highlights.delete("karaoke")), []);
-  useEffect(() => {
-    if (!curMatch) return;
-    setFollow(false);
-    list.current?.querySelector(`[data-seg-id="${curMatch.id}"]`)?.scrollIntoView({ block: "center" });
-  }, [curMatch]);
-
-  // 현재 세그먼트 자동 스크롤. 사용자가 직접 스크롤하면 멈추고 "현재 위치로" 버튼을 보인다.
-  // 화자를 고치는 동안(메뉴·이름 입력·합치기 확인)과 문장을 고치는 동안은 쉰다: 스크롤하면 고치던 것이 사라진다
+  const { find, setFind, setCur, findInput, matches, curMatch, curIndex, replace } = useFind({ visible, rows, editingId, list, saveText, setEditError, notify });
   const holding = !!(menu || renaming || merge || editingId);
-  useEffect(() => {
-    if (!follow || active < 0 || holding) return;
-    const el = list.current?.querySelector<HTMLElement>(`[data-seg="${active}"]`);
-    if (!el) return;
-    const box = el.getBoundingClientRect();
-    if (box.top < 80 || box.bottom > window.innerHeight - 140) {
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      el.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
-    }
-  }, [active, follow, holding]);
+  useReadingHighlights({ segments, rows, editingId, list, audio, playing, pos, active, follow, setFollow, holding, curMatch, detailKey: detail });
 
   // 단축키. e.key가 아니라 e.code(물리 키)로 본다: 한글 입력 상태에서는 e.key가 "ㅠ"·"ㅏ"다
   // (bbc/react-transcript-editor defaultHotKeys.js, MIT 참고)
