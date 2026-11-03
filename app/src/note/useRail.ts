@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { flushMemos } from "../memo";
 import type { MemoTarget } from "../MemoView";
 import { usePanels } from "../PanelToggle";
-import { railTabs, validTab, type RailTab } from "../rail";
+import { railTabs, tabClickPlan, validTab, type RailTab } from "../rail";
 
 export function useRail(memoNote: boolean, memoRef: { readonly current: boolean }, setMemoPick: (t: MemoTarget) => void) {
   const [tab, setTab] = useState<RailTab>("summary");
@@ -27,13 +27,13 @@ export function useRail(memoNote: boolean, memoRef: { readonly current: boolean 
       if (focusMemo) setMemoPick({ segId: null, nonce: Date.now() }); // 탭을 눌러 열면 입력창에 초점. 방향키로 지나갈 때는 두지 않는다
     }
   };
-  // 도크의 탭: 접힌 패널이면 펴서 그 탭을 보이고, 열려 있는 탭을 다시 누르면 접는다. 좁은 창(패널이 본문 아래로 내려간 때)에서는 패널로 스크롤한다
+  // 도크의 탭: 무엇을 할지는 rail.tabClickPlan(순수 규칙, 테스트)이 정한다
   const pickTab = (k: RailTab) => {
-    const narrow = window.matchMedia("(max-width: 1180px)").matches;
-    if (!narrow && !railCollapsed && k === tabNow) return void toggleRail("right");
+    const plan = tabClickPlan({ narrow: window.matchMedia("(max-width: 1180px)").matches, collapsed: railCollapsed, current: tabNow, clicked: k });
+    if (plan.kind === "fold") return void toggleRail("right");
     showTab(k, k === "memo");
-    if (railCollapsed) void toggleRail("right");
-    if (narrow) window.setTimeout(() => document.getElementById("rail-body")?.scrollIntoView({ block: "start", behavior: "smooth" }), 80);
+    if (plan.expand) void toggleRail("right");
+    if (plan.scroll) window.setTimeout(() => document.getElementById("rail-body")?.scrollIntoView({ block: "start", behavior: "smooth" }), 80);
   };
   // 메모의 줄로 간다: 메모 노트는 가운데 본문에서, 녹음 노트는 메모 탭을 열고 그 줄을 고른다
   const openMemoLine = useCallback(

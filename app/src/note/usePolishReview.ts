@@ -1,44 +1,18 @@
-// 스마트 교정의 제안 확인 (MeetingView에서 옮김, 동작 그대로): 실행(usePolish), 제안 받기·버리기(줄에 세워 저장), 다음 제안으로 이동.
-// 노트 데이터·편집 줄은 useNoteEditing이 들고 있고 여기서는 그것을 받아 쓴다.
-import { useCallback, useEffect, useRef, useState, type MutableRefObject, type RefObject } from "react";
-import { api, errDetail, errText, type MeetingDetail } from "../api";
+// 스마트 교정의 제안 확인: 실행(usePolish), 제안 받기·버리기(줄에 세워 저장), 다음 제안으로 이동.
+// 노트 데이터·저장 줄·저장 후 처리는 useNote의 것을 받아 쓴다.
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { api, errDetail, errText } from "../api";
 import type { Notify } from "../App";
-import { editQueue } from "../editQueue";
-import { indexer } from "../indexer";
-import { inverseEdits, segText, type TextEdit } from "../lib";
-import type { EditKind } from "../memo";
+import { inverseEdits, segText } from "../lib";
 import { nextSuggestion, NO_SUGGESTIONS, termsFromSuggestions, type PolishSuggestion } from "../polish";
 import { usePolish } from "../PolishControls";
-import { EDIT_BLOCKED } from "../remove";
+import type { Note } from "./useNote";
 
-export function usePolishReview({
-  id,
-  notify,
-  commit,
-  confirmed,
-  onEdited,
-  bumpEdit,
-  serial,
-  setEditError,
-  undoStack,
-  suggestTerms,
-  setFollow,
-  list,
-}: {
-  id: string;
-  notify: Notify;
-  commit: (d: MeetingDetail) => void;
-  confirmed: MutableRefObject<MeetingDetail | null>;
-  onEdited?: (id: string, updatedAt: string) => void;
-  bumpEdit: (kind: EditKind) => void;
-  serial: (task: () => Promise<void>) => Promise<void>;
-  setEditError: (e: string | null) => void;
-  undoStack: MutableRefObject<TextEdit[][]>;
-  suggestTerms: (all: string[]) => void;
-  setFollow: (f: boolean) => void;
-  /** 대화 목록: 제안으로 이동할 때 그 줄을 찾는다 */
-  list: RefObject<HTMLOListElement | null>;
-}) {
+export function usePolishReview({ id, notify, note, setFollow, list }: { id: string; notify: Notify; note: Note; setFollow: (f: boolean) => void; list: RefObject<HTMLOListElement | null> }) {
+  const { data, queue, noteSaved, suggestTerms } = note;
+  const { undoStack } = note.text;
+  const { confirmed, commit } = data;
+  const { guard, serial } = queue;
   // AI 다듬기 (docs/design/transcript-polish.md): 제안은 polish.json이 원본이다. 끝나면 노트를 다시 읽는다
   const polish = usePolish(id, notify, async () => {
     const d = await api.loadMeeting(id);
@@ -69,22 +43,19 @@ export function usePolishReview({
   const decidePolish = useCallback(
     (ids: string[], accept: boolean) => {
       if (!ids.length) return;
-      if (editQueue.isBlocked(id)) return setEditError(EDIT_BLOCKED);
+      if (guard()) return;
       setDeciding((d) => new Set([...d, ...ids]));
       const chosen = ids.flatMap((i) => polishLive.current.get(i) ?? []);
       void serial(async () => {
         const before = confirmed.current;
         try {
           const { changed, meeting } = await api.polishResolve(id, ids, accept);
-          commit(meeting);
+          noteSaved(meeting, "text", accept && changed > 0);
           // 정한 줄 다음의 제안으로 (여럿을 한꺼번에 정했으면 남은 것의 처음으로)
           const rest = new Map([...polishLive.current].filter(([k]) => !ids.includes(k)));
           const to = nextSuggestion(meeting.segments, rest, ids.length === 1 ? ids[0] : undefined);
           if (to) jumpTo(to);
           if (accept && changed > 0) {
-            onEdited?.(id, meeting.info.updated_at ?? "");
-            bumpEdit("text");
-            indexer.touch();
             const now = new Map(meeting.segments.map((s) => [s.id, s]));
             const edits = ids.flatMap((i) => (now.has(i) ? [{ id: i, text: segText(now.get(i)!) }] : []));
             if (before) undoStack.current.push(inverseEdits(before.segments, edits));
@@ -97,7 +68,7 @@ export function usePolishReview({
         }
       });
     },
-    [id, serial, commit, onEdited, bumpEdit, suggestTerms, notify, jumpTo],
+    [id, guard, serial, confirmed, noteSaved, undoStack, suggestTerms, notify, jumpTo],
   );
   return { polish, deciding, polishLive, polishAt, jumpTo, decidePolish };
 }

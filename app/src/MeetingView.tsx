@@ -44,7 +44,7 @@ import { cn } from "@/components/ui/utils";
 import { PolishBar } from "./PolishControls";
 import { RecordPill } from "./RecordPill";
 import { usePlayback } from "./note/usePlayback";
-import { useNoteEditing } from "./note/useNoteEditing";
+import { useNote } from "./note/useNote";
 import { useFind } from "./note/useFind";
 import { useNoteExport } from "./note/useNoteExport";
 import { usePolishReview } from "./note/usePolishReview";
@@ -83,12 +83,14 @@ export function MeetingView({
   /** 녹음을 방금 추가해 열었다: 요약이 있어도 아직 새 내용이 반영되지 않았다 */
   summaryStale?: boolean;
 }) {
-  const {
-    confirmed, commit, detail, summaryRev, setSummaryRev,
-    editSeq, editSeqRef, editKinds, bumpEdit, onMemoSaved,
-    memoRev, sendToMemo, renameNote,
-    editing, serial, editError, setEditError, saveMarks, editSpeakers, renameSpeaker,
-    undoStack, suggestTerms, saveText, undo,   } = useNoteEditing({ id, summaryStale, notify, onEdited, onChanged });
+  const note = useNote({ id, summaryStale, notify, onEdited, onChanged });
+  const { detail, commit, summaryRev, refresh: refreshNote } = note.data;
+  const { editSeq, editSeqRef, editKinds } = note.seq;
+  const { memoRev, onMemoSaved, sendToMemo } = note.memo;
+  const { editing, serial, editError, setEditError } = note.queue;
+  const { editSpeakers, renameSpeaker } = note.speakers;
+  const { saveText, undo } = note.text;
+  const { saveMarks, renameNote } = note;
   const [error, setError] = useState<{ text: string; detail: string | null } | null>(null);
   // 메모 노트 (녹음 없이 직접 쓴 글): 본문 편집기가 화면의 가운데를 차지하고 플레이어·참석자·단어 싱크는 없다
   const memoNote = !!detail && isMemo(detail.info);
@@ -162,7 +164,7 @@ export function MeetingView({
   const [menu, setMenu] = useState<MenuTarget | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [merge, setMerge] = useState<MergeAsk | null>(null);
-  const { polish, deciding, polishLive, polishAt, jumpTo, decidePolish } = usePolishReview({ id, notify, commit, confirmed, onEdited, bumpEdit, serial, setEditError, undoStack, suggestTerms, setFollow, list });
+  const { polish, deciding, polishLive, polishAt, jumpTo, decidePolish } = usePolishReview({ id, notify, note, setFollow, list });
   const [editingId, setEditingId] = useState<string | null>(null);
   const startEdit = useCallback((seg: Segment) => setEditingId(seg.id), []);
   const finishEdit = useCallback(
@@ -483,7 +485,7 @@ export function MeetingView({
         memoBusy={memoBusy}
         attach={attach}
         summaryRev={summaryRev}
-        bumpSummaryRev={() => setSummaryRev((r) => r + 1)}
+        bumpSummaryRev={() => refreshNote()}
         edit={{ editSeq, editSeqRef, editKinds }}
         notify={notify}
         onChanged={onChanged}

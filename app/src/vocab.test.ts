@@ -1,5 +1,5 @@
-import { expect, test } from "vitest";
-import { stem, termFromEdit } from "./vocab";
+import { describe, expect, test } from "vitest";
+import { stem, termFromEdit, unaskedTerms } from "./vocab";
 
 test("오인식 고침은 고친 낱말을 돌려준다 (조사는 뗀다)", () => {
   expect(termFromEdit("자원 언톨로지로 뭘 하려는지", "자원 온톨로지로 뭘 하려는지")).toBe("온톨로지");
@@ -22,4 +22,16 @@ test("조사·문장부호 떼기", () => {
   expect(stem("임베딩을,")).toBe("임베딩");
   expect(stem("VM이")).toBe("VM"); // 영문 뒤 조사도 뗀다
   expect(stem("나는")).toBe("나는");
+});
+
+describe("unaskedTerms", () => {
+  test("이미 물은 낱말은 거르고 순서는 유지한다", () => {
+    expect(unaskedTerms(new Set(["온톨로지"]), ["인시던트", "온톨로지", "파드"])).toEqual(["인시던트", "파드"]);
+  });
+  test("한 번에 같은 낱말이 둘 들어와도 한 번만 묻는다", () => {
+    expect(unaskedTerms(new Set(), ["파드", "파드"])).toEqual(["파드"]);
+  });
+  test("모두 물었으면 빈 목록", () => {
+    expect(unaskedTerms(new Set(["a"]), ["a"])).toEqual([]);
+  });
 });

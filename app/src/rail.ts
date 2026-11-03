@@ -34,3 +34,13 @@ export function railKey(tabs: RailTab[], current: RailTab, code: string): RailTa
 
 /** 탭 접근성 이름: 오른쪽 패널 전체 (`aside`) */
 export const railLabel = (memoNote: boolean): string => (memoNote ? t("요약과 AI 질문") : t("요약, 회의록, AI 질문, 메모")); // words-ok: 회의록은 문서 이름
+
+/**
+ * 도크의 탭을 눌렀을 때 할 일 (순수 규칙). 넓은 창에서 이미 열려 있는 탭을 다시 누르면 패널을 접는다.
+ * 그 밖에는 그 탭을 보이고, 패널이 접혀 있었으면 펴며, 좁은 창(패널이 본문 아래로 내려간 때)에서는 패널로 스크롤한다.
+ */
+export type TabClickPlan = { kind: "fold" } | { kind: "open"; expand: boolean; scroll: boolean };
+export function tabClickPlan({ narrow, collapsed, current, clicked }: { narrow: boolean; collapsed: boolean; current: RailTab; clicked: RailTab }): TabClickPlan {
+  if (!narrow && !collapsed && clicked === current) return { kind: "fold" };
+  return { kind: "open", expand: collapsed, scroll: narrow };
+}
