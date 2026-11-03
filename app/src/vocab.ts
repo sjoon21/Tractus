@@ -62,3 +62,8 @@ export function termFromEdit(before: string, after: string): string | null {
   if (term === was || !termLike(term) || term.replace(/\d/g, "") === was.replace(/\d/g, "") || similarity(was.replace(/\s/g, ""), term.replace(/\s/g, "")) < SIMILAR_MIN) return null;
   return term;
 }
+
+/** 이 화면에서 아직 묻지 않은 낱말만 (순서 유지, 중복 제거). 한 번 물은 낱말은 다시 묻지 않는다 */
+export function unaskedTerms(asked: ReadonlySet<string>, terms: readonly string[]): string[] {
+  return [...new Set(terms)].filter((x) => !asked.has(x));
+}

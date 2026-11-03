@@ -1,3 +1,12 @@
+import { ToastItem } from "@/components/Toast";
+import { isTranscribing, type Activity } from "./jobSchedule";
+import { useConvertQueue } from "./useConvertQueue";
+import { useImportQueue } from "./useImportQueue";
+import { useWorkScheduler } from "./useWorkScheduler";
+import { SidebarJobs } from "@/components/sidebar/SidebarJobs";
+import { LeftoverRecordings } from "@/components/sidebar/LeftoverRecordings";
+import { SidebarFooter } from "@/components/sidebar/SidebarFooter";
+import { Welcome } from "@/components/home/Welcome";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -5,42 +14,36 @@ import { ask, open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { attachAlignJobs } from "./alignJobs";
 import { api, errDetail, errFull, errText, useJob, useRecorder, type CalendarEvent, type MeetingInfo, type PendingRecording } from "./api";
-import { attendeeLine, CARD_LABEL, CARD_RECORD, eventWhen, useNextEvent } from "./calendar";
-import { CoachMark } from "./CoachMark";
-import { OnboardingCard } from "./OnboardingCard";
-import { onboardSteps, showOnboard, useOnboard, type StepId } from "./onboarding";
 import { AskPanel } from "./AskPanel";
-import { CHECKUP_LABEL, DROP_UNAVAILABLE, MODELS_LABEL, OK, recordNotice, UNCONVERTED_SAVED, type Decision } from "./caps";
+import { DROP_UNAVAILABLE, OK, recordNotice, UNCONVERTED_SAVED } from "./caps";
 import { Checkup } from "./Checkup";
 import { GatedButton } from "./GatedButton";
 import { DOWNLOAD_DONE, downloadErrorView } from "./models";
 import { ModelsView } from "./ModelsSettings";
 import { attachModelsJobs } from "./modelsJob";
-import { CapsContext, useCapabilities, useCapabilitiesState } from "./useCapabilities";
+import { CapsContext, useCapabilitiesState } from "./useCapabilities";
 import { OPEN_SETTINGS } from "./llmKey";
-import { addBlocked, ADDED, ADD_BADGE, attachReduce, DROP_CONFIRM, DROP_LABEL, failedFile, IDLE_ATTACH, IMPORT_BUSY, lockOf, pendingTarget, PENDING_LABEL, resolveTarget, type AttachControls, type AttachTarget } from "./attach";
+import { addBlocked, attachReduce, DROP_CONFIRM, DROP_LABEL, IDLE_ATTACH, IMPORT_BUSY, lockOf, resolveTarget, type AttachControls, type AttachTarget } from "./attach";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
-import { locale, t } from "./i18n";
+import { t } from "./i18n";
 import { bindIndexer, indexer } from "./indexer";
-import { baseName, errorView, isImeKey, isRecLive, IDLE_JOB, JOB_ERROR, fmtTime, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, STAGE_FALLBACK, STAGE_LABEL, warningText, type RecMode } from "./lib";
+import { baseName, errorView, isImeKey, isRecLive, IDLE_JOB, JOB_ERROR, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, type RecMode } from "./lib";
 import { MeetingView } from "./MeetingView";
 import type { NewNoteAction } from "./menu";
 import { NewNoteMenu } from "./NewNoteMenu";
-import { dropMemo, flushMemos, isMemo, noteTime, settleMemo } from "./memo";
+import { dropMemo, flushMemos, isMemo, settleMemo } from "./memo";
 import { RecordView } from "./RecordView";
-import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, recordingLabel, type DeleteTarget } from "./remove";
+import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, type DeleteTarget } from "./remove";
 import { SearchView } from "./SearchView";
 import { SettingsView } from "./SettingsView";
 import { createTraySender, deriveTrayState, routeTrayAction } from "./tray";
 import { AfterRecordDialog } from "./AfterRecordDialog";
 import { afterRecord, ASK_BLOCKS_RECORD, effectiveChoice, rememberedChoice, stopAction, type AskChoice } from "./afterRecord";
-import { convertsWhileRecording, LIVE_BLOCKS_RECORD, recordBlock } from "./recordBusy";
-import { attachConvertJobs, convertStore, useConvertJob } from "./convertJobs";
-import { convertAdvance, convertEnqueue, convertProgress, convertSlot, IDLE_CONVERT, type ConvertQueue } from "./convertQueue";
+import { LIVE_BLOCKS_RECORD, recordBlock } from "./recordBusy";
 import { recButton } from "./pause";
-import { BULK_MIN, CONVERT_ALL, CONVERT_PAUSED, CONVERT_ALL_LINE, CONVERT_ALL_TITLE, CONVERT_FAIL, CONVERTED, isRecorded, noteLabel, recordedIds, SAVE_NOTE, SAVE_NOTE_TITLE, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
+import { BULK_MIN, CONVERT_ALL, CONVERT_ALL_TITLE, CONVERTED, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
 import { NoteLibrary } from "./NoteLibrary";
 import { QuickFind } from "./QuickFind";
 import { touchNote as touchNoteIn, type Folder } from "./organize";
@@ -48,14 +51,11 @@ import { OrganizeContext, useOrganizeState } from "./useOrganize";
 import { PanelResizer, PanelToggle, usePanels } from "./PanelToggle";
 import { RAIL_REC_LABEL, railPendingLabel, railRecState } from "./panels";
 import { check } from "@tauri-apps/plugin-updater";
-import { AudioLines, Box, CalendarClock, ChevronRight, CircleAlert, FileText, House, Mic, Settings, Sparkles, SquarePen, Stethoscope, Upload, X } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { AudioLines, House, Settings, Sparkles, Upload, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
-import { Progress } from "@/components/ui/progress";
 import { cn } from "@/components/ui/utils";
-import { FlickeringGrid } from "@/components/ui/flickering-grid";
-import { JOB_CARD, NOTE_LINK, SIDE_HEAD, SIDE_ITEM } from "@/components/sidebar";
+import { SIDE_ITEM } from "@/components/sidebar";
 import { SparklesIcon } from "@/components/ui/sparkles-icon";
 import logo from "./assets/logo.png";
 import { markSeen, newVersionToast, noteExcerpt, OPEN_SETTINGS_LABEL, remembered, seenVersion, START_DELAY_MS, updateNotice, updateReduce } from "./update";
@@ -75,7 +75,6 @@ const GLOBAL = { kind: "global" } as const;
 /** 화면 아래 알림. 오류는 닫을 때까지 남고, 새 알림이 와도 밀려나지 않는다(쌓인다). detail: 원래 문구 (접힌 '자세히') */
 export type Toast = { text: string; detail?: string | null; error?: boolean; action?: { label: string; run: () => void } };
 export type Notify = (t: Toast) => void;
-const TOAST_MS = 6000;
 const TOAST_MAX = 4; // ponytail: 넘치면 가장 오래된 것부터 버린다. 여러 파일 실패를 다 보여야 하면 가져오기 패널에 실패 목록을 둔다
 
 export function App() {
@@ -245,11 +244,17 @@ export function App() {
     },
     [finish.runJob],
   );
-  // 변환 전 노트의 변환 줄 (convertQueue.ts): 노트 하나를 변환하는 것도, 모두 변환도 같은 줄이다. 한 번에 하나씩 (변환 엔진이 한 번에 하나만 올라간다)
-  const [convQ, setConvQ] = useState<ConvertQueue>(IDLE_CONVERT);
-  const convJob = useConvertJob(convQ.current);
-  const converting = convQ.current !== null;
-  const convertRunning = converting && convJob.running;
+  // 변환 전 노트의 변환 줄 (useConvertQueue.ts): 언제 시작하는가는 아래 useWorkScheduler가 정한다
+  const convert = useConvertQueue({
+    meetings,
+    convertGate: () => capsRef.current.can("convert"),
+    notify,
+    notifyBlocked,
+    refresh,
+    openMeeting,
+    isViewing: (noteId) => viewRef.current.kind === "meeting" && viewRef.current.id === noteId,
+  });
+  const { converting, running: convertRunning, job: convJob, bulkIds, convertNote, convertAll, slots: convertSlots, title: convTitle, pct: convPct, progress: convProgress } = convert;
   // 지금(마지막으로) 도는 전사 대상. "다시 전사"는 방금 녹음뿐 아니라 사이드바의 남은 녹음에도 쓴다. 전사를 시작할 때 정한다
   // 바로 시작하지 않고 대기 줄(waitList)에 둔다: 앞선 전사·파일 가져오기·변환 전 노트의 변환이 끝난 뒤에 시작한다(변환 엔진이 한 번에 하나만 올라가게).
   // 변환 중에도 녹음할 수 있으므로(recordBusy.ts) 변환이 도는 동안 다음 녹음이 끝나 줄에 설 수 있다
@@ -351,107 +356,54 @@ export function App() {
     api.setRecMode(m).catch((e) => setListError({ text: t("녹음 방식을 저장하지 못했습니다: {error}", { error: errText(e) }), detail: errDetail(e) }));
   };
 
-  // 파일 가져오기 (Phase 5.5): 끌어 놓거나 고른 파일을 큐에 넣고 한 번에 하나씩 전사한다
-  // (vibe use-drop-target.ts, meetily layout.tsx — 둘 다 MIT — 참고). 녹음 전사와는 겹치지 않는다: 녹음 전사가 먼저다
-  const [queue, setQueue] = useState<string[]>([]);
-  const [importing, setImporting] = useState<string | null>(null);
-  const importTarget = useRef<AttachTarget | null>(null); // 이 노트에 추가하려고 고른 파일이면 그 노트 (파일에서 추가)
-  const imp = useJob((meetingId, warnings) => {
-    void refresh();
-    const name = importing ? baseName(importing) : t("파일");
-    // 화면은 바꾸지 않는다: 고치던 문장·찾기가 사라진다. 열기는 사용자가 고른다
-    const dup = warnings.some((w) => w.code === "duplicate");
-    const into = importTarget.current;
-    if (into && !dup && into.id === meetingId) {
-      setNoteEpoch((e) => ({ id: meetingId, n: e.n + 1, stale: true })); // 열려 있는 노트는 녹음 노트로 다시 읽는다
-      return notify({ text: ADDED(into.title, name) });
-    }
-    notify({ text: dup ? t("이미 텍스트로 변환한 파일입니다 — {name}", { name }) : t("텍스트 변환을 마쳤습니다 — {name}", { name }), action: { label: t("열기"), run: () => openMeeting(meetingId) } });
+  // 파일 가져오기 줄 (useImportQueue.ts)
+  const importQ = useImportQueue({
+    convertGate: () => capsRef.current.can("convert"),
+    notify,
+    notifyBlocked,
+    refresh,
+    openMeeting,
+    markNoteStale: (id) => setNoteEpoch((e) => ({ id, n: e.n + 1, stale: true })),
   });
-  useEffect(() => {
-    // 실시간 텍스트 변환이 도는 녹음 중에는 변환 엔진을 올리지 않는다 (자막이 밀린다). 자막이 없으면 녹음과 함께 돈다
-    if (!waitList.length || transcribe.job.running || imp.job.running || convertRunning || !convertsWhileRecording(recording, liveRec)) return;
+  const { imp, queue, importing, importPct, enqueue, startAttach } = importQ;
+  // 무거운 작업은 한 번에 하나씩 순서대로 시작한다: 규칙은 jobSchedule.ts(테스트), 시작은 useWorkScheduler가 한다
+  const activity: Activity = {
+    recording,
+    liveRec,
+    asking,
+    transcribeRunning: transcribe.job.running,
+    transcribeWaiting: waitDir !== null,
+    finishRunning: finish.job.running,
+    converting,
+    convertRunning,
+    importRunning: imp.job.running,
+    importWaiting: queue.length > 0,
+  };
+  // 대기 줄의 첫 녹음을 변환하기 시작한다
+  const startNextTranscribe = useCallback(() => {
     const [next, ...rest] = waitList;
+    if (!next) return;
     setWaitList(rest);
     transcribeDir.current = next.dir;
     transcribeTarget.current = next.target;
     void transcribe.startJob("transcribe", next.dir, next.target?.id);
-  }, [waitList, transcribe.job.running, imp.job.running, convertRunning, recording, liveRec, transcribe.startJob]);
+  }, [waitList, transcribe.startJob]);
+  useWorkScheduler({
+    activity,
+    listLoaded,
+    startNextTranscribe,
+    tryStartConvert: convert.tryStart,
+    convertWatch: meetings,
+    startNextImport: importQ.startNext,
+    waitKey: waitList,
+    importKey: queue,
+  });
   // 노트로 저장하는 중·변환 전 노트를 변환하는 중도 `변환 중`으로 본다: 새 녹음·가져오기·창 닫기 확인이 같은 규칙을 쓴다
-  const transcribing = transcribe.job.running || waitDir !== null || finish.job.running || converting;
+  const transcribing = isTranscribing(activity);
   // 새 녹음을 막는 일 (recordBusy.ts): 묻는 창·저장 중, 그리고 실시간 텍스트 변환을 켜 둔 채 녹음을 변환하는 중. 그 밖의 변환은 녹음과 함께 돈다.
   // 변환 전 노트의 변환 줄은 막지 않는다: 자막을 켠 녹음이면 도는 변환을 멈추고(멈춘 곳부터 이어 할 수 있다) 녹음이 끝나면 이어서 한다 (pauseConvert)
   const recordBlockKind = recordBlock({ converting: transcribe.job.running || waitDir !== null, saving: finish.job.running, asking, liveOn });
   const recordBlocked = recordBlockKind !== null;
-  const preempted = useRef<string | null>(null); // 새 녹음이 멈춘 변환의 노트
-  // 변환 줄의 첫 노트를 시작한다: 녹음·다른 변환·가져오기가 끝난 뒤에. 지워졌거나 다른 곳에서 이미 변환한 노트는 건너뛴다
-  const meetingsRef = useRef(meetings);
-  meetingsRef.current = meetings;
-  const startedConv = useRef<string | null>(null);
-  useEffect(() => {
-    const id = convQ.current;
-    if (id === null) {
-      startedConv.current = null;
-      return;
-    }
-    if (startedConv.current === id || !listLoaded) return;
-    const note = meetings.find((m) => m.id === id);
-    if (!note || !isRecorded(note)) return setConvQ(convertAdvance);
-    if (!convertsWhileRecording(recording, liveRec) || asking || transcribe.job.running || waitDir !== null || finish.job.running || imp.job.running) return;
-    startedConv.current = id;
-    void convertStore.start(id);
-  }, [convQ.current, meetings, listLoaded, recording, liveRec, asking, transcribe.job.running, waitDir, finish.job.running, imp.job.running, convJob.running]);
-  // 변환이 끝나면(성공이든 실패든) 알리고 줄을 넘긴다. 실패해도 줄은 이어진다. 노트가 열려 있지 않아도 알린다
-  useEffect(
-    () =>
-      attachConvertJobs(({ noteId, ok, state }) => {
-        // 새 녹음이 멈춘 변환: 실패로 알리지 않고 줄도 넘기지 않는다. 녹음이 끝나면 같은 노트를 이어서 시작한다
-        if (preempted.current === noteId) {
-          preempted.current = null;
-          if (!ok) {
-            startedConv.current = null;
-            return;
-          }
-        }
-        const title = meetingsRef.current.find((m) => m.id === noteId)?.title ?? "";
-        if (ok) {
-          const open = viewRef.current.kind === "meeting" && viewRef.current.id === noteId;
-          notify({ text: CONVERTED(title), action: open ? undefined : { label: t("열기"), run: () => openMeeting(noteId) } });
-          state.warnings.forEach((w) => notify({ text: warningText(w) }));
-        } else {
-          const e = errorView(state.error, state.errorCode, JOB_ERROR.convert);
-          notify({ text: CONVERT_FAIL(title, e.text === JOB_ERROR.convert ? "" : `. ${e.text}`), detail: e.detail, error: true });
-        }
-        void refresh();
-        setConvQ((q) => (q.current === noteId ? convertAdvance(q) : q));
-      }),
-    [notify, refresh, openMeeting],
-  );
-  const enqueue = useCallback(
-    (paths: string[]) => {
-      if (!capsRef.current.can("convert").ok) return notifyBlocked(capsRef.current.can("convert")); // 끌어 놓은 파일: 실패하지 않고 이유를 알린다
-      const bad = paths.filter((p) => !isImportable(p));
-      if (bad.length) notify({ text: t("가져올 수 없는 형식입니다: {files}", { files: bad.map(baseName).join(", ") }), error: true });
-      setQueue((q) => [...q, ...paths.filter((p) => isImportable(p) && !q.includes(p))]);
-    },
-    [notify, notifyBlocked],
-  );
-  useEffect(() => {
-    if (!queue.length || imp.job.running || transcribing) return;
-    const [next, ...rest] = queue;
-    setQueue(rest);
-    setImporting(next);
-    importTarget.current = null;
-    void imp.startJob("import", next);
-  }, [queue, imp.job.running, transcribing, imp.startJob]);
-  // 실패는 알림으로 남긴다 (다음 파일이 시작되면 진행 표시는 그 파일로 바뀐다)
-  useEffect(() => {
-    if (!imp.job.running && imp.job.error && importing) {
-      const e = errorView(imp.job.error, imp.job.errorCode, JOB_ERROR.import);
-      const why = e.text === JOB_ERROR.import ? "" : `. ${e.text}`;
-      notify({ text: failedFile(importing, why), detail: e.detail, error: true });
-    }
-  }, [imp.job.running, imp.job.error, imp.job.errorCode, importing, notify]);
   const pickFiles = async () => {
     if (!convertGate.ok) return notifyBlocked(convertGate);
     try {
@@ -573,7 +525,6 @@ export function App() {
   useEffect(() => {
     if (!transcribe.job.running) void refresh();
   }, [transcribe.job.running, refresh]);
-  const importPct = imp.job.total ? imp.job.done / imp.job.total : null;
   const leftover = pending.filter((p) => !(recording && p.dir === rec.dir));
 
   useEffect(() => {
@@ -607,10 +558,7 @@ export function App() {
   // 자막이 없으면 변환은 녹음과 함께 계속 돈다. 이번 녹음의 자막 여부도 여기서 정한다
   const pauseConvert = () => {
     setLiveRec(liveOn);
-    if (!liveOn || !convertRunning || convQ.current === null) return;
-    preempted.current = convQ.current;
-    convertStore.cancel(convQ.current);
-    notify({ text: CONVERT_PAUSED });
+    if (liveOn) convert.preempt();
   };
   /** event: 홈의 `곧 시작하는 일정` 카드에서 시작한 녹음 (일정 제목·참석자를 녹음 폴더에 남긴다) */
   const onRecordButton = (event?: CalendarEvent) => {
@@ -697,10 +645,8 @@ export function App() {
     if (!file) return;
     if (!isImportable(file)) return notify({ text: t("가져올 수 없는 형식입니다: {files}", { files: baseName(file) }), error: true });
     if (!(await flushMemos())) return;
-    importTarget.current = target;
     dispatchAttach({ type: "convert", target });
-    setImporting(file);
-    void imp.startJob("import", file, target.id);
+    startAttach(file, target);
   };
   attachFileRef.current = attachFile;
   // 낡음 안내는 노트 화면이 처음 뜰 때 한 번만 쓴다 (요약을 다시 만든 뒤 노트를 다시 열었을 때 또 보이지 않게)
@@ -736,33 +682,8 @@ export function App() {
     else void pickFiles();
   };
 
-  // 변환 전 노트의 변환 (recorded.ts): 한 노트도, 모두도 같은 줄에 올린다. 못 쓰면 이유와 고치는 길을 알린다
-  const convertNote = useCallback(
-    (id: string) => {
-      const gate = capsRef.current.can("convert");
-      if (!gate.ok) return notifyBlocked(gate);
-      setConvQ((q) => convertEnqueue(q, [id]));
-    },
-    [notifyBlocked],
-  );
-  const bulkIds = useMemo(() => recordedIds(meetings), [meetings]);
-  const convertAll = () => {
-    if (!convertGate.ok) return notifyBlocked(convertGate);
-    setConvQ((q) => convertEnqueue(q, bulkIds));
-  };
-  const convertSlots = useMemo(() => {
-    const slots = new Map<string, "running" | "queued">();
-    for (const id of [convQ.current, ...convQ.pending]) {
-      const slot = id === null ? null : convertSlot(convQ, id, convertRunning);
-      if (id !== null && slot) slots.set(id, slot);
-    }
-    return slots;
-  }, [convQ, convertRunning]);
   const waitReason = recording && liveRec ? WAIT_RECORDING : WAIT_OTHER;
-  const convertControls: ConvertControls | undefined = view.kind === "meeting" ? { slot: convertSlot(convQ, view.id, convertRunning), waitReason, gate: convertGate, onConvert: convertNote } : undefined;
-  const convTitle = converting ? (meetings.find((m) => m.id === convQ.current)?.title ?? "") : "";
-  const convPct = convJob.total ? convJob.done / convJob.total : null;
-  const convProgress = convertProgress(convQ);
+  const convertControls: ConvertControls | undefined = view.kind === "meeting" ? { slot: convert.slotOf(view.id), waitReason, gate: convertGate, onConvert: convertNote } : undefined;
   // 녹음 단추는 녹음을 막는 동안에만 변환 상태를 보인다. 막지 않는 변환(자막이 꺼진 녹음 변환·가져오기)의 진행은 사이드바 카드에 있다
   const liveBlock = recordBlockKind === "live";
   const railRec = railRecState({ recording, asking, busy: finish.job.running || liveBlock });
@@ -912,43 +833,22 @@ export function App() {
           )}
         </div>
 
-        {(imp.job.running || queue.length > 0) && (
-          <section className={JOB_CARD} aria-live="polite" aria-label={t("가져오기 진행")}>
-            <p className="truncate font-medium text-foreground">{importing ? baseName(importing) : t("대기 중")}</p>
-            <p className="flex justify-between gap-2 tabular-nums">
-              <span>{STAGE_LABEL[imp.job.stage ?? ""] ?? STAGE_FALLBACK}</span>
-              <span>{[importPct !== null && `${Math.round(importPct * 100)}%`, queue.length > 0 && t("대기 {n}개", { n: queue.length })].filter(Boolean).join(" · ")}</span>
-            </p>
-            <Progress value={importPct} />
-            {imp.job.warnings
-              .filter((w) => w.code !== "duplicate")
-              .map((w) => (
-                <p key={w.code} className="text-memo">
-                  {warningText(w)}
-                </p>
-              ))}
-          </section>
-        )}
-        {(transcribe.job.running || waitList.length > 0) && (
-          <section className={JOB_CARD} aria-live="polite" aria-label={t("녹음 변환 진행")}>
-            <p className="truncate font-medium text-foreground">{t("녹음을 텍스트로 변환")}</p>
-            <p className="flex justify-between gap-2 tabular-nums">
-              <span>{transcribe.job.running ? (STAGE_LABEL[transcribe.job.stage ?? ""] ?? STAGE_FALLBACK) : waitReason}</span>
-              <span>{[txPct !== null && `${Math.round(txPct * 100)}%`, waitList.length > 0 && transcribe.job.running && t("대기 {n}개", { n: waitList.length })].filter(Boolean).join(" · ")}</span>
-            </p>
-            <Progress value={txPct} />
-          </section>
-        )}
-        {converting && (
-          <section className={JOB_CARD} aria-live="polite" aria-label={t("변환 전 노트 변환 진행")}>
-            <p className="truncate font-medium text-foreground">{convProgress ? CONVERT_ALL_LINE(convProgress.n, convProgress.total, convTitle) : noteLabel(convTitle)}</p>
-            <p className="flex justify-between gap-2 tabular-nums">
-              <span>{convertRunning ? (STAGE_LABEL[convJob.stage ?? ""] ?? STAGE_FALLBACK) : waitReason}</span>
-              <span>{convertRunning && convPct !== null ? `${Math.round(convPct * 100)}%` : ""}</span>
-            </p>
-            <Progress value={convertRunning ? convPct : null} />
-          </section>
-        )}
+        <SidebarJobs
+          importJob={imp.job}
+          importing={importing}
+          importPct={importPct}
+          queue={queue}
+          transcribeJob={transcribe.job}
+          waitList={waitList}
+          waitReason={waitReason}
+          txPct={txPct}
+          converting={converting}
+          convertRunning={convertRunning}
+          convStage={convJob.stage}
+          convPct={convPct}
+          convProgress={convProgress}
+          convTitle={convTitle}
+        />
 
         <nav className="meeting-nav mt-2 min-h-0 flex-1 overflow-y-auto border-t border-sidebar-border px-2 pt-2 pb-6" aria-label={t("노트 목록")}>
           {listError && (
@@ -957,70 +857,12 @@ export function App() {
               <ErrorDetail detail={listError.detail} />
             </div>
           )}
-          {leftover.length > 0 && (
-            <section className="mb-2">
-              <h2 className={SIDE_HEAD}>{t("변환 대기 중인 녹음")}</h2>
-              <ul>
-                {leftover.map((p) => {
-                  // 글만 있는 노트에 추가하려던 녹음이면 그 노트(아직 글만 있을 때)에 이어서 추가한다. 노트가 없어졌으면 새 노트로 변환한다
-                  const into = pendingTarget(p, meetings);
-                  const label = into ? PENDING_LABEL(into.title) : recordingLabel(p.started_at);
-                  return (
-                  <li key={p.dir} className="group relative">
-                    <GatedButton
-                      gate={convertGate}
-                      className={NOTE_LINK}
-                      disabled={transcribing}
-                      onClick={() => {
-                        startTranscribe(p.dir, into);
-                        void go({ kind: "record" });
-                      }}
-                    >
-                      <span className="block truncate text-[13px] font-medium tabular-nums">{label}</span>
-                      <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
-                        {p.duration === null ? t("끊긴 녹음") : fmtTime(p.duration)}
-                        <Badge variant="rec">{into ? ADD_BADGE : t("변환하기")}</Badge>
-                      </span>
-                    </GatedButton>
-                    <span className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-                      {!into && (
-                        <Button variant="outline" size="sm" className="h-6 px-2" disabled={transcribing || recording} aria-label={`${label} ${SAVE_NOTE}`} title={SAVE_NOTE_TITLE} onClick={() => saveLeftover(p.dir)}>
-                          {SAVE_NOTE}
-                        </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 px-2 hover:border-destructive hover:text-destructive"
-                        disabled={transcribing}
-                        aria-label={t("{label} 삭제", { label })}
-                        title={t("삭제 (휴지통으로 이동)")}
-                        onClick={() => askDelete({ kind: "recording", dir: p.dir, startedAt: p.started_at })}
-                      >
-                        {t("삭제")}
-                      </Button>
-                    </span>
-                  </li>
-                  );
-                })}
-              </ul>
-            </section>
-          )}
+          {leftover.length > 0 && <LeftoverRecordings leftover={leftover} meetings={meetings} convertGate={convertGate} transcribing={transcribing} recording={recording} startTranscribe={startTranscribe} saveLeftover={saveLeftover} askDelete={askDelete} go={go} />}
           {!listError && meetings.length === 0 && leftover.length === 0 && <p className="m-2 text-xs text-muted-foreground">{t("아직 노트가 없습니다. 새 노트로 녹음을 시작하거나 글을 쓰거나, 설정에서 데이터 위치를 확인하세요.")}</p>}
           <NoteLibrary notes={meetings} activeId={activeId} onOpen={openMeeting} convertSlots={convertSlots} onConvert={convertNote} />
         </nav>
 
-        <footer className="flex items-center gap-0.5 border-t border-sidebar-border px-2 py-1.5">
-          <Button variant="sidebar" size="sm" className="gap-1.5 text-muted-foreground aria-[current=true]:text-foreground" onClick={() => void go({ kind: "settings" })} aria-current={view.kind === "settings"}>
-            <Settings aria-hidden />
-            {t("설정")}
-          </Button>
-          <Button variant="sidebar" size="sm" className="gap-1.5 text-muted-foreground aria-[current=true]:text-foreground" onClick={() => void go({ kind: "models" })} aria-current={view.kind === "models"}>
-            <Box aria-hidden />
-            {MODELS_LABEL}
-          </Button>
-          <span className="ml-auto pr-2 text-[11px] text-subtle-foreground tabular-nums">{t("노트 {n}개", { n: meetings.length })}</span>
-        </footer>
+        <SidebarFooter viewKind={view.kind} noteCount={meetings.length} go={go} />
         </div>
       </aside>
 
@@ -1115,183 +957,5 @@ export function App() {
     </div>
     </OrganizeContext.Provider>
     </CapsContext.Provider>
-  );
-}
-
-function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
-  const close = useRef(onClose);
-  close.current = onClose;
-  useEffect(() => {
-    if (toast.error) return;
-    const h = setTimeout(() => close.current(), TOAST_MS);
-    return () => clearTimeout(h);
-  }, [toast.error]);
-  return (
-    <div className={cn("flex items-center gap-2 rounded-lg border border-border bg-popover py-1.5 pr-1.5 pl-3.5 text-[13px] text-popover-foreground shadow-pop animate-in fade-in-0 slide-in-from-bottom-2", toast.error && "border-destructive/40")} role={toast.error ? "alert" : "status"}>
-      {toast.error && <CircleAlert className="size-4 shrink-0 text-destructive" aria-hidden />}
-      <div className="min-w-0 flex-1 py-1">
-        {toast.text}
-        <ErrorDetail detail={toast.detail} />
-      </div>
-      {toast.action && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            toast.action?.run();
-            onClose();
-          }}
-        >
-          {toast.action.label}
-        </Button>
-      )}
-      <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label={t("알림 닫기")} onClick={onClose}>
-        <X aria-hidden />
-      </Button>
-    </div>
-  );
-}
-
-const RECENT_MAX = 6;
-
-function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, recordGate, convertGate, recording }: { notes: MeetingInfo[]; onOpen: (id: string) => void; onAction: (a: NewNoteAction) => void; onRecordEvent: (ev: CalendarEvent) => void; onSample: () => void; recordGate: Decision; convertGate: Decision; recording: boolean }) {
-  const caps = useCapabilities();
-  const { openCheckup, openModels } = caps;
-  const next = useNextEvent();
-  const onboard = useOnboard();
-  const steps = onboardSteps(onboard, notes, caps.can("convert").ok);
-  const checklist = showOnboard(onboard, steps);
-  const onStep = (id: StepId) => (id === "models" ? openModels() : id === "record" ? onAction("record") : onSample());
-  const recent = useMemo(() => [...notes].sort((a, b) => (b.updated_at ?? b.created_at).localeCompare(a.updated_at ?? a.created_at)).slice(0, RECENT_MAX), [notes]);
-  const keys: [string[], string][] = [
-    [["⌘N"], t("글쓰기 (새 메모)")],
-    [["⌘K"], t("검색")],
-    [["Space"], t("재생 / 일시정지")],
-    [["B"], t("녹음 중 북마크")],
-    [["←", "→"], t("5초 이동 (Shift 10초)")],
-    [["R"], t("직전 문장 다시 듣기")],
-    [["⌘F"], t("찾아 바꾸기")],
-    [["⌘J"], t("AI 어시스턴트")],
-    [["⌘B"], t("노트 목록 접기·펼치기")],
-    [["⌥⌘B"], t("오른쪽 패널 접기·펼치기")],
-  ];
-  const action = "flex flex-col items-start gap-3 rounded-lg border border-border bg-card p-4 text-left outline-none transition-colors hover:border-border-strong hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring/40 gated:opacity-50 [&_svg]:size-5";
-  return (
-    <section className="relative isolate flex h-full flex-col overflow-y-auto">
-      <FlickeringGrid className="absolute inset-x-0 top-0 -z-10 h-[360px] [mask-image:radial-gradient(ellipse_70%_100%_at_50%_0%,black_20%,transparent_75%)]" />
-      <div data-tauri-drag-region className="h-[52px] shrink-0" />
-      <div className="mx-auto flex w-full max-w-[760px] flex-col gap-10 px-8 pt-10 pb-16">
-        <h1 className="sr-only">{t("홈")}</h1>
-        {notes.length === 0 && <p className="m-0 text-[15px] font-medium">{t("녹음하거나 메모를 써서 노트를 만드세요. 녹음은 이 Mac에서 텍스트로 변환되고, 파일로 남습니다.")}</p>}
-
-        {next && <NextEventCard ev={next} gate={recordGate} recording={recording} onRecord={() => onRecordEvent(next)} />}
-        {checklist && <OnboardingCard steps={steps} onStep={onStep} />}
-        {/* 홈의 안내는 시작하기 목록을 마치거나 닫은 뒤에 (목록을 가리지 않게) */}
-        <CoachMark id="ask" side="right" ready={!checklist && notes.some((n) => !n.sample)} />
-        {next && <CoachMark id="calendar" ready={!checklist} />}
-
-        <div className="grid grid-cols-3 gap-3">
-          <GatedButton gate={recordGate} className={action} disabled={recording} onClick={() => onAction("record")}>
-            <span className="grid size-9 place-items-center rounded-full bg-rec-wash text-rec">
-              <Mic aria-hidden />
-            </span>
-            <span className="text-[13px] font-medium">{t("녹음 시작")}</span>
-          </GatedButton>
-          <button type="button" className={action} onClick={() => onAction("write")}>
-            <span className="grid size-9 place-items-center rounded-full bg-memo-wash text-memo">
-              <SquarePen aria-hidden />
-            </span>
-            <span className="flex w-full items-center justify-between text-[13px] font-medium">
-              {t("글쓰기")} <Kbd>⌘N</Kbd>
-            </span>
-          </button>
-          <GatedButton gate={convertGate} className={action} onClick={() => onAction("import")}>
-            <span className="grid size-9 place-items-center rounded-full bg-secondary text-muted-foreground">
-              <Upload aria-hidden />
-            </span>
-            <span className="text-[13px] font-medium">{t("파일 가져오기")}</span>
-          </GatedButton>
-        </div>
-
-        {recent.length > 0 && (
-          <section aria-labelledby="recent-title" className="flex flex-col gap-2">
-            <h2 id="recent-title" className="m-0 px-1 text-[13px] font-semibold">
-              {t("최근 노트")}
-            </h2>
-            <ul className="m-0 list-none divide-y divide-border overflow-hidden rounded-lg border border-border bg-card p-0">
-              {recent.map((m) => (
-                <li key={m.id}>
-                  <button type="button" className="flex w-full items-center gap-3 px-4 py-2.5 text-left outline-none hover:bg-accent/60 focus-visible:bg-accent" onClick={() => onOpen(m.id)}>
-                    {isMemo(m) ? <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden /> : <AudioLines className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{m.title || t("제목 없음")}</span>
-                    <span className="shrink-0 text-xs text-subtle-foreground tabular-nums">
-                      {new Date(m.updated_at ?? m.created_at).toLocaleDateString(locale(), { month: "short", day: "numeric" })} · {noteTime(m)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        <details className="group rounded-lg border border-border bg-card">
-          <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-2.5 text-[13px] font-semibold select-none">
-            {t("단축키")}
-            <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" aria-hidden />
-          </summary>
-          <dl className="m-0 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-border px-4 py-3 text-[13px]">
-            {keys.map(([ks, label]) => (
-              <div key={label} className="flex items-center gap-3">
-                <dt className="flex w-16 shrink-0 gap-0.5">
-                  {ks.map((k) => (
-                    <Kbd key={k}>{k}</Kbd>
-                  ))}
-                </dt>
-                <dd className="m-0 text-muted-foreground">{label}</dd>
-              </div>
-            ))}
-          </dl>
-        </details>
-
-        <p className="m-0 flex gap-2">
-          <Button variant="outline" size="sm" onClick={openCheckup}>
-            <Stethoscope aria-hidden />
-            {CHECKUP_LABEL}
-          </Button>
-          <Button variant="outline" size="sm" onClick={openModels}>
-            <Box aria-hidden />
-            {MODELS_LABEL}
-          </Button>
-        </p>
-      </div>
-    </section>
-  );
-}
-
-/** 홈: 진행 중이거나 15분 안에 시작하는 캘린더 일정 하나 (calendar.ts) */
-function NextEventCard({ ev, gate, recording, onRecord }: { ev: CalendarEvent; gate: Decision; recording: boolean; onRecord: () => void }) {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(id);
-  }, []);
-  const people = attendeeLine(ev.attendees);
-  return (
-    <section aria-label={CARD_LABEL} data-tip="calendar" className="flex items-center gap-4 rounded-lg border border-border bg-card/90 p-4 shadow-xs backdrop-blur-sm">
-      <span className="grid size-9 shrink-0 place-items-center rounded-full bg-rec-wash text-rec">
-        <CalendarClock className="size-5" aria-hidden />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="m-0 text-xs font-medium text-muted-foreground tabular-nums">{eventWhen(ev, now)}</p>
-        <p className="m-0 truncate text-[15px] font-semibold leading-6" title={ev.title}>
-          {ev.title}
-        </p>
-        {people && <p className="m-0 truncate text-xs text-subtle-foreground">{people}</p>}
-      </div>
-      <GatedButton gate={gate} className={buttonVariants({ variant: "rec", size: "sm" })} disabled={recording} onClick={onRecord}>
-        <Mic aria-hidden />
-        {CARD_RECORD}
-      </GatedButton>
-    </section>
   );
 }

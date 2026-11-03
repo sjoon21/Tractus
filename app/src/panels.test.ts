@@ -4,7 +4,7 @@ import { describe, expect, test, vi } from "vitest";
 import { flushMemos, registerMemo } from "./memo";
 import { PanelResizer, PanelsContext, PanelToggle, type PanelsApi } from "./PanelToggle";
 import appSrc from "./App.tsx?raw";
-import meetingSrc from "./MeetingView.tsx?raw";
+import meetingSrc from "./components/note/NoteRail.tsx?raw"; // 오른쪽 패널 마크업(예전에는 MeetingView에 있었다)
 import { canCollapse, clampWidth, DEFAULT_WIDTHS, restoreWidths, widthByKey, EXPANDED, initialPanels, NARROW_PX, PANELS_KEY, PANEL_TEXT, RAIL_REC_LABEL, panelKey, readPanels, restore, revealFor, choose, railPendingLabel, railRecState, serialize, toggleLabel, togglePanel, writePanels } from "./panels";
 
 const key = (over: Partial<Parameters<typeof panelKey>[0]> = {}) => ({ code: "KeyB", metaKey: true, ctrlKey: false, shiftKey: false, altKey: false, ...over });
