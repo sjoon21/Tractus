@@ -1,4 +1,6 @@
 import { ToastItem } from "@/components/Toast";
+import { canStartConvert, canStartTranscribe, isTranscribing } from "./jobSchedule";
+import { useImportQueue } from "./useImportQueue";
 import { SidebarJobs } from "@/components/sidebar/SidebarJobs";
 import { LeftoverRecordings } from "@/components/sidebar/LeftoverRecordings";
 import { SidebarFooter } from "@/components/sidebar/SidebarFooter";
@@ -19,7 +21,7 @@ import { ModelsView } from "./ModelsSettings";
 import { attachModelsJobs } from "./modelsJob";
 import { CapsContext, useCapabilitiesState } from "./useCapabilities";
 import { OPEN_SETTINGS } from "./llmKey";
-import { addBlocked, ADDED, attachReduce, DROP_CONFIRM, DROP_LABEL, failedFile, IDLE_ATTACH, IMPORT_BUSY, lockOf, resolveTarget, type AttachControls, type AttachTarget } from "./attach";
+import { addBlocked, attachReduce, DROP_CONFIRM, DROP_LABEL, IDLE_ATTACH, IMPORT_BUSY, lockOf, resolveTarget, type AttachControls, type AttachTarget } from "./attach";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
@@ -37,7 +39,7 @@ import { SettingsView } from "./SettingsView";
 import { createTraySender, deriveTrayState, routeTrayAction } from "./tray";
 import { AfterRecordDialog } from "./AfterRecordDialog";
 import { afterRecord, ASK_BLOCKS_RECORD, effectiveChoice, rememberedChoice, stopAction, type AskChoice } from "./afterRecord";
-import { convertsWhileRecording, LIVE_BLOCKS_RECORD, recordBlock } from "./recordBusy";
+import { LIVE_BLOCKS_RECORD, recordBlock } from "./recordBusy";
 import { attachConvertJobs, convertStore, useConvertJob } from "./convertJobs";
 import { convertAdvance, convertEnqueue, convertProgress, convertSlot, IDLE_CONVERT, type ConvertQueue } from "./convertQueue";
 import { recButton } from "./pause";
@@ -348,26 +350,20 @@ export function App() {
     api.setRecMode(m).catch((e) => setListError({ text: t("녹음 방식을 저장하지 못했습니다: {error}", { error: errText(e) }), detail: errDetail(e) }));
   };
 
-  // 파일 가져오기 (Phase 5.5): 끌어 놓거나 고른 파일을 큐에 넣고 한 번에 하나씩 전사한다
-  // (vibe use-drop-target.ts, meetily layout.tsx — 둘 다 MIT — 참고). 녹음 전사와는 겹치지 않는다: 녹음 전사가 먼저다
-  const [queue, setQueue] = useState<string[]>([]);
-  const [importing, setImporting] = useState<string | null>(null);
-  const importTarget = useRef<AttachTarget | null>(null); // 이 노트에 추가하려고 고른 파일이면 그 노트 (파일에서 추가)
-  const imp = useJob((meetingId, warnings) => {
-    void refresh();
-    const name = importing ? baseName(importing) : t("파일");
-    // 화면은 바꾸지 않는다: 고치던 문장·찾기가 사라진다. 열기는 사용자가 고른다
-    const dup = warnings.some((w) => w.code === "duplicate");
-    const into = importTarget.current;
-    if (into && !dup && into.id === meetingId) {
-      setNoteEpoch((e) => ({ id: meetingId, n: e.n + 1, stale: true })); // 열려 있는 노트는 녹음 노트로 다시 읽는다
-      return notify({ text: ADDED(into.title, name) });
-    }
-    notify({ text: dup ? t("이미 텍스트로 변환한 파일입니다 — {name}", { name }) : t("텍스트 변환을 마쳤습니다 — {name}", { name }), action: { label: t("열기"), run: () => openMeeting(meetingId) } });
+  // 파일 가져오기 줄 (useImportQueue.ts). 무거운 작업은 한 번에 하나씩 순서대로 시작한다 (jobSchedule.ts)
+  const others = { recording, liveRec, asking, transcribeRunning: transcribe.job.running, transcribeWaiting: waitDir !== null, finishRunning: finish.job.running, converting, convertRunning };
+  const { imp, queue, importing, importPct, activity, enqueue, startAttach } = useImportQueue({
+    others,
+    convertGate: () => capsRef.current.can("convert"),
+    notify,
+    notifyBlocked,
+    refresh,
+    openMeeting,
+    markNoteStale: (id) => setNoteEpoch((e) => ({ id, n: e.n + 1, stale: true })),
   });
   useEffect(() => {
     // 실시간 텍스트 변환이 도는 녹음 중에는 변환 엔진을 올리지 않는다 (자막이 밀린다). 자막이 없으면 녹음과 함께 돈다
-    if (!waitList.length || transcribe.job.running || imp.job.running || convertRunning || !convertsWhileRecording(recording, liveRec)) return;
+    if (!canStartTranscribe(activity)) return;
     const [next, ...rest] = waitList;
     setWaitList(rest);
     transcribeDir.current = next.dir;
@@ -375,7 +371,7 @@ export function App() {
     void transcribe.startJob("transcribe", next.dir, next.target?.id);
   }, [waitList, transcribe.job.running, imp.job.running, convertRunning, recording, liveRec, transcribe.startJob]);
   // 노트로 저장하는 중·변환 전 노트를 변환하는 중도 `변환 중`으로 본다: 새 녹음·가져오기·창 닫기 확인이 같은 규칙을 쓴다
-  const transcribing = transcribe.job.running || waitDir !== null || finish.job.running || converting;
+  const transcribing = isTranscribing(activity);
   // 새 녹음을 막는 일 (recordBusy.ts): 묻는 창·저장 중, 그리고 실시간 텍스트 변환을 켜 둔 채 녹음을 변환하는 중. 그 밖의 변환은 녹음과 함께 돈다.
   // 변환 전 노트의 변환 줄은 막지 않는다: 자막을 켠 녹음이면 도는 변환을 멈추고(멈춘 곳부터 이어 할 수 있다) 녹음이 끝나면 이어서 한다 (pauseConvert)
   const recordBlockKind = recordBlock({ converting: transcribe.job.running || waitDir !== null, saving: finish.job.running, asking, liveOn });
@@ -394,7 +390,7 @@ export function App() {
     if (startedConv.current === id || !listLoaded) return;
     const note = meetings.find((m) => m.id === id);
     if (!note || !isRecorded(note)) return setConvQ(convertAdvance);
-    if (!convertsWhileRecording(recording, liveRec) || asking || transcribe.job.running || waitDir !== null || finish.job.running || imp.job.running) return;
+    if (!canStartConvert(activity)) return;
     startedConv.current = id;
     void convertStore.start(id);
   }, [convQ.current, meetings, listLoaded, recording, liveRec, asking, transcribe.job.running, waitDir, finish.job.running, imp.job.running, convJob.running]);
@@ -424,31 +420,6 @@ export function App() {
       }),
     [notify, refresh, openMeeting],
   );
-  const enqueue = useCallback(
-    (paths: string[]) => {
-      if (!capsRef.current.can("convert").ok) return notifyBlocked(capsRef.current.can("convert")); // 끌어 놓은 파일: 실패하지 않고 이유를 알린다
-      const bad = paths.filter((p) => !isImportable(p));
-      if (bad.length) notify({ text: t("가져올 수 없는 형식입니다: {files}", { files: bad.map(baseName).join(", ") }), error: true });
-      setQueue((q) => [...q, ...paths.filter((p) => isImportable(p) && !q.includes(p))]);
-    },
-    [notify, notifyBlocked],
-  );
-  useEffect(() => {
-    if (!queue.length || imp.job.running || transcribing) return;
-    const [next, ...rest] = queue;
-    setQueue(rest);
-    setImporting(next);
-    importTarget.current = null;
-    void imp.startJob("import", next);
-  }, [queue, imp.job.running, transcribing, imp.startJob]);
-  // 실패는 알림으로 남긴다 (다음 파일이 시작되면 진행 표시는 그 파일로 바뀐다)
-  useEffect(() => {
-    if (!imp.job.running && imp.job.error && importing) {
-      const e = errorView(imp.job.error, imp.job.errorCode, JOB_ERROR.import);
-      const why = e.text === JOB_ERROR.import ? "" : `. ${e.text}`;
-      notify({ text: failedFile(importing, why), detail: e.detail, error: true });
-    }
-  }, [imp.job.running, imp.job.error, imp.job.errorCode, importing, notify]);
   const pickFiles = async () => {
     if (!convertGate.ok) return notifyBlocked(convertGate);
     try {
@@ -570,7 +541,6 @@ export function App() {
   useEffect(() => {
     if (!transcribe.job.running) void refresh();
   }, [transcribe.job.running, refresh]);
-  const importPct = imp.job.total ? imp.job.done / imp.job.total : null;
   const leftover = pending.filter((p) => !(recording && p.dir === rec.dir));
 
   useEffect(() => {
@@ -694,10 +664,8 @@ export function App() {
     if (!file) return;
     if (!isImportable(file)) return notify({ text: t("가져올 수 없는 형식입니다: {files}", { files: baseName(file) }), error: true });
     if (!(await flushMemos())) return;
-    importTarget.current = target;
     dispatchAttach({ type: "convert", target });
-    setImporting(file);
-    void imp.startJob("import", file, target.id);
+    startAttach(file, target);
   };
   attachFileRef.current = attachFile;
   // 낡음 안내는 노트 화면이 처음 뜰 때 한 번만 쓴다 (요약을 다시 만든 뒤 노트를 다시 열었을 때 또 보이지 않게)
