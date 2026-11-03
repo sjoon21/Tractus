@@ -108,6 +108,7 @@ export default {
   "다른 폴더로 옮기기…": "Move to another folder…",
   "삭제…": "Delete…",
   "도구 막대": "Toolbar",
+  "녹음 조작": "Recording controls",
   "더 보기": "More",
   "‘{name}’ 폴더를 삭제할까요?": "Delete the “{name}” folder?",
   "삭제하는 중…": "Deleting…",

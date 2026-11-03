@@ -1027,7 +1027,7 @@ export function App() {
         </div>
       </aside>
 
-      <main className="main relative h-screen overflow-hidden bg-background">
+      <main className={cn("main relative h-screen overflow-hidden bg-background transition-[padding] duration-200", askOpen && view.kind === "record" && "min-[1180px]:pr-[440px]")}>
         {view.kind === "home" && <Welcome notes={meetings} onOpen={openMeeting} onAction={onNewNote} onRecordEvent={onRecordButton} onSample={() => void openSample()} recordGate={recording || recordBlocked ? OK : recordGate} convertGate={convertGate} recording={recording} />}
         {view.kind === "meeting" && (
           <MeetingView
