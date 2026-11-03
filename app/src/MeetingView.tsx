@@ -67,8 +67,8 @@ import { ConvertPanel } from "./ConvertPanel";
 import { useConvertJob } from "./convertJobs";
 import { CONVERT_FIRST, deleteBlockedWhileConverting, isRecorded, keptNotice, railNotice, RECORDED_BADGE, recordedStats, type ConvertControls } from "./recorded";
 import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type EditKind, type SaveState } from "./memo";
-import { RAIL_LABEL, railKey, railLabel, railTabs, validTab, type RailTab } from "./rail";
-import { PanelResizer, PanelToggle, usePanels } from "./PanelToggle";
+import { RAIL_LABEL, railKey, railLabel } from "./rail";
+import { PanelResizer, PanelToggle } from "./PanelToggle";
 import { AudioLines, MoreHorizontal, TextSearch, Upload } from "lucide-react";
 import { Dock, DockGroup } from "@/components/ui/dock";
 import { ItemMenu, Popover } from "./Popover";
@@ -81,6 +81,7 @@ import { PolishBar, PolishButton, usePolish } from "./PolishControls";
 import { LlmServicePicker } from "./LlmServicePicker";
 import { RecordPill } from "./RecordPill";
 import { usePlayback } from "./note/usePlayback";
+import { useRail } from "./note/useRail";
 import { NotePlayer } from "@/components/note/NotePlayer";
 import { SegmentRow } from "@/components/note/SegmentRow";
 import { MemoRow } from "@/components/note/MemoRow";
@@ -497,46 +498,9 @@ export function MeetingView({
   }, [printNonce, notify]);
   const printable = useMemo(() => (printNonce && detail ? printDoc(detail, selectedSummary) : null), [printNonce > 0, detail, selectedSummary]);
 
-  // 오른쪽 레일: 요약 | AI 질문 (6.3) | 메모(녹음 노트만). 질문·메모 탭은 처음 열 때 만들고, 그 뒤에는 숨겨도 둔다(스트리밍·쓰던 글이 이어지게)
-  const [tab, setTab] = useState<RailTab>("summary");
-  // 오른쪽 패널 접기 (PanelToggle.tsx): 접어도 내용은 그대로 두고 숨기기만 한다 (쓰던 메모·질문 스트림·요약 작업이 이어진다)
-  const { state: panels, reveal, registerRight, toggle: toggleRail } = usePanels();
-  useEffect(() => registerRight(), [registerRight]);
-  const railCollapsed = panels.right;
-  const [askSeen, setAskSeen] = useState(false);
-  const [memoSeen, setMemoSeen] = useState(false);
-  const [minutesSeen, setMinutesSeen] = useState(false);
-  const tabs = railTabs(memoNote);
-  const tabNow = validTab(tabs, tab);
+  const { tabs, tabNow, askSeen, memoSeen, minutesSeen, railCollapsed, showTab, pickTab, openMemoLine } = useRail(memoNote, memoRef, setMemoPick);
   const memoSegs = useMemo(() => memoLineSegments(detail?.note_memo), [detail?.note_memo]);
-  const showTab = (k: RailTab, focusMemo = false) => {
-    if (tabNow === "memo" && k !== "memo") void flushMemos(); // 메모 탭을 떠날 때 저장을 마친다 (입력창을 벗어나는 blur와 같다)
-    setTab(k);
-    if (k === "ask") setAskSeen(true);
-    if (k === "minutes") setMinutesSeen(true);
-    if (k === "memo") {
-      setMemoSeen(true);
-      if (focusMemo) setMemoPick({ segId: null, nonce: Date.now() }); // 탭을 눌러 열면 입력창에 초점. 방향키로 지나갈 때는 두지 않는다
-    }
-  };
-  // 도크의 탭: 접힌 패널이면 펴서 그 탭을 보이고, 열려 있는 탭을 다시 누르면 접는다. 좁은 창(패널이 본문 아래로 내려간 때)에서는 패널로 스크롤한다
-  const pickTab = (k: RailTab) => {
-    const narrow = window.matchMedia("(max-width: 1180px)").matches;
-    if (!narrow && !railCollapsed && k === tabNow) return void toggleRail("right");
-    showTab(k, k === "memo");
-    if (railCollapsed) void toggleRail("right");
-    if (narrow) window.setTimeout(() => document.getElementById("rail-body")?.scrollIntoView({ block: "start", behavior: "smooth" }), 80);
-  };
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
-  // 메모의 줄로 간다: 메모 노트는 가운데 본문에서, 녹음 노트는 메모 탭을 열고 그 줄을 고른다
-  const openMemoLine = useCallback((segId: string | null) => {
-    if (!memoRef.current) {
-      setTab("memo");
-      setMemoSeen(true);
-      reveal({ kind: "memo-line", memoNote: false }); // 메모 탭이 접힌 패널 안에 있으면 펼친다
-    }
-    setMemoPick({ segId, nonce: Date.now() });
-  }, [reveal]);
   const onCite = useCallback(
     (_m: string, segId: string, sec: number) => (memoRef.current || isMemoLineId(segId) ? openMemoLine(segId) : seekTo(sec)),
     [seekTo, openMemoLine],
