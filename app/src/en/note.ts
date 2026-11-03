@@ -27,7 +27,6 @@ export default {
   "단어 싱크 맞추기": "Sync words",
   "찾아 바꾸기 (⌘F)": "Find and replace (⌘F)",
   "작업이 끝난 뒤에 삭제할 수 있습니다": "You can delete this when the current task finishes",
-  "노트를 휴지통으로 옮깁니다": "Moves the note to the Trash",
   "줄 {n}개": ["{n} line", "{n} lines"],
   "{n}자": ["{n} character", "{n} characters"],
   "대화를 두 번 누르거나 Enter를 눌러 내용을 수정합니다": "Double-click a line or press Enter to edit it",

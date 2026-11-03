@@ -852,6 +852,7 @@ export function App() {
             </GatedButton>
             <NewNoteMenu
               onPick={onNewNote}
+              tips={{ import: t("{exts} — 창에 끌어 놓아도 됩니다", { exts: IMPORT_EXTS.join(" ") }) }}
               disabled={{ write: creating ? t("만드는 중…") : undefined, record: recording ? t("이미 녹음 중입니다") : asking ? ASK_BLOCKS_RECORD : recordBlockKind === "live" ? LIVE_BLOCKS_RECORD : recordBlocked ? t("변환이 끝난 뒤에 녹음할 수 있습니다") : undefined }}
             />
           </div>
@@ -903,10 +904,6 @@ export function App() {
             <span className="group-hover/ai:bg-[linear-gradient(90deg,var(--sidebar-foreground)_0%,var(--sidebar-foreground)_35%,#8b5cf6_45%,#0ea5e9_55%,var(--sidebar-foreground)_65%,var(--sidebar-foreground)_100%)] bg-[length:200%_100%] bg-clip-text group-hover/ai:animate-shine group-hover/ai:text-transparent">{t("AI 어시스턴트")}</span>
             <Kbd className="ml-auto">⌘J</Kbd>
           </button>
-          <GatedButton gate={convertGate} className={SIDE_ITEM} onClick={pickFiles} title={t("{exts} — 창에 끌어 놓아도 됩니다", { exts: IMPORT_EXTS.join(" ") })}>
-            <Upload aria-hidden />
-            {t("파일 가져오기")}
-          </GatedButton>
           {bulkIds.length >= BULK_MIN && !converting && (
             <GatedButton gate={convertGate} className={SIDE_ITEM} disabled={transcribing || recording} onClick={convertAll} title={CONVERT_ALL_TITLE}>
               <AudioLines aria-hidden />
@@ -1027,7 +1024,7 @@ export function App() {
         </div>
       </aside>
 
-      <main className="main relative h-screen overflow-hidden bg-background">
+      <main className={cn("main relative h-screen overflow-hidden bg-background transition-[padding] duration-200", askOpen && view.kind === "record" && "min-[1180px]:pr-[440px]")}>
         {view.kind === "home" && <Welcome notes={meetings} onOpen={openMeeting} onAction={onNewNote} onRecordEvent={onRecordButton} onSample={() => void openSample()} recordGate={recording || recordBlocked ? OK : recordGate} convertGate={convertGate} recording={recording} />}
         {view.kind === "meeting" && (
           <MeetingView

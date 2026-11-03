@@ -12,7 +12,7 @@ import { LlmServicePicker, useLlmServices } from "./LlmServicePicker";
 import { OpenSettings } from "./OpenSettings";
 import { flushMemos } from "./memo";
 import { NOTE_GONE } from "./remove";
-import { ArrowUp, ChevronRight, Square } from "lucide-react";
+import { ArrowUp, CalendarRange, ChevronRight, Square } from "lucide-react";
 import { CHIP } from "@/components/panel/chip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,7 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
   const [llm, setLlm] = useState<LlmConfig | null>(null);
   const [draft, setDraft] = useState("");
   const [range, setRange] = useState({ from: "", to: "" });
+  const [rangeOpen, setRangeOpen] = useState(false); // 기간은 필요할 때만 편다 (값이 있으면 늘 보인다)
   const services = useLlmServices("ask");
   const provider = services.provider;
   const composing = useRef(false);
@@ -133,6 +134,24 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
             : t("모든 노트 내용을 바탕으로 AI가 답변합니다. 시각을 누르면 그 노트의 해당 부분을 엽니다.")}
         </p>
       )}
+      {turns.length === 0 && (
+        <ul className="m-0 mb-4 flex list-none flex-col items-start gap-1.5 p-0" aria-label={t("예시 질문")}>
+          {(meetingId ? EXAMPLES_NOTE : EXAMPLES_ALL).map((q) => (
+            <li key={q}>
+              <button
+                type="button"
+                className="rounded-full border border-border bg-background px-3 py-1 text-left text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+                onClick={() => {
+                  setDraft(q);
+                  inputRef?.current?.focus();
+                }}
+              >
+                {q}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       {loadError && <p className="m-0 mb-3 text-xs text-destructive">{loadError}</p>}
       <ol className="m-0 flex flex-1 list-none flex-col gap-7 p-0" aria-label={t("질문과 답변")}>
         {turns.map((x) => (
@@ -149,7 +168,13 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
           void send();
         }}
       >
-        {!meetingId && (
+        {!meetingId && !rangeOpen && !range.from && !range.to && (
+          <Button type="button" variant="ghost" size="sm" className="h-7 self-start px-2 text-xs text-muted-foreground" onClick={() => setRangeOpen(true)}>
+            <CalendarRange aria-hidden />
+            {t("기간 지정")}
+          </Button>
+        )}
+        {!meetingId && (rangeOpen || !!range.from || !!range.to) && (
           <fieldset className="m-0 flex min-w-0 items-center gap-1.5 border-0 p-0 text-xs text-muted-foreground">
             <legend className="float-left mr-1 p-0 font-medium">{t("기간")}</legend>
             <input type="date" className={DATE} aria-label={t("시작 날짜")} value={range.from} max={range.to || undefined} onChange={(e) => setRange({ ...range, from: e.target.value })} />
@@ -195,6 +220,9 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
     </div>
   );
 }
+
+const EXAMPLES_ALL = [t("지난주에 정한 것을 정리해 줘"), t("내가 해야 할 일을 모아 줘"), t("아직 정하지 못한 것은?")];
+const EXAMPLES_NOTE = [t("이 노트를 세 줄로 요약해 줘"), t("정한 것과 할 일을 알려 줘"), t("숫자나 날짜가 나온 부분은?")];
 
 const DATE = cn(inputClass, "h-7 w-auto px-1.5 text-xs");
 

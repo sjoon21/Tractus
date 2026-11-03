@@ -142,7 +142,9 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack, toUpdate }: { o
             </Button>
           </>
         }
-      />
+      >
+        <SettingsNav />
+      </PageHeader>
       <PageBody className="pb-24">
         <ThemeSection />
 
@@ -266,6 +268,24 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack, toUpdate }: { o
 }
 
 /** 도움말: 처음 사용 안내(체크리스트·기능 안내)를 다시 보거나 기능 안내를 끈다. 이 Mac에만 기억한다 (onboarding.ts·tips.ts) */
+/** 머리 아래 구역 바로가기: 긴 설정 페이지에서 자주 찾는 구역으로 (구역은 제목이 aria-label이다) */
+const NAV_SECTIONS = [t("화면"), t("녹음"), t("AI 요약·질문"), t("업데이트")];
+function SettingsNav() {
+  const go = (title: string) => {
+    const el = [...document.querySelectorAll<HTMLElement>("section[aria-label]")].find((x) => x.getAttribute("aria-label") === title);
+    el?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  };
+  return (
+    <nav aria-label={t("설정 구역")} className="mx-auto flex max-w-[680px] gap-1 overflow-x-auto px-5 pb-2">
+      {NAV_SECTIONS.map((title) => (
+        <Button key={title} type="button" variant="ghost" size="sm" className="h-7 shrink-0 text-xs text-muted-foreground" onClick={() => go(title)}>
+          {title}
+        </Button>
+      ))}
+    </nav>
+  );
+}
+
 function HelpSection() {
   const [tipsOn, setTipsOn] = useState(() => !readTips().off);
   const [msg, setMsg] = useState<string | null>(null);
@@ -430,7 +450,7 @@ function UpdateSection({ relaunchBlocked, toUpdate }: { relaunchBlocked: boolean
     </span>
   );
   return (
-    <Section id={UPDATE_SECTION_ID} tabIndex={-1} className="scroll-mt-4 outline-none" title={t("업데이트")}>
+    <Section id={UPDATE_SECTION_ID} tabIndex={-1} className="outline-none" title={t("업데이트")}>
       <Row
         label={<span className="tabular-nums">{versionLine(version)}</span>}
         hint={bundle === false ? REPO_NOTE : bundle ? UPDATE_HINT : undefined}

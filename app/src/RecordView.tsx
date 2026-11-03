@@ -11,6 +11,7 @@ import { AFTER_ASK } from "./afterRecord";
 import { PAUSE_LABEL, PAUSE_TITLE, PAUSED_NOTE, RESUME_LABEL, RESUME_TITLE } from "./pause";
 import { CONVERT_FAILED_TITLE, CONVERT_RETRY, SAVE_DONE_TITLE, SAVE_FAILED_TITLE, SAVE_RETRY, SAVING } from "./recorded";
 import { Bookmark, Pause, Play, Square } from "lucide-react";
+import { Dock, DockGroup } from "@/components/ui/dock";
 import { Button } from "@/components/ui/button";
 import { GrowTextarea } from "@/components/ui/textarea";
 import { Kbd } from "@/components/ui/kbd";
@@ -58,7 +59,7 @@ export function RecordView({
   return (
     <section className="flex h-full flex-col overflow-y-auto" aria-labelledby="record-title">
       <div data-tauri-drag-region className="h-[52px] shrink-0" />
-      <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-6 pt-6 pb-16">
+      <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-6 pt-6 pb-6">
         <header className="flex flex-col items-center gap-3 text-center">
           <p id="record-title" className={cn("m-0 inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-medium", rec.phase === "recording" ? "bg-rec-wash text-rec" : rec.phase === "error" ? "bg-destructive/10 text-destructive" : "bg-secondary text-muted-foreground")}>
             {rec.phase === "recording" && <span className="size-1.5 animate-rec-pulse rounded-full bg-rec" aria-hidden />}
@@ -99,20 +100,6 @@ export function RecordView({
                 {PAUSED_NOTE}
               </p>
             )}
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <Button variant="outline" onClick={() => send(paused ? "resume" : "pause")} disabled={!live} title={paused ? RESUME_TITLE : PAUSE_TITLE}>
-                {paused ? <Play aria-hidden /> : <Pause aria-hidden />}
-                {paused ? RESUME_LABEL : PAUSE_LABEL}
-              </Button>
-              <Button variant="outline" onClick={() => send("bookmark")} disabled={!live}>
-                <Bookmark aria-hidden />
-                {t("북마크")} <Kbd>B</Kbd>
-              </Button>
-              <Button variant="rec" onClick={() => send("stop")} disabled={!live}>
-                <Square aria-hidden className="fill-current" /> {t("녹음 종료")}
-              </Button>
-            </div>
-
             <form
               className="relative"
               onSubmit={(e) => {
@@ -187,6 +174,33 @@ export function RecordView({
           </ol>
         )}
       </div>
+      {(live || rec.phase === "starting" || rec.phase === "stopping") && (
+        // 일시정지·북마크·종료는 화면을 내려도 늘 손이 닿게 아래에 붙는다 (AI 어시스턴트 서랍이 열려도 본문이 밀려 가려지지 않는다: App)
+        <div className="sticky bottom-0 z-10 mt-auto bg-background/90 backdrop-blur-md">
+          <Dock label={t("녹음 조작")}>
+            <DockGroup>
+              <time className="px-2 text-[13px] font-medium tabular-nums" aria-hidden>
+                {fmtTime(rec.t)}
+              </time>
+            </DockGroup>
+            <DockGroup>
+              <Button variant="ghost" className="rounded-full" onClick={() => send(paused ? "resume" : "pause")} disabled={!live} title={paused ? RESUME_TITLE : PAUSE_TITLE}>
+                {paused ? <Play aria-hidden /> : <Pause aria-hidden />}
+                {paused ? RESUME_LABEL : PAUSE_LABEL}
+              </Button>
+              <Button variant="ghost" className="rounded-full" onClick={() => send("bookmark")} disabled={!live}>
+                <Bookmark aria-hidden />
+                {t("북마크")} <Kbd>B</Kbd>
+              </Button>
+            </DockGroup>
+            <DockGroup>
+              <Button variant="rec" className="rounded-full" onClick={() => send("stop")} disabled={!live}>
+                <Square aria-hidden className="fill-current" /> {t("녹음 종료")}
+              </Button>
+            </DockGroup>
+          </Dock>
+        </div>
+      )}
     </section>
   );
 }

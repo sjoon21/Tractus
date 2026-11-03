@@ -78,7 +78,9 @@ import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments
 import { RAIL_LABEL, railKey, railLabel, railTabs, validTab, type RailTab } from "./rail";
 import { PanelResizer, PanelToggle, usePanels } from "./PanelToggle";
 import { releaseVoiceBoost, resumeVoiceBoost, setPlaybackVolume, setVoiceBoost, voiceBoostSupported } from "./voice";
-import { AudioLines, FastForward, LocateFixed, Pause, Play, TextSearch, Trash2, Upload, Volume2, VolumeX } from "lucide-react";
+import { AudioLines, FastForward, LocateFixed, MoreHorizontal, Pause, Play, TextSearch, Upload, Volume2, VolumeX } from "lucide-react";
+import { Dock, DockGroup } from "@/components/ui/dock";
+import { ItemMenu, Popover } from "./Popover";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { selectClass } from "@/components/ui/select";
@@ -587,7 +589,7 @@ export function MeetingView({
   // 오른쪽 레일: 요약 | AI 질문 (6.3) | 메모(녹음 노트만). 질문·메모 탭은 처음 열 때 만들고, 그 뒤에는 숨겨도 둔다(스트리밍·쓰던 글이 이어지게)
   const [tab, setTab] = useState<RailTab>("summary");
   // 오른쪽 패널 접기 (PanelToggle.tsx): 접어도 내용은 그대로 두고 숨기기만 한다 (쓰던 메모·질문 스트림·요약 작업이 이어진다)
-  const { state: panels, reveal, registerRight } = usePanels();
+  const { state: panels, reveal, registerRight, toggle: toggleRail } = usePanels();
   useEffect(() => registerRight(), [registerRight]);
   const railCollapsed = panels.right;
   const [askSeen, setAskSeen] = useState(false);
@@ -606,6 +608,15 @@ export function MeetingView({
       if (focusMemo) setMemoPick({ segId: null, nonce: Date.now() }); // 탭을 눌러 열면 입력창에 초점. 방향키로 지나갈 때는 두지 않는다
     }
   };
+  // 도크의 탭: 접힌 패널이면 펴서 그 탭을 보이고, 열려 있는 탭을 다시 누르면 접는다. 좁은 창(패널이 본문 아래로 내려간 때)에서는 패널로 스크롤한다
+  const pickTab = (k: RailTab) => {
+    const narrow = window.matchMedia("(max-width: 1180px)").matches;
+    if (!narrow && !railCollapsed && k === tabNow) return void toggleRail("right");
+    showTab(k, k === "memo");
+    if (railCollapsed) void toggleRail("right");
+    if (narrow) window.setTimeout(() => document.getElementById("rail-body")?.scrollIntoView({ block: "start", behavior: "smooth" }), 80);
+  };
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
   // 메모의 줄로 간다: 메모 노트는 가운데 본문에서, 녹음 노트는 메모 탭을 열고 그 줄을 고른다
   const openMemoLine = useCallback((segId: string | null) => {
     if (!memoRef.current) {
@@ -892,10 +903,6 @@ export function MeetingView({
             {recorded && <Badge variant="memo">{RECORDED_BADGE}</Badge>}
           </p>
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
-            {!memoNote && !recorded && segments.length > 0 && <LlmServicePicker services={polish.services} disabled={polish.running} />}
-            {!memoNote && !recorded && segments.length > 0 && (
-              <PolishButton running={polish.running} done={polish.done} total={polish.total} disabled={polishOff} again={(detail.polish?.length ?? 0) > 0} onClick={() => void polish.start(flushMemos)} />
-            )}
             {!memoNote && segments.length > 0 && !hasWords && detail.audio_path && (
               <GatedButton
                 gate={alignGate}
@@ -916,11 +923,6 @@ export function MeetingView({
                 {ADD_FILE}
               </GatedButton>
             )}
-            {!memoNote && !recorded && (
-              <Button variant="ghost" size="icon-sm" aria-label={t("찾아 바꾸기")} title={t("찾아 바꾸기 (⌘F)")} onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
-                <TextSearch aria-hidden />
-              </Button>
-            )}
             <ExportMenu
               formats={exportFormatsFor(memoNote, recorded)}
               onPick={(f) => void exportAs(f)}
@@ -940,17 +942,27 @@ export function MeetingView({
                 }}
               />
             )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-              aria-label={t("삭제")}
-              disabled={align.job.running || summaryRunning || enhanceRunning || minutesRunning || polish.running || !!attach?.lock || !!convertBlock}
-              title={convertBlock ?? (align.job.running || summaryRunning || enhanceRunning || minutesRunning || polish.running || attach?.lock ? t("작업이 끝난 뒤에 삭제할 수 있습니다") : t("노트를 휴지통으로 옮깁니다"))}
-              onClick={() => onDelete({ kind: "note", id, title: info.title, dir: info.dir, memo: memoNote, withMemo: !memoNote && memoLines.size > 0 })}
-            >
-              <Trash2 aria-hidden />
+            <Button variant="ghost" size="icon-sm" aria-label={t("더 보기")} title={t("더 보기")} aria-haspopup="menu" aria-expanded={!!moreAnchor} onClick={(e) => setMoreAnchor((a) => (a ? null : e.currentTarget))}>
+              <MoreHorizontal aria-hidden />
             </Button>
+            {moreAnchor && (
+              <Popover anchor={moreAnchor} label={t("더 보기")} align="end" onClose={() => setMoreAnchor(null)}>
+                {(close) => (
+                  <ItemMenu
+                    close={close}
+                    entries={[
+                      {
+                        id: "delete",
+                        label: t("삭제…"),
+                        danger: true,
+                        disabled: convertBlock ?? (align.job.running || summaryRunning || enhanceRunning || minutesRunning || polish.running || attach?.lock ? t("작업이 끝난 뒤에 삭제할 수 있습니다") : undefined),
+                        onSelect: () => onDelete({ kind: "note", id, title: info.title, dir: info.dir, memo: memoNote, withMemo: !memoNote && memoLines.size > 0 }),
+                      },
+                    ]}
+                  />
+                )}
+              </Popover>
+            )}
           </div>
         </div>
         {find && (
@@ -1083,7 +1095,54 @@ export function MeetingView({
         </ol>}
         </div>
 
-        {!memoNote && <div className="player sticky bottom-0 z-10 mt-auto flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-background/90 px-6 py-2.5 backdrop-blur-md" role="group" aria-label={t("오디오 플레이어")}>
+        <div className="sticky bottom-0 z-10 mt-auto bg-background/90 backdrop-blur-md">
+        <Dock label={t("도구 막대")}>
+          <DockGroup>
+            <div
+              role="tablist"
+              aria-label={t("오른쪽 패널")}
+              className="flex items-center gap-0.5"
+              onKeyDown={(e) => {
+                if (e.metaKey || e.ctrlKey || e.altKey) return; // Shift+←→도 탭을 옮긴다: 막지 않으면 재생 단축키가 큰 폭으로 되감는다
+                const next = railKey(tabs, tabNow, e.code);
+                if (!next) return;
+                // 재생 단축키(←→ 5초 이동)가 이 키를 다시 쓰지 않게 막는다: 전역 단축키는 defaultPrevented면 지나간다
+                e.preventDefault();
+                showTab(next);
+                document.getElementById(`tab-${next}`)?.focus();
+              }}
+            >
+              {tabs.map((k) => (
+                <button
+                  key={k}
+                  id={`tab-${k}`}
+                  role="tab"
+                  aria-selected={tabNow === k}
+                  aria-controls={k === "summary" || (k === "ask" ? askSeen : k === "minutes" ? minutesSeen : memoSeen) ? `panel-${k}` : undefined}
+                  tabIndex={tabNow === k ? 0 : -1}
+                  onClick={() => pickTab(k)}
+                  className={cn("h-7 shrink-0 whitespace-nowrap rounded-full px-3 text-[13px] font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 aria-selected:bg-accent aria-selected:text-foreground", railCollapsed && "aria-selected:bg-transparent aria-selected:text-muted-foreground aria-selected:hover:bg-accent")}
+                >
+                  {RAIL_LABEL[k]}
+                </button>
+              ))}
+            </div>
+          </DockGroup>
+          {!memoNote && !recorded && segments.length > 0 && (
+            <DockGroup>
+              <LlmServicePicker services={polish.services} disabled={polish.running} />
+              <PolishButton running={polish.running} done={polish.done} total={polish.total} disabled={polishOff} again={(detail.polish?.length ?? 0) > 0} onClick={() => void polish.start(flushMemos)} />
+            </DockGroup>
+          )}
+          {!memoNote && !recorded && (
+            <DockGroup>
+              <Button variant="ghost" size="icon-sm" aria-label={t("찾아 바꾸기")} title={t("찾아 바꾸기 (⌘F)")} onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
+                <TextSearch aria-hidden />
+              </Button>
+            </DockGroup>
+          )}
+        </Dock>
+        {!memoNote && <div className="player flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-background/90 px-6 py-2.5 backdrop-blur-md" role="group" aria-label={t("오디오 플레이어")}>
           {detail.audio_path ? (
             <audio
               ref={audio}
@@ -1193,6 +1252,7 @@ export function MeetingView({
             {editing ? t("저장하는 중…") : editError}
           </span>
         </div>}
+        </div>
         {!memoNote && menu && (
           <SpeakerMenu
             target={menu}
@@ -1214,35 +1274,8 @@ export function MeetingView({
         <PanelToggle side="right" />
         {!railCollapsed && <PanelResizer side="right" className="max-[1180px]:hidden" />}
         <div id="rail-body" className="rail-body flex min-h-0 flex-1 flex-col overflow-y-auto max-[1180px]:overflow-visible" hidden={railCollapsed}>
-        <div
-          className="sticky top-0 z-10 flex h-[52px] shrink-0 items-center gap-1 bg-background/90 pr-12 pl-4 backdrop-blur-md"
-          data-tauri-drag-region
-          role="tablist"
-          aria-label={t("오른쪽 패널")}
-          onKeyDown={(e) => {
-            if (e.metaKey || e.ctrlKey || e.altKey) return; // Shift+←→도 탭을 옮긴다: 막지 않으면 재생 단축키가 큰 폭으로 되감는다
-            const next = railKey(tabs, tabNow, e.code);
-            if (!next) return;
-            // 재생 단축키(←→ 5초 이동)가 이 키를 다시 쓰지 않게 막는다: 전역 단축키는 defaultPrevented면 지나간다
-            e.preventDefault();
-            showTab(next);
-            document.getElementById(`tab-${next}`)?.focus();
-          }}
-        >
-          {tabs.map((k) => (
-            <button
-              key={k}
-              id={`tab-${k}`}
-              role="tab"
-              aria-selected={tabNow === k}
-              aria-controls={k === "summary" || (k === "ask" ? askSeen : k === "minutes" ? minutesSeen : memoSeen) ? `panel-${k}` : undefined}
-              tabIndex={tabNow === k ? 0 : -1}
-              onClick={() => showTab(k, k === "memo")}
-              className="h-7 shrink-0 whitespace-nowrap rounded-md px-2.5 text-[13px] font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 aria-selected:bg-accent aria-selected:text-foreground"
-            >
-              {RAIL_LABEL[k]}
-            </button>
-          ))}
+        <div className="sticky top-0 z-10 flex h-[52px] shrink-0 items-center bg-background/90 pr-12 pl-5 backdrop-blur-md" data-tauri-drag-region>
+          <h2 className="m-0 text-[13px] font-semibold">{RAIL_LABEL[tabNow]}</h2>
         </div>
         <div className={cn("flex flex-1 flex-col px-5 pt-2", tabNow === "ask" ? "pb-0" : "pb-10")}>
         <div id="panel-summary" role="tabpanel" aria-labelledby="tab-summary" hidden={tabNow !== "summary"}>
