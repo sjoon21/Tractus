@@ -42,6 +42,10 @@ from tractus.i18n import t  # noqa: E402
 from tractus.calendar_event import load_event, save_event  # noqa: E402
 from tractus import models_cli, organize_cli  # noqa: E402
 from tractus.commands import common  # noqa: E402
+from tractus.commands import note  # noqa: E402
+from tractus.commands import export  # noqa: E402
+from tractus.commands import glossary  # noqa: E402
+from tractus.commands import summaries  # noqa: E402
 from tractus.commands.common import Events, console  # noqa: E402
 from tractus.commands.common import emit_error as _emit_error, fail as _fail, fail_audio as _fail_audio, warn as _warn  # noqa: E402
 from tractus.commands.common import iso_date as _iso_date, note_dir as _note_dir, open_index as _open_index, read_json_object as _read_json_object  # noqa: E402
@@ -137,7 +141,6 @@ def choose_asr(track: Track | None, engine_id: str | None) -> registry.Model:
 def main() -> None:
     """현재 폴더와 $TRACTUS_HOME의 .env / .env.local을 읽는다 (셸 환경변수가 우선)."""
     load_env_all()
-
 
 
 @dataclass(frozen=True)
@@ -302,7 +305,6 @@ def _still_registered(suggestions: dict) -> dict:
     except (OSError, ValueError):
         return suggestions
     return {k: v for k, v in suggestions.items() if v.get("person_id") in ids}
-
 
 
 def _free_mlx() -> None:
@@ -733,7 +735,6 @@ def align_cmd(
         print(json.dumps(counts))
 
 
-
 @app.command()
 def summarize(
     meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
@@ -1019,7 +1020,6 @@ def search(
             print(f"  [{h.meeting_id[-6:]}#{s['id']} {stamp(s)}{who}] {seg_text(s)[:120]}")
 
 
-
 speakers_app = typer.Typer(help="노트의 화자 보기·이름 짓기·고치기. transcript.json과 md·vtt를 다시 쓰고 검색 색인을 갱신한다 (오디오는 건드리지 않음)")
 app.add_typer(speakers_app, name="speakers")
 
@@ -1027,7 +1027,6 @@ app.add_typer(speakers_app, name="speakers")
 @speakers_app.callback()
 def speakers_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
     ctx.obj = resolve_meeting(meeting)
-
 
 
 @speakers_app.command("list")
@@ -1426,311 +1425,6 @@ def polish_reject(ctx: typer.Context) -> None:
     print(json.dumps({"remaining": remaining}))
 
 
-note_app = typer.Typer(help="직접 쓰는 메모 노트(오디오 없음)와 노트 제목. transcript.json·md를 쓰고 검색 색인을 갱신한다 (docs/desktop.md §2.10)")
-app.add_typer(note_app, name="note")
-models_cli.register(app)  # models list|download|remove, doctor (docs/desktop.md §2.15)
-organize_cli.register(app, note_app)  # note meta, folders, notes list (docs/desktop.md §2.12)
-
-
-@note_app.callback()
-def note_main() -> None:
-    """메모 만들기·저장, 제목 바꾸기."""
-
-
-
-@note_app.command("new")
-def note_new(title: str = typer.Option(None, "--title", help="제목. stdin의 title보다 우선한다. 생략하면 '메모 HH:MM'(이 Mac의 시각)")) -> None:
-    """빈 메모(또는 stdin의 {"title"?, "body"?}로 채운 메모)를 만든다. stdout: {"meeting_id": "…", "meeting_dir": "<절대 경로>"}
-    잘못된 제목·본문이면 종료 코드 2 (아무것도 만들지 않는다)."""
-    raw = "" if sys.stdin.isatty() else sys.stdin.read()
-    try:
-        req = _read_json_object(raw, '{"title": "…", "body": "…"}') if raw.strip() else {}
-        for key in ("title", "body"):
-            if not isinstance(req.get(key, ""), str):
-                raise ValueError(t("입력은 {shape} 형식이어야 합니다", shape='{"title": "…", "body": "…"}'))  # words-ok: 앱 계약 오류
-        d, note = notes.create_memo(home_dir() / "meetings", title or req.get("title"), req.get("body", ""))
-    except ValueError as e:
-        _fail(str(e), exit_code=2)
-    _sync_index_quietly(embed=False)
-    print(json.dumps({"meeting_id": note["meeting_id"], "meeting_dir": str(d.resolve())}, ensure_ascii=False))
-
-
-@note_app.command("sample")
-def note_sample() -> None:
-    """예시 노트(첫 사용자 온보딩, 가상 회의)를 만든다. 이미 있으면 그것을 돌려준다. 모델·AI 키 없이 돈다.
-    stdout: {"meeting_id": "…", "meeting_dir": "<절대 경로>", "created": bool}. 검색 색인·MCP 목록에는 들어가지 않는다."""
-    from tractus import sample_note
-
-    d, created = sample_note.create(home_dir())
-    t = read_transcript(d)
-    print(json.dumps({"meeting_id": t["meeting_id"], "meeting_dir": str(d.resolve()), "created": created}, ensure_ascii=False))
-
-
-@note_app.command("save")
-def note_save(meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
-    """stdin의 {"body": "…"}로 메모의 내용을 통째로 바꾼다. 메모 노트는 본문, 녹음 노트는 transcript.json의 "memo"(오른쪽 패널 메모)를 쓴다 (비우면 "memo"를 지운다).
-    줄이 그대로면 줄 ID를 유지한다. stdout: {"saved": true, "segments": N, "changed": bool, "kind": "memo"|"recording"} (N: 메모의 줄 수)
-    잘못된 입력·20만 자·5,000줄 초과는 종료 코드 2 (아무것도 쓰지 않는다)."""
-    d = _note_dir(meeting)
-    try:
-        req = _read_json_object(sys.stdin.read(), '{"body": "…"}')
-        if not isinstance(req.get("body"), str):
-            raise ValueError(t("입력은 {shape} 형식이어야 합니다", shape='{"body": "…"}'))  # words-ok: 앱 계약 오류
-        body = notes.clean_body(req["body"])
-
-        def fn(t: dict):
-            new, changed = notes.apply_body(t, body)
-            count = len(new["segments"]) if is_memo(new) else len(memo_lines(new))
-            return new, (changed, count, "memo" if is_memo(new) else "recording")
-
-        changed, count, kind = edit_transcript(d, fn)
-    except ValueError as e:
-        _fail(str(e), exit_code=2)
-    if changed:
-        _sync_index_quietly(embed=False)  # 바뀐 청크는 벡터 없이 키워드로만 찾힌다. 앱의 조용한 색인이 나중에 임베딩한다
-    print(json.dumps({"saved": True, "segments": count, "changed": changed, "kind": kind}))
-
-
-@note_app.command("title")
-def note_title(meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
-    """stdin의 {"title": "…"}로 노트(녹음·메모 모두) 제목을 바꾼다. 폴더 이름은 그대로 두고 transcript.json·md(·vtt)·요약 파일·검색 색인의 제목을 바꾼다.
-    stdout: {"title": "<정리된 제목>"}. 비었거나 120자를 넘으면 종료 코드 2."""
-    d = _note_dir(meeting)
-    try:
-        req = _read_json_object(sys.stdin.read(), '{"title": "…"}')
-        if not isinstance(req.get("title"), str):
-            raise ValueError(t("입력은 {shape} 형식이어야 합니다", shape='{"title": "…"}'))  # words-ok: 앱 계약 오류
-        title = notes.clean_title(req["title"])
-        with note_lock(d):  # transcript.json과 요약 파일을 한 번에 바꾼다
-            edit_transcript(d, lambda t: (notes.apply_title(t, title), None))
-            notes.retitle_summary(d, title)
-    except ValueError as e:
-        _fail(str(e), exit_code=2)
-    _sync_index_quietly(embed=False)
-    print(json.dumps({"title": title}, ensure_ascii=False))
-
-
-marks_app = typer.Typer(help="녹음 중 남긴 메모·북마크 (노트 폴더의 memos.json). 고치기·지우기")
-app.add_typer(marks_app, name="marks")
-
-
-@marks_app.callback()
-def marks_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
-    ctx.obj = _note_dir(meeting)
-
-
-@marks_app.command("save")
-def marks_save(ctx: typer.Context) -> None:
-    """stdin {"marks": [{"t", "kind", "text"}]}: 남은 것만 보낸다 (빠진 항목은 지운다, 메모 글은 고친다, 글을 비우면 지운다).
-    새 메모를 끼워 넣거나 시각·종류를 바꾸면 종료 코드 2. stdout: {"marks": [...]} (시각 순)."""
-    from tractus.store import save_memos
-
-    try:
-        req = _read_json_object(sys.stdin.read(), '{"marks": […]}')
-        out = save_memos(ctx.obj, req.get("marks"))
-    except ValueError as e:
-        _fail(str(e), code="bad_input", exit_code=2)
-    print(json.dumps({"marks": out}, ensure_ascii=False))
-
-
-glossary_app = typer.Typer(help="용어집($TRACTUS_HOME/glossary.md). 다음 전사부터 Qwen3-ASR hotwords로 들어간다")
-app.add_typer(glossary_app, name="glossary")
-
-
-@glossary_app.callback()
-def glossary_main() -> None:
-    """용어집 관리."""
-
-
-@glossary_app.command("add")
-def glossary_add(terms: list[str] = typer.Argument(..., help="추가할 용어 (여러 개). '-'로 시작하면 앞에 -- 를 둔다")) -> None:
-    """용어를 `- 용어` 줄로 덧붙인다. 중복·빈 값은 건너뛴다. stdout: {"added": N}"""
-    home_dir().mkdir(parents=True, exist_ok=True)
-    print(json.dumps({"added": add_glossary_terms(home_dir() / "glossary.md", terms)}))
-
-
-ExportFormat = Enum("ExportFormat", {f: f for f in EXPORT_FORMATS}, type=str)
-
-
-@app.command("export")
-def export_cmd(
-    meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
-    fmt: ExportFormat = typer.Option(..., "--format", help="txt | md | srt | vtt | csv | docx | bundle(노트 폴더 zip)"),
-    out: Path = typer.Option(..., "--out", help="저장할 파일 경로"),
-    force: bool = typer.Option(False, "--force", help="--out 파일이 있으면 덮어쓴다"),
-    summary: list[str] = typer.Option(None, "--summary", help="md·docx에 넣을 요약의 key (meeting·brief·u-…·c-…). 생략하면 기본 요약, 그것도 없으면 처음 있는 요약. --parts와 함께면 여러 번 줄 수 있고(그 순서), 생략하면 요약 없음"),
-    parts: str = typer.Option(None, "--parts", help="md·docx에 넣을 내용만 고른다: transcript,memo,marks 중 쉼표로 (빈 값이면 요약만). 주면 순서가 머리 → 요약 → 대화 내용 → 메모 → 녹음 중 메모"),
-) -> None:
-    """노트를 파일로 내보낸다. 화자는 표시 이름, 본문은 교정본(corrected_text) 우선. stdout: {"path": "<절대 경로>"}"""
-    from tractus import summaries as sums
-
-    d = resolve_meeting(meeting)
-    keys = list(dict.fromkeys(summary or []))
-    picked = None if parts is None else {p.strip() for p in parts.split(",") if p.strip()}
-    if picked is not None and (bad := sorted(picked - set(EXPORT_PARTS))):
-        _fail(t("넣을 내용은 {parts} 중에서 고릅니다: {bad}", parts=", ".join(EXPORT_PARTS), bad=", ".join(bad)), exit_code=2)
-    if picked is None and len(keys) > 1:
-        _fail(t("요약을 여러 개 넣으려면 --parts도 줍니다."), exit_code=2)
-    if any(sums.read_data(d, k) is None for k in keys):
-        _fail(sums.NO_SUCH_SUMMARY, exit_code=2)
-    if out.exists() and not force:
-        console.print(f"[red]{t('이미 있는 파일입니다 (덮어쓰려면 --force):')}[/red] {escape(str(out))}")
-        raise typer.Exit(1)
-    try:
-        write_bytes_atomic(out, render_export(d, fmt.value, keys[0] if keys else None) if picked is None else render_export(d, fmt.value, keys=keys, parts=picked))
-    except UnsupportedFormat as e:  # 메모를 srt·vtt로, --parts를 md·docx 밖에서
-        _fail(str(e), exit_code=2)
-    except OSError as e:  # 임시 파일(.tmp) 경로 대신 사용자가 고른 경로를 알린다
-        console.print(f"[red]{escape(t('{path}에 저장할 수 없습니다 ({error})', path=out, error=e.strerror or e))}[/red]")
-        raise typer.Exit(1)
-    except ValueError as e:  # 제목 등에 남은 제어 문자를 docx(lxml)가 거부하는 경우. 원인은 앞 줄, 앱이 보이는 마지막 줄은 문장
-        console.print(str(e), markup=False)
-        console.print(f"[red]{t('제목이나 대화 내용에 쓸 수 없는 글자가 있습니다.')}[/red]")
-        raise typer.Exit(1)
-    print(json.dumps({"path": str(out.resolve())}, ensure_ascii=False))
-
-
-@app.command("obsidian")
-def obsidian_cmd(
-    meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)"),
-    vault: Path = typer.Option(..., "--vault", help="Obsidian 볼트 폴더. 노트는 <볼트>/Tractus/<폴더…>/ 아래에 쓴다"),
-    summary: str = typer.Option(None, "--summary", help="넣을 요약의 key. 생략하면 기본 요약, 그것도 없으면 처음 있는 요약"),
-    with_audio: bool = typer.Option(False, "--audio", help="오디오를 <볼트>/Tractus/attachments/에 복사해 노트에 붙인다"),
-    force: bool = typer.Option(False, "--force", help="볼트에서 고친 파일도 덮어쓴다"),
-) -> None:
-    """노트를 Obsidian 볼트에 Markdown 하나로 보낸다 (docs/design/obsidian-export.md).
-    stdout: {"status": "created|updated|unchanged|edited", "path", "audio"}. edited면 쓰지 않았다 (--force로 덮어쓴다)."""
-    from tractus import obsidian, summaries as sums
-
-    d = resolve_meeting(meeting)
-    if summary and sums.read_data(d, summary) is None:
-        _fail(sums.NO_SUCH_SUMMARY, exit_code=2)
-    note = read_transcript(d)
-    try:
-        r = obsidian.send(d, note, home_dir(), vault.expanduser(), summary, with_audio, force)
-    except ValueError as e:
-        _fail(str(e), code="obsidian_vault", exit_code=2)
-    except OSError as e:
-        _fail(t("볼트에 쓰지 못했습니다 ({error})", error=e.strerror or e), code="obsidian_write")
-    print(json.dumps(r, ensure_ascii=False))
-
-
-templates_app =typer.Typer(help="요약 유형($TRACTUS_HOME/templates/): 기본 유형(읽기 전용)과 내 유형 만들기·고치기·삭제 (docs/desktop.md §2.13)")
-app.add_typer(templates_app, name="templates")
-
-
-@templates_app.callback()
-def templates_main() -> None:
-    """요약 유형 관리."""
-
-
-@templates_app.command("list")
-def templates_list(as_json: bool = typer.Option(False, "--json", help='{"templates": [{"id","name","description","prompt","builtin"}]} (기본 유형 → 내 유형 순)')) -> None:
-    """요약 유형 목록."""
-    items = tmpls.all_templates(home_dir())
-    if as_json:
-        print(json.dumps({"templates": [t.public() for t in items]}, ensure_ascii=False))
-        return
-    for t in items:
-        print(f"{t.id}\t{t.name}\t{t.description}")
-
-
-@templates_app.command("save")
-def templates_save(
-    name: str = typer.Option(..., "--name", help=f"이름 ({tmpls.MAX_NAME}자까지)"),
-    description: str = typer.Option("", "--description", help=f"한 줄 설명 ({tmpls.MAX_DESC}자까지)"),
-    tid: str = typer.Option(None, "--id", help="고칠 내 유형 ID (생략하면 새로 만든다)"),
-) -> None:
-    """내 요약 유형을 만들거나 고친다. stdin의 {"prompt": "요약 방법"} (4,000자까지). stdout: {"id","name","description","prompt","builtin":false}
-    잘못된 입력은 종료 코드 2 (아무것도 쓰지 않는다)."""
-    try:
-        req = _read_json_object(sys.stdin.read(), '{"prompt": "…"}')
-        if not isinstance(req.get("prompt"), str):
-            raise ValueError(t("입력은 {shape} 형식이어야 합니다", shape='{"prompt": "…"}'))  # words-ok: 앱 계약 오류
-        saved = tmpls.save_user_template(home_dir(), name, req["prompt"], description, tid)
-    except ValueError as e:
-        _fail(str(e), code="bad_input", exit_code=2)
-    print(json.dumps(saved.public(), ensure_ascii=False))
-
-
-@templates_app.command("delete")
-def templates_delete(tid: str = typer.Argument(..., metavar="ID", help="내 유형 ID (기본 유형은 지울 수 없다). 이 유형으로 만든 요약은 그대로 남는다")) -> None:
-    """내 요약 유형을 지운다. stdout: {"deleted": "<ID>"}"""
-    try:
-        tmpls.delete_user_template(home_dir(), tid)
-    except ValueError as e:
-        _fail(str(e), code="bad_input", exit_code=2)
-    print(json.dumps({"deleted": tid}))
-
-
-summaries_app = typer.Typer(help="한 노트의 요약들(기본 summary.json + summaries/). 보기·지우기 (docs/desktop.md §2.13)")
-app.add_typer(summaries_app, name="summaries")
-
-
-@summaries_app.callback()
-def summaries_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
-    ctx.obj = _note_dir(meeting)
-
-
-@summaries_app.command("list")
-def summaries_list(ctx: typer.Context, as_json: bool = typer.Option(False, "--json", help='{"summaries": [{"key","template","name","title","generated_at","provider","model","custom"}]}')) -> None:
-    """요약 목록. key meeting은 기본 요약(summary.json)이다."""
-    from tractus import summaries as sums
-
-    items = sums.list_summaries(ctx.obj)
-    if as_json:
-        print(json.dumps({"summaries": items}, ensure_ascii=False))
-        return
-    for x in items:
-        print(f"{x['key']}\t{x['name']}\t{x['title']}")
-
-
-@summaries_app.command("delete")
-def summaries_delete(ctx: typer.Context, key: str = typer.Argument(..., metavar="KEY", help="지울 요약의 key (meeting이면 summary.json·summary.md)")) -> None:
-    """요약 하나를 지운다. stdout: {"deleted": "<KEY>"}. 없으면 종료 코드 2."""
-    from tractus import summaries as sums
-
-    try:
-        sums.delete_summary(ctx.obj, key)
-    except ValueError as e:
-        _fail(str(e), code="bad_input", exit_code=2)
-    print(json.dumps({"deleted": key}))
-
-
-minutes_app = typer.Typer(help="한 노트의 회의록(summaries/minutes.json). 보기·칸 고치기 (docs/design/meeting-minutes.md)")  # words-ok: 회의록은 문서 이름
-app.add_typer(minutes_app, name="minutes")
-
-
-@minutes_app.callback()
-def minutes_main(ctx: typer.Context, meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
-    ctx.obj = _note_dir(meeting)
-
-
-def _transcript(d: Path) -> dict:
-    return json.loads((d / "transcript.json").read_text(encoding="utf-8"))
-
-
-@minutes_app.command("show")
-def minutes_show(ctx: typer.Context) -> None:
-    """stdout: {"minutes", "attendees", "title", "generated_at", "edited_at", "markdown", "short"}. 회의록이 없으면 {"minutes": null}."""  # words-ok: 회의록은 문서 이름
-    from tractus import minutes, summaries as sums
-
-    print(json.dumps(minutes.show(sums.read_data(ctx.obj, minutes.KEY), _transcript(ctx.obj)), ensure_ascii=False))
-
-
-@minutes_app.command("save")
-def minutes_save(ctx: typer.Context) -> None:
-    """칸을 고친 회의록 저장. stdin {"minutes": {...}} (show의 minutes 모양). 비운 줄은 지운다. stdout은 show와 같다. 형식이 틀리면 종료 코드 2."""  # words-ok: 회의록은 문서 이름
-    from tractus import minutes
-
-    try:
-        raw = json.loads(sys.stdin.read() or "{}")
-        out = minutes.save_edit(ctx.obj, _transcript(ctx.obj), raw.get("minutes") if isinstance(raw, dict) else None)
-    except ValueError as e:  # json.JSONDecodeError도 ValueError
-        _fail(str(e) if str(e) in (minutes.BAD_EDIT, minutes.NO_MINUTES) else minutes.BAD_EDIT, code="bad_input", exit_code=2)
-    print(json.dumps(out, ensure_ascii=False))
-
-
 @app.command()
 def mcp() -> None:
     """MCP 서버(stdio)를 실행한다. Claude Code·Codex·agy에 등록해서 쓴다 (README 'MCP 연동')."""
@@ -1741,3 +1435,9 @@ def mcp() -> None:
 
 if __name__ == "__main__":
     app()
+app.add_typer(summaries.app)  # 요약 유형(templates)·노트의 요약들(summaries)·회의록(minutes) 명령. 모두 노트의 요약 파일을 보고 고친다.
+models_cli.register(app)  # models list|download|remove, doctor (docs/desktop.md §2.15)
+organize_cli.register(app, note.note_app)  # note meta, folders, notes list (docs/desktop.md §2.12)
+app.add_typer(glossary.app)  # 용어집(glossary) 명령: 다음 변환부터 자주 쓰는 단어로 들어갈 용어를 더한다.
+app.add_typer(export.app)  # 내보내기(export)와 Obsidian 보내기 명령.
+app.add_typer(note.app)  # 노트 만들기·저장·제목(note)과 녹음 중 메모·북마크 고치기(marks) 명령.
