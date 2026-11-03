@@ -8,7 +8,7 @@ import { MENU, MENU_ITEM } from "@/components/menu";
 import { t } from "./i18n";
 import { menuKey, NEW_NOTE_ITEMS, openKey, type NewNoteAction } from "./menu";
 
-export function NewNoteMenu({ onPick, disabled }: { onPick: (a: NewNoteAction) => void; disabled: Partial<Record<NewNoteAction, string>> }) {
+export function NewNoteMenu({ onPick, disabled, tips }: { onPick: (a: NewNoteAction) => void; disabled: Partial<Record<NewNoteAction, string>>; tips?: Partial<Record<NewNoteAction, string>> }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -83,7 +83,7 @@ export function NewNoteMenu({ onPick, disabled }: { onPick: (a: NewNoteAction) =
                 role="menuitem"
                 tabIndex={-1}
                 aria-disabled={why ? true : undefined}
-                title={why}
+                title={why ?? tips?.[it.action]}
                 className={MENU_ITEM}
                 onClick={() => {
                   if (why) return; // 못 쓰는 항목은 초점은 받되 아무 일도 하지 않는다
