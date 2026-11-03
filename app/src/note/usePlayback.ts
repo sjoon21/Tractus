@@ -96,3 +96,5 @@ export function usePlayback(audioPath: string | null | undefined) {
 
   return { audio, pos, setT, duration, setDuration, playing, setPlaying, follow, setFollow, audioError, setAudioError, seekTo, rate, setRate, volume, setVolume, muted, setMuted, skip, setSkip, saved, setSaved, voice, voiceError, toggleVoice };
 }
+
+export type Playback = ReturnType<typeof usePlayback>;
