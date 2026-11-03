@@ -1,4 +1,7 @@
 import { ToastItem } from "@/components/Toast";
+import { SidebarJobs } from "@/components/sidebar/SidebarJobs";
+import { LeftoverRecordings } from "@/components/sidebar/LeftoverRecordings";
+import { SidebarFooter } from "@/components/sidebar/SidebarFooter";
 import { Welcome } from "@/components/home/Welcome";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -8,7 +11,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { attachAlignJobs } from "./alignJobs";
 import { api, errDetail, errFull, errText, useJob, useRecorder, type CalendarEvent, type MeetingInfo, type PendingRecording } from "./api";
 import { AskPanel } from "./AskPanel";
-import { DROP_UNAVAILABLE, MODELS_LABEL, OK, recordNotice, UNCONVERTED_SAVED } from "./caps";
+import { DROP_UNAVAILABLE, OK, recordNotice, UNCONVERTED_SAVED } from "./caps";
 import { Checkup } from "./Checkup";
 import { GatedButton } from "./GatedButton";
 import { DOWNLOAD_DONE, downloadErrorView } from "./models";
@@ -16,19 +19,19 @@ import { ModelsView } from "./ModelsSettings";
 import { attachModelsJobs } from "./modelsJob";
 import { CapsContext, useCapabilitiesState } from "./useCapabilities";
 import { OPEN_SETTINGS } from "./llmKey";
-import { addBlocked, ADDED, ADD_BADGE, attachReduce, DROP_CONFIRM, DROP_LABEL, failedFile, IDLE_ATTACH, IMPORT_BUSY, lockOf, pendingTarget, PENDING_LABEL, resolveTarget, type AttachControls, type AttachTarget } from "./attach";
+import { addBlocked, ADDED, attachReduce, DROP_CONFIRM, DROP_LABEL, failedFile, IDLE_ATTACH, IMPORT_BUSY, lockOf, resolveTarget, type AttachControls, type AttachTarget } from "./attach";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
 import { t } from "./i18n";
 import { bindIndexer, indexer } from "./indexer";
-import { baseName, errorView, isImeKey, isRecLive, IDLE_JOB, JOB_ERROR, fmtTime, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, STAGE_FALLBACK, STAGE_LABEL, warningText, type RecMode } from "./lib";
+import { baseName, errorView, isImeKey, isRecLive, IDLE_JOB, JOB_ERROR, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, warningText, type RecMode } from "./lib";
 import { MeetingView } from "./MeetingView";
 import type { NewNoteAction } from "./menu";
 import { NewNoteMenu } from "./NewNoteMenu";
 import { dropMemo, flushMemos, isMemo, settleMemo } from "./memo";
 import { RecordView } from "./RecordView";
-import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, recordingLabel, type DeleteTarget } from "./remove";
+import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, type DeleteTarget } from "./remove";
 import { SearchView } from "./SearchView";
 import { SettingsView } from "./SettingsView";
 import { createTraySender, deriveTrayState, routeTrayAction } from "./tray";
@@ -38,7 +41,7 @@ import { convertsWhileRecording, LIVE_BLOCKS_RECORD, recordBlock } from "./recor
 import { attachConvertJobs, convertStore, useConvertJob } from "./convertJobs";
 import { convertAdvance, convertEnqueue, convertProgress, convertSlot, IDLE_CONVERT, type ConvertQueue } from "./convertQueue";
 import { recButton } from "./pause";
-import { BULK_MIN, CONVERT_ALL, CONVERT_PAUSED, CONVERT_ALL_LINE, CONVERT_ALL_TITLE, CONVERT_FAIL, CONVERTED, isRecorded, noteLabel, recordedIds, SAVE_NOTE, SAVE_NOTE_TITLE, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
+import { BULK_MIN, CONVERT_ALL, CONVERT_PAUSED, CONVERT_ALL_TITLE, CONVERT_FAIL, CONVERTED, isRecorded, recordedIds, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
 import { NoteLibrary } from "./NoteLibrary";
 import { QuickFind } from "./QuickFind";
 import { touchNote as touchNoteIn, type Folder } from "./organize";
@@ -46,13 +49,11 @@ import { OrganizeContext, useOrganizeState } from "./useOrganize";
 import { PanelResizer, PanelToggle, usePanels } from "./PanelToggle";
 import { RAIL_REC_LABEL, railPendingLabel, railRecState } from "./panels";
 import { check } from "@tauri-apps/plugin-updater";
-import { AudioLines, Box, House, Settings, Sparkles, Upload, X } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { AudioLines, House, Settings, Sparkles, Upload, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
-import { Progress } from "@/components/ui/progress";
 import { cn } from "@/components/ui/utils";
-import { JOB_CARD, NOTE_LINK, SIDE_HEAD, SIDE_ITEM } from "@/components/sidebar";
+import { SIDE_ITEM } from "@/components/sidebar";
 import { SparklesIcon } from "@/components/ui/sparkles-icon";
 import logo from "./assets/logo.png";
 import { markSeen, newVersionToast, noteExcerpt, OPEN_SETTINGS_LABEL, remembered, seenVersion, START_DELAY_MS, updateNotice, updateReduce } from "./update";
@@ -908,43 +909,22 @@ export function App() {
           )}
         </div>
 
-        {(imp.job.running || queue.length > 0) && (
-          <section className={JOB_CARD} aria-live="polite" aria-label={t("가져오기 진행")}>
-            <p className="truncate font-medium text-foreground">{importing ? baseName(importing) : t("대기 중")}</p>
-            <p className="flex justify-between gap-2 tabular-nums">
-              <span>{STAGE_LABEL[imp.job.stage ?? ""] ?? STAGE_FALLBACK}</span>
-              <span>{[importPct !== null && `${Math.round(importPct * 100)}%`, queue.length > 0 && t("대기 {n}개", { n: queue.length })].filter(Boolean).join(" · ")}</span>
-            </p>
-            <Progress value={importPct} />
-            {imp.job.warnings
-              .filter((w) => w.code !== "duplicate")
-              .map((w) => (
-                <p key={w.code} className="text-memo">
-                  {warningText(w)}
-                </p>
-              ))}
-          </section>
-        )}
-        {(transcribe.job.running || waitList.length > 0) && (
-          <section className={JOB_CARD} aria-live="polite" aria-label={t("녹음 변환 진행")}>
-            <p className="truncate font-medium text-foreground">{t("녹음을 텍스트로 변환")}</p>
-            <p className="flex justify-between gap-2 tabular-nums">
-              <span>{transcribe.job.running ? (STAGE_LABEL[transcribe.job.stage ?? ""] ?? STAGE_FALLBACK) : waitReason}</span>
-              <span>{[txPct !== null && `${Math.round(txPct * 100)}%`, waitList.length > 0 && transcribe.job.running && t("대기 {n}개", { n: waitList.length })].filter(Boolean).join(" · ")}</span>
-            </p>
-            <Progress value={txPct} />
-          </section>
-        )}
-        {converting && (
-          <section className={JOB_CARD} aria-live="polite" aria-label={t("변환 전 노트 변환 진행")}>
-            <p className="truncate font-medium text-foreground">{convProgress ? CONVERT_ALL_LINE(convProgress.n, convProgress.total, convTitle) : noteLabel(convTitle)}</p>
-            <p className="flex justify-between gap-2 tabular-nums">
-              <span>{convertRunning ? (STAGE_LABEL[convJob.stage ?? ""] ?? STAGE_FALLBACK) : waitReason}</span>
-              <span>{convertRunning && convPct !== null ? `${Math.round(convPct * 100)}%` : ""}</span>
-            </p>
-            <Progress value={convertRunning ? convPct : null} />
-          </section>
-        )}
+        <SidebarJobs
+          importJob={imp.job}
+          importing={importing}
+          importPct={importPct}
+          queue={queue}
+          transcribeJob={transcribe.job}
+          waitList={waitList}
+          waitReason={waitReason}
+          txPct={txPct}
+          converting={converting}
+          convertRunning={convertRunning}
+          convStage={convJob.stage}
+          convPct={convPct}
+          convProgress={convProgress}
+          convTitle={convTitle}
+        />
 
         <nav className="meeting-nav mt-2 min-h-0 flex-1 overflow-y-auto border-t border-sidebar-border px-2 pt-2 pb-6" aria-label={t("노트 목록")}>
           {listError && (
@@ -953,70 +933,12 @@ export function App() {
               <ErrorDetail detail={listError.detail} />
             </div>
           )}
-          {leftover.length > 0 && (
-            <section className="mb-2">
-              <h2 className={SIDE_HEAD}>{t("변환 대기 중인 녹음")}</h2>
-              <ul>
-                {leftover.map((p) => {
-                  // 글만 있는 노트에 추가하려던 녹음이면 그 노트(아직 글만 있을 때)에 이어서 추가한다. 노트가 없어졌으면 새 노트로 변환한다
-                  const into = pendingTarget(p, meetings);
-                  const label = into ? PENDING_LABEL(into.title) : recordingLabel(p.started_at);
-                  return (
-                  <li key={p.dir} className="group relative">
-                    <GatedButton
-                      gate={convertGate}
-                      className={NOTE_LINK}
-                      disabled={transcribing}
-                      onClick={() => {
-                        startTranscribe(p.dir, into);
-                        void go({ kind: "record" });
-                      }}
-                    >
-                      <span className="block truncate text-[13px] font-medium tabular-nums">{label}</span>
-                      <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
-                        {p.duration === null ? t("끊긴 녹음") : fmtTime(p.duration)}
-                        <Badge variant="rec">{into ? ADD_BADGE : t("변환하기")}</Badge>
-                      </span>
-                    </GatedButton>
-                    <span className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-                      {!into && (
-                        <Button variant="outline" size="sm" className="h-6 px-2" disabled={transcribing || recording} aria-label={`${label} ${SAVE_NOTE}`} title={SAVE_NOTE_TITLE} onClick={() => saveLeftover(p.dir)}>
-                          {SAVE_NOTE}
-                        </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 px-2 hover:border-destructive hover:text-destructive"
-                        disabled={transcribing}
-                        aria-label={t("{label} 삭제", { label })}
-                        title={t("삭제 (휴지통으로 이동)")}
-                        onClick={() => askDelete({ kind: "recording", dir: p.dir, startedAt: p.started_at })}
-                      >
-                        {t("삭제")}
-                      </Button>
-                    </span>
-                  </li>
-                  );
-                })}
-              </ul>
-            </section>
-          )}
+          {leftover.length > 0 && <LeftoverRecordings leftover={leftover} meetings={meetings} convertGate={convertGate} transcribing={transcribing} recording={recording} startTranscribe={startTranscribe} saveLeftover={saveLeftover} askDelete={askDelete} go={go} />}
           {!listError && meetings.length === 0 && leftover.length === 0 && <p className="m-2 text-xs text-muted-foreground">{t("아직 노트가 없습니다. 새 노트로 녹음을 시작하거나 글을 쓰거나, 설정에서 데이터 위치를 확인하세요.")}</p>}
           <NoteLibrary notes={meetings} activeId={activeId} onOpen={openMeeting} convertSlots={convertSlots} onConvert={convertNote} />
         </nav>
 
-        <footer className="flex items-center gap-0.5 border-t border-sidebar-border px-2 py-1.5">
-          <Button variant="sidebar" size="sm" className="gap-1.5 text-muted-foreground aria-[current=true]:text-foreground" onClick={() => void go({ kind: "settings" })} aria-current={view.kind === "settings"}>
-            <Settings aria-hidden />
-            {t("설정")}
-          </Button>
-          <Button variant="sidebar" size="sm" className="gap-1.5 text-muted-foreground aria-[current=true]:text-foreground" onClick={() => void go({ kind: "models" })} aria-current={view.kind === "models"}>
-            <Box aria-hidden />
-            {MODELS_LABEL}
-          </Button>
-          <span className="ml-auto pr-2 text-[11px] text-subtle-foreground tabular-nums">{t("노트 {n}개", { n: meetings.length })}</span>
-        </footer>
+        <SidebarFooter viewKind={view.kind} noteCount={meetings.length} go={go} />
         </div>
       </aside>
 
