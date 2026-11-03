@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
+from tractus import llm
 from tractus import ask as qa
 from tractus import cli, notes
 from tractus.export import render_export
@@ -376,8 +377,8 @@ def test_ask_cli_prints_memo_label_for_memo_citations(rec, monkeypatch):
         seen.append(kw["messages"])
         return iter([chunk("동결 [m0001]")])
 
-    monkeypatch.setattr(cli, "make_client", lambda p: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
-    monkeypatch.setattr(cli, "resolve_provider", lambda p, m: (SimpleNamespace(name="fake", temperature=0.2, base_url="http://x"), "m"))
+    monkeypatch.setattr(llm, "make_client", lambda p: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+    monkeypatch.setattr(llm, "resolve_provider", lambda p, m: (SimpleNamespace(name="fake", temperature=0.2, base_url="http://x"), "m"))
     r = run("ask", "--meeting", MID, input="예산은?")
     assert r.exit_code == 0 and "[m0001 메모 1번째 줄]" in r.stdout and "[내가 적은 메모]" in seen[0][-1]["content"]
 

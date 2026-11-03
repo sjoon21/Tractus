@@ -16,6 +16,7 @@ import pytest
 from mcp import Client
 from typer.testing import CliRunner
 
+from tractus import llm
 from tractus.commands import common
 from tractus import cli, deferred, notes, organize
 from tractus.index import Index
@@ -444,7 +445,7 @@ def test_ask_on_a_recorded_note_without_a_memo_does_not_call_the_llm(env, tmp_pa
         def chat(self):
             raise AssertionError("LLM을 부르면 안 된다")
 
-    monkeypatch.setattr(cli, "make_client", lambda p: NoLLM())
+    monkeypatch.setattr(llm, "make_client", lambda p: NoLLM())
     r = CliRunner().invoke(cli.app, ["ask", "--meeting", t["meeting_id"], "--provider", "upstage", "--progress-json"], input="예산은?")
     assert r.exit_code == 0, r.output
     ev = events(r.stdout)
@@ -458,7 +459,7 @@ def test_ask_on_a_recorded_note_uses_the_memo_as_evidence(recorded, monkeypatch)
     stream = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **kw: iter([
         SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="동결합니다 [m0001]."))]),
     ]))))
-    monkeypatch.setattr(cli, "make_client", lambda p: stream)
+    monkeypatch.setattr(llm, "make_client", lambda p: stream)
     r = CliRunner().invoke(cli.app, ["ask", "--meeting", recorded.id, "--provider", "upstage", "--progress-json"], input="예산은?")
     assert r.exit_code == 0, r.output
     ev = events(r.stdout)

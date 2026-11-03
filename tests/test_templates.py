@@ -9,6 +9,7 @@ import anyio
 import pytest
 from typer.testing import CliRunner
 
+from tractus import llm
 from tractus import cli, notes, summaries as sums, summary_templates as tm
 from tractus.export import render_export
 from tractus.llm import PROVIDERS, LLMError
@@ -62,7 +63,7 @@ def fake(monkeypatch):
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text_))])
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
-    monkeypatch.setattr(cli, "make_client", lambda p: client)
+    monkeypatch.setattr(llm, "make_client", lambda p: client)
     return state
 
 

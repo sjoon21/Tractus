@@ -9,12 +9,10 @@ from rich.markup import escape
 import typer
 
 from tractus import notes
+from tractus import llm
 from tractus.commands import common
 from tractus.commands import note
 from tractus.i18n import t
-from tractus.llm import LLMError
-from tractus.llm import make_client
-from tractus.llm import resolve_provider
 from tractus.paths import home_dir
 from tractus.store import NOT_CONVERTED
 from tractus.store import apply_text_edits
@@ -132,13 +130,13 @@ def polish_run(
     if not note["segments"]:
         common.fail(t("인식된 대화가 없어 교정할 수 없습니다"), code="no_segments")
     try:
-        p, m = resolve_provider(provider, model)
+        p, m = llm.resolve_provider(provider, model)
         t0 = time.perf_counter()
         common.Events.emit("stage", stage="polish")
         report = lambda done, total, got, span: common.Events.emit("progress", done=done, total=total, suggestions=got, range=list(span))  # noqa: E731
         with common.console.status(t("{provider}/{model}로 교정하는 중… (대화 {n}개)", provider=p.name, model=m, n=len(note["segments"]))):
-            found = polish.suggest(make_client(p), p, m, note, load_glossary(home_dir() / "glossary.md"), on_window=report)
-    except LLMError as e:
+            found = polish.suggest(llm.make_client(p), p, m, note, load_glossary(home_dir() / "glossary.md"), on_window=report)
+    except llm.LLMError as e:
         if e.code == "llm_invalid":
             common.console.print(f"[red]{escape(str(e))}[/red]")
             common.fail(t("AI 응답이 형식에 맞지 않아 교정하지 못했습니다"), code=e.code)

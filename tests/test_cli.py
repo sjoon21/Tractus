@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
+from tractus import llm
 from tractus.commands import common
 from tractus import voices
 from tractus import cli, summarize
@@ -134,7 +135,7 @@ def test_summarize_writes_summary_files(env, fake_asr, monkeypatch):
         return summ.MeetingSummary.model_validate(reply)
 
     monkeypatch.setattr(summarize, "summarize", fake_summarize)
-    monkeypatch.setattr(cli, "make_client", lambda p: None)
+    monkeypatch.setattr(llm, "make_client", lambda p: None)
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
     result = CliRunner().invoke(cli.app, ["summarize", meeting_id[-6:], "--provider", "upstage", "--progress-json"])
     assert result.exit_code == 0, result.output
@@ -161,10 +162,10 @@ def test_error_text_with_brackets_is_printed_verbatim(env, fake_asr, monkeypatch
     (d,) = (home / "meetings").iterdir()
 
     def boom(*a, **k):
-        raise cli.LLMError("검증 실패 [type=missing, input_value={}] [/x]")
+        raise llm.LLMError("검증 실패 [type=missing, input_value={}] [/x]")
 
     monkeypatch.setattr(summarize, "summarize", boom)
-    monkeypatch.setattr(cli, "make_client", lambda p: None)
+    monkeypatch.setattr(llm, "make_client", lambda p: None)
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
     result = CliRunner().invoke(cli.app, ["summarize", str(d), "--provider", "upstage"])
     assert result.exit_code == 1 and "[type=missing" in result.output
@@ -176,10 +177,10 @@ def test_summarize_invalid_llm_reply_emits_code_and_keeps_detail_on_stderr(env, 
     (d,) = (home / "meetings").iterdir()
 
     def boom(*a, **k):
-        raise cli.LLMError("upstage/m 응답이 2회 연속 검증에 실패했습니다: 전사에 없는 segment_ids: ['s0099']", code="llm_invalid")
+        raise llm.LLMError("upstage/m 응답이 2회 연속 검증에 실패했습니다: 전사에 없는 segment_ids: ['s0099']", code="llm_invalid")
 
     monkeypatch.setattr(summarize, "summarize", boom)
-    monkeypatch.setattr(cli, "make_client", lambda p: None)
+    monkeypatch.setattr(llm, "make_client", lambda p: None)
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
     result = CliRunner().invoke(cli.app, ["summarize", str(d), "--provider", "upstage", "--progress-json"])
     assert result.exit_code == 1 and "s0099" in result.stderr
