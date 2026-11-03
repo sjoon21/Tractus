@@ -1,6 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAlign } from "./alignJobs";
 import { api, errDetail, errText, type MeetingDetail, type SpeakerEdit } from "./api";
 import type { Notify, Seek } from "./App";
@@ -11,8 +11,6 @@ import { useCapabilities } from "./useCapabilities";
 import {
   applyEdits,
   baseName,
-  clickSeekTime,
-  evidenceStart,
   exportFilename,
   findMatches,
   fmtTime,
@@ -46,7 +44,6 @@ import {
   type Segment,
   type TextEdit,
 } from "./lib";
-import { citeLabel } from "./ask";
 import { AskPanel } from "./AskPanel";
 import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
@@ -55,17 +52,16 @@ import { indexer } from "./indexer";
 import { printDoc } from "./print";
 import { EDIT_BLOCKED, type DeleteTarget } from "./remove";
 import { appendBlock } from "./memoEdit";
-import { EditableMark } from "./MarkEdit";
 import { deleteMark, editMark } from "./marks";
 import { termFromEdit } from "./vocab";
 import { PrintSheet } from "./PrintSheet";
 import { SummariesPanel } from "./SummariesPanel";
 import type { SummaryDoc } from "./summaries";
-import { SpeakerChip, SpeakerMenu, SpeakersBar, spkStyle, type MenuTarget, type MergeAsk } from "./Speakers";
+import { SpeakerMenu, SpeakersBar, type MenuTarget, type MergeAsk } from "./Speakers";
 import { sendToObsidian } from "./obsidian";
 import { CoachMark } from "./CoachMark";
 import { markOnboard } from "./onboarding";
-import { ExportMenu, FindBar, SegmentEditor, type FindState } from "./TranscriptTools";
+import { ExportMenu, FindBar, type FindState } from "./TranscriptTools";
 import { ExportDialog, type ExportPick } from "./ExportDialog";
 import { exportItems, PICK_FORMATS, type ExportItem } from "./exportPick";
 import { MemoEditor, TitleEditor, type MemoTarget } from "./MemoView";
@@ -85,13 +81,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { selectClass } from "@/components/ui/select";
 import { cn } from "@/components/ui/utils";
-import { CHIP } from "@/components/panel/chip";
 import { EnhancedNote } from "./EnhancedNote";
 import { MinutesPanel } from "./MinutesPanel";
-import { PolishBar, PolishButton, PolishDiff, usePolish } from "./PolishControls";
+import { PolishBar, PolishButton, usePolish } from "./PolishControls";
 import { LlmServicePicker } from "./LlmServicePicker";
 import { RecordPill } from "./RecordPill";
-import { AI_EDITED, livePolish, nextSuggestion, NO_SUGGESTIONS, pendingIds, suggestionMarks, termsFromSuggestions, type PolishSuggestion } from "./polish";
+import { SegmentRow } from "@/components/note/SegmentRow";
+import { MemoRow } from "@/components/note/MemoRow";
+import { TimeChip } from "@/components/note/TimeChip";
+import { PENDING, TOGGLE } from "@/components/note/styles";
+import { livePolish, nextSuggestion, NO_SUGGESTIONS, pendingIds, suggestionMarks, termsFromSuggestions, type PolishSuggestion } from "./polish";
 
 const RATE_KEY = "tractus.playbackRate";
 const VOLUME_KEY = "tractus.volume";
@@ -1375,169 +1374,3 @@ export function MeetingView({
     </div>
   );
 }
-
-const SegmentRow = memo(function SegmentRow({
-  seg,
-  index,
-  isActive,
-  isEditing,
-  isFind,
-  order,
-  onSeek,
-  onEdit,
-  onEditDone,
-  speaker,
-  slot,
-  turnStart,
-  flow,
-  onChip,
-  suggestion,
-  glowing,
-  deciding,
-  onDecide,
-}: {
-  seg: Segment;
-  index: number;
-  isActive: boolean;
-  isEditing: boolean;
-  /** 찾기의 현재 일치 (Highlight API가 없을 때도 보이게 행 테두리) */
-  isFind: boolean;
-  order: number;
-  onSeek: (t: number) => void;
-  onEdit: (seg: Segment) => void;
-  onEditDone: (seg: Segment, raw: string | null) => void;
-  /** 화자 있는 회의만: 표시 이름(화자 미상이면 null). 화자 없는 회의는 undefined → 칩을 그리지 않는다 */
-  speaker?: string | null;
-  slot?: number;
-  turnStart: boolean;
-  /** 같은 발언에서 바로 이어진 줄: 문단처럼 붙여 그린다 (lib.transcriptRows) */
-  flow: boolean;
-  onChip: (seg: Segment, anchor: HTMLElement) => void;
-  /** AI 다듬기 제안 (줄 아래 diff + 받기·버리기) */
-  suggestion?: PolishSuggestion;
-  /** AI가 아직 보지 않은 줄: 은은하게 빛난다 */
-  glowing: boolean;
-  deciding: boolean;
-  onDecide: (ids: string[], accept: boolean) => void;
-}) {
-  const diarized = speaker !== undefined;
-  const button = useRef<HTMLButtonElement>(null);
-  const refocus = useRef(false);
-  // 키보드로 편집을 끝내면 초점을 세그먼트로 돌려준다 (마우스로 다른 곳을 눌러 끝냈으면 그대로 둔다)
-  useEffect(() => {
-    if (!isEditing && refocus.current) {
-      refocus.current = false;
-      button.current?.focus();
-    }
-  }, [isEditing]);
-  const edited = seg.corrected_text != null;
-  return (
-    <li
-      className={`seg ${isActive ? "is-active" : ""} ${diarized && turnStart ? "is-turn" : ""} ${flow ? "is-flow" : ""} ${isFind ? "is-find" : ""} ${glowing ? "is-glow" : ""} ${suggestion ? "has-polish" : ""}`}
-      data-seg={index}
-      data-seg-id={seg.id}
-      style={{ "--i": Math.min(order, 16), ...(diarized ? spkStyle(slot) : {}) } as React.CSSProperties}
-    >
-      {diarized && <SpeakerChip seg={seg} display={speaker} turnStart={turnStart} onOpen={onChip} />}
-      {isEditing ? (
-        <div className="seg-button is-editing">
-          <time className="seg-time tnum">{fmtTime(seg.start)}</time>
-          <SegmentEditor
-            initial={segText(seg)}
-            onDone={(raw, viaKey) => {
-              refocus.current = viaKey;
-              onEditDone(seg, raw);
-            }}
-          />
-        </div>
-      ) : (
-        <button
-          ref={button}
-          className="seg-button"
-          onClick={(e) => {
-            // 드래그로 글을 골랐으면 이동하지 않는다. 키보드(detail 0)·시간 칸은 세그먼트 시작, 단어 타이밍이 있으면 누른 단어
-            const sel = window.getSelection();
-            if (sel && !sel.isCollapsed && e.currentTarget.contains(sel.anchorNode)) return;
-            onSeek(clickSeekTime(seg, e.detail ? caretOffset(e.currentTarget, e.clientX, e.clientY) : null));
-          }}
-          onDoubleClick={() => onEdit(seg)}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" || e.metaKey || isImeKey(e.nativeEvent)) return;
-            e.preventDefault();
-            onEdit(seg);
-          }}
-          aria-current={isActive}
-          aria-keyshortcuts="Enter"
-          aria-description={t("Enter로 대화 내용 수정")}
-        >
-          <time className="seg-time tnum">{fmtTime(seg.start)}</time>
-          <span className="seg-body">
-            <span className="seg-text">{segText(seg)}</span>
-            {edited && (
-              <span className={`seg-edited ${seg.corrected_by === "ai" ? "is-ai" : ""}`} title={t("수정 전: {text}", { text: seg.text })}>
-                {seg.corrected_by === "ai" ? AI_EDITED : t("수정됨")}
-              </span>
-            )}
-          </span>
-        </button>
-      )}
-      {suggestion && !isEditing && <PolishDiff s={suggestion} busy={deciding} onDecide={onDecide} />}
-    </li>
-  );
-});
-
-/** 누른 지점이 문장 글자 노드의 몇 번째 글자인지. 문장 밖(시간 칸)이거나 지원하지 않으면 null */
-function caretOffset(button: HTMLElement, x: number, y: number): number | null {
-  const node = button.querySelector(".seg-text")?.firstChild;
-  const r = node ? document.caretRangeFromPoint?.(x, y) : null;
-  return r && r.startContainer === node ? r.startOffset : null;
-}
-
-function MemoRow({ memo: m, onSeek, onSave, onDelete }: { memo: Memo; onSeek: (t: number) => void; onSave: (text: string) => void; onDelete: () => void }) {
-  const isBookmark = m.kind === "bookmark";
-  return (
-    <li className={`memo is-${isBookmark ? "bookmark" : "memo"}`}>
-      <EditableMark memo={m} onSave={onSave} onDelete={onDelete}>
-        <button className="seg-button" onClick={() => onSeek(m.t)}>
-          <time className="seg-time tnum">{fmtTime(m.t)}</time>
-          <span className="memo-body">
-            <span className="memo-kind">{isBookmark ? t("북마크") : t("메모")}</span>
-            <span className="memo-text">{m.text}</span>
-          </span>
-        </button>
-      </EditableMark>
-    </li>
-  );
-}
-
-/**
- * 메모의 근거 표시: 시각 대신 본문의 줄 (`3번째 줄`). 누르면 편집기에서 그 줄을 고른다.
- * tagged: 녹음 노트의 메모 줄 (`메모 3번째 줄`). 같은 항목에 시각 칩과 함께 나올 수 있어 `메모`를 붙인다
- */
-type MemoChips = { lines: Map<string, number>; onPick: (segId: string) => void; tagged?: boolean };
-
-function TimeChip({ ids, starts, onSeek, memo }: { ids: string[]; starts: Map<string, number>; onSeek: (t: number) => void; memo?: MemoChips | null }) {
-  // 메모 줄 중 가장 앞의 줄 하나
-  const line = memo && ids.filter((i) => memo.lines.has(i)).sort((a, b) => (memo.lines.get(a) ?? 0) - (memo.lines.get(b) ?? 0))[0];
-  const at = evidenceStart(ids, starts); // 메모 노트는 시각이 없어(starts가 비어 있다) null
-  if (at === null && !line) return null;
-  return (
-    <>
-      {at !== null && (
-        <button className={CHIP} onClick={() => onSeek(at)} title={t("근거 대화로 이동 ({time})", { time: fmtTime(at) })}>
-          {fmtTime(at)}
-        </button>
-      )}
-      {memo && line && (
-        <button className={CHIP} onClick={() => memo.onPick(line)} title={t("메모의 줄로 이동")}>
-          {citeLabel(0, { memo: true, line: memo.lines.get(line), tagged: memo.tagged })}
-        </button>
-      )}
-    </>
-  );
-}
-
-/** 플레이어의 켜고 끄는 단추 */
-const TOGGLE = "inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 gated:opacity-45 aria-pressed:bg-rec-wash aria-pressed:text-rec [&_svg]:size-3.5";
-/** 오른쪽 패널: 변환 전 노트 안내 */
-const PENDING = "rail-pending m-0 rounded-md border border-border bg-muted px-3 py-2.5 text-xs leading-relaxed text-muted-foreground";
