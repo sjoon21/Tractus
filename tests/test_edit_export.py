@@ -108,11 +108,33 @@ def test_glossary_add_creates_file_and_dedupes(meeting):
     path = meeting.parents[1] / "glossary.md"
     r = invoke("glossary", "add", " 쿠버네티스 ", "WTO", "", "쿠버네티스")
     assert r.exit_code == 0, r.output
-    assert json.loads(r.stdout) == {"added": 2} and load_glossary(path) == ["쿠버네티스", "WTO"]
+    assert json.loads(r.stdout) == {"added": 2, "skipped": 0} and load_glossary(path) == ["쿠버네티스", "WTO"]
     r = invoke("glossary", "add", "WTO", "Project Atlas")
-    assert json.loads(r.stdout) == {"added": 1} and load_glossary(path)[-1] == "Project Atlas"
+    assert json.loads(r.stdout) == {"added": 1, "skipped": 0} and load_glossary(path)[-1] == "Project Atlas"
     r = invoke("glossary", "add", "--", "-x")  # 앱은 용어 앞에 --를 둔다
-    assert json.loads(r.stdout) == {"added": 1} and load_glossary(path)[-1] == "-x"
+    assert json.loads(r.stdout) == {"added": 1, "skipped": 0} and load_glossary(path)[-1] == "-x"
+
+
+def test_glossary_add_skips_too_long_terms(meeting):
+    r = invoke("glossary", "add", "가" * 41, "OK")
+    assert json.loads(r.stdout) == {"added": 1, "skipped": 1}
+
+
+def test_glossary_list_newest_first_with_max(meeting):
+    invoke("glossary", "add", "A", "B", "C")
+    r = invoke("glossary", "list", "--json")
+    assert json.loads(r.stdout) == {"terms": ["C", "B", "A"], "max": 50}
+
+
+def test_glossary_remove_and_rename(meeting):
+    path = meeting.parents[1] / "glossary.md"
+    invoke("glossary", "add", "WTO", "OECD", "Atlas")
+    assert json.loads(invoke("glossary", "remove", "OECD", "없는말").stdout) == {"removed": 1}
+    assert json.loads(invoke("glossary", "rename", "Atlas", "Project Atlas").stdout) == {"changed": True}
+    assert load_glossary(path) == ["WTO", "Project Atlas"]
+    assert json.loads(invoke("glossary", "rename", "없는말", "x").stdout) == {"changed": False}
+    r = invoke("glossary", "rename", "WTO", "가" * 41)
+    assert r.exit_code == 2 and "1~40" in r.stderr
 
 
 # ── export ──────────────────────────────────────────────────────────
