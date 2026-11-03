@@ -7,8 +7,7 @@ import typer
 
 from tractus import models_registry as registry
 from tractus.commands import common
-from tractus.diarize import FLUID
-from tractus.diarize import NEMOTRON
+from tractus.diarize import FLUID, NEMOTRON
 from tractus.i18n import t
 from tractus.models_registry import STANDARD_MIN_MEMORY
 from tractus.paths import models_dir

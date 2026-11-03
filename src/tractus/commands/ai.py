@@ -5,20 +5,15 @@ import sys
 import time
 from pathlib import Path
 
-from rich.markup import escape
 import typer
+from rich.markup import escape
 
-from tractus.calendar_event import load_event
 from tractus import llm
+from tractus.calendar_event import load_event
 from tractus.commands import common
 from tractus.i18n import t
-from tractus.paths import home_dir
-from tractus.paths import models_dir
-from tractus.store import NOT_CONVERTED
-from tractus.store import is_memo
-from tractus.store import is_recorded
-from tractus.store import load_glossary
-from tractus.store import stamp
+from tractus.paths import home_dir, models_dir
+from tractus.store import is_memo, is_recorded, load_glossary, NOT_CONVERTED, stamp
 
 app = typer.Typer()  # 이 영역의 명령. cli.py가 이름 없이 붙여 한 층으로 합친다
 

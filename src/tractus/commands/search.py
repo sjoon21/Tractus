@@ -2,14 +2,13 @@
 
 import time
 
-from rich.markup import escape
 import typer
+from rich.markup import escape
 
 from tractus import organize_cli
 from tractus.commands import common
 from tractus.i18n import t
-from tractus.store import seg_text
-from tractus.store import stamp
+from tractus.store import seg_text, stamp
 
 app = typer.Typer()  # 이 영역의 명령. cli.py가 이름 없이 붙여 한 층으로 합친다
 

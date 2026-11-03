@@ -9,11 +9,7 @@ from tractus import notes
 from tractus.commands import common
 from tractus.i18n import t
 from tractus.paths import home_dir
-from tractus.store import edit_transcript
-from tractus.store import is_memo
-from tractus.store import memo_lines
-from tractus.store import note_lock
-from tractus.store import read_transcript
+from tractus.store import edit_transcript, is_memo, memo_lines, note_lock, read_transcript
 
 app = typer.Typer()  # 이 영역의 명령. cli.py가 이름 없이 붙여 한 층으로 합친다
 

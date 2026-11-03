@@ -5,24 +5,25 @@ import sys
 import time
 from pathlib import Path
 
-from rich.markup import escape
 import typer
+from rich.markup import escape
 
-from tractus import notes
-from tractus import llm
+from tractus import llm, notes
 from tractus.commands import common
 from tractus.i18n import t
 from tractus.paths import home_dir
-from tractus.store import NOT_CONVERTED
-from tractus.store import apply_text_edits
-from tractus.store import edit_transcript
-from tractus.store import is_memo
-from tractus.store import is_recorded
-from tractus.store import load_glossary
-from tractus.store import note_lock
-from tractus.store import read_transcript
-from tractus.store import render_files
-from tractus.store import seg_text
+from tractus.store import (
+    apply_text_edits,
+    edit_transcript,
+    is_memo,
+    is_recorded,
+    load_glossary,
+    NOT_CONVERTED,
+    note_lock,
+    read_transcript,
+    render_files,
+    seg_text,
+)
 
 app = typer.Typer()  # 이 영역의 명령. cli.py가 이름 없이 붙여 한 층으로 합친다
 

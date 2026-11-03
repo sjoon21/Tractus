@@ -865,7 +865,7 @@ T='회의|전사|세그먼트|화자|청크|벡터|임베딩|색인|(?<!AI )모�
   rg -n --pcre2 "$T" app/src/{caps,models,checkupRows}.ts app/src/ModelsSettings.tsx | sed 's/모델//g'
   awk '/#\[cfg\(test\)\]/{exit} {print FILENAME":"FNR":"$0}' app/src-tauri/src/models.rs | sed 's/모델//g'
   rg -n --pcre2 '^(?!\s*#).*(raise [\w.]+\(|_fail\(|\bfail\(|emit\("error"|console\.print\(|add_heading|add_paragraph|writerow|_HEADER =|NO_EVIDENCE =)' \
-    src/tractus/{store,export,summarize,ask,cli,llm,audio,voices,notes,attach,deferred,organize,organize_cli,summaries,summary_templates,models_registry,models_install,models_cli,doctor,enhance,obsidian,calendar_event,sample_note,polish}.py
+    src/tractus/{store,export,summarize,ask,cli,llm,audio,voices,notes,attach,deferred,organize,organize_cli,summaries,summary_templates,models_registry,models_install,models_cli,doctor,enhance,obsidian,calendar_event,sample_note,polish}.py src/tractus/commands/*.py
   rg -n '^(name|description):' src/tractus/templates | sed 's/회의록//g'  # 요약 유형 이름·설명 (회의록은 문서 이름이라 뺀다)
 } | rg -v '^[^:]+:\d+:\s*(//|/\*|\*|\{/\*)' | rg -v 'words-ok|code=|eprintln!' \
   | sed -E 's#[[:space:]]//[^"`]*$##' | rg --pcre2 "$T"

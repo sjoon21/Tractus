@@ -3,26 +3,26 @@
 import json
 from pathlib import Path
 
-from rich.markup import escape
 import typer
+from rich.markup import escape
 
-from tractus import audio
-from tractus import voices
+from tractus import audio, voices
 from tractus.commands import common
 from tractus.i18n import t
-from tractus.paths import home_dir
-from tractus.paths import models_dir
-from tractus.store import JOB_FILE
-from tractus.store import Job
-from tractus.store import NOT_CONVERTED
-from tractus.store import apply_speaker_edit
-from tractus.store import apply_suggestions
-from tractus.store import edit_transcript
-from tractus.store import forget_person
-from tractus.store import is_memo
-from tractus.store import is_recorded
-from tractus.store import note_lock
-from tractus.store import save_transcript
+from tractus.paths import home_dir, models_dir
+from tractus.store import (
+    apply_speaker_edit,
+    apply_suggestions,
+    edit_transcript,
+    forget_person,
+    is_memo,
+    is_recorded,
+    Job,
+    JOB_FILE,
+    NOT_CONVERTED,
+    note_lock,
+    save_transcript,
+)
 
 app = typer.Typer()  # 이 영역의 명령. cli.py가 이름 없이 붙여 한 층으로 합친다
 

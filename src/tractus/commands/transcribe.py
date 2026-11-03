@@ -7,23 +7,14 @@ from pathlib import Path
 
 import typer
 
-from tractus import audio
-from tractus import deferred
-from tractus import notes
-from tractus import align as align_core
-from tractus import models_registry as registry
+from tractus import align as align_core, audio, deferred, models_registry as registry, notes
 from tractus.align import align_segments
 from tractus.commands import common, engines, pipeline
-from tractus.diarize import MAX_SPEAKERS
-from tractus.diarize import MODEL_DIR as DIARIZER_DIR
+from tractus.diarize import MAX_SPEAKERS, MODEL_DIR as DIARIZER_DIR
 from tractus.i18n import t
 from tractus.models_registry import STANDARD_MIN_MEMORY
-from tractus.paths import home_dir
-from tractus.paths import models_dir
-from tractus.store import NOT_CONVERTED
-from tractus.store import is_memo
-from tractus.store import is_recorded
-from tractus.store import load_glossary
+from tractus.paths import home_dir, models_dir
+from tractus.store import is_memo, is_recorded, load_glossary, NOT_CONVERTED
 
 app = typer.Typer()  # 이 영역의 명령. cli.py가 이름 없이 붙여 한 층으로 합친다
 

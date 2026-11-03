@@ -7,57 +7,36 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from rich.progress import BarColumn
-from rich.progress import MofNCompleteColumn
-from rich.progress import Progress
-from rich.progress import TextColumn
-from rich.progress import TimeElapsedColumn
-from rich.progress import TimeRemainingColumn
 import typer
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
-from tractus import attach
-from tractus import audio
-from tractus import deferred
-from tractus import models_registry as registry
-from tractus import voices
-from tractus import asr
-from tractus import align as align_core
-from tractus import diarize
-from tractus import vad
-from tractus.align import MODEL_DIR as ALIGNER_DIR
-from tractus.align import align_segments
-from tractus.align import is_approximate
-from tractus.asr import SR
-from tractus.asr import note_terms
-from tractus.calendar_event import load_event
-from tractus.calendar_event import save_event
+from tractus import align as align_core, asr, attach, audio, deferred, diarize, models_registry as registry, vad, voices
+from tractus.align import align_segments, is_approximate, MODEL_DIR as ALIGNER_DIR
+from tractus.asr import note_terms, SR
+from tractus.calendar_event import load_event, save_event
 from tractus.commands import common, engines
-from tractus.diarize import FLUID
-from tractus.diarize import MAX_SPEAKERS
-from tractus.diarize import MODEL_DIR as DIARIZER_DIR
-from tractus.diarize import NEMOTRON
-from tractus.diarize import fluid_hint
-from tractus.diarize import split_chunks
+from tractus.diarize import FLUID, fluid_hint, MAX_SPEAKERS, MODEL_DIR as DIARIZER_DIR, NEMOTRON, split_chunks
 from tractus.i18n import t
-from tractus.paths import home_dir
-from tractus.paths import models_dir
-from tractus.store import CHUNKS_FILE
-from tractus.store import IncompleteError
-from tractus.store import JOB_FILE
-from tractus.store import Job
-from tractus.store import MEMOS_FILE
-from tractus.store import edit_transcript
-from tractus.store import find_job
-from tractus.store import find_meeting_dir
-from tractus.store import find_transcribed
-from tractus.store import load_glossary
-from tractus.store import load_memos
-from tractus.store import meeting_dir_name
-from tractus.store import memo_lines
-from tractus.store import new_ulid
-from tractus.store import read_transcript
-from tractus.store import seg_text
-from tractus.store import write_transcript
+from tractus.paths import home_dir, models_dir
+from tractus.store import (
+    CHUNKS_FILE,
+    edit_transcript,
+    find_job,
+    find_meeting_dir,
+    find_transcribed,
+    IncompleteError,
+    Job,
+    JOB_FILE,
+    load_glossary,
+    load_memos,
+    meeting_dir_name,
+    memo_lines,
+    MEMOS_FILE,
+    new_ulid,
+    read_transcript,
+    seg_text,
+    write_transcript,
+)
 
 
 @dataclass(frozen=True)
