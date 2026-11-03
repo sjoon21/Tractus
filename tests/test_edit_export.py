@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from tractus.commands import common
 from tractus import cli
 from tractus.store import load_glossary, render_vtt, save_transcript
 
@@ -68,7 +69,7 @@ def read_t(d: Path) -> dict:
 
 def test_segments_edit_writes_renders_and_syncs_without_embedding(meeting, monkeypatch):
     synced = []
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: synced.append(embed))
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: synced.append(embed))
     edits = {"edits": [{"id": "s0002", "text": " 예산을 보겠습니다 "}, {"id": "s0001", "text": "안녕하세요"}]}
     r = invoke("segments", MID[-6:], "edit", input=json.dumps(edits, ensure_ascii=False))
     assert r.exit_code == 0, r.output
@@ -88,7 +89,7 @@ def test_segments_edit_writes_renders_and_syncs_without_embedding(meeting, monke
     'not json',
 ])
 def test_segments_edit_rejects_bad_input_and_writes_nothing(meeting, monkeypatch, payload):
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: pytest.fail("색인하면 안 됨"))
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: pytest.fail("색인하면 안 됨"))
     before = {p.name: p.read_bytes() for p in meeting.glob("transcript.*")}
     r = invoke("segments", str(meeting), "edit", input=payload)
     assert r.exit_code == 1 and r.stdout == "" and r.stderr.strip()
@@ -207,7 +208,7 @@ def test_long_error_stays_on_one_line_and_names_out(meeting, tmp_path):
 
 
 def test_control_chars_are_dropped_from_edits_and_names(meeting, monkeypatch):
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: None)
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: None)
     r = invoke("segments", MID, "edit", input=json.dumps({"edits": [{"id": "s0002", "text": "abc\u0001def\u0085g"}]}))
     assert r.exit_code == 0, r.output
     assert invoke("speakers", MID, "rename", "S2", "이\x02영희").exit_code == 0

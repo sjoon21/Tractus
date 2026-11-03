@@ -136,7 +136,8 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `embed.py` | Qwen3-Embedding-0.6B 8bit (`mlx-community/Qwen3-Embedding-0.6B-8bit`, mlx-lm `load_model`), `LazyEmbedder`, 선택: `UpstageEmbedder`(solar-embedding-2, `TRACTUS_EMBED=upstage`), `load_embedder`가 고른다 |
 | `index.py` | SQLite FTS5 음절 bigram + sqlite-vec, 증분 동기화(`stats()['pending']` = 지금 모델로 벡터가 없는 청크), strict 우선 + 가중 RRF |
 | `mcp_server.py` | MCP 서버 7개 도구 (`build_server(home, embedder)`) |
-| `cli.py` | `tractus transcribe`, `align`, `summarize`, `ask`, `index`, `search`, `speakers`, `voices`(`list --json`은 `model_present` 포함), `segments`, `render`, `glossary`, `export`, `note`(`new`·`save`·`title`), `mcp` |
+| `cli.py` | Typer 앱을 만들고 `commands/`의 모듈을 붙이는 것만 한다(명령 자체는 없다) |
+| `commands/` | **명령 모듈, 영역마다 한 파일**(v3.89). `common`(진행 이벤트·오류·노트 찾기·색인 갱신, 어떤 명령도 불러오지 않는다)·`engines`(변환 엔진·트랙 고르기)·`pipeline`(변환 파이프라인: VAD → 화자 분리 → ASR → 단어 시각 → 목소리 제안 → 저장), 명령: `transcribe`(transcribe·recording finish·live·align)·`ai`(summarize·ask·llm test\|models)·`search`(index·search)·`summary`(templates·summaries·minutes)·`note`(note·marks)·`transcript`(render·segments·polish)·`speakers`·`voiceprint`(voices, `list --json`은 `model_present` 포함)·`glossary`·`exports`(export·obsidian)·`mcp`. **새 명령은 영역에 맞는 모듈에 더하거나 새 모듈을 만들어 `cli.py`에 `app.add_typer`로 붙인다. 명령 모듈끼리 서로 불러오지 않는다(공용이 필요하면 `common`으로). 핵심 모듈과 같은 이름을 쓰지 않는다**(`voices`·`summaries`·`export` 대신 `voiceprint`·`summary`·`exports`). 테스트는 **쓰는 곳**의 이름을 바꿔 끼운다: `common.warn`·`common.sync_index_quietly`처럼 모듈 이름으로 부르므로 한 번 바꾸면 모든 명령에 먹고, 핵심 호출은 `llm.make_client`·`asr.Transcriber`·`align.load_aligner`·`diarize.load_diarizer`·`vad.find_chunks`·`registry.physical_memory`처럼 모듈 속성으로 부른다(`from x import y`로 가져온 이름은 따로 바꿔야 한다) |
 
 환경변수는 `.env.example`에 모두 있다. 개발 중에는 저장소 루트의 `.env`(기본값)와 `.env.local`(API 키)을 CLI가 읽는다. 우선순위는 셸 > `.env.local` > `.env`.
 

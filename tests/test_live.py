@@ -11,6 +11,9 @@ import pytest
 from types import SimpleNamespace
 from typer.testing import CliRunner
 
+from tractus.paths import models_dir
+from tractus.commands import engines
+from tractus import models_registry as registry
 from tractus import cli, live
 
 REC = live.REC_SR
@@ -447,7 +450,7 @@ def test_find_tracks_uses_recording_json_and_waits(tmp_path):
 @pytest.fixture
 def rec(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    for repo in (cli.VAD_MODEL, cli.MODELS[cli.Track.lite]):
+    for repo in (engines.VAD_MODEL, engines.MODELS[engines.Track.lite]):
         d = home / "models" / repo.split("/")[1].lower()
         d.mkdir(parents=True)
         (d / "config.json").write_text("{}")
@@ -467,7 +470,7 @@ def rec(tmp_path, monkeypatch):
         return energy_vad, FakeASR(), None
 
     monkeypatch.setattr(live, "load_models", fake_load)
-    monkeypatch.setattr(cli, "physical_memory", lambda: 32 * 1024**3)  # 실시간 변환은 16GB 미만을 거절한다: 시험 기계(CI 러너 7GB)와 무관하게 (거절은 따로 시험한다)
+    monkeypatch.setattr(registry, "physical_memory", lambda: 32 * 1024**3)  # 실시간 변환은 16GB 미만을 거절한다: 시험 기계(CI 러너 7GB)와 무관하게 (거절은 따로 시험한다)
     return d, seen
 
 
@@ -490,7 +493,7 @@ def test_cli_live_runs_until_stop_and_emits_contract_events(rec, monkeypatch):
 
 def test_cli_live_engine_std_loads_the_1_7b_dir_and_lite_stays_default(rec):
     d, seen = rec
-    std = cli.models_dir() / "qwen3-asr-1.7b-8bit"
+    std = models_dir() / "qwen3-asr-1.7b-8bit"
     std.mkdir(parents=True)
     (std / "config.json").write_text("{}")
     assert CliRunner().invoke(cli.app, ["live", "--recording", str(d), "--progress-json", "--engine", "std"], input="stop\n").exit_code == 0
@@ -528,7 +531,7 @@ def test_cli_live_without_progress_json_prints_finals_to_the_terminal(rec):
 
 def test_cli_live_refuses_low_memory_without_force(rec, monkeypatch):
     d, _ = rec
-    monkeypatch.setattr(cli, "physical_memory", lambda: 8 * 1024**3)
+    monkeypatch.setattr(registry, "physical_memory", lambda: 8 * 1024**3)
     res = CliRunner().invoke(cli.app, ["live", "--recording", str(d), "--progress-json"], input="stop\n")
     assert res.exit_code == 1
     err = json.loads(res.stdout.splitlines()[-1])

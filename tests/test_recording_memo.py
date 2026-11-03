@@ -14,6 +14,8 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
+from tractus.commands import pipeline
+from tractus import llm
 from tractus import ask as qa
 from tractus import cli, notes
 from tractus.export import render_export
@@ -133,7 +135,7 @@ def test_note_with_other_edits_keeps_memo(rec):
     assert run("speakers", MID, "rename", "S2", "이영희").exit_code == 0
     assert run("note", "title", MID, input='{"title": "새 제목"}').exit_code == 0
     seg = {**read_transcript(rec)["segments"][0], "words": [{"text": "안녕하십니까", "start": 0.0, "end": 1.0}]}
-    assert cli._save_words(rec, [seg], {"s0001"})["aligned"] == 1  # 단어 싱크 병합도 메모를 이어 간다
+    assert pipeline.save_words(rec, [seg], {"s0001"})["aligned"] == 1  # 단어 싱크 병합도 메모를 이어 간다
     t = read_transcript(rec)
     assert t["memo"]["body"] == MEMO_BODY and t["title"] == "새 제목" and t["segments"][1]["corrected_text"] == "예산 고침"
 
@@ -376,8 +378,8 @@ def test_ask_cli_prints_memo_label_for_memo_citations(rec, monkeypatch):
         seen.append(kw["messages"])
         return iter([chunk("동결 [m0001]")])
 
-    monkeypatch.setattr(cli, "make_client", lambda p: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
-    monkeypatch.setattr(cli, "resolve_provider", lambda p, m: (SimpleNamespace(name="fake", temperature=0.2, base_url="http://x"), "m"))
+    monkeypatch.setattr(llm, "make_client", lambda p: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+    monkeypatch.setattr(llm, "resolve_provider", lambda p, m: (SimpleNamespace(name="fake", temperature=0.2, base_url="http://x"), "m"))
     r = run("ask", "--meeting", MID, input="예산은?")
     assert r.exit_code == 0 and "[m0001 메모 1번째 줄]" in r.stdout and "[내가 적은 메모]" in seen[0][-1]["content"]
 

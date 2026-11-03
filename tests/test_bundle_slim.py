@@ -56,3 +56,18 @@ def test_patch_stt_init_stops_when_the_file_changed(tmp_path):
     init.write_text("from .registry import load_all\nload_all()\n")
     with pytest.raises(SystemExit):
         slim.patch_stt_init(tmp_path, slim.stt_families())
+
+
+def test_every_first_party_module_the_cli_imports_is_in_the_bundle_list():
+    """미리 만든 앱은 목록에 있는 모듈만 바이트코드를 만든다. 서명된 앱은 실행 중에 쓸 수 없어서, 목록에 없는 tractus 모듈은 실행할 때마다 다시 컴파일된다.
+    모듈을 더하거나 옮기면 scripts/bundle_modules.txt에 더한다(전체 추적은 `uv run python scripts/bundle_trace.py`, 첫 파티만이면 이 테스트가 알려 준다)."""
+    import json
+    import os
+    import subprocess
+    import sys
+
+    code = "import sys, json; import tractus.cli, tractus.mcp_server; print(json.dumps(sorted(m for m in sys.modules if m == 'tractus' or m.startswith('tractus.'))))"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True, env={**os.environ, "PYTHONPATH": str(REPO / "src")}).stdout
+    imported = set(json.loads(out))
+    listed = {line.strip() for line in (REPO / "scripts" / "bundle_modules.txt").read_text().splitlines() if line.strip()}
+    assert sorted(imported - listed) == []

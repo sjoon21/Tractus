@@ -263,3 +263,14 @@ def forget(data: dict, ref: str) -> tuple[dict, list[str]]:
     """이름 또는 id가 ref인 사람을 지운 새 프로필과 지운 id 목록."""
     gone = [p["id"] for p in data["people"] if ref in (p["id"], p["name"])]
     return {**data, "people": [p for p in data["people"] if p["id"] not in gone]}, gone
+
+
+def still_registered(home: Path, suggestions: dict) -> dict:
+    """변환하는 동안 `voices forget`으로 등록을 지운 사람의 제안은 버린다 (메모리의 작업이 지운 제안을 되살리지 않게)."""
+    if not suggestions:
+        return suggestions
+    try:
+        ids = {p["id"] for p in load_profiles(home)["people"]}
+    except (OSError, ValueError):
+        return suggestions
+    return {k: v for k, v in suggestions.items() if v.get("person_id") in ids}

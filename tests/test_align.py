@@ -9,6 +9,8 @@ import pytest
 from typer.testing import CliRunner
 
 from test_cli import env, events, fake_asr  # noqa: F401 — pytest fixture
+from tractus.commands import pipeline
+from tractus import align
 from tractus import cli
 from tractus.align import MAX_SLICE_S, SR, Aligner, align_segments, is_approximate, remap_words, spread, tokenize
 from tractus.store import apply_text_edits, save_transcript, seg_text
@@ -168,7 +170,7 @@ def test_apply_text_edits_keeps_words_invariant_including_revert():
 @pytest.fixture
 def fake_aligner(monkeypatch):
     model = FakeModel()
-    monkeypatch.setattr(cli, "load_aligner", lambda models: Aligner(model))
+    monkeypatch.setattr(align, "load_aligner", lambda models: Aligner(model))
     return model
 
 
@@ -217,7 +219,7 @@ def test_alignment_failure_keeps_transcript(env, fake_asr, monkeypatch):  # noqa
         def align(self, pcm, text):
             raise RuntimeError("boom")
 
-    monkeypatch.setattr(cli, "load_aligner", lambda models: Broken())
+    monkeypatch.setattr(align, "load_aligner", lambda models: Broken())
     result = CliRunner().invoke(cli.app, ["transcribe", str(wav), "--progress-json"])
     assert result.exit_code == 0, result.output
     assert [e["code"] for e in events(result.stdout) if e["event"] == "warning" and e["code"].startswith("aligner")] == ["aligner_failed"]
@@ -232,7 +234,7 @@ def test_ctrl_c_during_align_keeps_transcript(env, fake_asr, monkeypatch):  # no
         def align(self, pcm, text):
             raise KeyboardInterrupt
 
-    monkeypatch.setattr(cli, "load_aligner", lambda models: Interrupted())
+    monkeypatch.setattr(align, "load_aligner", lambda models: Interrupted())
     result = CliRunner().invoke(cli.app, ["transcribe", str(wav), "--progress-json"])
     assert result.exit_code == 130
     assert "tractus align" in events(result.stdout)[-1]["message"]
@@ -251,7 +253,7 @@ def test_transcribe_align_stage_keeps_edits_made_during_alignment(env, fake_asr,
                 save_transcript(d, apply_text_edits(cur, [{"id": "s0002", "text": "앱에서 고침"}])[0])
             return super().align(pcm, text)
 
-    monkeypatch.setattr(cli, "load_aligner", lambda models: EditingAligner(FakeModel()))
+    monkeypatch.setattr(align, "load_aligner", lambda models: EditingAligner(FakeModel()))
     r = CliRunner().invoke(cli.app, ["transcribe", str(wav)])
     assert r.exit_code == 0, r.output
     _, t = _meeting(env)
@@ -295,7 +297,7 @@ def test_align_command_keeps_edits_made_during_alignment(env, fake_asr, monkeypa
                 save_transcript(d, apply_text_edits(cur, [{"id": "s0002", "text": "앱에서 고침"}])[0])
             return super().align(pcm, text)
 
-    monkeypatch.setattr(cli, "load_aligner", lambda models: EditingAligner(FakeModel()))
+    monkeypatch.setattr(align, "load_aligner", lambda models: EditingAligner(FakeModel()))
     r = align_cmd(t["meeting_id"])
     assert r.exit_code == 0, r.output
     assert json.loads(r.stdout) == {"aligned": 2, "approximate": 0, "failed": 0, "skipped": 1}
@@ -309,7 +311,7 @@ def test_align_command_reports_approximate_segments_and_force_retries_them(env, 
     _, wav = env
     assert CliRunner().invoke(cli.app, ["transcribe", str(wav), "--no-align"]).exit_code == 0
     d, t = _meeting(env)
-    monkeypatch.setattr(cli, "load_aligner", lambda models: Aligner(FakeModel(spans=[(0.0, 0.0)] * 5)))  # 모두 길이 0 → 추정
+    monkeypatch.setattr(align, "load_aligner", lambda models: Aligner(FakeModel(spans=[(0.0, 0.0)] * 5)))  # 모두 길이 0 → 추정
     r = align_cmd(t["meeting_id"], "--progress-json")
     assert r.exit_code == 0, r.output
     done = events(r.stdout)[-1]
@@ -319,7 +321,7 @@ def test_align_command_reports_approximate_segments_and_force_retries_them(env, 
         check_words(s)
         assert is_approximate(s["words"])
     assert json.loads(align_cmd(t["meeting_id"]).stdout) == {"aligned": 0, "approximate": 0, "failed": 0, "skipped": 3}  # words가 있으니 건너뜀
-    monkeypatch.setattr(cli, "load_aligner", lambda models: Aligner(FakeModel()))
+    monkeypatch.setattr(align, "load_aligner", lambda models: Aligner(FakeModel()))
     assert json.loads(align_cmd(t["meeting_id"], "--force").stdout)["aligned"] == 3  # --force가 다시 맞춘다
     _, t = _meeting(env)
     assert not any(is_approximate(s["words"]) for s in t["segments"])
@@ -335,7 +337,7 @@ def test_save_words_waits_for_the_note_lock(env, fake_asr, fake_aligner):  # noq
     d, t = _meeting(env)
     segs, *_ = align_segments(Aligner(FakeModel()), np.zeros(10 * SR, np.float32), t["segments"])
     result = {}
-    worker = threading.Thread(target=lambda: result.update(cli._save_words(d, segs, {s["id"] for s in segs})))
+    worker = threading.Thread(target=lambda: result.update(pipeline.save_words(d, segs, {s["id"] for s in segs})))
     with note_lock(d):  # 다른 쓰기(앱 편집 등)가 잠금을 쥐고 있는 동안
         worker.start()
         worker.join(0.3)

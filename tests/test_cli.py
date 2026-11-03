@@ -10,6 +10,13 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
+from tractus import audio
+from tractus import vad
+from tractus import diarize
+from tractus import asr
+from tractus import llm
+from tractus.commands import common, engines
+from tractus import voices
 from tractus import cli, summarize
 from tractus.asr import Segment
 
@@ -20,7 +27,7 @@ CHUNKS = [(0, 2 * SR), (3 * SR, 5 * SR), (6 * SR, 8 * SR)]
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    for repo in (cli.VAD_MODEL, *cli.MODELS.values()):
+    for repo in (engines.VAD_MODEL, *engines.MODELS.values()):
         d = home / "models" / repo.split("/")[1].lower()
         d.mkdir(parents=True)
         (d / "config.json").write_text("{}")
@@ -29,7 +36,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("TRACTUS_HOME", str(home))
     monkeypatch.delenv("TRACTUS_MODELS_DIR", raising=False)
     monkeypatch.setenv("TRACTUS_DIAR_BIN", str(tmp_path / "no-tractus-diar"))  # 저장소에 빌드된 헬퍼를 쓰지 않게
-    monkeypatch.setattr(cli, "find_chunks", lambda pcm, vad_dir: CHUNKS)
+    monkeypatch.setattr(vad, "find_chunks", lambda pcm, vad_dir: CHUNKS)
 
     wav = tmp_path / "주간회의.wav"
     subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=8", "-ar", "16000", str(wav)], check=True)
@@ -55,7 +62,7 @@ class FakeTranscriber:
 @pytest.fixture
 def fake_asr(monkeypatch):
     FakeTranscriber.calls, FakeTranscriber.fail_at = [], None
-    monkeypatch.setattr(cli, "Transcriber", FakeTranscriber)
+    monkeypatch.setattr(asr, "Transcriber", FakeTranscriber)
     return FakeTranscriber
 
 
@@ -71,7 +78,7 @@ def test_transcribe_creates_meeting_layout(env, fake_asr):
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_주간회의_[0-9A-Z]{26}", d.name)
     assert sorted(p.name for p in d.iterdir()) == ["audio.ogg", "transcript.json", "transcript.md", "transcript.vtt"]
     t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
-    assert t["asr"]["model"] == cli.MODELS[cli.Track.lite] and t["asr"]["hotwords"] == ["김철수", "WTO", "주간회"]  # --term이 자주 쓰는 단어보다 앞 (asr.HOTWORDS_MAX)
+    assert t["asr"]["model"] == engines.MODELS[engines.Track.lite] and t["asr"]["hotwords"] == ["김철수", "WTO", "주간회"]  # --term이 자주 쓰는 단어보다 앞 (asr.HOTWORDS_MAX)
     assert [s["text"] for s in t["segments"]] == ["청크0", "청크1", "청크2"]
     assert fake_asr.calls[0] == {"samples": 2 * SR, "language": None, "hotwords": ["김철수", "WTO", "주간회"]}
 
@@ -132,7 +139,7 @@ def test_summarize_writes_summary_files(env, fake_asr, monkeypatch):
         return summ.MeetingSummary.model_validate(reply)
 
     monkeypatch.setattr(summarize, "summarize", fake_summarize)
-    monkeypatch.setattr(cli, "make_client", lambda p: None)
+    monkeypatch.setattr(llm, "make_client", lambda p: None)
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
     result = CliRunner().invoke(cli.app, ["summarize", meeting_id[-6:], "--provider", "upstage", "--progress-json"])
     assert result.exit_code == 0, result.output
@@ -159,10 +166,10 @@ def test_error_text_with_brackets_is_printed_verbatim(env, fake_asr, monkeypatch
     (d,) = (home / "meetings").iterdir()
 
     def boom(*a, **k):
-        raise cli.LLMError("검증 실패 [type=missing, input_value={}] [/x]")
+        raise llm.LLMError("검증 실패 [type=missing, input_value={}] [/x]")
 
     monkeypatch.setattr(summarize, "summarize", boom)
-    monkeypatch.setattr(cli, "make_client", lambda p: None)
+    monkeypatch.setattr(llm, "make_client", lambda p: None)
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
     result = CliRunner().invoke(cli.app, ["summarize", str(d), "--provider", "upstage"])
     assert result.exit_code == 1 and "[type=missing" in result.output
@@ -174,10 +181,10 @@ def test_summarize_invalid_llm_reply_emits_code_and_keeps_detail_on_stderr(env, 
     (d,) = (home / "meetings").iterdir()
 
     def boom(*a, **k):
-        raise cli.LLMError("upstage/m 응답이 2회 연속 검증에 실패했습니다: 전사에 없는 segment_ids: ['s0099']", code="llm_invalid")
+        raise llm.LLMError("upstage/m 응답이 2회 연속 검증에 실패했습니다: 전사에 없는 segment_ids: ['s0099']", code="llm_invalid")
 
     monkeypatch.setattr(summarize, "summarize", boom)
-    monkeypatch.setattr(cli, "make_client", lambda p: None)
+    monkeypatch.setattr(llm, "make_client", lambda p: None)
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
     result = CliRunner().invoke(cli.app, ["summarize", str(d), "--provider", "upstage", "--progress-json"])
     assert result.exit_code == 1 and "s0099" in result.stderr
@@ -265,7 +272,7 @@ class FakeDiarizer:
 @pytest.fixture
 def fake_diar(monkeypatch):
     FakeDiarizer.calls = []
-    monkeypatch.setattr(cli, "load_diarizer", lambda models: FakeDiarizer())
+    monkeypatch.setattr(diarize, "load_diarizer", lambda models: FakeDiarizer())
     return FakeDiarizer
 
 
@@ -325,7 +332,7 @@ def test_diarization_failure_warns_and_continues(env, fake_asr, monkeypatch):
         def diarize(self, pcm, max_speakers=None):
             raise RuntimeError("boom")
 
-    monkeypatch.setattr(cli, "load_diarizer", lambda models: Broken())
+    monkeypatch.setattr(diarize, "load_diarizer", lambda models: Broken())
     result = CliRunner().invoke(cli.app, ["transcribe", str(wav), "--progress-json"])
     assert result.exit_code == 0, result.output
     assert [e["code"] for e in events(result.stdout) if e["event"] == "warning"] == ["diarizer_failed", "aligner_missing"]
@@ -360,7 +367,7 @@ class FakeFluid:
 @pytest.fixture
 def fake_fluid(monkeypatch):
     FakeFluid.calls, FakeFluid.fail = [], False
-    monkeypatch.setattr(cli, "load_fluid", lambda models: FakeFluid())
+    monkeypatch.setattr(diarize, "load_fluid", lambda models: FakeFluid())
     return FakeFluid
 
 
@@ -415,7 +422,7 @@ def test_auto_passes_large_cap_to_fluid(env, fake_asr, fake_diar, fake_fluid, mo
 def test_auto_cap_without_fluid_warns_and_keeps_nemotron(env, fake_asr, fake_diar, monkeypatch):
     home, wav = env
     nemotron_turns(monkeypatch, EIGHT)
-    monkeypatch.setattr(cli, "load_fluid", lambda models: None)
+    monkeypatch.setattr(diarize, "load_fluid", lambda models: None)
     evs, diar, warns = transcribe_json(wav)
     assert [e["engine"] for e in diar] == ["nemotron"] and warns[0] == "diarizer_cap"
     msg = next(e["message"] for e in evs if e["event"] == "warning")
@@ -442,7 +449,7 @@ def test_explicit_fluid_skips_nemotron(env, fake_asr, fake_diar, fake_fluid):
 
 def test_explicit_fluid_missing_falls_back_to_nemotron(env, fake_asr, fake_diar, monkeypatch):
     home, wav = env
-    monkeypatch.setattr(cli, "load_fluid", lambda models: None)
+    monkeypatch.setattr(diarize, "load_fluid", lambda models: None)
     _, diar, warns = transcribe_json(wav, "--diarizer", "fluid")
     assert warns[:2] == ["fluid_short_clip", "fluid_missing"] and [e["engine"] for e in diar] == ["nemotron"]
     assert diarization(home)["diarization"]["model"] == "fake"
@@ -464,7 +471,7 @@ def test_explicit_fluid_warns_on_clips_under_a_minute_but_still_runs_fluid(env, 
 
 def test_fluid_short_clip_warning_not_for_long_clips(env, fake_asr, fake_diar, fake_fluid, monkeypatch):
     _, wav = env
-    monkeypatch.setattr(cli, "FLUID_MIN_CLIP_S", 5.0)  # 8초 클립이 문턱을 넘는다
+    monkeypatch.setattr(diarize, "FLUID_MIN_CLIP_S", 5.0)  # 8초 클립이 문턱을 넘는다
     assert "fluid_short_clip" not in transcribe_json(wav, "--diarizer", "fluid")[2]
 
 
@@ -500,7 +507,7 @@ def test_speakers_commands_rewrite_transcript_and_renders(env, fake_asr, fake_di
     (d,) = (home / "meetings").iterdir()
     ref = d.name.rsplit("_", 1)[1][-6:]
     synced = []
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: synced.append(embed))
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: synced.append(embed))
     audio_before = (d / "audio.ogg").read_bytes()
 
     r = speakers(ref, "list", "--json")
@@ -569,7 +576,7 @@ def test_video_without_audio_reports_korean_error(env, fake_asr, tmp_path):
 def test_missing_ffmpeg_has_its_own_code(env, fake_asr, tmp_path, monkeypatch):
     wav = tmp_path / "a.wav"
     wav.write_bytes(b"RIFF")
-    monkeypatch.setattr(cli.audio.shutil, "which", lambda _: None)
+    monkeypatch.setattr(audio.shutil, "which", lambda _: None)
     result = CliRunner().invoke(cli.app, ["transcribe", str(wav), "--progress-json"])
     assert result.exit_code == 1
     err = events(result.stdout)[-1]
@@ -592,7 +599,7 @@ class FakeVoiceEmbedder:
 @pytest.fixture
 def fake_voice(monkeypatch):
     FakeVoiceEmbedder.calls = 0
-    monkeypatch.setattr(cli.voices, "load_embedder", lambda models: FakeVoiceEmbedder())
+    monkeypatch.setattr(voices, "load_embedder", lambda models: FakeVoiceEmbedder())
     return FakeVoiceEmbedder
 
 
@@ -611,7 +618,7 @@ def _enrolled(env, monkeypatch):
     home, wav = env
     assert run(wav).exit_code == 0
     (d,) = (home / "meetings").iterdir()
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: None)
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: None)
     r = voices_cmd("enroll", d.name[-6:], "S1", "--name", "홍길동", "--consent")
     assert r.exit_code == 0, r.output
     return d, json.loads(r.stdout)
@@ -650,7 +657,7 @@ def test_enroll_rejects_unknown_label_and_speaker_without_clips(env, fake_asr, f
     assert run(wav).exit_code == 0
     (d,) = (home / "meetings").iterdir()
     assert voices_cmd("enroll", d.name[-6:], "S9", "--name", "홍길동", "--consent").exit_code == 1
-    monkeypatch.setattr(cli.voices, "MIN_CLIP_S", 5.0)
+    monkeypatch.setattr(voices, "MIN_CLIP_S", 5.0)
     r = voices_cmd("enroll", d.name[-6:], "S1", "--name", "홍길동", "--consent")
     assert r.exit_code == 1 and "초 이상" in r.stderr and not (home / "voices.json").exists()
     assert json.loads((d / "transcript.json").read_text(encoding="utf-8"))["speakers"]["S1"]["name"] is None  # 실패하면 이름도 그대로
@@ -729,17 +736,17 @@ def test_no_profiles_means_no_voices_stage_or_warning(env, fake_asr, fake_diar, 
 def test_voices_model_missing_or_failing_warns_and_transcription_continues(env, fake_asr, fake_diar, fake_voice, monkeypatch, tmp_path):
     home, _ = env
     _enrolled(env, monkeypatch)
-    monkeypatch.setattr(cli.voices, "load_embedder", lambda models: None)
+    monkeypatch.setattr(voices, "load_embedder", lambda models: None)
     r = CliRunner().invoke(cli.app, ["transcribe", str(another_wav(tmp_path)), "--progress-json"])
     assert r.exit_code == 0, r.output
     (w,) = [e for e in events(r.stdout) if e.get("code", "").startswith("voices")]
-    assert w["code"] == "voices_model_missing" and "curl" in w["message"] and cli.voices.MODEL_DIR in w["message"]
+    assert w["code"] == "voices_model_missing" and "curl" in w["message"] and voices.MODEL_DIR in w["message"]
 
     class Broken:
         def embed(self, pcm):
             raise RuntimeError("boom")
 
-    monkeypatch.setattr(cli.voices, "load_embedder", lambda models: Broken())
+    monkeypatch.setattr(voices, "load_embedder", lambda models: Broken())
     r = CliRunner().invoke(cli.app, ["transcribe", str(another_wav(tmp_path, "세번째.wav", 990)), "--progress-json"])
     assert r.exit_code == 0, r.output
     assert [e["code"] for e in events(r.stdout) if e.get("code", "").startswith("voices")] == ["voices_failed"]

@@ -1,5 +1,5 @@
 """노트 정리 명령: `tractus note meta`, `tractus folders …`, `tractus notes list` (docs/desktop.md §2.12).
-cli.py가 `register(app, note_app)` 한 번으로 붙인다. cli의 도우미는 부를 때 불러온다 (cli가 이 모듈을 불러오므로)."""
+cli.py가 `register(app, note_app)` 한 번으로 붙인다. 공용 도구는 commands.common에서 쓴다."""
 
 import json
 import sys
@@ -7,20 +7,15 @@ import sys
 import typer
 
 from tractus import organize
+from tractus.commands import common
 from tractus.i18n import t
 from tractus.paths import home_dir
 
 META_SHAPE = t('{"favorite": true, "tags": ["…"], "folder": "<폴더 ID>"|null}')
 
 
-def _cli():
-    from tractus import cli
-
-    return cli
-
-
 def _fail(e: ValueError) -> None:
-    _cli()._fail(str(e), exit_code=2)
+    common.fail(str(e), exit_code=2)
 
 
 def _out(data: dict) -> None:
@@ -58,9 +53,9 @@ def register(app: typer.Typer, note_app: typer.Typer) -> None:
     def note_meta(meeting: str = typer.Argument(..., help="노트 폴더 경로 또는 meeting_id (일부만 써도 됨)")) -> None:
         """stdin의 {"favorite"?: bool, "tags"?: [..], "folder"?: "<폴더 ID>"|null}로 노트(녹음·메모 모두)의 즐겨찾기·태그·폴더를 바꾼다. 준 키만 바뀐다.
         수정 시각(updated_at)은 올리지 않는다. stdout: 저장된 {"favorite", "tags", "folder"}. 잘못된 입력·없는 폴더·태그 한도 초과는 종료 코드 2 (아무것도 쓰지 않는다)."""
-        d = _cli()._note_dir(meeting)
+        d = common.note_dir(meeting)
         try:
-            req = _cli()._read_json_object(sys.stdin.read(), META_SHAPE)
+            req = common.read_json_object(sys.stdin.read(), META_SHAPE)
             meta = organize.set_note_meta(home_dir(), d, req)
         except ValueError as e:
             _fail(e)

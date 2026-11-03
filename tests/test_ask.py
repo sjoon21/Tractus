@@ -8,6 +8,8 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
+from tractus import llm
+from tractus.commands import common
 from tractus import ask as qa
 from tractus import cli
 from tractus.index import Index
@@ -242,13 +244,13 @@ def cli_env(home, monkeypatch):
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
     for k in ("TRACTUS_LOCAL_ONLY", "TRACTUS_LLM_MODEL", "TRACTUS_LLM_PROVIDER"):
         monkeypatch.delenv(k, raising=False)
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: None)
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: None)
     return home
 
 
 def run_ask(monkeypatch, pieces, stdin, *args):
     client = FakeStream(pieces)
-    monkeypatch.setattr(cli, "make_client", lambda p: client)
+    monkeypatch.setattr(llm, "make_client", lambda p: client)
     r = CliRunner().invoke(cli.app, ["ask", "--provider", "upstage", *args, "--progress-json"], input=stdin)
     return r, [json.loads(line) for line in r.stdout.splitlines() if line.startswith("{")], client
 
@@ -317,7 +319,7 @@ def test_cli_ask_rejects_save_without_meeting_and_bad_input(cli_env, monkeypatch
 
 def test_cli_ask_plain_output_prints_answer_and_sources(cli_env, monkeypatch):
     client = FakeStream(["GPU 구매는 보류 [s0008]."])
-    monkeypatch.setattr(cli, "make_client", lambda p: client)
+    monkeypatch.setattr(llm, "make_client", lambda p: client)
     r = CliRunner().invoke(cli.app, ["ask", "--meeting", BUDGET[-6:], "--provider", "upstage"], input="GPU 서버는?")
     assert r.exit_code == 0, r.output
     assert "GPU 구매는 보류 [s0008]." in r.stdout and "[s0008 00:01:56]" in r.stdout

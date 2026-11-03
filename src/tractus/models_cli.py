@@ -1,5 +1,5 @@
 """`tractus models list|download|remove`, `tractus doctor` (docs/desktop.md §2.15). cli.py가 `register(app)` 한 번으로 붙인다.
-cli의 도우미(Events·console)는 부를 때 불러온다 (cli가 이 모듈을 불러오므로)."""
+공용 도구(진행 이벤트·경고)는 commands.common에서 쓴다."""
 
 import json
 import os
@@ -8,23 +8,19 @@ import threading
 from pathlib import Path
 
 import typer
+from rich.markup import escape
 
 from tractus import diarize
 from tractus import doctor as doc
 from tractus import models_install as inst
 from tractus import models_registry as reg
+from tractus.commands import common
 from tractus.i18n import t
 from tractus.paths import models_dir
 
 STATE_LABEL = {"installed": t("설치됨"), "missing": t("없음"), "partial": t("일부만 받음"), "corrupt": t("손상")}
 LEVEL_LABEL = {"required": t("필수"), "recommended": t("권장"), "optional": t("선택")}
 ONE_OF_LABEL = t("필수 (엔진 중 하나)")  # level_note가 one_of인 필수 모델 (변환 엔진)
-
-
-def _cli():
-    from tractus import cli
-
-    return cli
 
 
 def _out(data: dict) -> None:
@@ -36,9 +32,8 @@ def _gb(n: int) -> str:
 
 
 def _error(message: str, code: str, model: str | None = None, exit_code: int = 1) -> None:
-    cli = _cli()
-    cli.Events.emit("error", message=message, code=code, **({"model": model} if model else {}))
-    cli.console.print(f"[red]{cli.escape(message)}[/red]")
+    common.Events.emit("error", message=message, code=code, **({"model": model} if model else {}))
+    common.console.print(f"[red]{escape(message)}[/red]")
     raise typer.Exit(exit_code)
 
 
@@ -65,8 +60,7 @@ def register(app: typer.Typer) -> None:
         progress_json: bool = typer.Option(False, "--progress-json", help="진행 이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
     ) -> None:
         """모델을 받는다. 이미 설치된 모델은 건너뛰고, 받다 만 모델은 이어받는다. SIGTERM이면 받던 파일을 남기고 멈춘다 (종료 코드 130)."""
-        cli = _cli()
-        cli.Events.enabled = progress_json
+        common.Events.enabled = progress_json
         helper = diarize._executable(diarize.fluid_bin())
         try:
             wanted = reg.resolve_ids(ids or [], preset, helper=helper)
@@ -75,7 +69,7 @@ def register(app: typer.Typer) -> None:
         if not wanted:
             _error(t("받을 모델이 없습니다. 모델 ID나 --preset을 지정하세요"), "bad_argument", exit_code=2)
         if preset == "all" and not helper:
-            cli._warn("fluid_skipped", t("도우미 프로그램(tractus-diar)이 없어 9명 이상 참석자 구분 모델은 건너뜁니다"))
+            common.warn("fluid_skipped", t("도우미 프로그램(tractus-diar)이 없어 9명 이상 참석자 구분 모델은 건너뜁니다"))
 
         root, cancel = models_dir(), threading.Event()
         installed_before = [i for i in wanted if reg.inspect(i, root).installed]
@@ -86,9 +80,9 @@ def register(app: typer.Typer) -> None:
             cancel.set()
 
         def emit(event: str, **data) -> None:
-            cli.Events.emit(event, **data)
+            common.Events.emit(event, **data)
             if not progress_json and event == "stage":
-                cli.console.print(t("받는 중 ({index}/{count}): {name} ({size})", index=data["index"], count=data["count"], name=reg.get(data["model"]).name, size=_gb(data["size_bytes"])))
+                common.console.print(t("받는 중 ({index}/{count}): {name} ({size})", index=data["index"], count=data["count"], name=reg.get(data["model"]).name, size=_gb(data["size_bytes"])))
 
         previous = {sig: signal.signal(sig, stop) for sig in (signal.SIGTERM, signal.SIGINT)}
         try:
@@ -96,16 +90,16 @@ def register(app: typer.Typer) -> None:
         except inst.ModelError as e:
             _error(e.message, e.code, e.model)
         except inst.Cancelled:
-            cli.Events.emit("cancelled")
-            cli.console.print(t("멈췄습니다. 같은 명령을 다시 실행하면 이어서 받습니다."))
+            common.Events.emit("cancelled")
+            common.console.print(t("멈췄습니다. 같은 명령을 다시 실행하면 이어서 받습니다."))
             raise typer.Exit(130) from None
         except Exception as e:  # noqa: BLE001 — 예상 밖 예외도 이벤트로 알린다
             _error(t("모델을 받지 못했습니다: {error}", error=e), inst.classify(e))
         finally:
             for sig, handler in previous.items():
                 signal.signal(sig, handler)
-        cli.Events.emit("done", models=done, already=installed_before)
-        cli.console.print(t("모델 {n}개를 받았습니다", n=len(done)) + (t(" (이미 설치됨 {n}개)", n=len(installed_before)) if installed_before else ""))  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
+        common.Events.emit("done", models=done, already=installed_before)
+        common.console.print(t("모델 {n}개를 받았습니다", n=len(done)) + (t(" (이미 설치됨 {n}개)", n=len(installed_before)) if installed_before else ""))  # words-ok: 터미널 전용 (성공 경로라 앱이 보이지 않는다)
 
     @models_app.command("add")
     def add_model(

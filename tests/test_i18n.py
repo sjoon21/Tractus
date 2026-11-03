@@ -60,7 +60,7 @@ def scan(path: Path) -> tuple[list[str], list[tuple[int, str]]]:
     return keys, left
 
 
-FILES = sorted(p for p in SRC.glob("*.py") if p.name not in SKIP)
+FILES = sorted(p for p in [*SRC.glob("*.py"), *SRC.glob("commands/*.py")] if p.name not in SKIP)
 SCANNED = {p.name: scan(p) for p in FILES}
 KEYS = {k for keys, _ in SCANNED.values() for k in keys}
 

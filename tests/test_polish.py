@@ -4,6 +4,8 @@ import json
 
 import pytest
 
+from tractus import llm
+from tractus.commands import common
 from tractus import polish
 from tractus.polish import Edit, Polish, check, moves_edge, rewrites, windows
 
@@ -146,7 +148,7 @@ def home_note(tmp_path, monkeypatch):
     save_transcript(d, t)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("TRACTUS_HOME", str(home))
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: None)
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: None)
     return d
 
 
@@ -155,8 +157,8 @@ def invoke(*args, input=None):
 
 
 def run_with(monkeypatch, d, edits):
-    monkeypatch.setattr(cli, "resolve_provider", lambda p, m: (type("P", (), {"name": "gemini"})(), "m"))
-    monkeypatch.setattr(cli, "make_client", lambda p: None)
+    monkeypatch.setattr(llm, "resolve_provider", lambda p, m: (type("P", (), {"name": "gemini"})(), "m"))
+    monkeypatch.setattr(llm, "make_client", lambda p: None)
     fake(monkeypatch, edits)
     return invoke("polish", MID, "run", "--progress-json")
 

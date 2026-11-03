@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from tractus import models_registry as registry
+from tractus.commands import common, engines
 from tractus import align, cli, diarize, doctor, embed, voices
 from tractus import models_install as inst
 from tractus import models_registry as reg
@@ -58,19 +60,19 @@ def test_registry_agrees_with_module_constants():
     assert (v.url, v.sha256, v.local_dir, list(v.files)) == (voices.MODEL_URL, voices.MODEL_SHA256, voices.MODEL_DIR, [voices.MODEL_FILE])
     assert (f.local_dir, f.repo) == (diarize.FLUID_DIR, diarize.FLUID_REPO)
     # cli의 ASR·VAD 저장소와 폴더 이름 규칙(저장소 이름 소문자)이 같다. local_model과 테스트 픽스처가 이 규칙을 쓴다
-    assert cli.VAD_MODEL == reg.get("vad").repo and cli.MODELS[cli.Track.standard] == reg.get("asr-std").repo and cli.MODELS[cli.Track.lite] == reg.get("asr-lite").repo
+    assert engines.VAD_MODEL == reg.get("vad").repo and engines.MODELS[engines.Track.standard] == reg.get("asr-std").repo and engines.MODELS[engines.Track.lite] == reg.get("asr-lite").repo
     for m in reg.MODELS:
         if m.id in ("vad", "asr-std", "asr-lite"):
             assert m.local_dir == m.repo.split("/")[1].lower()
         if m.kind == "hf":
             assert m.revision and re.fullmatch(r"[0-9a-f]{40}", m.revision) and m.size_bytes == sum(m.files.values())
-    assert diarize.FLUID_FILES[0] and cli.ALIGNER_DIR == reg.get("aligner").local_dir and cli.DIARIZER_DIR == reg.get("diarizer").local_dir
+    assert diarize.FLUID_FILES[0] and align.MODEL_DIR == reg.get("aligner").local_dir and diarize.MODEL_DIR == reg.get("diarizer").local_dir
 
 
 def test_every_model_says_what_it_is_and_agrees_with_download_constants():
     """소개 필드: 이름·만든 곳·내려받는 곳·라이선스는 비어 있으면 안 되고, source·revision은 내려받는 상수와 같다 (docs/desktop.md §2.15)."""
-    consts = {"vad": (cli.VAD_MODEL, reg.get("vad").revision), "asr-std": (cli.MODELS[cli.Track.standard], reg.get("asr-std").revision),
-              "asr-lite": (cli.MODELS[cli.Track.lite], reg.get("asr-lite").revision),
+    consts = {"vad": (engines.VAD_MODEL, reg.get("vad").revision), "asr-std": (engines.MODELS[engines.Track.standard], reg.get("asr-std").revision),
+              "asr-lite": (engines.MODELS[engines.Track.lite], reg.get("asr-lite").revision),
               "asr-ko-mix": ("voyagar/BuzzASR-korean-mlx-8bit", "b73fdad446cfa19ad50dd919d06d7f96af1726ff"),
               "asr-ko-univa": ("voyagar/Qwen3-ASR-1.7B-ko-mlx-8bit", "8fcc32c42a93394b8c822487e2d595670edae23f"),
               "diarizer": (diarize.MODEL_REPO, diarize.MODEL_REVISION), "aligner": (align.MODEL_REPO, align.MODEL_REVISION),
@@ -660,9 +662,9 @@ def test_auto_track_prefers_ram_choice_then_falls_back(root, monkeypatch, memory
         d.mkdir()
         (d / "config.json").write_text("{}")
     warnings = []
-    monkeypatch.setattr(cli, "physical_memory", lambda: memory)
-    monkeypatch.setattr(cli, "_warn", lambda code, message: warnings.append((code, message)))
-    assert cli.auto_track().value == want
+    monkeypatch.setattr(registry, "physical_memory", lambda: memory)
+    monkeypatch.setattr(common, "warn", lambda code, message: warnings.append((code, message)))
+    assert engines.auto_track().value == want
     assert [c for c, _ in warnings] == (["asr_track_fallback"] if fallback else [])
     if fallback:
         assert "tractus models download" in warnings[0][1]
@@ -676,9 +678,9 @@ def test_auto_track_ignores_a_half_downloaded_model(root, monkeypatch):
     lite = root / "qwen3-asr-0.6b-8bit"
     lite.mkdir()
     (lite / "config.json").write_text("{}")
-    monkeypatch.setattr(cli, "physical_memory", lambda: 16 * GB)
-    monkeypatch.setattr(cli, "_warn", lambda code, message: None)
-    assert cli.auto_track().value == "lite"
+    monkeypatch.setattr(registry, "physical_memory", lambda: 16 * GB)
+    monkeypatch.setattr(common, "warn", lambda code, message: None)
+    assert engines.auto_track().value == "lite"
 
 
 def test_local_model_rejects_a_half_downloaded_model(root):
@@ -687,17 +689,17 @@ def test_local_model_rejects_a_half_downloaded_model(root):
     (d / "config.json").write_text("{}")
     (d / ".cache/huggingface/download/m.h.incomplete").write_bytes(b"1")  # 취소로 남은 모습: 설정만 받고 가중치는 받는 중
     with pytest.raises(Exception) as e:
-        cli.local_model(cli.MODELS[cli.Track.lite])
+        engines.local_model(engines.MODELS[engines.Track.lite])
     assert "tractus models download asr-lite" in str(e.value)
     (d / ".cache/huggingface/download/m.h.incomplete").unlink()
     (d / "model.safetensors").write_bytes(b"short")  # 가중치가 있는데 크기가 맞지 않는다
     with pytest.raises(Exception):
-        cli.local_model(cli.MODELS[cli.Track.lite])
+        engines.local_model(engines.MODELS[engines.Track.lite])
 
 
 def test_model_missing_hint_names_the_registry_command(root):
     with pytest.raises(Exception) as e:
-        cli.local_model(cli.VAD_MODEL)
+        engines.local_model(engines.VAD_MODEL)
     text = str(e.value)
     assert "tractus models download vad" in text and "hf download mlx-community/silero-vad-v6 --revision" in text
 
@@ -869,18 +871,18 @@ def test_engine_option_picks_an_installed_engine_and_falls_back_with_a_warning(r
         d.mkdir()
         (d / "config.json").write_text("{}")
     warnings = []
-    monkeypatch.setattr(cli, "physical_memory", lambda: 16 * GB)
-    monkeypatch.setattr(cli, "_warn", lambda code, message: warnings.append(code))
-    assert cli.choose_asr(None, "asr-lite").id == "asr-lite"
-    assert cli.choose_asr(cli.Track.lite, None).id == "asr-lite"
-    assert cli.choose_asr(None, None).id == "asr-std" and warnings == []
+    monkeypatch.setattr(registry, "physical_memory", lambda: 16 * GB)
+    monkeypatch.setattr(common, "warn", lambda code, message: warnings.append(code))
+    assert engines.choose_asr(None, "asr-lite").id == "asr-lite"
+    assert engines.choose_asr(engines.Track.lite, None).id == "asr-lite"
+    assert engines.choose_asr(None, None).id == "asr-std" and warnings == []
     import shutil
 
     shutil.rmtree(root / reg.get("asr-lite").local_dir)
-    assert cli.choose_asr(None, "asr-lite").id == "asr-std" and warnings == ["asr_engine_missing"]
+    assert engines.choose_asr(None, "asr-lite").id == "asr-std" and warnings == ["asr_engine_missing"]
     with pytest.raises(Exception, match="변환 엔진이 아닙니다"):
-        cli.choose_asr(None, "vad")
-    assert (cli.track_name(reg.get("asr-std")), cli.track_name(reg.get("asr-lite"))) == ("standard", "lite")
+        engines.choose_asr(None, "vad")
+    assert (engines.track_name(reg.get("asr-std")), engines.track_name(reg.get("asr-lite"))) == ("standard", "lite")
 
 
 def test_convert_needs_any_one_transcription_engine(tmp_path):  # 빈 폴더: 개발 Mac의 직접 추가 엔진이 끼지 않게

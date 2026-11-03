@@ -9,6 +9,8 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
+from tractus.paths import models_dir
+from tractus.commands import common, pipeline, voiceprint
 from tractus import cli, store, voices
 from tractus.store import Job, apply_speaker_edit, apply_text_edits, edit_transcript, find_job, find_meeting_dir, find_transcribed, note_lock, write_transcript
 
@@ -24,7 +26,7 @@ def home(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)  # 저장소의 .env를 읽지 않게 한다
     monkeypatch.setenv("TRACTUS_HOME", str(h))
     monkeypatch.delenv("TRACTUS_MODELS_DIR", raising=False)
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: None)
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: None)
     return h
 
 
@@ -205,8 +207,8 @@ def run_voices(*args):
 def test_voices_match_does_not_resuggest_dismissed_person(home, monkeypatch):
     register(home)
     d, _ = sugg_note(home, dismissed=[PID])
-    monkeypatch.setattr(cli.voices, "load_embedder", lambda models: SameVoice())
-    monkeypatch.setattr(cli, "_meeting_pcm", lambda d, t: np.zeros(8 * SR, np.float32))
+    monkeypatch.setattr(voices, "load_embedder", lambda models: SameVoice())
+    monkeypatch.setattr(voiceprint, "_meeting_pcm", lambda d, t: np.zeros(8 * SR, np.float32))
     r = run_voices("match", str(d))
     assert r.exit_code == 0, r.output
     sp = read(d)["speakers"]
@@ -243,7 +245,7 @@ def test_forget_removes_person_from_all_notes_dismissals_and_unfinished_jobs(hom
 
 def test_transcribe_drops_suggestions_of_a_person_forgotten_meanwhile(home):
     register(home, pid="P2", name="김영희")
-    assert cli._still_registered({"S1": SUGG, "S2": {**SUGG, "person_id": "P2"}}) == {"S2": {**SUGG, "person_id": "P2"}}
+    assert voices.still_registered(home, {"S1": SUGG, "S2": {**SUGG, "person_id": "P2"}}) == {"S2": {**SUGG, "person_id": "P2"}}
 
 
 # ── voices enroll 롤백, list model_present ─────────────────────────────
@@ -251,14 +253,14 @@ def test_transcribe_drops_suggestions_of_a_person_forgotten_meanwhile(home):
 
 def enroll_setup(home, monkeypatch):
     d, _ = make_note(home, segs=[{"id": "s0001", "start": 0.0, "end": 4.0, "text": "가", "lang": "ko", "speaker": "S1", "corrected_text": None, "words": None}])
-    monkeypatch.setattr(cli.voices, "load_embedder", lambda models: SameVoice())
-    monkeypatch.setattr(cli, "_meeting_pcm", lambda d, t: np.zeros(8 * SR, np.float32))
+    monkeypatch.setattr(voices, "load_embedder", lambda models: SameVoice())
+    monkeypatch.setattr(voiceprint, "_meeting_pcm", lambda d, t: np.zeros(8 * SR, np.float32))
     return d
 
 
 def test_enroll_failure_after_profile_write_rolls_the_profile_back(home, monkeypatch):
     d = enroll_setup(home, monkeypatch)
-    monkeypatch.setattr(cli, "save_transcript", lambda *a: (_ for _ in ()).throw(OSError("disk full")))
+    monkeypatch.setattr(voiceprint, "save_transcript", lambda *a: (_ for _ in ()).throw(OSError("disk full")))
     r = run_voices("enroll", str(d), "S1", "--name", "홍길동", "--consent")
     assert r.exit_code != 0 and isinstance(r.exception, OSError)
     assert not (home / "voices.json").exists()  # 이름은 못 붙였는데 목소리만 등록된 채로 남지 않는다
@@ -269,7 +271,7 @@ def test_enroll_failure_restores_previous_profile_bytes_semantically(home, monke
     register(home, "김영희", "P2")
     before = json.loads((home / "voices.json").read_text(encoding="utf-8"))
     d = enroll_setup(home, monkeypatch)
-    monkeypatch.setattr(cli, "save_transcript", lambda *a: (_ for _ in ()).throw(OSError("disk full")))
+    monkeypatch.setattr(voiceprint, "save_transcript", lambda *a: (_ for _ in ()).throw(OSError("disk full")))
     assert run_voices("enroll", str(d), "S1", "--name", "홍길동", "--consent").exit_code != 0
     assert json.loads((home / "voices.json").read_text(encoding="utf-8")) == before
     assert (home / "voices.json").stat().st_mode & 0o777 == 0o600
@@ -283,7 +285,7 @@ def test_enroll_succeeds_and_keeps_edits_made_while_embedding(home, monkeypatch)
             edit_transcript(d, lambda t: apply_text_edits(t, [{"id": "s0001", "text": "고친 문장"}]))
             return super().embed(pcm)
 
-    monkeypatch.setattr(cli.voices, "load_embedder", lambda models: Editing())
+    monkeypatch.setattr(voices, "load_embedder", lambda models: Editing())
     r = run_voices("enroll", str(d), "S1", "--name", "홍길동", "--consent")
     assert r.exit_code == 0, r.output
     t = read(d)
@@ -292,7 +294,7 @@ def test_enroll_succeeds_and_keeps_edits_made_while_embedding(home, monkeypatch)
 
 def test_voices_list_reports_whether_the_voice_model_is_usable(home, monkeypatch):
     assert json.loads(run_voices("list", "--json").stdout)["model_present"] is False
-    p = voices.model_path(cli.models_dir())
+    p = voices.model_path(models_dir())
     p.parent.mkdir(parents=True)
     p.write_bytes(b"not the model")
     assert json.loads(run_voices("list", "--json").stdout)["model_present"] is False  # 다른 파일
@@ -389,7 +391,7 @@ def test_align_merge_after_edit_keeps_words_asr_so_revert_still_restores_the_ori
     edit_transcript(d, lambda cur: apply_text_edits(cur, [{"id": "s0001", "text": "예산은 오억입니다"}]))
     cur = read(d)["segments"][0]
     precise = [{"text": w["text"], "start": w["start"], "end": w["end"]} for w in cur["words"]]  # 모델이 고친 문장을 정확히 맞춘 결과
-    counts = cli._save_words(d, [{**cur, "words": precise}], {"s0001"})
+    counts = pipeline.save_words(d, [{**cur, "words": precise}], {"s0001"})
     assert counts["aligned"] == 1 and counts["skipped"] == 0
     merged = read(d)["segments"][0]
     assert merged["words"] == precise and merged["words_asr"] == orig  # 병합이 words_asr를 건드리지 않는다
@@ -402,7 +404,7 @@ def test_align_merge_skips_a_segment_edited_while_aligning_and_leaves_its_words_
     d, t = make_note(home)
     stale = {**t["segments"][0], "words": words("예산은 사억입니다", 2.0)}  # 정렬을 시작할 때의 문장으로 맞춘 결과
     edit_transcript(d, lambda cur: apply_text_edits(cur, [{"id": "s0001", "text": "예산은 오억입니다"}]))
-    counts = cli._save_words(d, [stale], {"s0001"})
+    counts = pipeline.save_words(d, [stale], {"s0001"})
     seg = read(d)["segments"][0]
     assert counts["skipped"] == 1 and counts["aligned"] == 0
     assert [w["text"] for w in seg["words"]] == ["예산은", "오억입니다"] and seg["corrected_text"] == "예산은 오억입니다"
@@ -414,14 +416,14 @@ def test_align_merge_skips_a_segment_edited_while_aligning_and_leaves_its_words_
 def test_match_drops_suggestion_of_a_person_forgotten_while_matching(home, monkeypatch):
     register(home)
     d, _ = make_note(home, speakers={"S1": {"name": None}})
-    monkeypatch.setattr(cli, "_meeting_pcm", lambda d, t: np.zeros(8 * SR, np.float32))
+    monkeypatch.setattr(voiceprint, "_meeting_pcm", lambda d, t: np.zeros(8 * SR, np.float32))
 
     class Forgetting(SameVoice):
         def embed(self, pcm):  # 계산하는 동안 다른 프로세스가 등록을 지웠다
             voices.save_profiles(home, {"version": 1, "model": voices.MODEL_ID, "people": []})
             return super().embed(pcm)
 
-    monkeypatch.setattr(cli.voices, "load_embedder", lambda models: Forgetting())
+    monkeypatch.setattr(voices, "load_embedder", lambda models: Forgetting())
     r = run_voices("match", str(d))
     assert r.exit_code == 0, r.output
     assert "suggested" not in read(d)["speakers"]["S1"] and "홍길동" not in json.dumps(read(d), ensure_ascii=False)
