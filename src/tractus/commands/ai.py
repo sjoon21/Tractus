@@ -11,8 +11,6 @@ import typer
 from tractus.calendar_event import load_event
 from tractus import llm
 from tractus.commands import common
-from tractus.commands import note
-from tractus.commands import transcript
 from tractus.i18n import t
 from tractus.paths import home_dir
 from tractus.paths import models_dir

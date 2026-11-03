@@ -7,7 +7,6 @@ from rich.markup import escape
 import typer
 
 from tractus.commands import common
-from tractus.commands import note
 from tractus.i18n import t
 from tractus.store import NOT_CONVERTED
 from tractus.store import _hms

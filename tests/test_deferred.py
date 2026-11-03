@@ -16,8 +16,10 @@ import pytest
 from mcp import Client
 from typer.testing import CliRunner
 
+from tractus import audio
+from tractus import asr
 from tractus import llm
-from tractus.commands import common
+from tractus.commands import common, engines
 from tractus import cli, deferred, notes, organize
 from tractus.index import Index
 from tractus.mcp_server import build_server
@@ -171,7 +173,7 @@ def test_finish_resumes_after_an_encode_failure_and_keeps_the_recording(env, tmp
     home, _ = env
     rec = make_recording(tmp_path)
     real = deferred.audio.encode_opus
-    monkeypatch.setattr(deferred.audio, "encode_opus", lambda *a: (_ for _ in ()).throw(cli.audio.FFmpegError("끊김")))
+    monkeypatch.setattr(deferred.audio, "encode_opus", lambda *a: (_ for _ in ()).throw(audio.FFmpegError("끊김")))
     r = finish(rec)
     assert r.exit_code == 1 and events(r.stdout)[-1]["code"] == "audio_failed"
     assert (rec / "mic.wav").is_file() and (rec / "system.wav").is_file() and (rec / "recording.json").is_file()  # 녹음은 그대로
@@ -211,7 +213,7 @@ def test_convert_fills_the_note_in_place(env, fake_asr, tmp_path):
     assert notes_in(home) == [d]
 
     t = read_transcript(d)
-    assert "state" not in t and [s["text"] for s in t["segments"]] == ["청크0", "청크1", "청크2"] and t["asr"]["model"] == cli.MODELS[cli.Track.lite] and t["asr"]["hotwords"][:2] == ["김철수", "WTO"]  # 뒤에는 녹음 중 메모의 낱말 (asr.note_terms)
+    assert "state" not in t and [s["text"] for s in t["segments"]] == ["청크0", "청크1", "청크2"] and t["asr"]["model"] == engines.MODELS[engines.Track.lite] and t["asr"]["hotwords"][:2] == ["김철수", "WTO"]  # 뒤에는 녹음 중 메모의 낱말 (asr.note_terms)
     assert (t["meeting_id"], t["title"], t["created_at"]) == (before["meeting_id"], before["title"], before["created_at"]) and t["audio"] == before["audio"]
     assert (d / "audio.ogg").read_bytes() == audio_bytes and not (d / "tracks").exists()  # 트랙은 변환이 끝나면 지워진다
     assert files(d) == ["audio.ogg", "memos.json", "transcript.json", "transcript.md", "transcript.vtt"]
@@ -306,7 +308,7 @@ def test_edits_made_while_converting_survive(env, fake_asr, tmp_path, monkeypatc
     home, _ = env
     d, t = saved(tmp_path)
     cli_run("note", "save", t["meeting_id"], input=json.dumps({"body": "예산\n\n견적"}))
-    monkeypatch.setattr(cli, "Transcriber", EditingTranscriber)
+    monkeypatch.setattr(asr, "Transcriber", EditingTranscriber)
 
     def edit():  # 변환 중에 앱이 메모·제목·태그를 고친다
         edit_transcript(d, lambda cur: (notes.apply_title(notes.apply_body(cur, "예산\n\n견적\n\n새 줄")[0], "바뀐 제목"), None))
@@ -393,7 +395,7 @@ def test_a_recorded_note_cannot_be_the_target_of_append(env, fake_asr, tmp_path)
 
 def test_convert_does_not_overwrite_a_note_converted_by_another_run(env, fake_asr, tmp_path, monkeypatch):
     d, t = saved(tmp_path)
-    monkeypatch.setattr(cli, "Transcriber", EditingTranscriber)
+    monkeypatch.setattr(asr, "Transcriber", EditingTranscriber)
     EditingTranscriber.hook = lambda: edit_transcript(d, lambda cur: ({k: v for k, v in cur.items() if k != "state"}, None))  # 다른 실행이 먼저 끝냈다
     try:
         r = convert(t["meeting_id"])

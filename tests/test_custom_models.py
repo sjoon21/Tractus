@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tractus.commands import common
+from tractus.commands import common, engines
 from tractus import cli
 from tractus import models_install as inst
 from tractus import models_registry as reg
@@ -88,8 +88,8 @@ def test_an_installed_custom_engine_counts_for_convert_and_is_not_pruned(root, m
     assert convert["ready"]
     assert inst.unregistered(root) == []  # 직접 추가한 폴더를 옛 모델로 보지 않는다
     monkeypatch.setattr(common, "warn", lambda code, message: None)
-    assert cli.choose_asr(None, m.id).id == m.id and cli.track_name(m) == m.id
-    assert cli.local_model(m.repo) == root / m.local_dir
+    assert engines.choose_asr(None, m.id).id == m.id and engines.track_name(m) == m.id
+    assert engines.local_model(m.repo) == root / m.local_dir
 
 
 def test_remove_deletes_the_files_and_the_entry(root, monkeypatch):

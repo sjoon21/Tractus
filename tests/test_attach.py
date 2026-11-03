@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from tractus import asr
 from tractus.commands import common
 from tractus import attach, cli, notes
 from tractus.index import Index
@@ -190,7 +191,7 @@ def test_note_converted_by_someone_else_meanwhile_is_not_overwritten(env, fake_a
                 (d / "transcript.json").write_text(json.dumps({**{k: v for k, v in t.items() if k != "kind"}, "audio": {"file": "audio.ogg", "duration_sec": 1, "source": "x", "sha256": "other"}}), encoding="utf-8")
             return super().transcribe(audio, language, hotwords)
 
-    monkeypatch.setattr(cli, "Transcriber", Racing)
+    monkeypatch.setattr(asr, "Transcriber", Racing)
     r = append(old["meeting_id"], wav)
     assert r.exit_code == 2 and events(r.stdout)[-1] == {"event": "error", "message": attach.HAS_AUDIO, "code": "append_has_audio"}
     assert read_transcript(d)["audio"]["sha256"] == "other" and not memo_lines(read_transcript(d))

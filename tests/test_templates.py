@@ -54,7 +54,7 @@ def reply(**over):
 
 @pytest.fixture
 def fake(monkeypatch):
-    """cli.make_client를 가짜로: fake.replies에 넣은 응답을 차례로 돌려주고, 받은 messages를 fake.calls에 쌓는다."""
+    """llm.make_client를 가짜로: fake.replies에 넣은 응답을 차례로 돌려주고, 받은 messages를 fake.calls에 쌓는다."""
     state = SimpleNamespace(replies=[reply()], calls=[])
 
     def create(**kw):
