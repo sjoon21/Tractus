@@ -49,3 +49,5 @@ export function useRail(memoNote: boolean, memoRef: { readonly current: boolean 
   );
   return { tab, tabs, tabNow, askSeen, memoSeen, minutesSeen, railCollapsed, showTab, pickTab, openMemoLine };
 }
+
+export type Rail = ReturnType<typeof useRail>;

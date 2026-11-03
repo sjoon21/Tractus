@@ -61,23 +61,22 @@ import { ConvertPanel } from "./ConvertPanel";
 import { useConvertJob } from "./convertJobs";
 import { CONVERT_FIRST, deleteBlockedWhileConverting, isRecorded, keptNotice, railNotice, RECORDED_BADGE, recordedStats, type ConvertControls } from "./recorded";
 import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type SaveState } from "./memo";
-import { RAIL_LABEL, railKey, railLabel } from "./rail";
+import { RAIL_LABEL, railLabel } from "./rail";
 import { PanelResizer, PanelToggle } from "./PanelToggle";
-import { AudioLines, MoreHorizontal, TextSearch, Upload } from "lucide-react";
-import { Dock, DockGroup } from "@/components/ui/dock";
+import { AudioLines, MoreHorizontal, Upload } from "lucide-react";
 import { ItemMenu, Popover } from "./Popover";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import { EnhancedNote } from "./EnhancedNote";
 import { MinutesPanel } from "./MinutesPanel";
-import { PolishBar, PolishButton, usePolish } from "./PolishControls";
-import { LlmServicePicker } from "./LlmServicePicker";
+import { PolishBar, usePolish } from "./PolishControls";
 import { RecordPill } from "./RecordPill";
 import { usePlayback } from "./note/usePlayback";
 import { useNoteEditing } from "./note/useNoteEditing";
 import { useRail } from "./note/useRail";
 import { NotePlayer } from "@/components/note/NotePlayer";
+import { NoteDock } from "@/components/note/NoteDock";
 import { SegmentRow } from "@/components/note/SegmentRow";
 import { MemoRow } from "@/components/note/MemoRow";
 import { TimeChip } from "@/components/note/TimeChip";
@@ -278,7 +277,8 @@ export function MeetingView({
   }, [printNonce, notify]);
   const printable = useMemo(() => (printNonce && detail ? printDoc(detail, selectedSummary) : null), [printNonce > 0, detail, selectedSummary]);
 
-  const { tabs, tabNow, askSeen, memoSeen, minutesSeen, railCollapsed, showTab, pickTab, openMemoLine } = useRail(memoNote, memoRef, setMemoPick);
+  const railState = useRail(memoNote, memoRef, setMemoPick);
+  const { tabNow, askSeen, memoSeen, minutesSeen, railCollapsed, openMemoLine } = railState;
   const memoSegs = useMemo(() => memoLineSegments(detail?.note_memo), [detail?.note_memo]);
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
   const onCite = useCallback(
@@ -751,52 +751,7 @@ export function MeetingView({
         </div>
 
         <div className="sticky bottom-0 z-10 mt-auto bg-background/90 backdrop-blur-md">
-        <Dock label={t("도구 막대")}>
-          <DockGroup>
-            <div
-              role="tablist"
-              aria-label={t("오른쪽 패널")}
-              className="flex items-center gap-0.5"
-              onKeyDown={(e) => {
-                if (e.metaKey || e.ctrlKey || e.altKey) return; // Shift+←→도 탭을 옮긴다: 막지 않으면 재생 단축키가 큰 폭으로 되감는다
-                const next = railKey(tabs, tabNow, e.code);
-                if (!next) return;
-                // 재생 단축키(←→ 5초 이동)가 이 키를 다시 쓰지 않게 막는다: 전역 단축키는 defaultPrevented면 지나간다
-                e.preventDefault();
-                showTab(next);
-                document.getElementById(`tab-${next}`)?.focus();
-              }}
-            >
-              {tabs.map((k) => (
-                <button
-                  key={k}
-                  id={`tab-${k}`}
-                  role="tab"
-                  aria-selected={tabNow === k}
-                  aria-controls={k === "summary" || (k === "ask" ? askSeen : k === "minutes" ? minutesSeen : memoSeen) ? `panel-${k}` : undefined}
-                  tabIndex={tabNow === k ? 0 : -1}
-                  onClick={() => pickTab(k)}
-                  className={cn("h-7 shrink-0 whitespace-nowrap rounded-full px-3 text-[13px] font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 aria-selected:bg-accent aria-selected:text-foreground", railCollapsed && "aria-selected:bg-transparent aria-selected:text-muted-foreground aria-selected:hover:bg-accent")}
-                >
-                  {RAIL_LABEL[k]}
-                </button>
-              ))}
-            </div>
-          </DockGroup>
-          {!memoNote && !recorded && segments.length > 0 && (
-            <DockGroup>
-              <LlmServicePicker services={polish.services} disabled={polish.running} />
-              <PolishButton running={polish.running} done={polish.done} total={polish.total} disabled={polishOff} again={(detail.polish?.length ?? 0) > 0} onClick={() => void polish.start(flushMemos)} />
-            </DockGroup>
-          )}
-          {!memoNote && !recorded && (
-            <DockGroup>
-              <Button variant="ghost" size="icon-sm" aria-label={t("찾아 바꾸기")} title={t("찾아 바꾸기 (⌘F)")} onClick={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} aria-keyshortcuts="Meta+F">
-                <TextSearch aria-hidden />
-              </Button>
-            </DockGroup>
-          )}
-        </Dock>
+        <NoteDock rail={railState} memoNote={memoNote} recorded={recorded} hasSegments={segments.length > 0} polish={polish} polishOff={polishOff} polishAgain={(detail.polish?.length ?? 0) > 0} onFind={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} />
         {!memoNote && <NotePlayer pb={pb} audioPath={detail.audio_path} marks={detail.memos} visible={visible} filter={filter} editing={editing} editError={editError} />}
         </div>
         {!memoNote && menu && (
