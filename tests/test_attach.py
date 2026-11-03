@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from tractus.commands import common
 from tractus import attach, cli, notes
 from tractus.index import Index
 from tractus.store import find_job, find_meeting_dir, memo_lines, read_transcript
@@ -318,7 +319,7 @@ def test_real_models_append_say_audio_to_a_text_note(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("TRACTUS_HOME", str(home))
     monkeypatch.setenv("TRACTUS_MODELS_DIR", str(models))
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: None)
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: None)
     wav = tmp_path / "say.wav"
     subprocess.run(["say", "-v", "Yuna", "-o", str(wav), "--data-format=LEI16@16000", "안녕하세요. 오늘 회의는 예산 검토입니다."], check=True)
     d, old = notes.create_memo(home / "meetings", "예산 메모", BODY, NOW)

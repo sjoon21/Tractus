@@ -10,6 +10,8 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
+from tractus.commands import common
+from tractus import voices
 from tractus import cli, summarize
 from tractus.asr import Segment
 
@@ -500,7 +502,7 @@ def test_speakers_commands_rewrite_transcript_and_renders(env, fake_asr, fake_di
     (d,) = (home / "meetings").iterdir()
     ref = d.name.rsplit("_", 1)[1][-6:]
     synced = []
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: synced.append(embed))
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: synced.append(embed))
     audio_before = (d / "audio.ogg").read_bytes()
 
     r = speakers(ref, "list", "--json")
@@ -611,7 +613,7 @@ def _enrolled(env, monkeypatch):
     home, wav = env
     assert run(wav).exit_code == 0
     (d,) = (home / "meetings").iterdir()
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: None)
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: None)
     r = voices_cmd("enroll", d.name[-6:], "S1", "--name", "홍길동", "--consent")
     assert r.exit_code == 0, r.output
     return d, json.loads(r.stdout)
@@ -733,7 +735,7 @@ def test_voices_model_missing_or_failing_warns_and_transcription_continues(env, 
     r = CliRunner().invoke(cli.app, ["transcribe", str(another_wav(tmp_path)), "--progress-json"])
     assert r.exit_code == 0, r.output
     (w,) = [e for e in events(r.stdout) if e.get("code", "").startswith("voices")]
-    assert w["code"] == "voices_model_missing" and "curl" in w["message"] and cli.voices.MODEL_DIR in w["message"]
+    assert w["code"] == "voices_model_missing" and "curl" in w["message"] and voices.MODEL_DIR in w["message"]
 
     class Broken:
         def embed(self, pcm):

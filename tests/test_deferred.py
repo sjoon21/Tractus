@@ -16,6 +16,7 @@ import pytest
 from mcp import Client
 from typer.testing import CliRunner
 
+from tractus.commands import common
 from tractus import cli, deferred, notes, organize
 from tractus.index import Index
 from tractus.mcp_server import build_server
@@ -437,7 +438,7 @@ def test_ask_on_a_recorded_note_without_a_memo_does_not_call_the_llm(env, tmp_pa
     home, _ = env
     d, t = saved(tmp_path)
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: None)
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: None)
     class NoLLM:
         @property
         def chat(self):
@@ -453,7 +454,7 @@ def test_ask_on_a_recorded_note_without_a_memo_does_not_call_the_llm(env, tmp_pa
 
 def test_ask_on_a_recorded_note_uses_the_memo_as_evidence(recorded, monkeypatch):
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: None)
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: None)
     stream = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **kw: iter([
         SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="동결합니다 [m0001]."))]),
     ]))))
@@ -601,7 +602,7 @@ def test_real_models_finish_then_convert_equals_the_direct_path(tmp_path, monkey
     text = "안녕하세요. 오늘은 예산 검토를 합니다. 다음 주 화요일까지 견적서를 제출해 주세요."
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("TRACTUS_MODELS_DIR", str(models))
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: None)
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: None)
 
     # 바로 변환 (기준)
     home_a = tmp_path / "a" / "home"

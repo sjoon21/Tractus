@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
+from tractus.commands import common
 from tractus import ask as qa
 from tractus import cli
 from tractus.index import Index
@@ -242,7 +243,7 @@ def cli_env(home, monkeypatch):
     monkeypatch.setenv("UPSTAGE_API_KEY", "k")
     for k in ("TRACTUS_LOCAL_ONLY", "TRACTUS_LLM_MODEL", "TRACTUS_LLM_PROVIDER"):
         monkeypatch.delenv(k, raising=False)
-    monkeypatch.setattr(cli, "_sync_index_quietly", lambda embed=True: None)
+    monkeypatch.setattr(common, "sync_index_quietly", lambda embed=True: None)
     return home
 
 

@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from tractus.commands import common
 from tractus import align, cli, diarize, doctor, embed, voices
 from tractus import models_install as inst
 from tractus import models_registry as reg
@@ -661,7 +662,7 @@ def test_auto_track_prefers_ram_choice_then_falls_back(root, monkeypatch, memory
         (d / "config.json").write_text("{}")
     warnings = []
     monkeypatch.setattr(cli, "physical_memory", lambda: memory)
-    monkeypatch.setattr(cli, "_warn", lambda code, message: warnings.append((code, message)))
+    monkeypatch.setattr(common, "warn", lambda code, message: warnings.append((code, message)))
     assert cli.auto_track().value == want
     assert [c for c, _ in warnings] == (["asr_track_fallback"] if fallback else [])
     if fallback:
@@ -677,7 +678,7 @@ def test_auto_track_ignores_a_half_downloaded_model(root, monkeypatch):
     lite.mkdir()
     (lite / "config.json").write_text("{}")
     monkeypatch.setattr(cli, "physical_memory", lambda: 16 * GB)
-    monkeypatch.setattr(cli, "_warn", lambda code, message: None)
+    monkeypatch.setattr(common, "warn", lambda code, message: None)
     assert cli.auto_track().value == "lite"
 
 
@@ -870,7 +871,7 @@ def test_engine_option_picks_an_installed_engine_and_falls_back_with_a_warning(r
         (d / "config.json").write_text("{}")
     warnings = []
     monkeypatch.setattr(cli, "physical_memory", lambda: 16 * GB)
-    monkeypatch.setattr(cli, "_warn", lambda code, message: warnings.append(code))
+    monkeypatch.setattr(common, "warn", lambda code, message: warnings.append(code))
     assert cli.choose_asr(None, "asr-lite").id == "asr-lite"
     assert cli.choose_asr(cli.Track.lite, None).id == "asr-lite"
     assert cli.choose_asr(None, None).id == "asr-std" and warnings == []
