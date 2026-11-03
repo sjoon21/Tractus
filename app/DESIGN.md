@@ -47,6 +47,7 @@ macOS 노트 앱(Granola·Apple Notes) 톤. 무채색 바탕에 색은 의미로
 - `Button` — `variant`: `default`(그 화면의 주 동작 하나), `outline`, `secondary`, `ghost`(툴바·부차 동작), `destructive`(확인 창의 삭제), `rec`, `link`. `size`: `sm`·`default`·`lg`·`icon`·`icon-sm`. 옛 `.text-button`(밑줄 글자 단추)은 `ghost` `sm` 또는 `link`로.
 - `Input`, `Textarea`, `Select`(네이티브), `Switch`(켜고 끄는 설정), `checkClass`(체크박스·라디오), `Kbd`, `Badge`(`default`·`memo`·`rec`·`outline`), `Progress`(값 0..1 또는 null).
 - `Section` + `Row` — 설정처럼 이름/조작이 짝인 목록(macOS 시스템 설정의 묶음 카드). `PageHeader`(뒤로 + 제목 + 동작) + `PageBody`(가운데 읽기 폭).
+- `Dock` + `DockGroup`(`components/ui/dock.tsx`) — 가운데 화면 아래에 뜨는 알약 모양 도구 막대. 자주 쓰는 것(패널 탭·도구)만 모으고 묶음 사이는 구분선. 좁으면 가로 스크롤(줄을 바꾸지 않는다). 같은 동작을 도크와 다른 자리에 두 번 두지 않는다.
 - 메뉴·팝오버: `Popover`/`ItemMenu`(`src/Popover.tsx`), 클래스 `MENU`·`MENU_ITEM`(`src/components/menu.ts`).
 - 아이콘: `lucide-react` 16px(`[&_svg]:size-4`). 아이콘만 있는 단추에는 `aria-label`과 `title`.
 - 모델·도구가 없어 못 쓰는 단추는 반드시 `GatedButton`(이유 팝오버). `className`에 `buttonVariants(...)`를 넘긴다.
