@@ -22,13 +22,11 @@ import {
   replayStart,
   type Segment,
 } from "./lib";
-import { AskPanel } from "./AskPanel";
 import { ErrorDetail } from "./ErrorDetail";
 import { locale, t } from "./i18n";
 import type { DeleteTarget } from "./remove";
 import { deleteMark, editMark } from "./marks";
 import { PrintSheet } from "./PrintSheet";
-import { SummariesPanel } from "./SummariesPanel";
 import type { SummaryDoc } from "./summaries";
 import { SpeakerMenu, SpeakersBar, type MenuTarget, type MergeAsk } from "./Speakers";
 import { CoachMark } from "./CoachMark";
@@ -39,14 +37,10 @@ import { NoteOrganizer } from "./NoteOrganizer";
 import { LOCK_NOTICE, type AttachControls } from "./attach";
 import { ConvertPanel } from "./ConvertPanel";
 import { useConvertJob } from "./convertJobs";
-import { CONVERT_FIRST, deleteBlockedWhileConverting, isRecorded, keptNotice, railNotice, recordedStats, type ConvertControls } from "./recorded";
-import { flushMemos, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type SaveState } from "./memo";
-import { RAIL_LABEL, railLabel } from "./rail";
-import { PanelResizer, PanelToggle } from "./PanelToggle";
+import { CONVERT_FIRST, deleteBlockedWhileConverting, isRecorded, keptNotice, recordedStats, type ConvertControls } from "./recorded";
+import { isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type SaveState } from "./memo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
-import { EnhancedNote } from "./EnhancedNote";
-import { MinutesPanel } from "./MinutesPanel";
 import { PolishBar } from "./PolishControls";
 import { RecordPill } from "./RecordPill";
 import { usePlayback } from "./note/usePlayback";
@@ -59,10 +53,9 @@ import { useRail } from "./note/useRail";
 import { NotePlayer } from "@/components/note/NotePlayer";
 import { NoteDock } from "@/components/note/NoteDock";
 import { NoteHeader } from "@/components/note/NoteHeader";
+import { NoteRail } from "@/components/note/NoteRail";
 import { SegmentRow } from "@/components/note/SegmentRow";
 import { MemoRow } from "@/components/note/MemoRow";
-import { TimeChip } from "@/components/note/TimeChip";
-import { PENDING } from "@/components/note/styles";
 import { livePolish, nextSuggestion, pendingIds, suggestionMarks } from "./polish";
 
 export function MeetingView({
@@ -190,7 +183,7 @@ export function MeetingView({
   const exp = useNoteExport({ id, detail, memoNote, selectedSummary, serial, notify });
 
   const railState = useRail(memoNote, memoRef, setMemoPick);
-  const { tabNow, askSeen, memoSeen, minutesSeen, railCollapsed, openMemoLine } = railState;
+  const { railCollapsed, openMemoLine } = railState;
   const memoSegs = useMemo(() => memoLineSegments(detail?.note_memo), [detail?.note_memo]);
   const onCite = useCallback(
     (_m: string, segId: string, sec: number) => (memoRef.current || isMemoLineId(segId) ? openMemoLine(segId) : seekTo(sec)),
@@ -473,107 +466,38 @@ export function MeetingView({
       </article>
       {polish.running && <div aria-hidden className="polish-frame pointer-events-none col-start-1 row-start-1 max-[1180px]:hidden" />}
 
-      <aside className="summary-col relative flex min-h-0 flex-col border-l border-border bg-background max-[1180px]:overflow-visible max-[1180px]:border-t max-[1180px]:border-l-0" aria-label={railLabel(memoNote)}>
-        <PanelToggle side="right" />
-        {!railCollapsed && <PanelResizer side="right" className="max-[1180px]:hidden" />}
-        <div id="rail-body" className="rail-body flex min-h-0 flex-1 flex-col overflow-y-auto max-[1180px]:overflow-visible" hidden={railCollapsed}>
-        <div className="sticky top-0 z-10 flex h-[52px] shrink-0 items-center bg-background/90 pr-12 pl-5 backdrop-blur-md" data-tauri-drag-region>
-          <h2 className="m-0 text-[13px] font-semibold">{RAIL_LABEL[tabNow]}</h2>
-        </div>
-        <div className={cn("flex flex-1 flex-col px-5 pt-2", tabNow === "ask" ? "pb-0" : "pb-10")}>
-        <div id="panel-summary" role="tabpanel" aria-labelledby="tab-summary" hidden={tabNow !== "summary"}>
-          {recorded ? (
-            <p className={PENDING} role="status">
-              {railNotice("summary", true)}
-            </p>
-          ) : (
-          <SummariesPanel
-            id={id}
-            memoNote={memoNote}
-            rev={summaryRev}
-            prepare={async () => !attach?.lock && (await flushMemos())} // 메모(메모 노트의 본문, 녹음 노트의 메모 탭)는 쓰던 글을 먼저 저장한다 (요약이 저장된 글을 읽는다). 저장하지 못하면 요약하지 않는다 (오류는 편집기가 보인다)
-            blocked={editing || memoBusy || !!attach?.lock}
-            editSeq={editSeq}
-            editSeqRef={editSeqRef}
-            editKinds={editKinds}
-            chip={(ids) => <TimeChip ids={ids} starts={rail} onSeek={seekTo} memo={memoLines.size > 0 ? { lines: memoLines, onPick: openMemoLine, tagged: !memoNote } : null} />}
-            starts={rail}
-            memoLines={memoNote ? undefined : memoLines}
-            notify={notify}
-            onRunning={setSummaryRunning}
-            onSelect={setSelectedSummary}
-            onChanged={onChanged}
-            onToMemo={memoNote || recorded ? undefined : sendToMemo}
-          />
-          )}
-        </div>
-        {minutesSeen && !memoNote && (
-          <div id="panel-minutes" role="tabpanel" aria-labelledby="tab-minutes" hidden={tabNow !== "minutes"}>
-            <MinutesPanel
-              id={id}
-              rev={summaryRev}
-              disabled={recorded ? CONVERT_FIRST : segments.length === 0 ? t("인식된 대화가 없습니다") : editing || memoBusy ? t("저장이 끝난 뒤에 만들 수 있습니다") : null}
-              prepare={flushMemos}
-              editSeq={editSeq}
-              editSeqRef={editSeqRef}
-              editKinds={editKinds}
-              chip={(ids) => <TimeChip ids={ids} starts={rail} onSeek={seekTo} memo={memoLines.size > 0 ? { lines: memoLines, onPick: openMemoLine, tagged: true } : null} />}
-              notify={notify}
-              onRunning={setMinutesRunning}
-              onChanged={() => {
-                setSummaryRev((r) => r + 1);
-                onChanged();
-              }}
-            />
-          </div>
-        )}
-        {askSeen && (
-          <div id="panel-ask" role="tabpanel" aria-labelledby="tab-ask" className="rail-ask flex flex-1 flex-col" hidden={tabNow !== "ask"}>
-            {recorded ? (
-              <p className={PENDING} role="status">
-                {railNotice("ask", true)}
-              </p>
-            ) : attach?.lock ? (
-              // 녹음을 추가하는 동안에는 묻지 않는다: 메모 노트가 녹음 노트로 바뀌는 중이라 근거(메모 줄 ID)가 곧 바뀐다
-              <p className={PENDING} role="status">
-                {LOCK_NOTICE[attach.lock]}
-              </p>
-            ) : (
-              <AskPanel scope={{ kind: "meeting", id, starts, memoLines: memoLines.size > 0 ? memoLines : undefined, memoNote }} onCite={onCite} />
-            )}
-          </div>
-        )}
-        {memoSeen && !memoNote && (
-          <div id="panel-memo" role="tabpanel" aria-labelledby="tab-memo" className="rail-memo" hidden={tabNow !== "memo"}>
-            <EnhancedNote
-              id={id}
-              rev={summaryRev}
-              disabled={recorded ? CONVERT_FIRST : segments.length === 0 ? t("인식된 대화가 없습니다") : editing || memoBusy ? t("저장이 끝난 뒤에 완성할 수 있습니다") : null}
-              prepare={flushMemos}
-              editSeq={editSeq}
-              editSeqRef={editSeqRef}
-              editKinds={editKinds}
-              chip={(ids) => <TimeChip ids={ids} starts={rail} onSeek={seekTo} />}
-              onSeek={(t) => seekTo(t)}
-              onMade={() => {
-                setSummaryRev((r) => r + 1);
-                onChanged();
-              }}
-              onRunning={setEnhanceRunning}
-              notify={notify}
-              pick={memoTarget}
-              mine={
-                <>
-                  <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">{t("내가 적는 메모입니다. 요약과 AI 질문에 대화 내용과 함께 쓰입니다.")}</p>
-                  <MemoEditor key={memoRev} variant="rail" id={id} initial={noteBody} savedBody={noteBody} segments={memoSegs} target={memoTarget} notify={notify} onSaved={onMemoSaved} onState={setMemoSave} />
-                </>
-              }
-            />
-          </div>
-        )}
-        </div>
-        </div>
-      </aside>
+      <NoteRail
+        id={id}
+        memoNote={memoNote}
+        recorded={recorded}
+        hasSegments={segments.length > 0}
+        rail={railState}
+        railStarts={rail}
+        starts={starts}
+        memoLines={memoLines}
+        memoTarget={memoTarget}
+        noteBody={noteBody}
+        memoSegs={memoSegs}
+        memoRev={memoRev}
+        editing={editing}
+        memoBusy={memoBusy}
+        attach={attach}
+        summaryRev={summaryRev}
+        bumpSummaryRev={() => setSummaryRev((r) => r + 1)}
+        edit={{ editSeq, editSeqRef, editKinds }}
+        notify={notify}
+        onChanged={onChanged}
+        onCite={onCite}
+        openMemoLine={openMemoLine}
+        seekTo={seekTo}
+        sendToMemo={sendToMemo}
+        onMemoSaved={onMemoSaved}
+        setMemoSave={setMemoSave}
+        setSummaryRunning={setSummaryRunning}
+        setSelectedSummary={setSelectedSummary}
+        setMinutesRunning={setMinutesRunning}
+        setEnhanceRunning={setEnhanceRunning}
+      />
       {exp.printable && <PrintSheet doc={exp.printable} />}
     </div>
   );
