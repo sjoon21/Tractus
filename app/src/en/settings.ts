@@ -22,6 +22,7 @@ export default {
   "언어를 바꾸지 못했습니다: {error}": "Couldn’t change the language: {error}",
   "바꾸면 앱 화면을 다시 엽니다.": "Changing this reloads the app window.",
   업데이트: "Updates",
+  "설정 구역": "Settings sections",
 
   // 참석자 목소리 프로필
   "참석자 목소리 프로필": "Speaker voice profiles",

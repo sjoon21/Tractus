@@ -5,7 +5,7 @@ import { cn } from "./utils";
 
 export function Section({ title, icon, description, actions, children, className, id, tabIndex }: { title?: ReactNode; icon?: ReactNode; description?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; id?: string; tabIndex?: number }) {
   return (
-    <section id={id} tabIndex={tabIndex} className={cn("flex flex-col gap-2", className)} aria-label={typeof title === "string" ? title : undefined}>
+    <section id={id} tabIndex={tabIndex} className={cn("flex scroll-mt-24 flex-col gap-2", className)} aria-label={typeof title === "string" ? title : undefined}>
       {(title || actions) && (
         <header className="flex items-end justify-between gap-3 px-1">
           <div className="min-w-0">
