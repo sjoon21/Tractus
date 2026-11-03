@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { APP_ERROR, IDLE_JOB, type JobState } from "./lib";
 import { exportFormatsFor } from "./memo";
-import { canQueueConvert, CONVERT_FIRST, convertPanelView, deleteBlockedWhileConverting, DELETE_BLOCKED, isRecorded, noteLabel, railNotice, recordedIds, recordedStats, keptNotice, keptTitle, KEPT_WARN, WAIT_OTHER, WAIT_RECORDING } from "./recorded";
+import { canQueueConvert, CONVERT_FIRST, convertPanelView, deleteBlockedWhileConverting, DELETE_BLOCKED, isRecorded, noteLabel, railNotice, recordedIds, recordedStats, keptNotice, keptTitle, KEPT_WARN, makeBlockedReason, WAIT_OTHER, WAIT_RECORDING } from "./recorded";
 import { railTabs } from "./rail";
 
 const job = (o: Partial<JobState> = {}): JobState => ({ ...IDLE_JOB, ...o });
@@ -116,5 +116,17 @@ describe("보관 중인 원본 녹음 안내 (D5)", () => {
   test("MB는 1 미만으로 내려가지 않고 천 단위로 끊는다. 배지 title도 같은 크기", () => {
     expect(keptNotice(10, "2026-10-15T09:00:00+09:00", now)?.line).toContain("1 MB");
     expect(keptTitle(1500 * MB)).toBe("원본 녹음 1,500 MB 보관 중");
+  });
+});
+
+describe("makeBlockedReason", () => {
+  const ok = { recorded: false, hasSegments: true, busy: false };
+  test("만들 수 있으면 이유가 없다", () => {
+    expect(makeBlockedReason(ok, "저장 중")).toBeNull();
+  });
+  test("변환 전 노트가 가장 먼저이고, 그다음 대화 없음, 그다음 저장 중이다", () => {
+    expect(makeBlockedReason({ recorded: true, hasSegments: false, busy: true }, "저장 중")).toBe(CONVERT_FIRST);
+    expect(makeBlockedReason({ recorded: false, hasSegments: false, busy: true }, "저장 중")).toContain("대화");
+    expect(makeBlockedReason({ ...ok, busy: true }, "저장 중")).toBe("저장 중");
   });
 });

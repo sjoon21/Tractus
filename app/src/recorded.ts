@@ -113,3 +113,8 @@ export const CONVERTED = (title: string) => t("‘{title}’ 노트를 텍스트
 export const CONVERT_FAIL = (title: string, why: string) => t("‘{title}’ 노트를 텍스트로 변환하지 못했습니다{why}", { title: titleOf(title), why });
 /** 모두 변환 진행 줄: `2 / 3 · ‘제목’` */
 export const CONVERT_ALL_LINE = (n: number, total: number, title: string) => t("{n} / {total} · ‘{title}’", { n, total, title: titleOf(title) });
+
+/** 회의록·노트 완성을 만들 수 없는 이유 (없으면 null). 변환 전 노트가 먼저, 그다음 대화 없음, 그다음 저장 중 (busyText는 탭마다 다르다) */
+export function makeBlockedReason({ recorded, hasSegments, busy }: { recorded: boolean; hasSegments: boolean; busy: boolean }, busyText: string): string | null {
+  return recorded ? CONVERT_FIRST : !hasSegments ? t("인식된 대화가 없습니다") : busy ? busyText : null;
+}

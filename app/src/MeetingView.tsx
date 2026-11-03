@@ -45,6 +45,7 @@ import { PolishBar } from "./PolishControls";
 import { RecordPill } from "./RecordPill";
 import { usePlayback } from "./note/usePlayback";
 import { useNote } from "./note/useNote";
+import { NoteViewProvider, type NoteView } from "./note/NoteViewContext";
 import { useFind } from "./note/useFind";
 import { useNoteExport } from "./note/useNoteExport";
 import { usePolishReview } from "./note/usePolishReview";
@@ -298,6 +299,27 @@ export function MeetingView({
   const deleteWhy = convertBlock ?? (align.job.running || summaryRunning || enhanceRunning || minutesRunning || polish.running || attach?.lock ? t("작업이 끝난 뒤에 삭제할 수 있습니다") : null);
   const polishOff = recorded ? CONVERT_FIRST : editing || memoBusy ? t("저장이 끝난 뒤에 교정할 수 있습니다") : null;
 
+  // 오른쪽 패널의 탭들이 함께 쓰는 노트 단위의 값 (note/NoteViewContext)
+  const noteView: NoteView = {
+    id,
+    memoNote,
+    recorded,
+    hasSegments: segments.length > 0,
+    notify,
+    onChanged,
+    summaryRev,
+    refreshNote,
+    edit: { editSeq, editSeqRef, editKinds },
+    busy: editing || memoBusy,
+    attach,
+    seekTo,
+    openMemoLine,
+    starts,
+    railStarts: rail,
+    memoLines,
+    setRunning: { summary: setSummaryRunning, minutes: setMinutesRunning, enhance: setEnhanceRunning },
+  };
+
   return (
     <div className={cn("meeting grid h-full max-[1180px]:block max-[1180px]:overflow-y-auto", railCollapsed ? "is-rail-collapsed grid-cols-[minmax(0,1fr)_52px]" : "grid-cols-[minmax(0,1fr)_var(--rail)]")}>
       <article className="transcript-col relative col-start-1 row-start-1 flex min-h-0 flex-col overflow-y-auto max-[1180px]:overflow-visible" onWheel={() => playing && setFollow(false)} onScroll={() => menu && setMenu(null)}>
@@ -468,38 +490,15 @@ export function MeetingView({
       </article>
       {polish.running && <div aria-hidden className="polish-frame pointer-events-none col-start-1 row-start-1 max-[1180px]:hidden" />}
 
-      <NoteRail
-        id={id}
-        memoNote={memoNote}
-        recorded={recorded}
-        hasSegments={segments.length > 0}
-        rail={railState}
-        railStarts={rail}
-        starts={starts}
-        memoLines={memoLines}
-        memoTarget={memoTarget}
-        noteBody={noteBody}
-        memoSegs={memoSegs}
-        memoRev={memoRev}
-        editing={editing}
-        memoBusy={memoBusy}
-        attach={attach}
-        summaryRev={summaryRev}
-        bumpSummaryRev={() => refreshNote()}
-        edit={{ editSeq, editSeqRef, editKinds }}
-        notify={notify}
-        onChanged={onChanged}
-        onCite={onCite}
-        openMemoLine={openMemoLine}
-        seekTo={seekTo}
-        sendToMemo={sendToMemo}
-        onMemoSaved={onMemoSaved}
-        setMemoSave={setMemoSave}
-        setSummaryRunning={setSummaryRunning}
-        setSelectedSummary={setSelectedSummary}
-        setMinutesRunning={setMinutesRunning}
-        setEnhanceRunning={setEnhanceRunning}
-      />
+      <NoteViewProvider value={noteView}>
+        <NoteRail
+          rail={railState}
+          onSelectSummary={setSelectedSummary}
+          sendToMemo={sendToMemo}
+          onCite={onCite}
+          memoTab={{ target: memoTarget, body: noteBody, segments: memoSegs, rev: memoRev, onSaved: onMemoSaved, onState: setMemoSave }}
+        />
+      </NoteViewProvider>
       {exp.printable && <PrintSheet doc={exp.printable} />}
     </div>
   );
