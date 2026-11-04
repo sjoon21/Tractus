@@ -139,7 +139,7 @@ def live_cmd(
         stop.set()  # stop 줄 또는 EOF (부모 앱이 죽어도 고아로 남지 않게)
 
     threading.Thread(target=watch_stdin, daemon=True).start()
-    hotwords = load_glossary(home_dir() / "glossary.md")
+    hotwords = load_glossary(home_dir() / "glossary.md")[::-1]  # 최근에 더한 것부터 (앞의 asr.HOTWORDS_MAX개만 쓴다, v3.92)
 
     def emit(event: str, **data) -> None:
         common.Events.emit(event, **data)
