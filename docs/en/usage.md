@@ -21,7 +21,7 @@ How to create, refine and find notes in the app. Terminal commands are in [CLI](
 - **Add a recording to a text-only note:** `Add recording` or `Add from file` in the memo header. The note becomes a recording note, and what you wrote moves to the `Memo` tab.
 - **Write memos in a recording note:** the `Memo` tab in the side panel. Memos are used as sources for search, Ask AI and summaries.
 - **Editing memos:** Text is saved as plain Markdown. Press Enter on a `- `, `1. ` or `- [ ] ` list line to continue the list on the next line; press Enter on an empty list line to end the list. Press ⌘Enter or click `[ ]` to check or uncheck a checkbox. Select text and press ⌘B (bold) or ⌘I (italic). With no text selected, ⌘B collapses the note list.
-- **Note titles and memos improve recognition:** When transcribing, words from the note's title, memos during recording and your own memos (for example, `Kubernetes` in the title `Kubernetes migration sync`) are added to that note's custom vocabulary. Writing domain terms in the title or a memo before you record makes the transcript more accurate.
+- **Note titles and memos improve recognition:** When transcribing, words from the note's title, memos during recording and your own memos (for example, `Kubernetes` in the title `Kubernetes migration sync`) are used like custom vocabulary for that note (they aren't saved to your list). Writing domain terms in the title or a memo before you record makes the transcript more accurate.
 
 </details>
 
@@ -30,6 +30,7 @@ How to create, refine and find notes in the app. Terminal commands are in [CLI](
 
 - In the speaker bar, double-click a name to rename it, or drag it onto another speaker to `Merge speakers`. If you choose `Register this speaker’s voice` while renaming, future recordings will suggest `Is this {name}?`. A voice is biometric data, so only register your own voice or someone who has given consent.
 - Double-click a line or press Enter to edit it (Enter saves, Esc cancels). The original text is kept as `Before editing`. Use ⌘F to find and replace. When you correct a misheard term (for example, `Cooper Netties` → `Kubernetes`), Tractus asks `Add to custom vocabulary?`. Click `Add` and it's recognized more accurately from your next recording.
+- **Vocabulary:** under `Vocabulary` in the sidebar, list names, product names and jargon ahead of time so transcription recognizes them more accurately. Add words one at a time with Enter, or paste a list separated by commas or new lines to add them all at once. Each word can be edited or deleted, and `Undo` in the notice brings a deleted word back. Transcription uses up to 50 words, most recently added first. Words are stored in `glossary.md` in your data folder and are also sent to your AI service when you use Minutes or Smart fix.
 - Consecutive lines from the same speaker are shown together as one paragraph. Times appear when you point at a line.
 - Click `Sync words` to highlight the word being played; click a word to play from there. New recordings are synced automatically.
 - Player: speed 0.8–2×, `This speaker only`, `Skip silence`, `Clear voice`, volume and mute. `R` replays the current sentence from the start.
@@ -44,7 +45,7 @@ How to create, refine and find notes in the app. Terminal commands are in [CLI](
 - **Minutes:** in a recording note, `Create minutes` in the `Minutes` tab on the right. You get attendees, a discussion summary table, notes per topic (undecided topics are marked `Needs more discussion`), next steps and the next meeting, in a shape that pastes well into a wiki. Owners, teams and due dates are kept only when someone said them, and numbers that don't match the conversation get `Check number`. Double-click a line to edit it (clear it to delete), and click `No owner yet` or `No due date` to fill it in. `Copy` gives the full minutes for a wiki; `Copy short version` gives a short version to send in chat right away (decided, to-dos, not decided yet).
   - To get teams as subjects, add the team to the attendee's name (e.g. `Daniel Kim (Payments)`), or name the speaker after the team.
   - Before the meeting ends, say the to-dos with owners and due dates out loud once; the minutes keep only what was said. Check names, dates and numbers before you send them.
-  - Adding your field's terms to `Custom vocabulary` improves both transcription and how terms are written in the minutes.
+  - Adding your field's terms to `Vocabulary` improves both transcription and how terms are written in the minutes.
 - **Ask AI:** `Ask AI` on the right answers from this note; ⌘J (`AI assistant` in the sidebar) searches all your notes. Click a time in an answer to jump to the supporting line. If there's nothing to back the answer, it says `No supporting lines`. Before sending, Tractus shows which AI service will receive what.
 
 </details>
