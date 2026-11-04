@@ -858,7 +858,7 @@ LLM 프롬프트(요약·AI 질문)도 이름 없는 참석자를 `참석자 N`�
 
 | 위치 | 문구 |
 | --- | --- |
-| 사이드바 단추 (아래쪽, 설정 옆) | `사전`, `title` `사전: 텍스트로 변환할 때 더 정확하게 알아들을 단어`. 접힌 사이드바 띠에는 두지 않는다 |
+| 사이드바 항목 (위 목록, `홈`·`AI 어시스턴트` 아래) | `사전`, `title` `사전: 텍스트로 변환할 때 더 정확하게 알아들을 단어`. 접힌 사이드바 띠에는 두지 않는다. 아래 줄(설정·모델)에 두면 영어 화면 폭 900에서 노트 개수가 밀려 넘쳤다 |
 | 화면 제목 / 설명 | `사전` / `이름·제품명·전문 용어처럼 잘못 알아듣기 쉬운 단어를 적어 두면, 다음 녹음부터 텍스트로 변환할 때 더 정확하게 알아듣습니다.` |
 | 보내는 곳 안내 | `회의록·스마트 교정을 쓰면 사전 단어도 함께 AI 서비스로 보냅니다.` (words-ok: 탭 이름 `회의록`) |
 | 입력 칸 | placeholder `단어를 적고 Enter`, `aria-label` `사전에 단어 추가`. 쉼표·줄바꿈이 든 글을 붙여 넣으면 단어 칩으로 미리 보이고 단추 `{n}개 추가` / `취소` |
@@ -876,7 +876,7 @@ LLM 프롬프트(요약·AI 질문)도 이름 없는 참석자를 `참석자 N`�
 사용자에게 보이는 문구를 바꾼 뒤, 커밋하기 전에 저장소 루트에서 돌린다. **출력이 없으면 통과다.**
 
 ```bash
-T='회의|전사|세그먼트|화자|청크|벡터|임베딩|색인|(?<!AI )모델|정렬|타이밍|용어집|묶음|무음|대목|미상|출처 없음|실시간 자막|발화|발언|확정|공급자|\bLLM\b|\bMCP\b|\bs\d{4}\b'
+T='회의|전사|세그먼트|화자|청크|벡터|임베딩|색인|(?<!AI )모델|정렬|타이밍|용어집|자주 쓰는 단어|묶음|무음|대목|미상|출처 없음|실시간 자막|발화|발언|확정|공급자|\bLLM\b|\bMCP\b|\bs\d{4}\b'
 {
   rg -n --pcre2 -g '*.{ts,tsx}' -g '!*.test.ts' -g '!fixtures/**' -g '!**/preview/**' -g '!{caps,models,checkupRows}.ts' -g '!ModelsSettings.tsx' "$T" app/src
   for f in app/src-tauri/src/*.rs; do awk '/#\[cfg\(test\)\]/{exit} {print FILENAME":"FNR":"$0}' "$f"; done | rg -v '/models\.rs:'
@@ -1238,8 +1238,8 @@ T='회의|전사|세그먼트|화자|청크|벡터|임베딩|색인|(?<!AI )모�
 
 ### 2026-11-04 (사전)
 
-1. **`자주 쓰는 단어`를 `사전`으로 바꾼다(소유자).** 화면 이름만이 아니라 사용자에게 보이는 문구 전부다(앱·Rust·코어 경고·모델 설명). 한 기능에 이름이 둘이면 사이드바의 `사전`과 토스트의 `자주 쓰는 단어`가 다른 것으로 읽힌다. 코드 이름(`glossary`, `hotwords`)·CLI·JSON 키·`glossary.md` 파일 이름과 머리말은 그대로다(§4.8). 앱 문구를 다 옮긴 뒤 §5 금지어에 `자주 쓰는 단어`를 더한다(화면 PR에서, 그 전에 더하면 검사가 깨진다).
-2. **영어는 `custom vocabulary` 그대로다.** 기존 영어 문구와 겹치지 않고, `Dictionary`는 번역 사전으로 읽힌다. 화면 제목 `Custom vocabulary`, 사이드바 단추는 좁아서 `Vocabulary`.
+1. **`자주 쓰는 단어`를 `사전`으로 바꾼다(소유자).** 화면 이름만이 아니라 사용자에게 보이는 문구 전부다(앱·Rust·코어 경고·모델 설명). 한 기능에 이름이 둘이면 사이드바의 `사전`과 토스트의 `자주 쓰는 단어`가 다른 것으로 읽힌다. 코드 이름(`glossary`, `hotwords`)·CLI·JSON 키·`glossary.md` 파일 이름과 머리말은 그대로다(§4.8). 앱 문구를 다 옮기면서 §5 금지어에 `자주 쓰는 단어`를 더했다(사전 화면 PR).
+2. **영어는 `custom vocabulary` 그대로다.** 기존 영어 문구와 겹치지 않고, `Dictionary`는 번역 사전으로 읽힌다. 화면 제목과 사이드바 단추는 한 키(`사전`)라 짧은 `Vocabulary`(사이드바가 좁다), 문장 안에서는 `custom vocabulary`.
 3. **지우기는 확인 창이 아니라 `되돌리기` 토스트다.** 단어 하나를 지우는 일이라 확인 창이 더 번거롭다.
 4. **변환에 쓰는 순서는 `최근에 추가한 단어부터`다.** 변환이 사전에서 쓰는 단어는 최대 50개라 지금은 오래된 단어가 남고 방금 넣은 단어가 잘린다. 화면 개수 줄도 이 규칙으로 말한다(§4.29).
 5. **사용 횟수 표시·틀린 말 → 맞는 말 바꾸기는 이번에 넣지 않는다.** 사용 횟수는 새 저장 파일이 필요하고, 글자를 바꾸는 규칙은 측정하지 않은 위험(조사·부분 일치·단어 싱크)이 크다.
@@ -1273,7 +1273,7 @@ Rust 문장은 `app/src-tauri/src/en.json`, 코어 문장·내보낸 문서는 `
 | 참석자 / 참석자 1 / 알 수 없음 | speaker / Speaker 1 / Unknown | participant, attendee (캘린더 일정의 참석자는 `attendees`) |
 | 말하는 사람 구분 | speaker detection | diarization |
 | 단어 싱크 | word sync | alignment, timestamps |
-| 사전 / 사전 단어 | custom vocabulary (화면 제목 `Custom vocabulary`, 사이드바 `Vocabulary`) / word | glossary, hotwords, dictionary |
+| 사전 / 사전 단어 | custom vocabulary / word (화면 제목·사이드바 단추는 `Vocabulary`) | glossary, hotwords, dictionary |
 | 스마트 검색 / 단어 일치 / 비슷한 뜻 | smart search / word match / similar meaning | index, embeddings, vector |
 | 노트 완성 / 완성된 노트 | enhance / enhanced note | |
 | 요약 / 요약 유형 / 내 유형 / 요약 방법 | summary / summary type / my types / instructions | template (설정 섹션 `Summary templates` 외에는), prompt |

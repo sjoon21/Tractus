@@ -1,4 +1,4 @@
-// 고친 낱말을 자주 쓰는 단어로 제안하기 (v3.53): 대화 한 줄을 "언톨로지 → 온톨로지"처럼 고치면 고친 낱말을 돌려준다.
+// 고친 낱말을 사전 단어로 제안하기 (v3.53): 대화 한 줄을 "언톨로지 → 온톨로지"처럼 고치면 고친 낱말을 돌려준다.
 // 용어 고침으로 보는 것만: 바뀐 부분이 낱말 1~2개이고, 고치기 전과 소리가 비슷하고(자모 비교), 용어처럼 보인다(동사·어미로 끝나지 않음).
 // 화면과 무관한 순수 함수: vocab.test.ts. 제안은 MeetingView가 알림으로 띄우고, 누르면 `glossary add`.
 
@@ -46,7 +46,7 @@ const termLike = (s: string) => {
   return n >= 2 && n <= 30 && /[가-힣A-Za-z]/.test(s) && !/^\d+$/.test(s) && (/[A-Za-z0-9]/.test(s) || !VERBISH.test(s)); // i18n-ok: 한국어 처리 데이터
 };
 
-/** 고치기 전·후 문장 → 자주 쓰는 단어로 제안할 낱말. 용어 고침이 아니면 null */
+/** 고치기 전·후 문장 → 사전 단어로 제안할 낱말. 용어 고침이 아니면 null */
 export function termFromEdit(before: string, after: string): string | null {
   const a = before.split(/\s+/).filter(Boolean);
   const b = after.split(/\s+/).filter(Boolean);
