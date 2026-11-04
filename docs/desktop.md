@@ -131,7 +131,7 @@ macOS 캘린더(EventKit) 읽기. 설계: [docs/design/calendar.md](design/calen
 | `tractus speakers` | 화자 편집. transcript.json을 고치고 md·vtt를 다시 쓴 뒤 검색 색인을 갱신한다. 오디오는 건드리지 않는다. 아래 §2.1 |
 | 표시 텍스트 (Phase 5) | 어디서나 `corrected_text`가 null이 아니면 그것, 아니면 `text`(코어 `store.seg_text`). md·vtt·요약 프롬프트·MCP·색인·CLI 검색·내보내기가 모두 따른다. 앱도 같은 규칙으로 표시한다 |
 | `tractus segments` | 텍스트 편집. 아래 §2.2 |
-| `tractus glossary add` | 용어집 추가. 아래 §2.3 |
+| `tractus glossary add\|list\|remove\|rename` | 용어집 보기·추가·지우기·고치기. 아래 §2.3 |
 | `tractus export` | 내보내기. 아래 §2.4 |
 | `tractus note meta`, `folders`, `notes list` (v3.20) | 즐겨찾기·태그·폴더와 목록 정렬·필터. 아래 §2.12 |
 | `tractus note` (v3.18) | 직접 쓰는 메모 노트(오디오 없음)와 노트 제목 바꾸기. 아래 §2.10 |
@@ -247,7 +247,15 @@ stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없
 
 ### 2.3 `tractus glossary add <용어> [<용어>…]`
 
-`$TRACTUS_HOME/glossary.md`에 `- 용어` 줄로 덧붙인다(없으면 머리말 `# 자주 쓰는 단어`와 안내 한 줄로 만든다). 앱은 찾아 바꾸기의 `바꾼 말을 자주 쓰는 단어에 추가`와, 대화 한 줄을 직접 고쳤을 때의 제안(v3.53, `vocab.termFromEdit`: 바뀐 낱말 1~2개, 자모로 비교해 소리가 비슷함, 동사·어미로 끝나지 않음, 숫자만 바뀐 것 제외, 한 번 물은 낱말은 그 화면에서 다시 묻지 않음)에서 부른다. 앞뒤 공백을 지우고, 빈 값과 이미 있는 용어(대소문자 구분)는 건너뛴다. stdout: `{"added":N}`. 용어가 `-`로 시작할 수 있으므로 앱은 `tractus glossary add -- <용어>…`처럼 `--`를 앞에 둔다. 다음 전사부터 hotwords로 들어간다.
+`$TRACTUS_HOME/glossary.md`에 `- 용어` 줄로 덧붙인다(없으면 머리말 `# 자주 쓰는 단어`와 안내 한 줄로 만든다). 앱은 찾아 바꾸기의 `바꾼 말을 자주 쓰는 단어에 추가`와, 대화 한 줄을 직접 고쳤을 때의 제안(v3.53, `vocab.termFromEdit`: 바뀐 낱말 1~2개, 자모로 비교해 소리가 비슷함, 동사·어미로 끝나지 않음, 숫자만 바뀐 것 제외, 한 번 물은 낱말은 그 화면에서 다시 묻지 않음)에서 부른다. 앞뒤 공백을 지우고, 빈 값과 이미 있는 용어(대소문자 구분)는 건너뛴다. stdout: `{"added":N,"skipped":M}`(`skipped` = 한 용어 40자·전체 300개 한도에 걸린 것. 두 한도는 측정한 값이 아니다). 용어가 `-`로 시작할 수 있으므로 앱은 `tractus glossary add -- <용어>…`처럼 `--`를 앞에 둔다. 다음 전사부터 hotwords로 들어간다.
+
+같은 영역의 나머지 명령(`store.edit_glossary`가 `.glossary.lock` flock 안에서 읽고 쓴다: 앱 편집과 변환 중 추가가 서로 덮어쓰지 않는다. 머리말·손으로 쓴 줄·`*` 항목·들여쓰기는 그대로 남는다):
+
+| 명령 | stdout |
+| --- | --- |
+| `glossary list --json` | `{"terms":[…],"max":50}` — 최근에 더한 것부터. `max`는 변환 한 번이 쓰는 개수(`asr.HOTWORDS_MAX`, 앞의 것이 먼저 남는다) |
+| `glossary remove [--] <용어>…` | `{"removed":N}` — 없는 용어는 건너뜀 |
+| `glossary rename <옛> <새>` | `{"changed":bool}` — 새 용어가 이미 있으면 옛 줄만 지운다. 새 용어가 1~40자가 아니면 종료 코드 2 |
 
 ### 2.4 `tractus export <회의> --format <형식> --out <경로> [--force] [--summary KEY …] [--parts transcript,memo,marks]`
 

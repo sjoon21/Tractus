@@ -293,6 +293,40 @@ def test_add_glossary_terms_creates_dedupes_and_appends(tmp_path):
     assert load_glossary(path) == ["쿠버네티스", "WTO", "Project Atlas"]
 
 
+def test_glossary_edits_keep_header_hand_lines_and_markers(tmp_path):
+    from tractus.store import add_glossary_terms, remove_glossary_terms, rename_glossary_term
+
+    p = tmp_path / "glossary.md"
+    p.write_text("# 용어집\n\n손으로 쓴 설명\n- WTO\n* 김철수\n  - OECD\n", encoding="utf-8")
+    assert remove_glossary_terms(p, ["WTO"]) == 1
+    assert rename_glossary_term(p, "김철수", "김철호") and rename_glossary_term(p, "OECD", "OECD2")
+    assert p.read_text(encoding="utf-8") == "# 용어집\n\n손으로 쓴 설명\n* 김철호\n  - OECD2\n"
+    assert rename_glossary_term(p, "김철호", "OECD2")  # 이미 있는 용어로 바꾸면 옛 줄만 지운다
+    assert load_glossary(p) == ["OECD2"]
+    assert not remove_glossary_terms(tmp_path / "없음.md", ["x"]) and not (tmp_path / "없음.md").exists()
+
+
+def test_add_glossary_terms_limits_length_and_count(tmp_path, monkeypatch):
+    from tractus import store
+
+    p = tmp_path / "glossary.md"
+    monkeypatch.setattr(store, "GLOSSARY_MAX", 2)
+    skipped: list[str] = []
+    assert store.add_glossary_terms(p, ["a", "b", "c", "가" * 41], skipped) == 2
+    assert skipped == ["c", "가" * 41] and load_glossary(p) == ["a", "b"]
+
+
+def test_add_glossary_terms_concurrent_writers_lose_nothing(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from tractus.store import add_glossary_terms
+
+    p = tmp_path / "glossary.md"
+    with ThreadPoolExecutor(8) as ex:
+        list(ex.map(lambda i: add_glossary_terms(p, [f"t{i}"]), range(40)))
+    assert sorted(load_glossary(p)) == sorted(f"t{i}" for i in range(40))
+
+
 def test_speaker_display_shows_unnamed_labels_as_participant_numbers():
     from tractus.store import speaker_display, speaker_name
 

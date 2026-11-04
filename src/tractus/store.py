@@ -27,8 +27,8 @@ CHUNKS_FILE = ".chunks.jsonl"
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 __all__ = [
-    "Job", "Segment", "add_glossary_terms", "apply_speaker_edit", "apply_suggestions", "apply_text_edits", "META_KEYS", "edit_transcript", "find_job", "find_meeting_dir",
-    "forget_person", "is_memo", "is_recorded", "load_glossary", "meeting_dir_name", "memo_lines", "memo_segments", "new_ulid", "note_lock", "read_transcript", "render_files", "render_markdown", "save_transcript",
+    "GLOSSARY_MAX", "GLOSSARY_TERM_MAX", "Job", "Segment", "add_glossary_terms", "apply_speaker_edit", "apply_suggestions", "apply_text_edits", "META_KEYS", "edit_glossary", "edit_transcript", "find_job", "find_meeting_dir",
+    "forget_person", "is_memo", "is_recorded", "load_glossary", "meeting_dir_name", "memo_lines", "memo_segments", "new_ulid", "note_lock", "read_transcript", "remove_glossary_terms", "rename_glossary_term", "render_files", "render_markdown", "save_transcript",
     "seg_text", "speaker_display", "speaker_name", "stamp", "write_transcript",
 ]
 
@@ -61,17 +61,95 @@ def _glossary_header() -> str:
     return t("# 자주 쓰는 단어\n\n녹음을 텍스트로 변환할 때 이 단어들을 더 정확하게 인식합니다. 한 줄에 하나씩 `- 단어` 형식으로 적습니다.\n\n")
 
 
-def add_glossary_terms(path: Path, terms: list[str]) -> int:
-    """용어를 `- 용어` 줄로 덧붙인다. 앞뒤 공백을 지우고, 빈 값과 이미 있는 용어는 건너뛴다. 파일이 없으면 머리말과 함께 만든다.
-    추가한 개수를 돌려준다."""
-    have = set(load_glossary(path))
-    new = [t for t in dict.fromkeys(" ".join(t.split()) for t in terms) if t and t not in have]
-    if new:
-        text = path.read_text(encoding="utf-8") if path.exists() else _glossary_header()
-        if text and not text.endswith("\n"):
-            text += "\n"
-        _write_atomic(path, text + "".join(f"- {t}\n" for t in new))
-    return len(new)
+GLOSSARY_LOCK = ".glossary.lock"
+GLOSSARY_TERM_MAX = 40  # 글자 수. 단어가 아닌 문장을 넣으면 hotwords가 방해 단어가 된다. 측정한 값이 아니다
+GLOSSARY_MAX = 300  # 개수. ASR은 앞의 50개만 쓰지만(asr.HOTWORDS_MAX) 모아 둘 곳은 넉넉히. 측정한 값이 아니다
+_GLOSSARY_ITEM = re.compile(r"^(\s*[-*]\s+)(.+?)\s*$")
+
+
+def edit_glossary(path: Path, fn: Callable[[list[str]], list[str]]) -> bool:
+    """glossary.md의 줄 목록을 읽어 `fn`으로 바꾸고, 바뀌었을 때만 쓴다(읽기→쓰기를 `.glossary.lock` 안에서: 앱 편집과 변환 중 추가가 서로 덮어쓰지 않게).
+    머리말·손으로 쓴 줄·`*` 항목은 `fn`이 건드리지 않는 한 그대로 남는다. 파일이 없으면 머리말 줄로 시작한다. 바뀌었는지 돌려준다."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path.parent / GLOSSARY_LOCK, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else _glossary_header().splitlines()
+        out = fn(list(lines))
+        if out == lines:
+            return False
+        _write_atomic(path, "\n".join(out) + "\n")
+        return True
+    finally:
+        os.close(fd)
+
+
+def _term_of(line: str) -> str | None:
+    m = _GLOSSARY_ITEM.match(line)
+    return m.group(2).strip() if m else None
+
+
+def add_glossary_terms(path: Path, terms: list[str], skipped: list[str] | None = None) -> int:
+    """용어를 `- 용어` 줄로 덧붙인다. 공백을 정리하고, 빈 값과 이미 있는 용어는 건너뛴다. 글자 수·개수 한도에 걸린 용어는 `skipped`에 모은다.
+    파일이 없으면 머리말과 함께 만든다. 추가한 개수를 돌려준다."""
+    added: list[str] = []
+
+    def add(lines: list[str]) -> list[str]:
+        have = {x for x in map(_term_of, lines) if x}
+        for term in dict.fromkeys(" ".join(t.split()) for t in terms):
+            if not term or term in have:
+                continue
+            if len(term) > GLOSSARY_TERM_MAX or len(have) >= GLOSSARY_MAX:
+                if skipped is not None:
+                    skipped.append(term)
+                continue
+            have.add(term)
+            added.append(term)
+        return lines + [f"- {t}" for t in added]
+
+    edit_glossary(path, add)
+    return len(added)
+
+
+def remove_glossary_terms(path: Path, terms: list[str]) -> int:
+    """용어가 적힌 줄을 지운다(같은 용어가 여러 줄이면 모두). 지운 줄 수를 돌려준다. 파일이 없으면 만들지 않는다."""
+    if not path.exists():
+        return 0
+    drop = {" ".join(t.split()) for t in terms}
+    removed = 0
+
+    def remove(lines: list[str]) -> list[str]:
+        nonlocal removed
+        keep = [ln for ln in lines if _term_of(ln) not in drop]
+        removed = len(lines) - len(keep)
+        return keep
+
+    edit_glossary(path, remove)
+    return removed
+
+
+def rename_glossary_term(path: Path, old: str, new: str) -> bool:
+    """`old` 줄의 용어를 `new`로 바꾼다(표지·들여쓰기 유지). `new`가 이미 있으면 `old` 줄만 지운다. 한도를 넘는 `new`는 ValueError.
+    바뀌었는지 돌려준다. `old`가 없으면 False."""
+    old, new = " ".join(old.split()), " ".join(new.split())
+    if not new or len(new) > GLOSSARY_TERM_MAX:
+        raise ValueError(new)
+    if not path.exists() or old == new:
+        return False
+
+    def rename(lines: list[str]) -> list[str]:
+        exists = new in {x for x in map(_term_of, lines) if x}
+        out = []
+        for ln in lines:
+            m = _GLOSSARY_ITEM.match(ln)
+            if not m or m.group(2).strip() != old:
+                out.append(ln)
+            elif not exists:
+                out.append(m.group(1) + new)
+                exists = True
+        return out
+
+    return edit_glossary(path, rename)
 
 
 @dataclass

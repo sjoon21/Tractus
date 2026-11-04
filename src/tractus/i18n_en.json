@@ -1,6 +1,7 @@
 {
  " (이미 설치됨 {n}개)": " ({n} already installed)",
  " · 길이 {duration}": " · Length {duration}",
+ "자주 쓰는 단어는 1~{n}자로 적어 주세요.": "Custom vocabulary entries must be 1–{n} characters.",
  "# 자주 쓰는 단어\n\n녹음을 텍스트로 변환할 때 이 단어들을 더 정확하게 인식합니다. 한 줄에 하나씩 `- 단어` 형식으로 적습니다.\n\n": "# Custom vocabulary\n\nThese words are recognized more accurately when recordings are transcribed. Write one per line as `- word`.\n\n",
  "(Swift 6.2 이상, 다른 위치면 TRACTUS_DIAR_BIN)": "(Swift 6.2 or later; TRACTUS_DIAR_BIN if elsewhere)",
  "(도우미 프로그램: {cmd})": "(Helper: {cmd})",
