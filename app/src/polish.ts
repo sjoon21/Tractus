@@ -87,7 +87,7 @@ export function wordDiff(before: string, after: string): DiffPart[] {
   return parts;
 }
 
-/** 받은 제안에서 자주 쓰는 단어로 넘길 낱말: 용어·이름 제안(kind term·name)의 바꾼 자리마다 termFromEdit. 군말·문장부호를 함께 고친 문장도 자리별로 본다 */
+/** 받은 제안에서 사전 단어로 넘길 낱말: 용어·이름 제안(kind term·name)의 바꾼 자리마다 termFromEdit. 군말·문장부호를 함께 고친 문장도 자리별로 본다 */
 export function termsFromSuggestions(list: Pick<PolishSuggestion, "before" | "text" | "kind">[]): string[] {
   const out = new Set<string>();
   for (const x of list) {

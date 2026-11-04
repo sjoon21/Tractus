@@ -41,7 +41,7 @@ export function useTextEditing({ id, data, queue, noteSaved, suggestTerms }: { i
     },
     [id, confirmed, settle, noteSaved, suggestTerms, setEditError],
   );
-  /** suggestTerm: 대화 한 줄을 직접 고쳤을 때 (찾아 바꾸기는 '자주 쓰는 단어에 추가' 체크가 따로 있다) */
+  /** suggestTerm: 대화 한 줄을 직접 고쳤을 때 (찾아 바꾸기는 '사전에 추가' 체크가 따로 있다) */
   const saveText = useCallback(
     (edits: TextEdit[], suggestTerm = false) => {
       if (!edits.length) return;

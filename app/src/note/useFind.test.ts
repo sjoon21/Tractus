@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// 찾아 바꾸기: 일치 목록, 현재 일치 하나 / 모두 바꾸기, 바꿔도 같을 때의 안내, 바꾼 말을 자주 쓰는 단어에 추가.
+// 찾아 바꾸기: 일치 목록, 현재 일치 하나 / 모두 바꾸기, 바꿔도 같을 때의 안내, 바꾼 말을 사전에 추가.
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Segment } from "../lib";
@@ -83,7 +83,7 @@ describe("바꾸기", () => {
     expect(setEditError).not.toHaveBeenCalled();
   });
 
-  test("바꾼 말을 자주 쓰는 단어에 추가하면 알려 준다", async () => {
+  test("바꾼 말을 사전에 추가하면 알려 준다", async () => {
     const { result, notify } = setup();
     api.glossaryAdd.mockResolvedValue({ added: 1, skipped: 0 });
     act(() => result.current.setFind({ q: "예산", r: " 비용 ", glossary: true }));
@@ -97,13 +97,13 @@ describe("바꾸기", () => {
     act(() => result.current.setFind({ q: "예산", r: "비용", glossary: true }));
     api.glossaryAdd.mockResolvedValueOnce({ added: 0, skipped: 0 });
     await act(async () => result.current.replace(false));
-    expect(notify).toHaveBeenLastCalledWith({ text: expect.stringContaining("이미 자주 쓰는 단어에 있습니다") });
+    expect(notify).toHaveBeenLastCalledWith({ text: expect.stringContaining("이미 사전에 있습니다") });
     api.glossaryAdd.mockRejectedValueOnce(new Error("사전 저장 실패"));
     await act(async () => result.current.replace(false));
     expect(notify).toHaveBeenLastCalledWith({ text: expect.stringContaining("사전 저장 실패"), error: true });
   });
 
-  test("체크하지 않으면 자주 쓰는 단어에 추가하지 않는다", () => {
+  test("체크하지 않으면 사전에 추가하지 않는다", () => {
     const { result } = setup();
     act(() => result.current.setFind({ q: "예산", r: "비용", glossary: false }));
     act(() => result.current.replace(false));

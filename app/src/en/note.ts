@@ -16,9 +16,9 @@ export default {
   "‘목소리 선명하게’를 켜지 못했습니다: {error}": "Couldn’t turn on “Clear voice”: {error}",
   "인쇄 창을 열지 못했습니다: {error}": "Couldn’t open the print dialog: {error}",
   "바꿔도 내용이 같거나 비게 되어 바꾸지 않았습니다": "Nothing replaced: the text would be unchanged or empty",
-  "자주 쓰는 단어에 추가했습니다 — {term} (다음 녹음부터 더 정확하게 인식합니다)": "Added to custom vocabulary — {term} (recognized more accurately in future recordings)",
-  "이미 자주 쓰는 단어에 있습니다 — {term}": "Already in custom vocabulary — {term}",
-  "자주 쓰는 단어에 추가하지 못했습니다: {error}": "Couldn’t add to custom vocabulary: {error}",
+  "사전에 추가했습니다 — {term} (다음 녹음부터 더 정확하게 인식합니다)": "Added to custom vocabulary — {term} (recognized more accurately in future recordings)",
+  "이미 사전에 있습니다 — {term}": "Already in custom vocabulary — {term}",
+  "사전에 추가하지 못했습니다: {error}": "Couldn’t add to custom vocabulary: {error}",
   "저장 위치를 고르지 못했습니다: {error}": "Couldn’t choose a save location: {error}",
   "내보냈습니다 — {file}": "Exported — {file}",
   "내보내지 못했습니다: {error}": "Couldn’t export: {error}",
@@ -148,7 +148,7 @@ export default {
   "바꿀 말": "Replace with",
   바꾸기: "Replace",
   "모두 바꾸기": "Replace all",
-  "바꾼 말을 자주 쓰는 단어에 추가": "Add the replacement to custom vocabulary",
+  "바꾼 말을 사전에 추가": "Add the replacement to custom vocabulary",
   "다음 녹음부터 이 단어를 더 정확하게 인식합니다": "Recognized more accurately in future recordings",
   "내보내기 형식": "Export format",
 
@@ -225,7 +225,7 @@ export default {
   "볼륨": "Volume",
   "요약을 메모에 붙였습니다": "Added the summary to your memo",
   "메모에 붙이지 못했습니다: {error}": "Couldn’t add it to your memo: {error}",
-  "자주 쓰는 단어에 추가할까요? — {term} (다음 녹음부터 더 정확하게 인식합니다)": "Add to custom vocabulary? — {term} (recognized more accurately from your next recording)",
+  "사전에 추가할까요? — {term} (다음 녹음부터 더 정확하게 인식합니다)": "Add to custom vocabulary? — {term} (recognized more accurately from your next recording)",
   // MinutesPanel (회의록 탭) // words-ok: 회의록은 문서 이름
   "저장이 끝난 뒤에 만들 수 있습니다": "You can create it after saving finishes",
   "회의록 만들기": "Create minutes", // words-ok: 회의록은 문서 이름

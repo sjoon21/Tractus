@@ -20,7 +20,7 @@ export function usePolishReview({ id, notify, note, setFollow, list }: { id: str
     if (!d.polish?.length) notify({ text: NO_SUGGESTIONS });
   });
   const [deciding, setDeciding] = useState<ReadonlySet<string>>(new Set());
-  // 지금 보이는 제안 (아래 렌더에서 채운다): 받은 제안의 용어를 자주 쓰는 단어로 넘길 때 kind·원문을 본다
+  // 지금 보이는 제안 (아래 렌더에서 채운다): 받은 제안의 용어를 사전 단어로 넘길 때 kind·원문을 본다
   const polishLive = useRef<Map<string, PolishSuggestion>>(new Map());
   // 제안으로 이동: 가운데로 스크롤하고 수락 단추에 초점을 둔다 (Enter로 바로 받을 수 있다). polishAt은 '다음 제안'의 기준
   const [jump, setJump] = useState<{ id: string } | null>(null);
@@ -39,7 +39,7 @@ export function usePolishReview({ id, notify, note, setFollow, list }: { id: str
     // 어디로 왔는지 보이게 제안 상자를 잠깐 밝힌다
     if (!reduce) row?.querySelector(".seg-polish")?.animate([{ boxShadow: "0 0 0 4px color-mix(in srgb, var(--ring) 60%, transparent)" }, { boxShadow: "0 0 0 0 transparent" }], { duration: 1400, easing: "ease-out" });
   }, [jump]);
-  /** 제안 받기·버리기: 줄에 세워 코어가 고친 회의를 돌려준다. 받은 문장은 ⌘Z로 되돌릴 수 있고, 받은 용어·이름 교정은 모아서 자주 쓰는 단어로 제안한다 */
+  /** 제안 받기·버리기: 줄에 세워 코어가 고친 회의를 돌려준다. 받은 문장은 ⌘Z로 되돌릴 수 있고, 받은 용어·이름 교정은 모아서 사전 단어로 제안한다 */
   const decidePolish = useCallback(
     (ids: string[], accept: boolean) => {
       if (!ids.length) return;

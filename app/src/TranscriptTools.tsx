@@ -150,7 +150,7 @@ export function FindBar({
       </div>
       <label className="flex items-center gap-2 text-xs text-muted-foreground">
         <input type="checkbox" className={checkClass} checked={state.glossary} onChange={(e) => onChange({ ...state, glossary: e.target.checked })} />
-        <span className="text-foreground">{t("바꾼 말을 자주 쓰는 단어에 추가")}</span> <span>{t("다음 녹음부터 이 단어를 더 정확하게 인식합니다")}</span>
+        <span className="text-foreground">{t("바꾼 말을 사전에 추가")}</span> <span>{t("다음 녹음부터 이 단어를 더 정확하게 인식합니다")}</span>
       </label>
     </div>
   );

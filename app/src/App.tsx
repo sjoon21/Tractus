@@ -20,6 +20,7 @@ import { Checkup } from "./Checkup";
 import { GatedButton } from "./GatedButton";
 import { DOWNLOAD_DONE, downloadErrorView } from "./models";
 import { ModelsView } from "./ModelsSettings";
+import { DictionaryView } from "./DictionaryView";
 import { attachModelsJobs } from "./modelsJob";
 import { CapsContext, useCapabilitiesState } from "./useCapabilities";
 import { OPEN_SETTINGS } from "./llmKey";
@@ -51,7 +52,7 @@ import { OrganizeContext, useOrganizeState } from "./useOrganize";
 import { PanelResizer, PanelToggle, usePanels } from "./PanelToggle";
 import { RAIL_REC_LABEL, railPendingLabel, railRecState } from "./panels";
 import { check } from "@tauri-apps/plugin-updater";
-import { AudioLines, House, Settings, Sparkles, Upload, X } from "lucide-react";
+import { AudioLines, BookA, House, Settings, Sparkles, Upload, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/components/ui/utils";
@@ -68,7 +69,8 @@ export type View =
   | { kind: "search"; q: string }
   | { kind: "record" }
   | { kind: "settings"; toUpdate?: number } // toUpdate: 업데이트 절로 내려간다 (누를 때마다 새 값)
-  | { kind: "models" };
+  | { kind: "models" }
+  | { kind: "dictionary" };
 
 const GLOBAL = { kind: "global" } as const;
 
@@ -143,9 +145,9 @@ export function App() {
   const go = useCallback(async (next: View) => {
     if (await flushMemos()) setView(next);
   }, []);
-  // 설정·모델 화면의 `뒤로`: 그 화면을 열기 전에 보던 화면 (노트·검색·녹음·홈)
+  // 설정·모델·사전 화면의 `뒤로`: 그 화면을 열기 전에 보던 화면 (노트·검색·녹음·홈)
   const lastContent = useRef<View>({ kind: "home" });
-  if (view.kind !== "settings" && view.kind !== "models") lastContent.current = view;
+  if (view.kind !== "settings" && view.kind !== "models" && view.kind !== "dictionary") lastContent.current = view;
   const goBack = useCallback(() => void go(lastContent.current), [go]);
   // 요약·질문 오류의 `설정 열기` (llmKey.requestSettings)
   useEffect(() => {
@@ -825,6 +827,10 @@ export function App() {
             <span className="group-hover/ai:bg-[linear-gradient(90deg,var(--sidebar-foreground)_0%,var(--sidebar-foreground)_35%,#8b5cf6_45%,#0ea5e9_55%,var(--sidebar-foreground)_65%,var(--sidebar-foreground)_100%)] bg-[length:200%_100%] bg-clip-text group-hover/ai:animate-shine group-hover/ai:text-transparent">{t("AI 어시스턴트")}</span>
             <Kbd className="ml-auto">⌘J</Kbd>
           </button>
+          <button className={SIDE_ITEM} aria-current={view.kind === "dictionary"} title={t("사전: 텍스트로 변환할 때 더 정확하게 알아들을 단어")} onClick={() => void go({ kind: "dictionary" })}>
+            <BookA aria-hidden />
+            {t("사전")}
+          </button>
           {bulkIds.length >= BULK_MIN && !converting && (
             <GatedButton gate={convertGate} className={SIDE_ITEM} disabled={transcribing || recording} onClick={convertAll} title={CONVERT_ALL_TITLE}>
               <AudioLines aria-hidden />
@@ -886,6 +892,7 @@ export function App() {
         {view.kind === "record" && <RecordView rec={rec} captions={live} job={progressKind === "save" ? finish.job : waitDir ? { ...IDLE_JOB, running: true, stage: "wait_convert" } : transcribe.job} progressKind={progressKind} choosing={afterAsk !== null} send={sendRec} retry={() => (progressKind === "save" ? finishDir.current && finishRecording(finishDir.current) : transcribeDir.current && startTranscribe(transcribeDir.current, transcribeTarget.current))} unconverted={unconverted ? UNCONVERTED_SAVED : null} attachTitle={attach.phase !== "idle" ? (attach.target?.title ?? null) : null} />}
         {view.kind === "settings" && <SettingsView toUpdate={view.toUpdate} onBack={goBack} onSaved={() => void Promise.all([refresh(), caps.refresh(), readLive()])} relaunchBlocked={recording || transcribing || imp.job.running || queue.length > 0} />}
         {view.kind === "models" && <ModelsView onBack={goBack} />}
+        {view.kind === "dictionary" && <DictionaryView onBack={goBack} notify={notify} />}
       </main>
 
       <aside
