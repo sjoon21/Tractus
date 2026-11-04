@@ -83,6 +83,15 @@ def test_transcribe_creates_meeting_layout(env, fake_asr):
     assert fake_asr.calls[0] == {"samples": 2 * SR, "language": None, "hotwords": ["김철수", "WTO", "주간회"]}
 
 
+def test_glossary_recent_terms_come_first(env, fake_asr):
+    """사전 단어는 최근에 더한 것(파일 끝)부터: 50개를 넘으면 오래된 단어가 잘린다 (v3.92, 측정 면제는 CLAUDE.md)."""
+    home, wav = env
+    (home / "glossary.md").write_text("".join(f"- w{i}\n" for i in range(60)), encoding="utf-8")
+    assert run(wav).exit_code == 0
+    used = fake_asr.calls[0]["hotwords"][: asr.HOTWORDS_MAX]
+    assert used == [f"w{i}" for i in range(59, 9, -1)]
+
+
 def test_interrupted_run_resumes_remaining_chunks(env, fake_asr):
     home, wav = env
     fake_asr.fail_at = 2

@@ -317,12 +317,12 @@ def _new_job(
         save_event(d, source.event)
 
     ev = source.event or load_event(d)  # 나중에 변환(--into)은 노트 폴더의 일정을 읽는다
-    # 이 노트에 가까운 것부터: 참석자 이름(이 노트의 변환에만) → 명령의 --term → 자주 쓰는 단어 → 노트의 제목·메모에서 고른 낱말. 앞의 asr.HOTWORDS_MAX개만 쓴다
+    # 이 노트에 가까운 것부터: 참석자 이름(이 노트의 변환에만) → 명령의 --term → 사전(최근에 더한 것부터, v3.92) → 노트의 제목·메모에서 고른 낱말. 앞의 asr.HOTWORDS_MAX개만 쓴다
     old = (append or into or (None, {}))[1]
     marks = source.marks or (load_memos(into[0]) if into else [])  # 변환 전 노트는 녹음 중 메모를 memos.json에 두었다
     mine = [str(old.get("body") or "")] + [m["text"] for m in memo_lines(old)] + [str(m.get("text") or "") for m in marks]
     picked = note_terms(title, *mine)  # 기본 제목(녹음 14:05)은 흔한 말·시각이라 남지 않는다
-    hotwords = list(dict.fromkeys((ev["attendees"] if ev else []) + terms + load_glossary(home_dir() / "glossary.md") + picked))
+    hotwords = list(dict.fromkeys((ev["attendees"] if ev else []) + terms + load_glossary(home_dir() / "glossary.md")[::-1] + picked))
     job = Job(
         dir=d, meeting_id=meeting_id, sha256=digest, source=source.name, title=title,
         created_at=created_at, duration_sec=round(len(pcm) / SR, 2),
