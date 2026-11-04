@@ -271,8 +271,13 @@ export const api = {
   indexRefresh: () => invoke<boolean>("index_refresh"),
   /** 화면 언어 (settings.json ui_lang). 바꾼 뒤 화면을 다시 연다 (i18n.ts) */
   setUiLang: (pref: "system" | "ko" | "en") => invoke<void>("set_ui_lang", { pref }),
-  /** `tractus glossary add`. 새로 더한 개수 */
-  glossaryAdd: (terms: string[]) => invoke<number>("glossary_add", { terms }),
+  /** 사전(`tractus glossary add`): 새로 더한 개수와 못 넣은 개수(40자 초과·사전이 가득 참) */
+  glossaryAdd: (terms: string[]) => invoke<{ added: number; skipped: number }>("glossary_add", { terms }),
+  /** 사전 단어(최근에 더한 것부터)와 변환이 한 번에 쓰는 개수 */
+  glossaryList: () => invoke<{ terms: string[]; max: number }>("glossary_list"),
+  glossaryRemove: (terms: string[]) => invoke<{ removed: number }>("glossary_remove", { terms }),
+  /** 새 단어가 이미 있으면 옛 단어만 지운다 */
+  glossaryRename: (old: string, next: string) => invoke<{ changed: boolean }>("glossary_rename", { old, new: next }),
   /** `tractus templates list --json`: 기본 요약 유형 → 내 요약 유형 (docs/desktop.md §2.13) */
   templatesList: () => invoke<TemplateInfo[]>("templates_list"),
   /** `tractus templates save`: 내 요약 유형 만들기(id 없음)·고치기. 저장한 유형 */

@@ -293,7 +293,27 @@ let minutesEdited: Record<string, T> = {};
 const shownMinutes = (m: T | null, edited: string | null) =>
   m ? { minutes: m, attendees: PEOPLE.slice(0, 2), title: EN ? "Weekly dev sync" : "주간 개발 회의", generated_at: "2026-10-20T10:00:00+09:00", edited_at: edited, markdown: "# [26.10.20] …", short: "[회의록] …" } : { minutes: null };
 
+// 사전(glossary.md): 최근에 더한 것이 앞
+let glossary = EN ? ["Kubernetes", "Project Atlas", "OKR", "Grafana", "p95"] : ["쿠버네티스", "Project Atlas", "온보딩", "결제 API", "p95"];
+const glossaryAdd = (terms: string[]) => {
+  const fresh = [...new Set(terms.map((x) => x.trim()))].filter((x) => x && x.length <= 40 && !glossary.includes(x));
+  glossary = [...fresh.reverse(), ...glossary];
+  return { added: fresh.length, skipped: terms.filter((x) => x.trim().length > 40).length };
+};
+
 const handlers: Record<string, (a: T) => unknown> = {
+  glossary_list: () => ({ terms: glossary, max: 50 }),
+  glossary_add: (a) => glossaryAdd(a.terms),
+  glossary_remove: (a) => {
+    const before = glossary.length;
+    glossary = glossary.filter((x) => !a.terms.includes(x));
+    return { removed: before - glossary.length };
+  },
+  glossary_rename: (a) => {
+    const changed = glossary.includes(a.old) && a.old !== a.new;
+    if (changed) glossary = glossary.includes(a.new) ? glossary.filter((x) => x !== a.old) : glossary.map((x) => (x === a.old ? a.new : x));
+    return { changed };
+  },
   rec_start: fakeRecording,
   rec_send: fakeRecSend,
   marks_save: (a) => ((noteMarks = { ...noteMarks, [a.id]: a.marks }), { marks: a.marks }),

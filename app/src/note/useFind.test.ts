@@ -85,7 +85,7 @@ describe("바꾸기", () => {
 
   test("바꾼 말을 자주 쓰는 단어에 추가하면 알려 준다", async () => {
     const { result, notify } = setup();
-    api.glossaryAdd.mockResolvedValue(1);
+    api.glossaryAdd.mockResolvedValue({ added: 1, skipped: 0 });
     act(() => result.current.setFind({ q: "예산", r: " 비용 ", glossary: true }));
     await act(async () => result.current.replace(false));
     expect(api.glossaryAdd).toHaveBeenCalledWith(["비용"]); // 앞뒤 공백은 뗀다
@@ -95,7 +95,7 @@ describe("바꾸기", () => {
   test("이미 있는 단어면 그렇게 알리고, 추가에 실패하면 오류로 알린다", async () => {
     const { result, notify } = setup();
     act(() => result.current.setFind({ q: "예산", r: "비용", glossary: true }));
-    api.glossaryAdd.mockResolvedValueOnce(0);
+    api.glossaryAdd.mockResolvedValueOnce({ added: 0, skipped: 0 });
     await act(async () => result.current.replace(false));
     expect(notify).toHaveBeenLastCalledWith({ text: expect.stringContaining("이미 자주 쓰는 단어에 있습니다") });
     api.glossaryAdd.mockRejectedValueOnce(new Error("사전 저장 실패"));

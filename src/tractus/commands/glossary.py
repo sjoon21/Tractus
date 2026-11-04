@@ -55,5 +55,5 @@ def glossary_rename(old: str = typer.Argument(..., help="바꿀 용어"), new: s
     try:
         changed = store.rename_glossary_term(_path(), old, new)
     except ValueError:
-        common.fail(t("자주 쓰는 단어는 1~{n}자로 적어 주세요.", n=store.GLOSSARY_TERM_MAX), exit_code=2)
+        common.fail(t("사전 단어는 1~{n}자로 적어 주세요.", n=store.GLOSSARY_TERM_MAX), exit_code=2)
     print(json.dumps({"changed": changed}))
