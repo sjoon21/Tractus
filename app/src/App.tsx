@@ -2,13 +2,14 @@ import { ToastItem } from "@/components/Toast";
 import { isTranscribing, type Activity } from "./jobSchedule";
 import { useConvertQueue } from "./useConvertQueue";
 import { useImportQueue } from "./useImportQueue";
+import { useFileDrop } from "./useFileDrop";
+import { useTranscribeQueue } from "./useTranscribeQueue";
 import { useWorkScheduler } from "./useWorkScheduler";
 import { SidebarJobs } from "@/components/sidebar/SidebarJobs";
 import { LeftoverRecordings } from "@/components/sidebar/LeftoverRecordings";
 import { SidebarFooter } from "@/components/sidebar/SidebarFooter";
 import { Welcome } from "@/components/home/Welcome";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -44,7 +45,7 @@ import { AfterRecordDialog } from "./AfterRecordDialog";
 import { afterRecord, ASK_BLOCKS_RECORD, effectiveChoice, rememberedChoice, stopAction, type AskChoice } from "./afterRecord";
 import { LIVE_BLOCKS_RECORD, recordBlock } from "./recordBusy";
 import { recButton } from "./pause";
-import { BULK_MIN, CONVERT_ALL, CONVERT_ALL_TITLE, CONVERTED, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
+import { BULK_MIN, CONVERT_ALL, CONVERT_ALL_TITLE, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
 import { NoteLibrary } from "./NoteLibrary";
 import { QuickFind } from "./QuickFind";
 import { touchNote as touchNoteIn, type Folder } from "./organize";
@@ -227,12 +228,16 @@ export function App() {
 
   // 녹음 정지 → 전사 → 회의 상세. 다음 녹음을 하는 중에 앞 녹음의 변환이 끝났으면(recordBusy.ts) 화면을 바꾸지 않고 알린다: 녹음 화면의 메모·북마크가 끊기지 않게
   const recordingRef = useRef(false);
-  const transcribe = useJob((meetingId) => {
-    const target = transcribeTarget.current;
-    if (target && target.id === meetingId) setNoteEpoch((e) => ({ id: meetingId, n: e.n + 1, stale: true })); // 녹음을 덧붙인 노트: 열려 있으면 다시 읽는다
-    if (!recordingRef.current) return void refresh().then(() => openMeeting(meetingId));
-    void refresh().then((ms) => notify({ text: CONVERTED(ms?.find((m) => m.id === meetingId)?.title ?? ""), action: { label: t("열기"), run: () => openMeeting(meetingId) } }));
+  // 녹음 변환 줄 (useTranscribeQueue.ts): 언제 시작하는가는 아래 useWorkScheduler가 정한다
+  const transcribe = useTranscribeQueue({
+    notify,
+    refresh,
+    openMeeting,
+    markNoteStale: (id) => setNoteEpoch((e) => ({ id, n: e.n + 1, stale: true })),
+    isRecording: () => recordingRef.current,
+    failureHidden: () => recordingRef.current || viewRef.current.kind !== "record",
   });
+  const waitDir = transcribe.waitDir;
   // 녹음을 변환하지 않고 노트로 저장 (`recording finish`, docs/desktop.md §3.3): 끝나면 변환 전 노트를 연다. 실패하면 녹음 폴더가 남아 `변환 대기 중인 녹음`에 보인다 (녹음은 잃지 않는다)
   const finish = useJob((meetingId) => void refresh().then(() => openMeeting(meetingId)));
   const finishDir = useRef<string | null>(null);
@@ -257,19 +262,17 @@ export function App() {
     isViewing: (noteId) => viewRef.current.kind === "meeting" && viewRef.current.id === noteId,
   });
   const { converting, running: convertRunning, job: convJob, bulkIds, convertNote, convertAll, slots: convertSlots, title: convTitle, pct: convPct, progress: convProgress } = convert;
-  // 지금(마지막으로) 도는 전사 대상. "다시 전사"는 방금 녹음뿐 아니라 사이드바의 남은 녹음에도 쓴다. 전사를 시작할 때 정한다
-  // 바로 시작하지 않고 대기 줄(waitList)에 둔다: 앞선 전사·파일 가져오기·변환 전 노트의 변환이 끝난 뒤에 시작한다(변환 엔진이 한 번에 하나만 올라가게).
-  // 변환 중에도 녹음할 수 있으므로(recordBusy.ts) 변환이 도는 동안 다음 녹음이 끝나 줄에 설 수 있다
-  const transcribeDir = useRef<string | null>(null);
-  const transcribeTarget = useRef<AttachTarget | null>(null); // 글만 있는 노트에 덧붙이는 녹음이면 그 노트 (--append-to)
-  const [waitList, setWaitList] = useState<{ dir: string; target: AttachTarget | null }[]>([]);
-  const waitDir = waitList[0]?.dir ?? null;
-  const startTranscribe = useCallback((dir: string, target?: AttachTarget | null) => {
-    setProgressKind("convert");
-    setUnconverted(false);
-    if (target) dispatchAttach({ type: "convert", target });
-    setWaitList((l) => (l.some((x) => x.dir === dir) ? l : [...l, { dir, target: target ?? null }]));
-  }, []);
+  // 녹음 변환을 줄에 세운다. "다시 변환"은 방금 녹음뿐 아니라 사이드바의 남은 녹음에도 쓴다
+  const enqueueTranscribe = transcribe.enqueue;
+  const startTranscribe = useCallback(
+    (dir: string, target?: AttachTarget | null) => {
+      setProgressKind("convert");
+      setUnconverted(false);
+      if (target) dispatchAttach({ type: "convert", target });
+      enqueueTranscribe(dir, target ?? null);
+    },
+    [enqueueTranscribe],
+  );
   const confirmDelete = async () => {
     const t = del.target;
     if (!t || del.busy) return;
@@ -285,7 +288,7 @@ export function App() {
         setView((v) => (v.kind === "meeting" && v.id === t.id ? { kind: "home" } : v));
       } else {
         await api.deleteRecording(t.dir);
-        if (transcribeDir.current === t.dir) transcribeDir.current = null;
+        transcribe.forget(t.dir);
       }
       notify({ text: deletedText(t) });
     } catch (e) {
@@ -320,16 +323,6 @@ export function App() {
   });
   const recording = rec.phase === "recording" || rec.phase === "paused" || rec.phase === "starting" || rec.phase === "stopping";
   recordingRef.current = recording;
-  // 녹음 변환의 실패가 녹음 화면에 보이지 않을 때 알린다: 다음 녹음을 하는 중이거나, 다음 녹음이 줄에 있어 곧 그 진행으로 바뀌거나, 녹음 화면을 떠났을 때.
-  // 녹음은 `변환 대기 중인 녹음`에 남아 다시 변환할 수 있다. 줄·화면은 ref로 읽는다 (바뀔 때마다 지난 실패를 다시 알리지 않게)
-  const waitListRef = useRef(waitList);
-  waitListRef.current = waitList;
-  useEffect(() => {
-    if (transcribe.job.running || !transcribe.job.error || !(recordingRef.current || waitListRef.current.length > 0 || viewRef.current.kind !== "record")) return;
-    const e = errorView(transcribe.job.error, transcribe.job.errorCode, JOB_ERROR.transcribe);
-    notify({ text: e.text, detail: e.detail, error: true });
-  }, [transcribe.job.running, transcribe.job.error, transcribe.job.errorCode, notify]);
-
   // 실시간 텍스트 변환: 켜 두면 변환 중에는 녹음하지 않는다(recordBusy.ts). 처음과 설정 화면을 나올 때 읽고,
   // 이번 녹음에 켜졌는지(liveRec)는 녹음을 시작할 때 정한다(Rust도 녹음을 시작할 때의 설정으로 자막을 띄운다)
   const [liveOn, setLiveOn] = useState(false);
@@ -381,23 +374,14 @@ export function App() {
     importRunning: imp.job.running,
     importWaiting: queue.length > 0,
   };
-  // 대기 줄의 첫 녹음을 변환하기 시작한다
-  const startNextTranscribe = useCallback(() => {
-    const [next, ...rest] = waitList;
-    if (!next) return;
-    setWaitList(rest);
-    transcribeDir.current = next.dir;
-    transcribeTarget.current = next.target;
-    void transcribe.startJob("transcribe", next.dir, next.target?.id);
-  }, [waitList, transcribe.startJob]);
   useWorkScheduler({
     activity,
     listLoaded,
-    startNextTranscribe,
+    startNextTranscribe: transcribe.startNext,
     tryStartConvert: convert.tryStart,
     convertWatch: meetings,
     startNextImport: importQ.startNext,
-    waitKey: waitList,
+    waitKey: transcribe.waitList,
     importKey: queue,
   });
   // 노트로 저장하는 중·변환 전 노트를 변환하는 중도 `변환 중`으로 본다: 새 녹음·가져오기·창 닫기 확인이 같은 규칙을 쓴다
@@ -415,26 +399,9 @@ export function App() {
       notify({ text: t("파일을 고르지 못했습니다: {error}", { error: errText(e) }), error: true });
     }
   };
-  // 창에 파일을 끌어 오면 덮개를 보인다. 앱 안에서 끄는 것(화자 합치기)은 경로가 없어서 무시된다
-  const [dropping, setDropping] = useState(false);
-  const [dropCount, setDropCount] = useState(0);
-  const dropNote = useRef<AttachTarget | null>(null); // 글만 있는 노트를 보고 있고 추가할 수 있으면 그 노트: 파일 하나를 놓으면 그 노트에 추가한다
+  // 창에 파일 끌어다 놓기 (useFileDrop.ts)
+  const { dropping, dropCount, dropNote, dropAsk, setDropAsk } = useFileDrop(enqueue);
   const attachFileRef = useRef<(t: AttachTarget, path?: string) => Promise<void>>(async () => {});
-  const [dropAsk, setDropAsk] = useState<{ target: AttachTarget; path: string } | null>(null); // 놓은 파일로 노트를 바꾸기 전에 묻는다 (되돌릴 수 없다)
-  useEffect(() => {
-    const un = getCurrentWebview().onDragDropEvent(({ payload }) => {
-      if (payload.type === "enter") {
-        setDropping(payload.paths.length > 0);
-        setDropCount(payload.paths.length);
-      } else if (payload.type === "leave") setDropping(false);
-      else if (payload.type === "drop") {
-        setDropping(false);
-        if (dropNote.current && payload.paths.length === 1) setDropAsk({ target: dropNote.current, path: payload.paths[0] });
-        else if (payload.paths.length) enqueue(payload.paths);
-      }
-    });
-    return () => void un.then((f) => f());
-  }, [enqueue]);
 
   // 창을 닫으면 앱이 끝난다(메뉴 막대에 남기기가 꺼져 있을 때): 전사 중이거나 대기 중인 파일이 있으면 묻는다.
   // ponytail: ⌘Q는 묻지 않는다(쓰던 메모만 저장하고 끝낸다: quit-requested). 남은 전사 프로세스는 stdout이 닫혀 다음 진행 이벤트에서 끝난다
@@ -845,7 +812,7 @@ export function App() {
           importPct={importPct}
           queue={queue}
           transcribeJob={transcribe.job}
-          waitList={waitList}
+          waitList={transcribe.waitList}
           waitReason={waitReason}
           txPct={txPct}
           converting={converting}
@@ -889,7 +856,7 @@ export function App() {
           />
         )}
         {view.kind === "search" && <SearchView key={view.q} query={view.q} onOpen={openMeeting} memoIds={memoIds} />}
-        {view.kind === "record" && <RecordView rec={rec} captions={live} job={progressKind === "save" ? finish.job : waitDir ? { ...IDLE_JOB, running: true, stage: "wait_convert" } : transcribe.job} progressKind={progressKind} choosing={afterAsk !== null} send={sendRec} retry={() => (progressKind === "save" ? finishDir.current && finishRecording(finishDir.current) : transcribeDir.current && startTranscribe(transcribeDir.current, transcribeTarget.current))} unconverted={unconverted ? UNCONVERTED_SAVED : null} attachTitle={attach.phase !== "idle" ? (attach.target?.title ?? null) : null} />}
+        {view.kind === "record" && <RecordView rec={rec} captions={live} job={progressKind === "save" ? finish.job : waitDir ? { ...IDLE_JOB, running: true, stage: "wait_convert" } : transcribe.job} progressKind={progressKind} choosing={afterAsk !== null} send={sendRec} retry={() => (progressKind === "save" ? finishDir.current && finishRecording(finishDir.current) : transcribe.current.current && startTranscribe(transcribe.current.current.dir, transcribe.current.current.target))} unconverted={unconverted ? UNCONVERTED_SAVED : null} attachTitle={attach.phase !== "idle" ? (attach.target?.title ?? null) : null} />}
         {view.kind === "settings" && <SettingsView toUpdate={view.toUpdate} onBack={goBack} onSaved={() => void Promise.all([refresh(), caps.refresh(), readLive()])} relaunchBlocked={recording || transcribing || imp.job.running || queue.length > 0} />}
         {view.kind === "models" && <ModelsView onBack={goBack} />}
         {view.kind === "dictionary" && <DictionaryView onBack={goBack} notify={notify} />}
