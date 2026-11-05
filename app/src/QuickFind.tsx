@@ -1,11 +1,10 @@
-// 사이드바 맨 위 검색창 (⌘K): 입력하면 제목이 맞는 노트가 바로 아래에 뜨고(↑↓·Enter로 열기), 목록에서 고르지 않고 Enter를 누르면 내용 검색(스마트 검색)으로 간다.
+// 사이드바 맨 위 검색창: 입력하면 제목이 맞는 노트가 바로 아래에 뜨고(↑↓·Enter로 열기), 목록에서 고르지 않고 Enter를 누르면 내용 검색(스마트 검색)으로 간다.
 import { useId, useMemo, useState, type RefObject } from "react";
 import type { MeetingInfo } from "./api";
 import { t } from "./i18n";
 import { quickMatches } from "./quickMatch";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/components/ui/utils";
 
 export function QuickFind({ notes, inputRef, onOpen, onSearch }: { notes: readonly MeetingInfo[]; inputRef: RefObject<HTMLInputElement | null>; onOpen: (id: string) => void; onSearch: (q: string) => void }) {
@@ -46,7 +45,7 @@ export function QuickFind({ notes, inputRef, onOpen, onSearch }: { notes: readon
         aria-autocomplete="list"
         placeholder={t("노트 검색")}
         aria-label={t("노트 검색")}
-        className="h-7 bg-background/70 pr-10 pl-7"
+        className="h-7 bg-background/70 pr-2 pl-7"
         value={q}
         onChange={(e) => {
           setQ(e.target.value);
@@ -67,7 +66,6 @@ export function QuickFind({ notes, inputRef, onOpen, onSearch }: { notes: readon
           }
         }}
       />
-      <Kbd className="absolute top-1/2 right-2.5 -translate-y-1/2">⌘K</Kbd>
       {show && (
         <ul id={`${id}-list`} role="listbox" aria-label={t("노트 바로 열기")} className="absolute inset-x-1 top-full z-30 mt-1 overflow-hidden rounded-lg border border-border bg-background p-1 shadow-md">
           {hits.map((m, i) => (

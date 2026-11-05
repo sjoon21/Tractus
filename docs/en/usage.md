@@ -53,7 +53,8 @@ How to create, refine and find notes in the app. Terminal commands are in [CLI](
 <details>
 <summary><b>Finding, organizing, exporting, deleting</b></summary>
 
-- **Search:** ⌘K. Shows word matches and `Similar meaning` results together. Without the smart search model, it finds word matches only.
+- **Quick actions:** ⌘K. A window in the middle of the screen finds notes by title, or runs actions such as Start recording, Write, Vocabulary and Settings. Pick `Search contents for “…”` at the bottom to search inside notes.
+- **Search:** the `Search notes` box in the sidebar, or ⌘K's `Search contents`. Shows word matches and `Similar meaning` results together. Without the smart search model, it finds word matches only.
 - **Layout:** Drag the edge of the note list or the side panel to resize it (double-click to reset). Choose the theme and language (`System`, `한국어`, `English`) in `Settings` › `Appearance`.
 - **Organizing:** Add a favorite (★), tags (up to 20) and a folder (up to 3 levels deep) from the note header. You can drag notes onto folders in the sidebar, and sort the list by `Last modified`, `Date created`, `Title` or `Length`.
 - **Export:** txt, md, srt, vtt, csv (opens directly in Korean Excel), docx, full backup (ZIP: audio + transcript + summary + memo), and PDF (print). Speaker names and your edits are included. Memos can't be exported as srt or vtt.
@@ -68,7 +69,7 @@ How to create, refine and find notes in the app. Terminal commands are in [CLI](
 | Key | Action |
 | --- | --- |
 | ⌘N | Write (new memo) |
-| ⌘K | Search notes |
+| ⌘K | Find notes and actions (quick actions) |
 | ⌘J | AI assistant (ask across all notes) |
 | ⌘B | Collapse or expand the note list |
 | ⌥⌘B | Collapse or expand the side panel (summary, minutes, Ask AI, memo) |

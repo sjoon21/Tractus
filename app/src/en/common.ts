@@ -15,7 +15,6 @@ export default {
   "휴지통으로 이동": "Move to Trash",
   "이름 바꾸기": "Rename",
   홈: "Home",
-  검색: "Search",
   설정: "Settings",
   노트: "Note",
   메모: "Memo",

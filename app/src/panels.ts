@@ -41,19 +41,15 @@ export const togglePanel = (s: PanelState, side: Side): PanelState => ({ ...s, [
 export type PanelIntent =
   | { kind: "memo-line"; memoNote: boolean } // 인용·검색 결과가 가리키는 녹음 노트의 메모 줄 (메모 탭)
   | { kind: "seek" } // 대화 시각으로 이동: 가운데에서 일어난다
-  | { kind: "search" } // ⌘K: 검색창이 왼쪽 목록 안에 있으므로 접혀 있으면 펼친다
   | { kind: "open-note" } // 검색 결과·목록·인용으로 노트를 연다: 왼쪽을 억지로 펼치지 않는다
   | { kind: "record" }; // 녹음 단추: 접힌 띠에서도 누를 수 있다
 
 /** 오른쪽 패널이 접혀 있으면 펼쳐야 하는가. 메모 노트의 줄은 가운데 본문에서 고르므로 펼치지 않는다 */
 export const needsRight = (i: PanelIntent): boolean => i.kind === "memo-line" && !i.memoNote;
-export const needsLeft = (i: PanelIntent): boolean => i.kind === "search";
 
-/** 이 일을 하려고 필요한 만큼만 펼친다. 바뀔 것이 없으면 같은 객체를 돌려준다 */
+/** 이 일을 하려고 필요한 만큼만 펼친다 (지금은 오른쪽만: 왼쪽 목록을 억지로 펼치는 일은 없다). 바뀔 것이 없으면 같은 객체를 돌려준다 */
 export function revealFor(s: PanelState, i: PanelIntent): PanelState {
-  const left = s.left && !needsLeft(i);
-  const right = s.right && !needsRight(i);
-  return left === s.left && right === s.right ? s : { left, right };
+  return s.right && needsRight(i) ? { ...s, right: false } : s;
 }
 
 /** 사용자가 직접 정한 칸만 담는다. 없는 칸은 기본값(좁은 창 규칙 포함)을 따른다 */
