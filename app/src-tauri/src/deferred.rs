@@ -6,7 +6,8 @@
 //! 두 작업은 "job" 이벤트로 진행을 보낸다 (`{job, kind: "finish" | "convert"}`). 오류 문자열: 첫 줄은 화면 문장(WORDS.md), 둘째 줄부터는 원래 오류.
 
 use crate::i18n::tv;
-use crate::{cancel_index, clean_title, hold, is_meeting_id, meetings, procs, release, AppState};
+use crate::edits::clean_title;
+use crate::{cancel_index, hold, is_meeting_id, meetings, procs, release, AppState};
 use serde_json::{json, Value};
 use std::path::Path;
 use tauri::{AppHandle, Emitter, State};

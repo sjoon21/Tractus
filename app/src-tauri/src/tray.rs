@@ -447,7 +447,7 @@ pub fn on_menu_event(app: &AppHandle, id: &str) {
         ID_STOP => emit_action(app, "record_stop", None),
         ID_BOOKMARK => emit_action(app, "bookmark", None),
         ID_OPEN => show_main(app),
-        ID_QUIT => crate::begin_quit(app), // ⌘Q와 같은 길: 쓰던 메모를 저장하고, 3초 안에 끝낸다
+        ID_QUIT => crate::quit::begin_quit(app), // ⌘Q와 같은 길: 쓰던 메모를 저장하고, 3초 안에 끝낸다
         _ => {
             if let Some(note) = id.strip_prefix(ID_NOTE) {
                 show_main(app);
