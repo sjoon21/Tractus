@@ -324,6 +324,8 @@ export const api = {
   calendarSet: (enabled: boolean, hidden: string[]) => invoke<void>("calendar_set", { enabled, hidden }),
   /** 진행 중이거나 15분 안에 시작하는 일정 (연결 안 했으면 빈 목록) */
   calendarNext: () => invoke<CalendarEvent[]>("calendar_next"),
+  /** 홈의 `이번 주` 띠: from(YYYY-MM-DD, 월요일)부터 7일의 일정 (종일 포함, `all_day`) */
+  calendarWeek: (from: string) => invoke<(CalendarEvent & { all_day?: boolean })[]>("calendar_week", { from }),
   calendarPrivacy: () => invoke<void>("calendar_privacy"),
   /** 노트 폴더를 휴지통으로 옮긴다 (되돌릴 수 있다). 처리 중이거나 변환이 끝나지 않은 노트는 거절한다. 검색 색인은 백그라운드로 정리 */
   deleteMeeting: (id: string) => invoke<void>("delete_meeting", { id }),

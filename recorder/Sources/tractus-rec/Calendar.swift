@@ -2,7 +2,7 @@ import EventKit
 import Foundation
 import RecorderKit
 
-// tractus-rec calendar access|request|list|next — macOS 캘린더 읽기 (docs/design/calendar.md).
+// tractus-rec calendar access|request|list|next|range — macOS 캘린더 읽기 (docs/design/calendar.md).
 // 출력은 한 줄 JSON. 권한이 없으면 목록은 비고 오류가 아니다. 참석자 이메일은 내보내지 않는다.
 
 func accessName(_ s: EKAuthorizationStatus) -> String {
@@ -67,8 +67,23 @@ func runCalendar(_ args: [String]) -> Never {
         emit(["access": currentAccess(), "events": events.map {
             ["id": $0.id, "title": $0.title, "start": isoLocal($0.start), "end": isoLocal($0.end), "calendar": $0.calendar, "attendees": $0.attendees] as [String: Any]
         }])
+    case "range":
+        // 홈의 `이번 주` 띠: 기간과 겹치는 일정 (종일 포함)
+        let options: RangeOptions
+        do { options = try RangeOptions.parse(Array(args.dropFirst())) } catch { fatal("\(error)") }
+        var events: [CalendarEvent] = []
+        if granted() {
+            let cals = store.calendars(for: .event).filter { !options.exclude.contains($0.calendarIdentifier) }
+            if !cals.isEmpty {  // 빈 목록을 넘기면 EventKit은 모든 캘린더를 본다
+                let found = store.events(matching: store.predicateForEvents(withStart: options.from, end: options.to, calendars: cals))
+                events = overlapping(found.compactMap(calendarEvent), from: options.from, to: options.to)
+            }
+        }
+        emit(["access": currentAccess(), "events": events.map {
+            ["id": $0.id, "title": $0.title, "start": isoLocal($0.start), "end": isoLocal($0.end), "all_day": $0.allDay, "calendar": $0.calendar, "attendees": $0.attendees] as [String: Any]
+        }])
     default:
-        fputs("사용법: tractus-rec calendar access|request|list|next [--ahead 분] [--exclude 캘린더ID]…\n", stderr)
+        fputs("사용법: tractus-rec calendar access|request|list|next [--ahead 분] [--exclude 캘린더ID]… | range --from YYYY-MM-DD [--days N] [--exclude 캘린더ID]…\n", stderr)
         exit(1)
     }
     exit(0)

@@ -57,3 +57,44 @@ public struct NextOptions: Equatable {
         return o
     }
 }
+
+/// [from, to)와 겹치는 일정 (종일 포함), 시작 순. 홈의 `이번 주` 띠가 쓴다
+public func overlapping(_ events: [CalendarEvent], from: Date, to: Date) -> [CalendarEvent] {
+    events.filter { $0.end > from && $0.start < to }.sorted { ($0.start, $0.title) < ($1.start, $1.title) }
+}
+
+public struct RangeOptions: Equatable {
+    /// 첫날 0시 (이 Mac의 시간대)
+    public var from: Date
+    public var days: Int = 7
+    public var exclude: [String] = []
+
+    /// 끝 (마지막 날 다음 날 0시). 서머타임이 있는 날도 달력으로 센다
+    public var to: Date { Calendar.current.date(byAdding: .day, value: days, to: from) ?? from }
+
+    /// `--from YYYY-MM-DD`(필수), `--days N`(1~31, 기본 7), `--exclude ID`(여러 번)
+    public static func parse(_ args: [String], calendar: Calendar = .current) throws -> RangeOptions {
+        var from: Date?
+        var days = 7
+        var exclude: [String] = []
+        var it = args.makeIterator()
+        while let a = it.next() {
+            switch a {
+            case "--from":
+                let parts = (it.next() ?? "").split(separator: "-").compactMap { Int($0) }
+                guard parts.count == 3, let d = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])),
+                      calendar.component(.day, from: d) == parts[2] else { throw UsageError(description: "--from은 YYYY-MM-DD입니다") }
+                from = d
+            case "--days":
+                guard let v = it.next(), let n = Int(v), (1...31).contains(n) else { throw UsageError(description: "--days는 1~31일입니다") }
+                days = n
+            case "--exclude":
+                guard let v = it.next(), !v.isEmpty else { throw UsageError(description: "--exclude에 캘린더 ID가 필요합니다") }
+                exclude.append(v)
+            default: throw UsageError(description: "알 수 없는 옵션: \(a)")
+            }
+        }
+        guard let from else { throw UsageError(description: "--from이 필요합니다") }
+        return RangeOptions(from: from, days: days, exclude: exclude)
+    }
+}

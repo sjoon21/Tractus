@@ -9,6 +9,7 @@ let usage = """
   tractus-rec record --out <dir> [--no-mic] [--no-system] [--echo-cancel] [--fake]
   tractus-rec check
   tractus-rec calendar access|request|list|next [--ahead 분] [--exclude 캘린더ID]…
+  tractus-rec calendar range --from YYYY-MM-DD [--days N] [--exclude 캘린더ID]…
 """
 
 signal(SIGPIPE, SIG_IGN)  // 부모가 먼저 죽어도 파일을 닫고 끝내도록

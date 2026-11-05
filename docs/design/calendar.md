@@ -12,6 +12,7 @@
 2. **참석자 이름은 세 곳에:** 그 녹음의 음성 인식 힌트(자주 쓰는 단어 목록에는 넣지 않는다), 대화 내용의 참석자 이름 고르기, 노트의 일정 정보(`event.json`, Obsidian 속성 `attendees`).
 3. **알림은 하지 않는다.** 알림 권한이 필요 없다.
 4. **캘린더는 설정에서 고른다.** 처음에는 모두 읽고, 끈 캘린더 ID만 저장한다.
+5. **홈의 `이번 주` 띠 (2026-11-05, 소유자 선택).** 월~일 7칸에 날마다 일정·그날 만든 노트를 점으로 보이고, 고른 날의 목록에서 일정(오늘 시작하고 끝나지 않은 것은 `이 일정으로 녹음`)과 노트(열기)를 보인다. 지난주·다음 주로 옮길 수 있다. 캘린더를 연결하지 않았으면 노트만 보인다. 일정과 그 일정으로 녹음한 노트를 잇지는 않는다(노트에 일정 ID가 없다). 화면 문구는 WORDS.md §4.31.
 
 ## 읽는 쪽: `tractus-rec calendar` (EventKit, Swift)
 
@@ -23,6 +24,7 @@ Google·Exchange 계정도 macOS 캘린더에 추가돼 있으면 읽힌다(OAut
 | `calendar request` | 권한 창을 띄우고 같은 모양 |
 | `calendar list` | `{"access", "calendars": [{"id", "title", "source"}]}` |
 | `calendar next --ahead 15 [--exclude ID]…` | `{"access", "events": [{"id", "title", "start", "end", "calendar", "attendees": ["이름"]}]}` |
+| `calendar range --from YYYY-MM-DD [--days 7] [--exclude ID]…` | 같은 모양 + `all_day`. 그날 0시(이 Mac 시간대)부터 `days`일과 겹치는 일정, 종일 포함, 시작 순 (홈의 `이번 주` 띠, 앱 명령 `calendar_week`) |
 
 - `next`는 끝나지 않았고 `ahead`분 안에 시작하는 일정을 시작 순으로 준다. 종일·제목 없는·취소된·내가 거절한 일정은 뺀다(제목은 200자까지 자른다). 참석자는 사람(`person`)이고 이름이 있는 사람만, 나(`isCurrentUser`)도 포함한다. **이메일은 내보내지 않는다:** 이름이 없는 초대 대상은 EventKit이 이메일을 이름에 넣으므로 `@`가 든 이름은 녹음 프로그램·앱·코어 세 곳에서 모두 뺀다.
 - 권한이 없으면 `events`·`calendars`는 빈 목록이다(오류가 아니다).

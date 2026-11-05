@@ -1,4 +1,4 @@
-// 첫 화면 (App에서 옮김, 동작 그대로): 시작 점검·곧 시작하는 일정 카드·만들기 카드·최근 노트.
+// 첫 화면: 시작 점검·곧 시작하는 일정 카드·만들기 카드·이번 주 띠(WeekStrip)·최근 노트.
 import { useEffect, useMemo, useState } from "react";
 import { type CalendarEvent, type MeetingInfo } from "../../api";
 import { attendeeLine, CARD_LABEL, CARD_RECORD, eventWhen, useNextEvent } from "../../calendar";
@@ -15,6 +15,7 @@ import { AudioLines, Box, CalendarClock, ChevronRight, FileText, Mic, SquarePen,
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { FlickeringGrid } from "@/components/ui/flickering-grid";
+import { WeekStrip } from "./WeekStrip";
 
 const RECENT_MAX = 6;
 
@@ -76,6 +77,8 @@ export function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, reco
             <span className="text-[13px] font-medium">{t("파일 가져오기")}</span>
           </GatedButton>
         </div>
+
+        <WeekStrip notes={notes} onOpen={onOpen} onRecordEvent={onRecordEvent} recordGate={recordGate} recording={recording} />
 
         {recent.length > 0 && (
           <section aria-labelledby="recent-title" className="flex flex-col gap-2">

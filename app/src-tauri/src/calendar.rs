@@ -90,6 +90,31 @@ pub async fn calendar_next(state: State<'_, AppState>) -> Result<Value, String> 
     blocking(move || Ok(run(&s, &next_args(&s.calendar_hidden))?["events"].as_array().cloned().map_or(json!([]), Value::Array))).await
 }
 
+/// `calendar range`의 인수: 첫날(YYYY-MM-DD)부터 7일, 끈 캘린더 제외. 날짜 꼴만 여기서 보고 달력에 있는 날인지는 녹음 프로그램이 본다
+fn week_args(from: &str, hidden: &[String]) -> Result<Vec<String>, String> {
+    let b = from.as_bytes();
+    let ok = b.len() == 10 && b.iter().enumerate().all(|(i, c)| if i == 4 || i == 7 { *c == b'-' } else { c.is_ascii_digit() });
+    if !ok {
+        return Err(tv("잘못된 날짜입니다: {date}", &[("date", from.to_string())]));
+    }
+    let mut a = vec!["range".to_string(), "--from".into(), from.to_string(), "--days".into(), "7".into()];
+    for id in hidden {
+        a.extend(["--exclude".to_string(), id.clone()]);
+    }
+    Ok(a)
+}
+
+/// 홈의 `이번 주` 띠: 첫날부터 7일 동안의 일정 (시작 순, 종일 포함). 연결하지 않았거나 권한이 없으면 빈 목록
+#[tauri::command]
+pub async fn calendar_week(state: State<'_, AppState>, from: String) -> Result<Value, String> {
+    let s = state.settings();
+    let args = week_args(&from, &s.calendar_hidden)?;
+    if !s.calendar_enabled {
+        return Ok(json!([]));
+    }
+    blocking(move || Ok(run(&s, &args)?["events"].as_array().cloned().map_or(json!([]), Value::Array))).await
+}
+
 /// 시스템 설정의 캘린더 개인 정보 화면 (권한을 거부했을 때)
 #[tauri::command]
 pub fn calendar_privacy() -> Result<(), String> {
@@ -159,6 +184,14 @@ mod tests {
     #[test]
     fn next_args_exclude_hidden_calendars() {
         assert_eq!(next_args(&["A".into(), "B".into()]), ["next", "--ahead", "15", "--exclude", "A", "--exclude", "B"]);
+    }
+
+    #[test]
+    fn week_args_take_a_date_and_exclude_hidden_calendars() {
+        assert_eq!(week_args("2026-11-02", &["A".into()]).unwrap(), ["range", "--from", "2026-11-02", "--days", "7", "--exclude", "A"]);
+        for bad in ["2026-1-02", "--days", "2026/11/02", "", "2026-11-02x"] {
+            assert!(week_args(bad, &[]).is_err(), "{bad}");
+        }
     }
 
     #[test]
