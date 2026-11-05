@@ -209,7 +209,7 @@ def _diarize(pcm, max_speakers: int | None, engine: engines.DiarizerEngine = eng
 
 def _suggest_voices(pcm, turns: list[dict]) -> dict:
     """화자 분리 결과를 등록된 목소리와 맞춘 제안 {라벨: {person_id, name, score}}. 등록된 사람이 없으면 조용히 건너뛴다.
-    모델이 없거나 실패해도 전사는 계속한다 (onnxruntime CPU라 MLX 메모리와 겹치지 않는다)."""
+    모델이 없거나 실패해도 전사는 계속한다 (가중치 28MB라 MLX로 돌려도 다른 모델과 겹치는 메모리가 작다)."""
     try:
         people = voices.usable_people(voices.load_profiles(home_dir()))
         if not people or not turns:

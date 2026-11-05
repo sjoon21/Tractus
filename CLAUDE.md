@@ -64,11 +64,11 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | --- | --- | --- |
 | 3D-Speaker CAM++ zh_en advanced (k2-fsa 릴리스 ONNX, sha256 `aa3cfc16…ceba2`) | `models/3dspeaker-campplus-zh-en/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx` | Apache-2.0 |
 
-- 런타임은 `onnxruntime`(1.29 이상, CPU) + `kaldi-native-fbank`다. **`sherpa-onnx`를 넣지 않는다**(휠에 espeak-ng GPL-3가 정적 링크). 화자 분리 뒤, 등록된 사람이 있을 때만 `voices` 단계를 돌린다. 결과는 `speakers.S1.suggested` **제안**이고 `name`(사용자 확정)이 아니다.
+- 런타임은 `onnx_mlx`(받은 ONNX 그래프를 MLX로 그대로 실행, v3.99. onnxruntime 1.30과 결과가 같다) + `kaldi-native-fbank`다. **`onnxruntime`·`sherpa-onnx`를 다시 넣지 않는다**(onnxruntime은 번들 약 75MB, sherpa-onnx는 휠에 espeak-ng GPL-3가 정적 링크). 모델 그래프에 새 연산이 생기면 `onnx_mlx.OPS`에 더하고 `tests/test_onnx_mlx.py`에 작은 그래프 시험을 둔다(모르는 연산은 실행 전에 오류다). 화자 분리 뒤, 등록된 사람이 있을 때만 `voices` 단계를 돌린다. 결과는 `speakers.S1.suggested` **제안**이고 `name`(사용자 확정)이 아니다.
 - **벡터는 `$TRACTUS_HOME/voices.json`(0600)에만 둔다.** 회의 폴더·transcript.json·MCP·LLM 프롬프트·색인·내보내기·로그·stdout에 쓰지 않는다. `voices list`도 이름·표본 수만 낸다.
 - **제안 이름을 표시 이름으로 쓰지 않는다.** `store.speaker_name`은 `name`만 본다. bundle 내보내기는 `suggested`를 뺀다. `summarize.clean_owners(s, transcript)`는 확정되지 않은 제안 이름 owner를 null로 바꾼다.
 - **등록에는 동의가 필수다**(`voices enroll --consent`, 개인정보보호법 제23조). `--consent` 없이 등록하는 경로를 만들지 않는다.
-- **모델·`voices.THRESHOLD`·`MARGIN`·구간 선택·onnxruntime 버전을 바꾸면 `bench/voice_eval.py`(AI Hub, 로컬 전용, 지표만, 저장소 루트에서 `uv run --with soundfile python bench/voice_eval.py`)를 다시 돌린다.** AI Hub 라벨 행과 ALIASES 민감도 행을 둘 다 보고, 수치가 같은 세션 기준임을 적는다. 모델을 바꾸면 `MODEL_ID`가 바뀌어 기존 프로필은 매칭에서 빠지고 다시 등록해야 한다.
+- **모델·`voices.THRESHOLD`·`MARGIN`·구간 선택·`onnx_mlx`의 연산 구현을 바꾸면 `bench/voice_eval.py`(AI Hub, 로컬 전용, 지표만, 저장소 루트에서 `uv run --with soundfile python bench/voice_eval.py`)를 다시 돌린다.** AI Hub 라벨 행과 ALIASES 민감도 행을 둘 다 보고, 수치가 같은 세션 기준임을 적는다. 모델을 바꾸면 `MODEL_ID`가 바뀌어 기존 프로필은 매칭에서 빠지고 다시 등록해야 한다.
 - 테스트는 가짜 임베더를 쓴다. 실제 모델은 `pytest -m slow`(가상 `say` 음성)만.
 
 ## 실시간 자막 (Phase 7.2, 2026-10-07)
@@ -116,7 +116,8 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | `organize.py`, `organize_cli.py` | 노트 정리(즐겨찾기·태그·폴더, v3.20): 태그·폴더 규칙·한도, `note meta`·`folders`·`notes list`, `folders.json`(flock, 3단계), 목록 정렬·필터(`matching_ids` → 검색·MCP 필터) |
 | `store.py` | 회의 폴더, `.job.json`·`.chunks.jsonl`(이어하기, 목소리 제안 포함), transcript.json/md/vtt (schema_version 2: 화자), `apply_speaker_edit`(rename·set·merge·dismiss), `apply_suggestions`, `apply_text_edits`(words도 옮김), `seg_text`(표시 텍스트 = `corrected_text` 우선), `add_glossary_terms` |
 | `live.py` | 실시간 자막(미리보기): `WavTail`(커지는 WAV 꼬리 읽기), `Mixer`(트랙 합산·클립), `Resampler`(48k → 16k FIR), `Segmenter`(Silero feed, 0.5초 무음·8초 상한·3초 미리보기·쉼 미리 전사), `Live`(ASR·뒤처짐·정지), `SpeakerTrack`(선택) |
-| `voices.py` | 목소리 프로필: CAM++ 임베딩(onnxruntime + kaldi-native-fbank), 화자 구간 고르기, `voices.json`(0600, 원자적 쓰기), `match`(헝가리안 + 임계값 + 2위와 차이) |
+| `voices.py` | 목소리 프로필: CAM++ 임베딩(`onnx_mlx` + kaldi-native-fbank), 화자 구간 고르기, `voices.json`(0600, 원자적 쓰기), `match`(헝가리안 + 임계값 + 2위와 차이) |
+| `onnx_mlx.py` | 작은 ONNX 실행기: protobuf에서 그래프·가중치를 직접 읽고(`onnx` 패키지 없음) 목소리 모델이 쓰는 연산만 MLX·numpy로 실행 |
 | `export.py` | 내보내기 txt·md·srt·vtt·csv(utf-8-sig)·docx(python-docx, `w:eastAsia`)·bundle(zip) |
 | `prompts/` | AI 프롬프트 문구(`<기능>.md`: summarize·summaries·minutes·enhance·ask·polish·common). `## 이름` 블록, `{{이름}}`은 같은 파일 블록으로 바뀐다(`prompts.load`). 조립·값 채우기는 각 기능 모듈 |
 | `llm.py` | 공급자 표(`PROVIDERS`: 서비스 주소·온도 정책 포함), `resolve_provider`(주소 덮어쓰기·호스트 기반 로컬 전용), `map_error`(SDK 오류 → `LLMError` 코드), `check_connection`(`tractus llm test`), `list_models`(`tractus llm models`), `complete_json`: strict JSON + Pydantic 검증 + 1회 재요청, `stream_chat`: 평문 스트리밍 |
@@ -213,7 +214,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 
 - **번들 구성은 `Tractus.app/Contents/Resources/`의 `runtime/`(옮길 수 있는 Python 3.12 + `site-packages` + 래퍼 `runtime/bin/tractus`, 파이썬은 `-I`로 실행)와 `bin/`(`tractus-rec`, 선택 `tractus-diar`)다.** 코어(Python)는 파일 위치를 `sys.executable`·`__file__` 기준 상대 경로로만 찾는다(`paths.tool_bin`: `runtime/bin/python3.12`에서 `../../bin/`). 만든 Mac의 절대 경로(`REPO_ROOT`, `.venv`, 홈 폴더)를 가정하는 코드를 넣지 않는다. 앱(Rust)은 `current_exe()` 기준 `../Resources/…`(`paths.rs`)다.
 - 번들 안은 서명으로 봉인되어 있다. **코어는 실행 중에 번들 안에 아무것도 쓰지 않는다**(`PYTHONDONTWRITEBYTECODE=1`, 바이트코드는 빌드 때 `unchecked-hash`로 미리 만든다). 캐시·임시 파일은 데이터 폴더나 `$TMPDIR`에 쓴다.
-- **번들은 실제로 불러오는 모듈 목록(`scripts/bundle_modules.txt`)으로 줄인다**(v3.69, `scripts/bundle_slim.py`): transformers·mlx_audio·mlx_lm·scipy·onnxruntime의 하위 패키지 중 목록에 없는 것을 지우고, 목록에 있는 모듈만 바이트코드를 미리 만든다. mlx_audio의 변환 계열 일괄 import는 `asr.ENGINES` 계열 + 단어 정렬만 남긴다. **의존성(`uv.lock`)을 바꾸거나, 새 기능이 위 패키지의 다른 부분(새 변환 계열 등)을 쓰면 `uv run python scripts/bundle_trace.py`(models/ 필요, 몇 분)로 목록을 다시 만들어 커밋한다.** 목록에 없는 경로는 번들에서만 ImportError가 난다(개발 환경에서는 안 보인다).
+- **번들은 실제로 불러오는 모듈 목록(`scripts/bundle_modules.txt`)으로 줄인다**(v3.69, `scripts/bundle_slim.py`): transformers·mlx_audio·mlx_lm·scipy의 하위 패키지 중 목록에 없는 것을 지우고, 목록에 있는 모듈만 바이트코드를 미리 만든다. mlx_audio의 변환 계열 일괄 import는 `asr.ENGINES` 계열 + 단어 정렬만 남긴다. **의존성(`uv.lock`)을 바꾸거나, 새 기능이 위 패키지의 다른 부분(새 변환 계열 등)을 쓰면 `uv run python scripts/bundle_trace.py`(models/ 필요, 몇 분)로 목록을 다시 만들어 커밋한다.** 목록에 없는 경로는 번들에서만 ImportError가 난다(개발 환경에서는 안 보인다).
 - 의존성을 바꾸면(`pyproject.toml`·`uv.lock`) 번들은 wheel만 설치한다(`--only-binary :all:`). sdist만 있는 패키지는 번들 빌드가 실패하므로 넣기 전에 wheel이 있는지 본다. copyleft 의존성 금지 규칙은 그대로다.
 - **번들을 바꾸는 변경은 복사본을 옮겨 놓고 확인한다**: 빌드한 앱을 다른 폴더에 복사해 저장소·원래 Python 읽기를 막은 `sandbox-exec` + `env -i`에서 `tractus doctor --json`·텍스트 변환·`tractus-rec record --fake`·`tractus mcp`를 돌린다(절차와 결과: ARCHITECTURE.md v3.30). 깨끗한 Mac에서의 확인은 GitHub Actions `Bundle smoke`(`.github/workflows/bundle-smoke.yml`, 매주·수동)가 한다: 러너에서 번들을 만들고 저장소 밖 `env -i`에서 `doctor`·메모 만들기·`record --fake`·서명 검증을 돌린다(2026-10-16 첫 통과, 파이썬 3.12.15). 옮길 수 있는 파이썬 판정은 불러오는 라이브러리가 시스템 것이거나 실행 파일 기준인지로 본다(새 python-build-standalone은 libpython을 정적으로 품는다). `tauri.conf.json`에는 `bundle.resources`를 고정하지 않는다(스크립트가 `--config`로 합친다).
 - 번들 빌드와 `.dmg`는 저장소 복사본에서 돌려 시험한다(`rsync`로 `.git`·`target`·`node_modules`·`.venv`·`models`·`data` 제외). 결과는 `dist/`(gitignore)에 둔다.

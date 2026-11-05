@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 # 하위 패키지를 골라 지울 패키지 (쓰지 않는 모델·기능이 많은 것)
-PRUNE = ("transformers.models", "mlx_audio", "mlx_audio.stt.models", "mlx_audio.vad.models", "mlx_lm.models", "scipy", "onnxruntime")
+PRUNE = ("transformers.models", "mlx_audio", "mlx_audio.stt.models", "mlx_audio.vad.models", "mlx_lm.models", "scipy")
 STT_INIT = Path("mlx_audio", "stt", "models", "__init__.py")
 ALIGNER_FAMILY = "qwen3_forced_aligner"  # tractus.align이 부르는 단어 정렬 모델 (일괄 import 목록에는 원래 없다)
 

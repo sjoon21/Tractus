@@ -4,8 +4,8 @@
    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx",
    "local_dir": "models/3dspeaker-campplus-zh-en",
    "license": "Apache-2.0",
-   "runtime": "onnxruntime + kaldi-native-fbank (tractus.voices)",
-   "rtf_cpu2": 0.0085,
+   "runtime": "onnx_mlx (MLX) + kaldi-native-fbank (tractus.voices)",
+   "rtf_cpu2": 0.0082,
    "pairs": {
     "same_session": {
      "eer_pct": 7.65,
@@ -851,7 +851,7 @@
  },
  "recommended": {
   "model": "campplus-zh-en",
-  "runtime": "onnxruntime 1.30.0 + kaldi-native-fbank 1.22.3 (sherpa-onnx는 espeak-ng GPL-3 정적 링크라 뺐다)",
+  "runtime": "onnx_mlx (ONNX 그래프를 MLX로, v3.99) + kaldi-native-fbank 1.22.3. onnxruntime 1.30.0 때와 지표가 모두 같다(2026-11-05 같은 세션으로 다시 잼, sherpa-onnx는 espeak-ng GPL-3 정적 링크라 뺐다)",
   "sha256": "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2",
   "threshold": 0.7,
   "margin": 0.08,

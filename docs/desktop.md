@@ -194,7 +194,7 @@ macOS 캘린더(EventKit) 읽기. 설계: [docs/design/calendar.md](design/calen
   회의를 찾지 못한 오류(`resolve_meeting`)와 ask의 입력 오류에는 `code`가 없다.
 
 - `diarize` 단계는 모델이 있을 때만 나온다(84분 회의 약 14초, fluid는 90분 약 22초). auto가 fluid로 다시 나누면 `engine`만 다른 `diarize`가 한 번 더 나온다. 이어하기에서는 다시 하지 않는다(처음 쓴 엔진이 `.job.json`에 남는다).
-- `voices` 단계는 등록된 목소리가 있고 화자 분리를 했을 때만 나온다(화자당 구간 3개 임베딩, onnxruntime CPU). 등록된 사람이 없으면 단계도 경고도 없다. 이어하기에서는 다시 하지 않는다.
+- `voices` 단계는 등록된 목소리가 있고 화자 분리를 했을 때만 나온다(화자당 구간 3개 임베딩, `onnx_mlx`로 MLX). 등록된 사람이 없으면 단계도 경고도 없다. 이어하기에서는 다시 하지 않는다.
 - `align` 단계는 `transcribe` 다음, `index` 전에 나온다(모델이 있고 `--no-align`이 아닐 때). `progress`는 세그먼트 단위다(`done`/`total`). 44.7분 회의 약 66초.
 - `align` 중에 중단하면 전사는 이미 저장돼 있다. `error`(`code: align_interrupted`) 메시지에 `tractus align <id>` 안내가 있고 종료 코드는 130이다.
 - `warning`은 종료가 아니다. 앱은 `message`를 알림으로 보여 주고 진행을 계속 표시한다.
