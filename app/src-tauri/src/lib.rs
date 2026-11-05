@@ -365,6 +365,7 @@ pub fn run() {
             glossary::glossary_list,
             glossary::glossary_remove,
             glossary::glossary_rename,
+            glossary::glossary_corrections,
             jobs::index_refresh,
             edits::export_meeting,
             edits::note_new,
