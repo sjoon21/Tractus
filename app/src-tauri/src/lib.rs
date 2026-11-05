@@ -344,6 +344,7 @@ pub fn run() {
             calendar::calendar_connect,
             calendar::calendar_set,
             calendar::calendar_next,
+            calendar::calendar_week,
             calendar::calendar_privacy,
             deferred::recording_finish,
             deferred::convert_note,

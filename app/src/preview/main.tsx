@@ -338,6 +338,26 @@ const handlers: Record<string, (a: T) => unknown> = {
     const start = new Date(Date.now() + 6 * 60_000);
     return [{ id: "e1", title: EN ? "Weekly infra check" : "주간 인프라 점검", start: start.toISOString(), end: new Date(start.getTime() + 3_600_000).toISOString(), calendar: EN ? "Work" : "회사", attendees: PEOPLE }];
   },
+  // 홈의 `이번 주` 띠: 받은 월요일부터 날마다 일정 몇 개 + 오늘 지금 일정 (calendar_next와 같은 것)
+  calendar_week: ({ from }: T) => {
+    const at = (day: number, h: number, m = 0) => {
+      const d = new Date(`${from}T00:00:00`);
+      d.setDate(d.getDate() + day);
+      d.setHours(h, m);
+      return d.toISOString();
+    };
+    const ev = (id: string, ko: string, en: string, day: number, h: number, m: number, mins: number, people: string[] = []) => ({ id, title: EN ? en : ko, start: at(day, h, m), end: new Date(new Date(at(day, h, m)).getTime() + mins * 60_000).toISOString(), calendar: EN ? "Work" : "회사", attendees: people });
+    const now = new Date(Date.now() + 6 * 60_000);
+    const today = { id: "e1", title: EN ? "Weekly infra check" : "주간 인프라 점검", start: now.toISOString(), end: new Date(now.getTime() + 3_600_000).toISOString(), calendar: EN ? "Work" : "회사", attendees: PEOPLE };
+    const list = [
+      ...[0, 1, 2, 3, 4].map((d) => ev(`s${d}`, "데일리 스탠드업", "Daily standup", d, 9, 30, 15)),
+      ev("r1", "4분기 예산 리뷰", "Q4 budget review", 2, 14, 0, 60, PEOPLE),
+      ev("o1", "1:1 민수", "1:1 with Minsu", 3, 16, 30, 30, PEOPLE.slice(0, 1)),
+      { ...ev("w1", "팀 워크숍", "Team workshop", 4, 0, 0, 0), end: at(6, 0), all_day: true },
+    ];
+    const inWeek = now >= new Date(`${from}T00:00:00`) && now < new Date(at(7, 0));
+    return (inWeek ? [...list, today] : list).sort((a, b) => a.start.localeCompare(b.start));
+  },
   calendar_status: () => (EN ? { enabled: true, access: "granted", hidden: ["c3"], calendars: [{ id: "c1", title: "Work", source: "Google" }, { id: "c2", title: "Team", source: "Google" }, { id: "c3", title: "US Holidays", source: "Subscribed" }] } : { enabled: true, access: "granted", hidden: ["c3"], calendars: [{ id: "c1", title: "회사", source: "Google" }, { id: "c2", title: "팀 일정", source: "Google" }, { id: "c3", title: "대한민국 공휴일", source: "구독" }] }),
   set_obsidian: ({ vault, audio }: T) => void Object.assign(settings, { obsidian_vault: vault, obsidian_audio: audio }),
   obsidian_send: ({ id }: T) => ({ status: "created", path: `/Users/me/Documents/My Vault/Tractus/${id}.md`, audio: null }),

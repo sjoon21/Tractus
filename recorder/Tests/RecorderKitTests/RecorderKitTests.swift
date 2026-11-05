@@ -234,6 +234,25 @@ final class CalendarPickTests: XCTestCase {
         XCTAssertThrowsError(try NextOptions.parse(["--exclude"]))
         XCTAssertThrowsError(try NextOptions.parse(["--x"]))
     }
+
+    func testOverlappingKeepsEventsTouchingTheRangeIncludingAllDay() {
+        let events = [ev("after", 7200, 9000), ev("inside", 600, 1200), ev("before", -7200, -3600), ev("spans", -600, 600), ev("allday", -3600, 86400, allDay: true), ev("edge", 3600, 4000)]
+        XCTAssertEqual(overlapping(events, from: now, to: now.addingTimeInterval(3600)).map(\.title), ["allday", "spans", "inside"])
+    }
+
+    func testRangeOptions() throws {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Seoul")!
+        let o = try RangeOptions.parse(["--from", "2026-11-02", "--days", "7", "--exclude", "A"], calendar: cal)
+        XCTAssertEqual(cal.dateComponents([.year, .month, .day, .hour], from: o.from), DateComponents(year: 2026, month: 11, day: 2, hour: 0))
+        XCTAssertEqual(o.days, 7)
+        XCTAssertEqual(o.exclude, ["A"])
+        XCTAssertEqual(try RangeOptions.parse(["--from", "2026-11-02"], calendar: cal).days, 7)
+        XCTAssertThrowsError(try RangeOptions.parse([], calendar: cal))
+        XCTAssertThrowsError(try RangeOptions.parse(["--from", "2026-02-30"], calendar: cal))
+        XCTAssertThrowsError(try RangeOptions.parse(["--from", "11/02/2026"], calendar: cal))
+        XCTAssertThrowsError(try RangeOptions.parse(["--from", "2026-11-02", "--days", "0"], calendar: cal))
+    }
 }
 
 final class MicFormatTests: XCTestCase {
