@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { attachAlignJobs } from "./alignJobs";
 import { api, errDetail, errFull, errText, useJob, useRecorder, type CalendarEvent, type MeetingInfo, type PendingRecording } from "./api";
 import { AskPanel } from "./AskPanel";
-import { DROP_UNAVAILABLE, OK, recordNotice, UNCONVERTED_SAVED } from "./caps";
+import { DROP_UNAVAILABLE, MODELS_LABEL, OK, recordNotice, UNCONVERTED_SAVED } from "./caps";
 import { Checkup } from "./Checkup";
 import { GatedButton } from "./GatedButton";
 import { DOWNLOAD_DONE, downloadErrorView } from "./models";
@@ -48,12 +48,14 @@ import { recButton } from "./pause";
 import { BULK_MIN, CONVERT_ALL, CONVERT_ALL_TITLE, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
 import { NoteLibrary } from "./NoteLibrary";
 import { QuickFind } from "./QuickFind";
+import { CommandPalette } from "./CommandPalette";
+import type { PaletteAction } from "./palette";
 import { touchNote as touchNoteIn, type Folder } from "./organize";
 import { OrganizeContext, useOrganizeState } from "./useOrganize";
 import { PanelResizer, PanelToggle, usePanels } from "./PanelToggle";
-import { RAIL_REC_LABEL, railPendingLabel, railRecState } from "./panels";
+import { PANEL_TEXT, RAIL_REC_LABEL, railPendingLabel, railRecState, toggleLabel } from "./panels";
 import { check } from "@tauri-apps/plugin-updater";
-import { AudioLines, BookA, House, Settings, Sparkles, Upload, X } from "lucide-react";
+import { AudioLines, BookA, Box, House, Mic, PanelLeft, Settings, Sparkles, SquarePen, Stethoscope, Upload, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/components/ui/utils";
@@ -89,18 +91,10 @@ export function App() {
   const [listLoaded, setListLoaded] = useState(false);
   const [view, setView] = useState<View>({ kind: "home" });
   const panels = usePanels(); // 양쪽 패널 접기 (PanelToggle.tsx, docs/desktop.md §3.2): 왼쪽 노트 목록은 여기서, 오른쪽 패널은 노트 화면이 그린다
-  const panelsRef = useRef(panels);
-  panelsRef.current = panels;
-  const searchAfterReveal = useRef(false); // ⌘K로 접힌 목록을 펼쳤다: 그려진 뒤 검색창에 초점
-  useEffect(() => {
-    if (panels.state.left || !searchAfterReveal.current) return;
-    searchAfterReveal.current = false;
-    searchRef.current?.focus();
-    searchRef.current?.select();
-  }, [panels.state.left]);
   const searchRef = useRef<HTMLInputElement>(null);
   // 전체 회의에 질문 (6.3): 오른쪽 서랍. 닫아도 대화는 남는다(앱을 끄기 전까지)
   const [askOpen, setAskOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const askInput = useRef<HTMLTextAreaElement>(null);
   const askButton = useRef<HTMLButtonElement>(null);
   const closeAsk = useCallback(() => {
@@ -170,17 +164,18 @@ export function App() {
   checkupOpenRef.current = checkupOpen;
   const viewRef = useRef<View>({ kind: "home" });
   viewRef.current = view;
+  const openSettings = useCallback(() => {
+    setAskOpen(false);
+    setCheckupOpen(false);
+    void go({ kind: "settings" });
+  }, [go]);
   const caps = useCapabilitiesState({
     openModels: useCallback(() => {
       setCheckupOpen(false);
       void go({ kind: "models" });
     }, [go]),
     openCheckup: useCallback(() => setCheckupOpen(true), []),
-    openSettings: useCallback(() => {
-      setAskOpen(false);
-      setCheckupOpen(false);
-      void go({ kind: "settings" });
-    }, [go]),
+    openSettings,
   });
   const capsRef = useRef(caps);
   capsRef.current = caps;
@@ -506,13 +501,7 @@ export function App() {
         void newMemo();
       } else if (e.metaKey && e.code === "KeyK") {
         e.preventDefault();
-        if (panelsRef.current.state.left) {
-          // 검색창은 접힌 노트 목록 안에 있다: 펼친 뒤 그려지면 초점을 준다 (아래 effect)
-          searchAfterReveal.current = true;
-          panelsRef.current.reveal({ kind: "search" });
-        }
-        searchRef.current?.focus();
-        searchRef.current?.select();
+        setPaletteOpen((o) => !o); // 빠른 실행 (CommandPalette.tsx)
       } else if (e.code === "KeyB" && !e.metaKey && !e.ctrlKey && isRecLive(rec.phase) && !isTypingTarget(e.target)) {
         e.preventDefault();
         void sendRec("bookmark");
@@ -651,6 +640,23 @@ export function App() {
     else void pickFiles();
   };
 
+  // 새 노트 메뉴와 ⌘K 빠른 실행이 같은 이유로 막는다
+  const newNoteBlocked = { write: creating ? t("만드는 중…") : undefined, record: recording ? t("이미 녹음 중입니다") : asking ? ASK_BLOCKS_RECORD : recordBlockKind === "live" ? LIVE_BLOCKS_RECORD : recordBlocked ? t("변환이 끝난 뒤에 녹음할 수 있습니다") : undefined };
+  // ⌘K 빠른 실행의 앱 동작: 사이드바·메뉴의 단추와 같은 함수를 부른다 (모델이 없는 등 막힌 이유는 그 함수가 알린다)
+  const leftToggle = toggleLabel("left", panels.state.left);
+  const paletteActions: PaletteAction[] = [
+    { id: "record", label: t("녹음 시작"), icon: <Mic />, blocked: newNoteBlocked.record, run: () => onNewNote("record") },
+    { id: "write", label: t("글쓰기"), keywords: t("새 메모"), icon: <SquarePen />, kbd: "⌘N", blocked: newNoteBlocked.write, run: () => onNewNote("write") },
+    { id: "import", label: t("파일 가져오기"), icon: <Upload />, run: () => onNewNote("import") },
+    { id: "ask", label: t("AI 어시스턴트"), icon: <Sparkles />, kbd: "⌘J", run: () => setAskOpen(true) },
+    { id: "home", label: t("홈"), icon: <House />, run: () => void go({ kind: "home" }) },
+    { id: "dictionary", label: t("사전"), icon: <BookA />, run: () => void go({ kind: "dictionary" }) },
+    { id: "settings", label: t("설정"), icon: <Settings />, run: openSettings },
+    { id: "models", label: MODELS_LABEL, icon: <Box />, run: caps.openModels },
+    { id: "checkup", label: t("시작 점검"), icon: <Stethoscope />, run: caps.openCheckup },
+    { id: "left", label: leftToggle.label, icon: <PanelLeft />, kbd: PANEL_TEXT.left.key, run: () => void panels.toggle("left") },
+  ];
+
   const waitReason = recording && liveRec ? WAIT_RECORDING : WAIT_OTHER;
   const convertControls: ConvertControls | undefined = view.kind === "meeting" ? { slot: convert.slotOf(view.id), waitReason, gate: convertGate, onConvert: convertNote } : undefined;
   // 녹음 단추는 녹음을 막는 동안에만 변환 상태를 보인다. 막지 않는 변환(자막이 꺼진 녹음 변환·가져오기)의 진행은 사이드바 카드에 있다
@@ -743,7 +749,7 @@ export function App() {
             <NewNoteMenu
               onPick={onNewNote}
               tips={{ import: t("{exts} — 창에 끌어 놓아도 됩니다", { exts: IMPORT_EXTS.join(" ") }) }}
-              disabled={{ write: creating ? t("만드는 중…") : undefined, record: recording ? t("이미 녹음 중입니다") : asking ? ASK_BLOCKS_RECORD : recordBlockKind === "live" ? LIVE_BLOCKS_RECORD : recordBlocked ? t("변환이 끝난 뒤에 녹음할 수 있습니다") : undefined }}
+              disabled={newNoteBlocked}
             />
           </div>
 
@@ -899,6 +905,7 @@ export function App() {
         />
       )}
       {afterAsk && <AfterRecordDialog seconds={afterAsk.seconds} convert={convertGate} onChoose={chooseAfter} />}
+      {paletteOpen && <CommandPalette notes={meetings} actions={paletteActions} onOpenNote={openMeeting} onSearch={(q) => void go({ kind: "search", q })} onClose={() => setPaletteOpen(false)} />}
       {dropAsk && (
         <ConfirmDialog
           title={DROP_CONFIRM.title(dropAsk.target.title)}

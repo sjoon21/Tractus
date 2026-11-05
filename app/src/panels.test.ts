@@ -95,10 +95,6 @@ describe("auto-expand", () => {
   test("a memo note's lines live in the centre: nothing is forced open", () => {
     expect(revealFor(closed, { kind: "memo-line", memoNote: true })).toBe(closed);
   });
-  test("⌘K opens the left list (the search box lives there) and nothing else", () => {
-    expect(revealFor(closed, { kind: "search" })).toEqual({ left: false, right: true });
-    expect(revealFor(EXPANDED, { kind: "search" })).toBe(EXPANDED);
-  });
   test("seeking, opening a note and recording never force a panel open", () => {
     for (const kind of ["seek", "open-note", "record"] as const) expect(revealFor(closed, { kind })).toBe(closed);
   });

@@ -29,7 +29,7 @@ export function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, reco
   const recent = useMemo(() => [...notes].sort((a, b) => (b.updated_at ?? b.created_at).localeCompare(a.updated_at ?? a.created_at)).slice(0, RECENT_MAX), [notes]);
   const keys: [string[], string][] = [
     [["⌘N"], t("글쓰기 (새 메모)")],
-    [["⌘K"], t("검색")],
+    [["⌘K"], t("노트·동작 찾기")],
     [["Space"], t("재생 / 일시정지")],
     [["B"], t("녹음 중 북마크")],
     [["←", "→"], t("5초 이동 (Shift 10초)")],
