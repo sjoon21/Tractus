@@ -7,13 +7,16 @@ type Side = "bottom" | "top" | "right" | "left";
 const GAP = 10;
 const MARGIN = 12;
 
-/** 보이고(숨은 탭 안이 아니고) 창 안에 있는가 */
+/** 보이고(숨은 탭 안이 아니고) 창 안에 있고, 다른 것(AI 어시스턴트 서랍·대화상자)에 덮이지 않았는가 */
 function onScreen(el: HTMLElement): boolean {
   const r = el.getBoundingClientRect();
-  return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < window.innerHeight && r.left < window.innerWidth;
+  if (!(r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < window.innerHeight && r.left < window.innerWidth)) return false;
+  const top = document.elementFromPoint?.(r.left + r.width / 2, r.top + r.height / 2);
+  return !top || el.contains(top) || top.closest("[data-coachmark]") !== null; // 안내 자신이 그 자리를 덮은 것은 덮인 것으로 보지 않는다
 }
 
-export function CoachMark({ id, ready = true, side = "bottom", anchor }: { id: TipId; ready?: boolean; side?: Side; anchor?: string }) {
+/** align: 위·아래 안내를 자리 가운데(center)에 둘지, 자리 왼쪽에 맞출지(start: 목록 왼쪽 끝의 작은 자리에서 옆 패널로 넘치지 않게) */
+export function CoachMark({ id, ready = true, side = "bottom", align = "center", anchor }: { id: TipId; ready?: boolean; side?: Side; align?: "center" | "start"; anchor?: string }) {
   const selector = anchor ?? `[data-tip="${id}"]`;
   const [target, setTarget] = useState<HTMLElement | null>(null);
   const [rev, setRev] = useState(0); // 0.5초마다: 패널 접기·목록 로딩처럼 이벤트 없이 자리가 움직여도 따라간다
@@ -45,11 +48,12 @@ export function CoachMark({ id, ready = true, side = "bottom", anchor }: { id: T
       const clampY = (y: number) => Math.max(MARGIN, Math.min(y, window.innerHeight - b.height - MARGIN));
       const cx = a.left + a.width / 2;
       const cy = a.top + a.height / 2;
+      const x = align === "start" ? a.left - 8 : cx - b.width / 2;
       const p =
         side === "right" ? { top: clampY(cy - b.height / 2), left: clampX(a.right + GAP) }
         : side === "left" ? { top: clampY(cy - b.height / 2), left: clampX(a.left - GAP - b.width) }
-        : side === "top" ? { top: clampY(a.top - GAP - b.height), left: clampX(cx - b.width / 2) }
-        : { top: clampY(a.bottom + GAP), left: clampX(cx - b.width / 2) };
+        : side === "top" ? { top: clampY(a.top - GAP - b.height), left: clampX(x) }
+        : { top: clampY(a.bottom + GAP), left: clampX(x) };
       setPos({ ...p, ax: cx - p.left, ay: cy - p.top }); // 화살표: 상자 안에서 자리의 가운데
     };
     place();
@@ -59,7 +63,7 @@ export function CoachMark({ id, ready = true, side = "bottom", anchor }: { id: T
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [show, target, side, rev]);
+  }, [show, target, side, align, rev]);
 
   useEffect(() => {
     if (!show) return;
@@ -82,6 +86,7 @@ export function CoachMark({ id, ready = true, side = "bottom", anchor }: { id: T
     <div
       ref={box}
       role="dialog"
+      data-coachmark
       aria-modal="false"
       aria-label={t("안내")}
       className="fixed z-[60] w-[260px] rounded-lg bg-foreground px-3.5 py-3 text-background shadow-lg"
