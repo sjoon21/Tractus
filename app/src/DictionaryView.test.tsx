@@ -55,6 +55,7 @@ describe("사전 화면", () => {
     fireEvent.click(screen.getByText("3개 추가"));
     await flush();
     expect(api.glossaryAdd).toHaveBeenCalledWith(["a", "b", "c"]);
+    expect(notify).toHaveBeenCalledWith({ text: expect.stringContaining("사전에 2개를 추가했습니다") });
     expect(notify).toHaveBeenCalledWith({ text: "1개는 추가하지 못했습니다 (40자가 넘거나 사전이 가득 찼습니다)", error: true });
   });
 
@@ -92,11 +93,14 @@ describe("사전 화면", () => {
     expect(screen.queryByRole("textbox", { name: "‘OKR’ 고치기" })).toBeNull();
   });
 
-  test("찾기는 10개를 넘을 때만, 50개를 넘으면 변환에 쓰는 개수를 말한다", async () => {
-    await setup(Array.from({ length: 51 }, (_, i) => `w${i}`));
-    expect(screen.getByText(/최근에 추가한 단어부터 50개까지/)).toBeTruthy();
+  test("찾기는 10개를 넘을 때만, 50개를 넘으면 쓰는 단어와 쓰지 않는 단어를 나눈다", async () => {
+    await setup(Array.from({ length: 52 }, (_, i) => `w${i}`));
+    expect(screen.getByText("지금은 쓰지 않는 단어 2개")).toBeTruthy();
+    const group = (title: string) => screen.getByText(title).closest("div")!.querySelectorAll("li");
+    expect(group("변환에 쓰는 단어")).toHaveLength(50);
+    expect([...group("지금은 쓰지 않는 단어 2개")].map((x) => x.textContent)).toEqual(["w50", "w51"]);
     fireEvent.change(screen.getByLabelText("사전에서 찾기"), { target: { value: "w5" } });
-    expect(screen.getAllByRole("listitem").map((x) => x.textContent)).toEqual(["w5", "w50"]);
+    expect(screen.getAllByRole("listitem").map((x) => x.textContent)).toEqual(["w5", "w50", "w51"]);
   });
 
   test("Qwen이 아닌 엔진을 고르면 안내한다", async () => {
