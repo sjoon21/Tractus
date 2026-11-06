@@ -276,6 +276,8 @@ export const api = {
   /** 사전 단어(최근에 더한 것부터)와 변환이 한 번에 쓰는 개수 */
   glossaryList: () => invoke<{ terms: string[]; max: number }>("glossary_list"),
   glossaryRemove: (terms: string[]) => invoke<{ removed: number }>("glossary_remove", { terms }),
+  /** 사전 제안의 재료: 녹음 노트에서 사람이 고친 문장 쌍 [원문, 고친 문장] */
+  glossaryCorrections: () => invoke<[string, string][]>("glossary_corrections"),
   /** 새 단어가 이미 있으면 옛 단어만 지운다 */
   glossaryRename: (old: string, next: string) => invoke<{ changed: boolean }>("glossary_rename", { old, new: next }),
   /** `tractus templates list --json`: 기본 요약 유형 → 내 요약 유형 (docs/desktop.md §2.13) */

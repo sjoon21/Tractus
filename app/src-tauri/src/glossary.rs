@@ -1,7 +1,7 @@
 //! 사전 (WORDS.md §4.29, 코드 이름 glossary): `tractus glossary add|remove|rename|list`.
 
 use crate::i18n::t;
-use super::{blocking, run_tractus, stdout_json, AppState};
+use super::{blocking, meetings, run_tractus, stdout_json, AppState};
 use serde_json::Value;
 use tauri::State;
 
@@ -45,6 +45,13 @@ pub async fn glossary_rename(state: State<'_, AppState>, old: String, new: Strin
 pub async fn glossary_list(state: State<'_, AppState>) -> Result<Value, String> {
     let s = state.settings();
     blocking(move || stdout_json(&run_tractus(&s, &["glossary", "list", "--json"].map(String::from), None, &t("사전을 읽지 못했습니다"))?)).await
+}
+
+/// 사전 제안의 재료: 녹음 노트에서 사람이 고친 문장 쌍 [원문, 고친 문장] (meetings::corrections)
+#[tauri::command]
+pub async fn glossary_corrections(state: State<'_, AppState>) -> Result<Vec<(String, String)>, String> {
+    let home = state.settings().home();
+    blocking(move || Ok(meetings::corrections(&home))).await
 }
 
 #[cfg(test)]

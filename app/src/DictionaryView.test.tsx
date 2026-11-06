@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   glossaryAdd: vi.fn(),
   glossaryRemove: vi.fn(),
   glossaryRename: vi.fn(),
+  glossaryCorrections: vi.fn(),
   modelsList: vi.fn(),
   getSettings: vi.fn(),
 }));
@@ -29,6 +30,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   api.modelsList.mockResolvedValue({ models: [{ id: "asr-std", engine: "qwen3", installed: true }] });
   api.getSettings.mockResolvedValue({ asr_engine: "" });
+  api.glossaryCorrections.mockResolvedValue([]);
+  localStorage.clear();
 });
 afterEach(cleanup);
 
@@ -101,6 +104,24 @@ describe("사전 화면", () => {
     expect([...group("지금은 쓰지 않는 단어 2개")].map((x) => x.textContent)).toEqual(["w50", "w51"]);
     fireEvent.change(screen.getByLabelText("사전에서 찾기"), { target: { value: "w5" } });
     expect(screen.getAllByRole("listitem").map((x) => x.textContent)).toEqual(["w5", "w50", "w51"]);
+  });
+
+  test("고친 낱말을 제안하고, 추가하거나 무시한다 (사전에 있는 낱말은 빼고, 무시는 기억한다)", async () => {
+    api.glossaryCorrections.mockResolvedValue([
+      ["언톨로지 설계를 봅시다", "온톨로지 설계를 봅시다"],
+      ["그 언톨로지는", "그 온톨로지는"],
+      ["쿠버내티스 배포", "쿠버네티스 배포"],
+      ["프로매테우스 경보", "프로메테우스 경보"],
+    ]);
+    await setup();
+    expect(screen.getAllByRole("button", { name: /사전에 추가$/ }).map((b) => b.getAttribute("aria-label"))).toEqual(["‘온톨로지’ 사전에 추가", "‘프로메테우스’ 사전에 추가"]); // 많이 고친 순, 쿠버네티스는 이미 있다
+    api.glossaryAdd.mockResolvedValue({ added: 1, skipped: 0 });
+    fireEvent.click(screen.getByLabelText("‘온톨로지’ 사전에 추가"));
+    await flush();
+    expect(api.glossaryAdd).toHaveBeenCalledWith(["온톨로지"]);
+    fireEvent.click(screen.getByLabelText("‘프로메테우스’ 제안 무시"));
+    expect(screen.queryByLabelText("‘프로메테우스’ 사전에 추가")).toBeNull();
+    expect(JSON.parse(localStorage.getItem("tractus.dictionary.dismissed")!)).toEqual(["프로메테우스"]);
   });
 
   test("Qwen이 아닌 엔진을 고르면 안내한다", async () => {
