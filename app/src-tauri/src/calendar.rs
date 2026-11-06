@@ -14,6 +14,7 @@ const EVENT_FILE: &str = "event.json";
 const MAX_TITLE: usize = 200;
 const MAX_NAME: usize = 80;
 const MAX_ATTENDEES: usize = 50;
+const MAX_ID: usize = 256;
 
 /// `tractus-rec calendar <args>` → stdout 한 줄 JSON
 fn run(s: &Settings, args: &[String]) -> Result<Value, String> {
@@ -134,7 +135,22 @@ pub fn clean_event(v: &Value) -> Result<Value, String> {
             names.push(n);
         }
     }
-    Ok(json!({"title": title, "start": start, "end": end, "calendar": text("calendar", MAX_TITLE).unwrap_or_default(), "attendees": names}))
+    let mut ev = json!({"title": title, "start": start, "end": end, "calendar": text("calendar", MAX_TITLE).unwrap_or_default(), "attendees": names});
+    // 캘린더의 일정 ID: 이번 주 띠가 일정과 노트를 잇는다. 모양이 이상하면 버린다 (잇기만 못 할 뿐)
+    if let Some(id) = v["id"].as_str().filter(|x| !x.is_empty() && x.len() <= MAX_ID && !x.chars().any(char::is_control)) {
+        ev["id"] = json!(id);
+    }
+    Ok(ev)
+}
+
+/// 노트 폴더 event.json에서 일정과 노트를 잇는 데 쓰는 것만 (노트 목록 MeetingInfo.event). 없거나 깨졌으면 None
+pub fn note_event(note_dir: &Path) -> Option<Value> {
+    let v = clean_event(&serde_json::from_str::<Value>(&std::fs::read_to_string(note_dir.join(EVENT_FILE)).ok()?).ok()?).ok()?;
+    let mut link = json!({"title": v["title"], "start": v["start"]});
+    if v["id"].is_string() {
+        link["id"] = v["id"].clone();
+    }
+    Some(link)
 }
 
 pub fn write_event(rec_dir: &Path, event: &Value) -> Result<(), String> {
@@ -170,6 +186,18 @@ mod tests {
         assert!(clean_event(&json!({"title": "", "start": "a", "end": "b"})).is_err());
         assert_eq!(clean_event(&json!({"title": "x".repeat(300), "start": "a", "end": "b"})).unwrap()["title"].as_str().unwrap().len(), 200); // 긴 제목은 잘라 쓴다
         assert_eq!(clean_event(&json!({"title": "t", "start": "a", "end": "b", "attendees": ["guest@example.com", "김민수"]})).unwrap()["attendees"], json!(["김민수"])); // 이메일은 남기지 않는다
+        assert_eq!(clean_event(&json!({"id": "E1:2", "title": "t", "start": "a", "end": "b"})).unwrap()["id"], "E1:2");
+        assert!(clean_event(&json!({"id": "a\nb", "title": "t", "start": "a", "end": "b"})).unwrap().get("id").is_none());
+    }
+
+    #[test]
+    fn note_event_keeps_only_what_links_a_note() {
+        let d = std::env::temp_dir().join(format!("tractus-note-event-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        assert!(note_event(&d).is_none());
+        std::fs::write(d.join(EVENT_FILE), r#"{"id": "E1", "title": "주간", "start": "2026-11-05T09:30:00+09:00", "end": "2026-11-05T10:00:00+09:00", "attendees": ["김민수"]}"#).unwrap();
+        assert_eq!(note_event(&d), Some(json!({"id": "E1", "title": "주간", "start": "2026-11-05T09:30:00+09:00"})));
+        std::fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]

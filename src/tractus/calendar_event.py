@@ -14,6 +14,7 @@ EVENT_FILE = "event.json"
 MAX_TITLE = 200
 MAX_NAME = 80
 MAX_ATTENDEES = 50
+MAX_ID = 256
 
 
 def _iso(v) -> str | None:
@@ -24,7 +25,7 @@ def _iso(v) -> str | None:
 
 
 def clean_event(raw) -> dict | None:
-    """검사한 일정 {"title", "start", "end", "calendar", "attendees"}. 제목이 비었거나 시각이 맞지 않으면 None. 긴 제목은 자른다."""
+    """검사한 일정 {"title", "start", "end", "calendar", "attendees"} (+ 캘린더의 일정 ID "id"가 있으면: 앱이 일정과 노트를 잇는다). 제목이 비었거나 시각이 맞지 않으면 None. 긴 제목은 자른다."""
     if not isinstance(raw, dict):
         return None
     title = (one_line(raw["title"]) if isinstance(raw.get("title"), str) else "")[:MAX_TITLE]
@@ -37,7 +38,11 @@ def clean_event(raw) -> dict | None:
         if n and len(n) <= MAX_NAME and "@" not in n and n not in names:  # 이메일은 남기지 않는다
             names.append(n)
     calendar = one_line(raw["calendar"])[:MAX_TITLE] if isinstance(raw.get("calendar"), str) else ""
-    return {"title": title, "start": start, "end": end, "calendar": calendar, "attendees": names[:MAX_ATTENDEES]}
+    ev = {"title": title, "start": start, "end": end, "calendar": calendar, "attendees": names[:MAX_ATTENDEES]}
+    eid = raw.get("id")
+    if isinstance(eid, str) and 0 < len(eid) <= MAX_ID and eid == one_line(eid):  # 모양이 이상한 ID는 버린다 (잇기만 못 할 뿐)
+        ev["id"] = eid
+    return ev
 
 
 def load_event(d: Path | None) -> dict | None:

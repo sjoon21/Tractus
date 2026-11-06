@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { MeetingInfo } from "./api";
-import { addDays, groupWeek, recordable, weekDays, weekStart, ymd, type WeekEvent } from "./week";
+import { addDays, dayNotes, groupWeek, linked, recordable, weekDays, weekStart, ymd, type WeekEvent } from "./week";
 
 const ev = (title: string, start: string, end: string, all_day = false): WeekEvent => ({ id: title, title, start, end, calendar: "회사", attendees: [], all_day });
 const note = (id: string, created_at: string) => ({ id, title: id, created_at }) as MeetingInfo;
@@ -29,6 +29,27 @@ describe("날마다 묶기", () => {
     expect(g.get("2026-11-03")!.notes.map((n) => n.id)).toEqual(["a", "b"]); // 이른 것부터
     expect(days.filter((d) => g.get(d)!.events.some((e) => e.title === "워크숍"))).toEqual(["2026-11-05", "2026-11-06"]);
     expect([...g.values()].flatMap((d) => d.events).some((e) => e.title === "지난주")).toBe(false);
+  });
+});
+
+describe("일정과 노트 잇기", () => {
+  const days = weekDays(new Date(2026, 10, 2));
+  const standup = { ...ev("스탠드업", "2026-11-03T09:30:00+09:00", "2026-11-03T10:00:00+09:00"), id: "E1" };
+  const withEvent = (id: string, event: MeetingInfo["event"]) => ({ ...note(id, "2026-11-03T09:31:00"), event }) as MeetingInfo;
+
+  test("시작 시각이 같고 일정 ID가 같으면 (ID가 없는 옛 노트는 제목이 같으면) 이어진다", () => {
+    expect(linked(standup, withEvent("a", { id: "E1", title: "이름을 바꿈", start: "2026-11-03T00:30:00Z" }))).toBe(true); // 같은 순간이면 표기가 달라도
+    expect(linked(standup, withEvent("b", { title: "스탠드업", start: "2026-11-03T09:30:00+09:00" }))).toBe(true);
+    expect(linked(standup, withEvent("c", { id: "E2", title: "스탠드업", start: "2026-11-03T09:30:00+09:00" }))).toBe(false); // 다른 일정
+    expect(linked(standup, withEvent("d", { id: "E1", title: "스탠드업", start: "2026-11-10T09:30:00+09:00" }))).toBe(false); // 반복 일정의 다른 회차
+    expect(linked(standup, note("e", "2026-11-03T09:31:00"))).toBe(false);
+  });
+
+  test("이어진 노트는 일정 아래로 가고 그날 노트 목록에서는 빠진다 (개수는 그대로)", () => {
+    const g = groupWeek(days, [standup], [withEvent("a", { id: "E1", title: "스탠드업", start: "2026-11-03T09:30:00+09:00" }), note("b", "2026-11-03T15:00:00")]).get("2026-11-03")!;
+    expect(g.events[0].notes.map((n) => n.id)).toEqual(["a"]);
+    expect(g.notes.map((n) => n.id)).toEqual(["b"]);
+    expect(dayNotes(g)).toBe(2);
   });
 });
 
