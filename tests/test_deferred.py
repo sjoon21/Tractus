@@ -643,4 +643,7 @@ def test_real_models_finish_then_convert_equals_the_direct_path(tmp_path, monkey
     conv = read_transcript(db)
     assert "state" not in conv and not (db / "tracks").exists() and conv["memo"]["body"] == "내가 적은 메모"
     assert [(s["text"], s["start"], s["end"], s["speaker"]) for s in conv["segments"]] == [(s["text"], s["start"], s["end"], s["speaker"]) for s in direct["segments"]]
-    assert conv["audio"] == direct["audio"] and conv["asr"] == direct["asr"] and conv["speakers"] == direct["speakers"]
+    assert conv["audio"] == direct["audio"] and conv["speakers"] == direct["speakers"]
+    # 변환 전에 적은 메모의 낱말은 hotwords에 더해진다(asr.note_terms, v3.53). 나머지 asr 기록은 같다
+    assert conv["asr"].pop("hotwords") == direct["asr"].pop("hotwords", []) + ["내가", "적은"]
+    assert conv["asr"] == direct["asr"]
