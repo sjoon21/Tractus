@@ -31,7 +31,7 @@ from scipy.optimize import linear_sum_assignment
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from tractus.voices import VoiceEmbedder  # noqa: E402  제품과 같은 특징·런타임(onnxruntime + kaldi-native-fbank)
+from tractus.voices import VoiceEmbedder  # noqa: E402  제품과 같은 특징·런타임(onnx_mlx + kaldi-native-fbank)
 DATA = ROOT / "data/aihub-meeting"
 OUT = Path(__file__).resolve().parent / "results/voice_summary.json"
 SR = 16000
@@ -227,7 +227,7 @@ def main():
             sess_embs.append((E, np.array([k for *_, k in utts])))
         rtf = (time.perf_counter() - t0) / audio_s
         d, f, lic = MODELS[key]
-        r = {"url": RELEASE + f, "local_dir": f"models/{d}", "license": lic, "runtime": "onnxruntime + kaldi-native-fbank (tractus.voices)",
+        r = {"url": RELEASE + f, "local_dir": f"models/{d}", "license": lic, "runtime": "onnx_mlx (MLX) + kaldi-native-fbank (tractus.voices)",
              "rtf_cpu2": round(rtf, 4), "pairs": pair_trials(sess_embs),
              "production": production(sess, sess_embs, {}),  # 정답 = AI Hub 라벨 (기본, 보수적)
              "production_alias": production(sess, sess_embs, ALIASES),  # 민감도: ALIASES를 같은 사람으로 (미검증)

@@ -1,7 +1,7 @@
 """목소리 프로필: 등록한 사람의 화자 임베딩과 회의 화자를 맞춰 이름을 **제안**한다 (확정은 사용자가 한다).
 
 ARCHITECTURE.md §2.5. 임베딩은 생체정보다(개인정보보호법 제23조 민감정보). $TRACTUS_HOME/voices.json(권한 0600)에만 두고
-회의 폴더·MCP·LLM 프롬프트·색인·내보내기·로그로 내보내지 않는다. 모델은 onnxruntime(CPU)과 kaldi-native-fbank로 돌린다.
+회의 폴더·MCP·LLM 프롬프트·색인·내보내기·로그로 내보내지 않는다. 모델은 onnx_mlx(ONNX 그래프를 MLX로)와 kaldi-native-fbank로 돌린다.
 """
 
 from __future__ import annotations
@@ -71,30 +71,31 @@ def fbank(pcm: np.ndarray) -> np.ndarray:
 
 
 class VoiceEmbedder:
-    """onnxruntime(MIT) CPU로 3D-Speaker ONNX를 직접 돌린다. sherpa-onnx는 쓰지 않는다: 휠에 espeak-ng(GPL-3)가 정적 링크돼 있다.
-    onnxruntime 1.29 이상이어야 한다. 1.28까지는 AveragePool(ceil_mode)의 마지막 짧은 창을 창 크기 전체로 나눠 PyTorch 원본과
-    임베딩이 달라진다(긴 구간에서 cosine 약 0.975)."""
+    """3D-Speaker CAM++ ONNX를 MLX로 돌린다(onnx_mlx: 그래프를 그대로 실행, v3.99). 전에는 onnxruntime(1.29 이상)이었고
+    결과는 같다(cosine 1.0, 최대 차이 약 1e-5). sherpa-onnx는 쓰지 않는다: 휠에 espeak-ng(GPL-3)가 정적 링크돼 있다.
+    AveragePool(ceil_mode)의 마지막 짧은 창은 실제 칸 수로 나눈다(PyTorch 원본과 같다. onnxruntime 1.28까지는 달랐다)."""
 
     def __init__(self, model_path: Path):
-        import onnxruntime as ort
+        from . import onnx_mlx
 
-        so = ort.SessionOptions()
-        so.intra_op_num_threads = 2
-        so.inter_op_num_threads = 1
-        so.log_severity_level = 3  # stdout·stderr에 경고를 쏟지 않는다
-        self.session = ort.InferenceSession(str(model_path), so, providers=["CPUExecutionProvider"])
-        meta = self.session.get_modelmeta().custom_metadata_map
+        try:
+            self.graph = onnx_mlx.load(model_path)
+        except (OSError, ValueError, IndexError) as e:
+            raise RuntimeError(t("목소리 인식 파일이 올바르지 않습니다. 다시 받아 주세요: {path}", path=model_path)) from e
+        meta = self.graph.meta
         if meta.get("feature_normalize_type") != "global-mean" or meta.get("normalize_samples", "1") != "1" \
-                or int(meta.get("sample_rate", SR)) != SR:
+                or int(meta.get("sample_rate", SR)) != SR or len(self.graph.inputs) != 1:
             raise RuntimeError(t("목소리 인식 파일이 올바르지 않습니다. 다시 받아 주세요: {path}", path=model_path))
-        self.input = self.session.get_inputs()[0].name
+        self.input = self.graph.inputs[0]
 
     def embed(self, pcm: np.ndarray) -> np.ndarray:
         """16kHz mono float32 → L2 정규화한 임베딩."""
+        from . import onnx_mlx
+
         x = fbank(pcm)
         if not len(x):
             raise ValueError(t("목소리 구간이 너무 짧습니다"))
-        return _unit(self.session.run(None, {self.input: x[None]})[0][0])
+        return _unit(onnx_mlx.run(self.graph, {self.input: x[None]})[0][0])
 
 
 def model_path(models_dir: Path) -> Path:

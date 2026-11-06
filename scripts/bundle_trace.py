@@ -3,7 +3,7 @@
 테스트 전체(실제 모델 `slow`·작은 VAD 받기 `network` 포함, 실제 AI 호출 `llm`은 뺀다)를 모듈 기록기를 켜고 돌린 뒤, 이 Mac에서 돌리지 못하는 경로
 (모델이 없는 변환 엔진 계열 등)는 EXTRA로 직접 불러 더한다. 남기는 것은 site-packages에 있는 패키지와 tractus뿐이다.
 
-언제: 의존성을 바꿨을 때(uv.lock), 새 기능이 transformers·mlx_audio·mlx_lm·scipy·onnxruntime의 다른 부분을 쓸 때.
+언제: 의존성을 바꿨을 때(uv.lock), 새 기능이 transformers·mlx_audio·mlx_lm·scipy의 다른 부분을 쓸 때.
 필요한 것: 저장소의 models/(변환·화자 분리·단어 싱크·검색·목소리 모델), 몇 분.
 실행: 저장소 루트에서 `uv run python scripts/bundle_trace.py`
 """
@@ -32,7 +32,7 @@ import mlx_audio.stt.models.qwen3_asr, mlx_audio.stt.models.qwen3_forced_aligner
 import mlx_audio.vad.models.silero_vad, mlx_audio.vad.models.nemotron_diarization
 from transformers import AutoTokenizer, PreTrainedTokenizerFast, WhisperProcessor, WhisperTokenizer, WhisperTokenizerFast, WhisperFeatureExtractor
 from huggingface_hub import snapshot_download, model_info
-import docx, openai, onnxruntime, kaldi_native_fbank, sqlite_vec
+import docx, openai, kaldi_native_fbank, sqlite_vec
 from tractus import mcp_server, cli
 """
 

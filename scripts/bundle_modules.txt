@@ -793,14 +793,6 @@ numpy.testing._private.utils
 numpy.testing.overrides
 numpy.typing
 numpy.version
-onnxruntime
-onnxruntime.capi
-onnxruntime.capi._ld_preload
-onnxruntime.capi._pybind_state
-onnxruntime.capi.build_and_package_info
-onnxruntime.capi.onnxruntime_inference_collection
-onnxruntime.capi.onnxruntime_pybind11_state
-onnxruntime.capi.onnxruntime_validation
 openai
 openai._base_client
 openai._client
@@ -2137,6 +2129,7 @@ tractus.models_install
 tractus.models_registry
 tractus.notes
 tractus.obsidian
+tractus.onnx_mlx
 tractus.organize
 tractus.organize_cli
 tractus.paths

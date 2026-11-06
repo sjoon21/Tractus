@@ -144,7 +144,7 @@ uv run tractus models remove aligner                # 하나 지우기
 
 | 항목 | 크기 | 비고 |
 | --- | --- | --- |
-| `.venv` (코어) | 0.58GB | mlx, scipy, onnxruntime, transformers 등 |
+| `.venv` (코어) | 0.5GB | mlx, scipy, transformers 등 |
 | `recorder/.build` | 0.10GB | 녹음 프로그램 |
 | `recorder/diar/.build` | 0.95GB | `--with-fluid`일 때만 (FluidAudio와 의존성) |
 | `app/src-tauri/target` | 1.22GB | 릴리스 컴파일 산출물. 완성된 `Tractus.app`은 약 17MB |

@@ -267,13 +267,6 @@ def test_lock_has_no_known_copyleft_runtime():
     assert not names & COPYLEFT, names & COPYLEFT
 
 
-def test_onnxruntime_pools_partial_window_like_pytorch():
-    """1.28까지는 AveragePool(ceil_mode)의 마지막 짧은 창을 창 크기로 나눠 CAM++ 임베딩이 PyTorch 원본과 달랐다."""
-    import onnxruntime
-
-    assert tuple(int(x) for x in onnxruntime.__version__.split(".")[:2]) >= (1, 29)
-
-
 def test_fbank_is_80_dim_kaldi_frames_with_global_mean_removed():
     pcm = np.random.default_rng(0).standard_normal(SR).astype(np.float32) * 0.1
     x = voices.fbank(pcm)
