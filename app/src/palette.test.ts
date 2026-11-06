@@ -25,6 +25,19 @@ describe("묶음", () => {
     expect(paletteSections(NOTES, ACTIONS, "메모").map((x) => x.title)).toEqual(["동작", "찾기"]); // 찾기 말로도 맞는다
   });
 
+  test("이 노트의 동작은 맨 앞에, 폴더·태그는 입력이 있을 때만 동작 뒤에", () => {
+    const mine = [act("favorite", "즐겨찾기에 추가"), act("export-md", "내보내기: Markdown", { keywords: "md" })];
+    const jumps = [act("folder-1", "프로젝트/예산"), act("tag-x", "#회고")];
+    expect(paletteSections(NOTES, ACTIONS, "", mine, jumps).map((x) => x.title)).toEqual(["이 노트", "최근 노트", "동작"]);
+    expect(paletteSections(NOTES, ACTIONS, "예산", mine, jumps).map((x) => x.title)).toEqual(["노트", "폴더·태그", "찾기"]);
+    const rare = act("export-srt", "내보내기: SRT 자막", { typed: true });
+    expect(paletteSections(NOTES, ACTIONS, "", [...mine, rare])[0].items).toHaveLength(2); // 찾을 때만 나온다
+    expect(paletteSections(NOTES, ACTIONS, "srt", [...mine, rare])[0].items).toHaveLength(1);
+    const md = paletteSections(NOTES, ACTIONS, "md", mine, jumps);
+    expect(md[0].title).toBe("이 노트");
+    expect(md[0].items.map((i) => (i.kind === "action" ? i.action.id : ""))).toEqual(["export-md"]);
+  });
+
   test("동작은 이름·찾기 말에 낱말이 모두 있어야 맞는다 (대소문자 무시)", () => {
     expect(actionMatches(ACTIONS[2], "VOCAB")).toBe(true);
     expect(actionMatches(ACTIONS[0], "녹음 시작")).toBe(true);

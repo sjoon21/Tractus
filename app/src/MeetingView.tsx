@@ -38,7 +38,7 @@ import { LOCK_NOTICE, type AttachControls } from "./attach";
 import { ConvertPanel } from "./ConvertPanel";
 import { useConvertJob } from "./convertJobs";
 import { CONVERT_FIRST, deleteBlockedWhileConverting, isRecorded, keptNotice, recordedStats, type ConvertControls } from "./recorded";
-import { isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type SaveState } from "./memo";
+import { exportFormatsFor, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type SaveState } from "./memo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import { PolishBar } from "./PolishControls";
@@ -59,6 +59,9 @@ import { SegmentRow } from "@/components/note/SegmentRow";
 import { MemoRow } from "@/components/note/MemoRow";
 import { livePolish, nextSuggestion, pendingIds, suggestionMarks } from "./polish";
 
+/** 노트 머리의 내보내기 메뉴와 같은 일을 밖에서 부탁한다: format은 EXPORT_FORMATS의 형식 또는 "obsidian" */
+export type ExportReq = { id: string; format: string; nonce: number };
+
 export function MeetingView({
   id,
   seek,
@@ -69,6 +72,7 @@ export function MeetingView({
   attach,
   convert,
   summaryStale = false,
+  exportReq,
 }: {
   id: string;
   seek?: Seek;
@@ -83,6 +87,8 @@ export function MeetingView({
   convert?: ConvertControls;
   /** 녹음을 방금 추가해 열었다: 요약이 있어도 아직 새 내용이 반영되지 않았다 */
   summaryStale?: boolean;
+  /** ⌘K 빠른 실행의 내보내기 요청 (nonce가 바뀌면 새 요청) */
+  exportReq?: ExportReq;
 }) {
   const note = useNote({ id, summaryStale, notify, onEdited, onChanged });
   const { detail, commit, summaryRev, refresh: refreshNote } = note.data;
@@ -184,6 +190,14 @@ export function MeetingView({
   const active = segmentIndexAt(segments, pos);
 
   const exp = useNoteExport({ id, detail, memoNote, selectedSummary, serial, notify });
+  const doneReq = useRef(0);
+  useEffect(() => {
+    if (!exportReq || !detail || exportReq.nonce === doneReq.current) return; // 노트를 다 읽은 뒤에 한 번만
+    doneReq.current = exportReq.nonce;
+    if (exportReq.format === "obsidian") return void exp.toObsidian();
+    const f = exportFormatsFor(memoNote, isRecorded(detail.info)).find((x) => x.format === exportReq.format);
+    if (f) void exp.exportAs(f);
+  }, [exportReq, detail]); // exp는 렌더마다 새로 만들어 넣지 않는다
 
   const railState = useRail(memoNote, memoRef, setMemoPick);
   const { railCollapsed, openMemoLine } = railState;

@@ -32,10 +32,10 @@ import { ErrorDetail } from "./ErrorDetail";
 import { t } from "./i18n";
 import { bindIndexer, indexer } from "./indexer";
 import { baseName, errorView, isImeKey, isRecLive, IDLE_JOB, JOB_ERROR, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, type RecMode } from "./lib";
-import { MeetingView } from "./MeetingView";
+import { MeetingView, type ExportReq } from "./MeetingView";
 import type { NewNoteAction } from "./menu";
 import { NewNoteMenu } from "./NewNoteMenu";
-import { dropMemo, flushMemos, isMemo, settleMemo } from "./memo";
+import { dropMemo, exportFormatsFor, flushMemos, isMemo, settleMemo } from "./memo";
 import { RecordView } from "./RecordView";
 import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, type DeleteTarget } from "./remove";
 import { SearchView } from "./SearchView";
@@ -45,17 +45,17 @@ import { AfterRecordDialog } from "./AfterRecordDialog";
 import { afterRecord, ASK_BLOCKS_RECORD, effectiveChoice, rememberedChoice, stopAction, type AskChoice } from "./afterRecord";
 import { LIVE_BLOCKS_RECORD, recordBlock } from "./recordBusy";
 import { recButton } from "./pause";
-import { BULK_MIN, CONVERT_ALL, CONVERT_ALL_TITLE, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
+import { BULK_MIN, CONVERT_ALL, CONVERT_ALL_TITLE, isRecorded, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
 import { NoteLibrary } from "./NoteLibrary";
 import { QuickFind } from "./QuickFind";
 import { CommandPalette } from "./CommandPalette";
 import type { PaletteAction } from "./palette";
-import { touchNote as touchNoteIn, type Folder } from "./organize";
+import { folderPath, touchNote as touchNoteIn, type Folder } from "./organize";
 import { OrganizeContext, useOrganizeState } from "./useOrganize";
 import { PanelResizer, PanelToggle, usePanels } from "./PanelToggle";
 import { PANEL_TEXT, RAIL_REC_LABEL, railPendingLabel, railRecState, toggleLabel } from "./panels";
 import { check } from "@tauri-apps/plugin-updater";
-import { AudioLines, BookA, Box, House, Mic, PanelLeft, Settings, Sparkles, SquarePen, Stethoscope, Upload, X } from "lucide-react";
+import { AudioLines, BookA, Box, Download, Folder as FolderIcon, House, Mic, PanelLeft, Settings, Sparkles, SquarePen, Star, Stethoscope, Tag, Upload, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/components/ui/utils";
@@ -95,6 +95,7 @@ export function App() {
   // 전체 회의에 질문 (6.3): 오른쪽 서랍. 닫아도 대화는 남는다(앱을 끄기 전까지)
   const [askOpen, setAskOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [exportReq, setExportReq] = useState<ExportReq | null>(null); // ⌘K의 노트 내보내기 요청
   const askInput = useRef<HTMLTextAreaElement>(null);
   const askButton = useRef<HTMLButtonElement>(null);
   const closeAsk = useCallback(() => {
@@ -656,6 +657,27 @@ export function App() {
     { id: "checkup", label: t("시작 점검"), icon: <Stethoscope />, run: caps.openCheckup },
     { id: "left", label: leftToggle.label, icon: <PanelLeft />, kbd: PANEL_TEXT.left.key, run: () => void panels.toggle("left") },
   ];
+  const COMMON_EXPORTS = ["md", "docx"]; // 빈 입력에서도 보이는 내보내기 형식. 나머지는 `내보내기`로 찾는다
+  // 지금 연 노트의 동작: 즐겨찾기·태그는 사이드바 줄 메뉴와, 내보내기는 노트 머리의 내보내기 메뉴와 같은 함수다 (내보내기는 MeetingView가 exportReq를 받아 한다)
+  const openNote = view.kind === "meeting" ? meetings.find((m) => m.id === view.id) : undefined;
+  const noteActions: PaletteAction[] = openNote
+    ? [
+        { id: "favorite", label: openNote.favorite ? t("즐겨찾기에서 빼기") : t("즐겨찾기에 추가"), icon: <Star />, run: () => void org.setFavorite(openNote.id, !openNote.favorite) },
+        { id: "tags", label: t("태그 편집…"), icon: <Tag />, run: () => org.requestTagFocus(openNote.id) },
+        ...exportFormatsFor(isMemo(openNote), isRecorded(openNote)).map((f) => ({ id: `export-${f.format}`, label: t("내보내기: {format}", { format: f.label }), keywords: f.ext, icon: <Download />, typed: !COMMON_EXPORTS.includes(f.format), run: () => setExportReq({ id: openNote.id, format: f.format, nonce: Date.now() }) })),
+        { id: "obsidian", label: t("Obsidian으로 보내기"), keywords: t("내보내기"), icon: <Download />, run: () => setExportReq({ id: openNote.id, format: "obsidian", nonce: Date.now() }) },
+      ]
+    : [];
+  // 폴더·태그로 바로 가기: 사이드바 거르기를 그 폴더(태그) 하나로 바꾸고 노트 목록을 펼친다
+  const showFiltered = (apply: () => void) => {
+    org.clearFilters();
+    apply();
+    if (panels.state.left) void panels.toggle("left");
+  };
+  const jumps: PaletteAction[] = [
+    ...folders.map((f) => ({ id: `folder-${f.id}`, label: folderPath(folders, f.id), keywords: t("폴더"), icon: <FolderIcon />, run: () => showFiltered(() => org.selectFolder(f.id)) })),
+    ...org.tags.map(({ tag }) => ({ id: `tag-${tag}`, label: `#${tag}`, keywords: t("태그"), icon: <Tag />, run: () => showFiltered(() => org.toggleTag(tag)) })),
+  ];
 
   const waitReason = recording && liveRec ? WAIT_RECORDING : WAIT_OTHER;
   const convertControls: ConvertControls | undefined = view.kind === "meeting" ? { slot: convert.slotOf(view.id), waitReason, gate: convertGate, onConvert: convertNote } : undefined;
@@ -859,6 +881,7 @@ export function App() {
             attach={attachControls}
             convert={convertControls}
             summaryStale={noteEpoch.stale && noteEpoch.id === view.id}
+            exportReq={exportReq?.id === view.id ? exportReq : undefined}
           />
         )}
         {view.kind === "search" && <SearchView key={view.q} query={view.q} onOpen={openMeeting} memoIds={memoIds} />}
@@ -905,7 +928,7 @@ export function App() {
         />
       )}
       {afterAsk && <AfterRecordDialog seconds={afterAsk.seconds} convert={convertGate} onChoose={chooseAfter} />}
-      {paletteOpen && <CommandPalette notes={meetings} actions={paletteActions} onOpenNote={openMeeting} onSearch={(q) => void go({ kind: "search", q })} onClose={() => setPaletteOpen(false)} />}
+      {paletteOpen && <CommandPalette notes={meetings} actions={paletteActions} noteActions={noteActions} jumps={jumps} onOpenNote={openMeeting} onSearch={(q) => void go({ kind: "search", q })} onClose={() => setPaletteOpen(false)} />}
       {dropAsk && (
         <ConfirmDialog
           title={DROP_CONFIRM.title(dropAsk.target.title)}
