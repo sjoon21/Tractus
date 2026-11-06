@@ -9,10 +9,12 @@ import { DIALOG } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/components/ui/utils";
 
-export function CommandPalette({ notes, actions, onOpenNote, onSearch, onClose }: { notes: readonly MeetingInfo[]; actions: readonly PaletteAction[]; onOpenNote: (id: string) => void; onSearch: (q: string) => void; onClose: () => void }) {
+const NONE: readonly PaletteAction[] = [];
+
+export function CommandPalette({ notes, actions, noteActions = NONE, jumps = NONE, onOpenNote, onSearch, onClose }: { notes: readonly MeetingInfo[]; actions: readonly PaletteAction[]; noteActions?: readonly PaletteAction[]; jumps?: readonly PaletteAction[]; onOpenNote: (id: string) => void; onSearch: (q: string) => void; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [q, setQ] = useState("");
-  const sections = useMemo(() => paletteSections(notes, actions, q), [notes, actions, q]);
+  const sections = useMemo(() => paletteSections(notes, actions, q, noteActions, jumps), [notes, actions, q, noteActions, jumps]);
   const items = useMemo(() => sections.flatMap((s) => s.items), [sections]);
   const [pick, setPick] = useState(0);
   const id = useId();

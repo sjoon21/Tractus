@@ -14,6 +14,8 @@ export type PaletteAction = {
   keywords?: string;
   icon?: ReactNode;
   kbd?: string;
+  /** 빈 입력에서는 보이지 않고 찾을 때만 나온다 (자주 쓰지 않는 것으로 목록을 길게 만들지 않게) */
+  typed?: boolean;
   /** 지금 할 수 없으면 그 이유. 고를 수 없다 */
   blocked?: string;
   run: () => void;
@@ -30,13 +32,17 @@ export function actionMatches(a: Pick<PaletteAction, "label" | "keywords">, quer
   return query.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
 }
 
-/** 입력에 맞는 묶음. 빈 입력: 최근 노트 + 모든 동작. 입력이 있으면 맞는 노트·동작 + 맨 끝 `내용에서 찾기`. 빈 묶음은 뺀다 */
-export function paletteSections(notes: readonly MeetingInfo[], actions: readonly PaletteAction[], query: string): PaletteSection[] {
+/** 입력에 맞는 묶음. 빈 입력: 이 노트의 동작 + 최근 노트 + 모든 동작. 입력이 있으면 맞는 동작·노트 + 폴더·태그 + 맨 끝 `내용에서 찾기`. 빈 묶음은 뺀다.
+ * noteActions: 지금 연 노트의 동작 (노트를 열었을 때만). jumps: 폴더·태그로 거르기 (입력이 있을 때만: 빈 목록을 길게 만들지 않게) */
+export function paletteSections(notes: readonly MeetingInfo[], actions: readonly PaletteAction[], query: string, noteActions: readonly PaletteAction[] = [], jumps: readonly PaletteAction[] = []): PaletteSection[] {
   const q = query.trim();
   const found = q ? quickMatches(notes, q) : [...notes].sort(byUpdated).slice(0, RECENT_NOTES);
+  const match = (list: readonly PaletteAction[]): PaletteItem[] => list.filter((a) => (q ? actionMatches(a, q) : !a.typed)).map((action) => ({ kind: "action", action }));
   const sections: PaletteSection[] = [
+    { title: t("이 노트"), items: match(noteActions) },
     { title: q ? t("노트") : t("최근 노트"), items: found.map((note) => ({ kind: "note", note })) },
-    { title: t("동작"), items: actions.filter((a) => !q || actionMatches(a, q)).map((action) => ({ kind: "action", action })) },
+    { title: t("동작"), items: match(actions) },
+    { title: t("폴더·태그"), items: q ? match(jumps) : [] },
     { title: t("찾기"), items: q ? [{ kind: "search", q }] : [] },
   ];
   return sections.filter((s) => s.items.length);

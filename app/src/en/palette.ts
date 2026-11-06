@@ -8,4 +8,7 @@ export default {
   "내용에서 ‘{q}’ 찾기": "Search contents for “{q}”",
   "맞는 것이 없습니다": "Nothing matches",
   "새 메모": "new memo",
+  "이 노트": "This note",
+  "폴더·태그": "Folders & tags",
+  "내보내기: {format}": "Export: {format}",
 } satisfies Dict;
