@@ -665,6 +665,10 @@ export function App() {
         { id: "favorite", label: openNote.favorite ? t("즐겨찾기에서 빼기") : t("즐겨찾기에 추가"), icon: <Star />, run: () => void org.setFavorite(openNote.id, !openNote.favorite) },
         { id: "tags", label: t("태그 편집…"), icon: <Tag />, run: () => org.requestTagFocus(openNote.id) },
         ...exportFormatsFor(isMemo(openNote), isRecorded(openNote)).map((f) => ({ id: `export-${f.format}`, label: t("내보내기: {format}", { format: f.label }), keywords: f.ext, icon: <Download />, typed: !COMMON_EXPORTS.includes(f.format), run: () => setExportReq({ id: openNote.id, format: f.format, nonce: Date.now() }) })),
+        { id: "print", label: t("내보내기: {format}", { format: "PDF" }), keywords: t("인쇄"), icon: <Download />, typed: true, run: () => setExportReq({ id: openNote.id, format: "print", nonce: Date.now() }) },
+        // 폴더로 옮기기: 사이드바 줄 메뉴의 고르는 창 대신 폴더마다 한 줄 (찾을 때만)
+        ...folders.filter((f) => f.id !== openNote.folder).map((f) => ({ id: `move-${f.id}`, label: t("폴더로 이동: {folder}", { folder: folderPath(folders, f.id) }), icon: <FolderIcon />, typed: true, run: () => void org.moveNote(openNote.id, f.id) })),
+        ...(openNote.folder ? [{ id: "move-out", label: t("폴더에서 빼기"), keywords: t("폴더"), icon: <FolderIcon />, typed: true, run: () => void org.moveNote(openNote.id, null) }] : []),
         { id: "obsidian", label: t("Obsidian으로 보내기"), keywords: t("내보내기"), icon: <Download />, run: () => setExportReq({ id: openNote.id, format: "obsidian", nonce: Date.now() }) },
       ]
     : [];

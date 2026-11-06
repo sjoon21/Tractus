@@ -11,4 +11,7 @@ export default {
   "이 노트": "This note",
   "폴더·태그": "Folders & tags",
   "내보내기: {format}": "Export: {format}",
+  "폴더로 이동: {folder}": "Move to folder: {folder}",
+  "폴더에서 빼기": "Remove from folder",
+  인쇄: "print",
 } satisfies Dict;
