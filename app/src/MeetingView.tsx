@@ -390,7 +390,7 @@ export function MeetingView({
             </p>
           )}
           {/* 온보딩 ③: 처음 마주칠 때 하나씩 (tips.ts, 한 번에 하나) */}
-          <CoachMark id="transcript" anchor=".seg-time" ready={!memoNote && !recorded && segments.length > 0} />
+          <CoachMark id="transcript" side="top" align="start" anchor=".seg-time" ready={!memoNote && !recorded && segments.length > 0} />
           <CoachMark id="speakers" anchor="#speakers-title" ready={!memoNote && diarized} />
           <CoachMark id="export" />
           {!memoNote && diarized && (
