@@ -303,6 +303,11 @@ const glossaryAdd = (terms: string[]) => {
 
 const handlers: Record<string, (a: T) => unknown> = {
   glossary_list: () => ({ terms: glossary, max: 50 }),
+  // 사전 제안: 사람이 고친 문장 쌍 (온톨로지는 두 번, Grafana 한 번, 말투 고침은 제안되지 않는다)
+  glossary_corrections: () =>
+    EN
+      ? [["the ontolgy design", "the ontology design"], ["that ontolgy", "that ontology"], ["Grafna dashboard", "Grafana dashboard"], ["we did it", "we have done it"]]
+      : [["언톨로지 설계를 봅시다", "온톨로지 설계를 봅시다"], ["그 언톨로지는", "그 온톨로지는"], ["Grafna 대시보드", "Grafana 대시보드"], ["했습니다", "했어요"]],
   glossary_add: (a) => glossaryAdd(a.terms),
   glossary_remove: (a) => {
     const before = glossary.length;

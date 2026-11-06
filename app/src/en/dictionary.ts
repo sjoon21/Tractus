@@ -25,5 +25,10 @@ export default {
   "‘{term}’ 지우기": "Delete “{term}”",
   "사전에서 지웠습니다 — {term}": "Removed from custom vocabulary — {term}",
   되돌리기: "Undo",
+  "고쳐 쓴 낱말": "Words you corrected",
+  "대화 내용에서 고친 낱말입니다. 사전에 넣으면 다음 녹음부터 더 정확하게 알아듣습니다.": "Words you fixed in transcripts. Add them to recognize them better in future recordings.",
+  "‘{term}’ 사전에 추가": "Add “{term}” to custom vocabulary",
+  "‘{term}’ 제안 무시": "Dismiss “{term}”",
+  "{n}번": ["{n}×", "{n}×"],
   "{n}개는 추가하지 못했습니다 (40자가 넘거나 사전이 가득 찼습니다)": ["Couldn’t add {n} word (over 40 characters, or the list is full)", "Couldn’t add {n} words (over 40 characters, or the list is full)"],
 } satisfies Dict;

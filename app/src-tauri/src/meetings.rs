@@ -403,6 +403,46 @@ struct RecordingJson {
     duration: Option<f64>,
 }
 
+/// 사전 제안(WORDS.md §4.29)의 재료: 모든 녹음 노트에서 사람이 고친 문장 (원문, 고친 문장). 예시 노트·메모 노트·고치지 않은 줄은 뺀다.
+/// 고친 낱말을 고르는 규칙은 화면(vocab.ts termFromEdit)에 있다. 많아도 `CORRECTIONS_MAX`쌍까지
+pub const CORRECTIONS_MAX: usize = 5000;
+
+pub fn corrections(home: &Path) -> Vec<(String, String)> {
+    #[derive(Deserialize)]
+    struct Pair {
+        #[serde(default)]
+        text: String,
+        #[serde(default, deserialize_with = "lenient")]
+        corrected_text: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct Note {
+        #[serde(default)]
+        kind: Option<String>,
+        #[serde(default)]
+        sample: Option<bool>,
+        #[serde(default)]
+        segments: Vec<Pair>,
+    }
+    let Ok(entries) = fs::read_dir(home.join("meetings")) else { return vec![] };
+    let mut out = Vec::new();
+    for e in entries.flatten() {
+        let Ok(n) = read_json::<Note>(&e.path().join("transcript.json")) else { continue }; // 깨진 노트는 건너뛴다
+        if n.kind.as_deref() == Some("memo") || n.sample == Some(true) {
+            continue;
+        }
+        for s in n.segments {
+            if let Some(c) = s.corrected_text.filter(|c| *c != s.text) {
+                out.push((s.text, c));
+                if out.len() >= CORRECTIONS_MAX {
+                    return out;
+                }
+            }
+        }
+    }
+    out
+}
+
 /// 녹음 폴더 이름은 tractus-rec이 만든 ULID(영숫자)만 받는다. `..`이나 다른 경로가 전사·삭제 대상이 되지 않게 한다.
 pub fn is_recording_dir(home: &Path, dir: &Path) -> bool {
     dir.parent() == Some(home.join("recordings").as_path())
@@ -590,6 +630,22 @@ mod tests {
         assert!(list(&home).iter().find(|m| m.id == "01A").unwrap().has_summary);
         fs::remove_dir_all(home.join("meetings/2026-10-02_x_01B")).unwrap();
         assert_eq!(titles(&home), ["바뀐 제목"]);
+    }
+
+    #[test]
+    fn corrections_are_human_edits_of_recording_notes_only() {
+        let home = std::env::temp_dir().join(format!("tractus-corr-{}", std::process::id()));
+        let note = |name: &str, body: &str| {
+            let d = home.join("meetings").join(name);
+            fs::create_dir_all(&d).unwrap();
+            fs::write(d.join("transcript.json"), body).unwrap();
+        };
+        note("a", r#"{"segments":[{"id":"s1","start":0,"end":1,"text":"언톨로지 회의","corrected_text":"온톨로지 회의"},{"id":"s2","start":1,"end":2,"text":"같음","corrected_text":"같음"},{"id":"s3","start":2,"end":3,"text":"그대로","corrected_text":null}]}"#);
+        note("b", r#"{"kind":"memo","segments":[{"id":"s1","start":0,"end":0,"text":"x","corrected_text":"y"}]}"#);
+        note("c", r#"{"sample":true,"segments":[{"id":"s1","start":0,"end":1,"text":"x","corrected_text":"y"}]}"#);
+        note("d", "{broken");
+        assert_eq!(corrections(&home), [("언톨로지 회의".to_string(), "온톨로지 회의".to_string())]);
+        fs::remove_dir_all(&home).unwrap();
     }
 
     #[test]

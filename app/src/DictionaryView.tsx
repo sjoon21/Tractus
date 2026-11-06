@@ -1,11 +1,11 @@
 // 사전 화면 (WORDS.md §4.29, 코드 이름 glossary): 단어 더하기·붙여 넣기·찾기·고치기·지우기(되돌리기 알림).
 // 저장은 코어 `tractus glossary`만 한다(glossary.md, 잠금 안에서). 순수 함수는 dictionary.ts.
 import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import type { Notify } from "./App";
 import { api, errDetail, errText } from "./api";
 import { ErrorDetail } from "./ErrorDetail";
-import { engineSkipsVocab, FIND_MIN, isMulti, matchTerms, splitTerms } from "./dictionary";
+import { engineSkipsVocab, FIND_MIN, isMulti, matchTerms, splitTerms, suggestFromCorrections } from "./dictionary";
 import { t } from "./i18n";
 import { useCapabilities } from "./useCapabilities";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageBody, PageHeader } from "@/components/ui/page";
 import { Section } from "@/components/ui/section";
+
+/** 사전 제안에서 `무시`한 낱말 (이 Mac의 이 앱에서만 기억한다. 잃어도 제안이 다시 보일 뿐이다) */
+const DISMISSED_KEY = "tractus.dictionary.dismissed";
+const readDismissed = (): Set<string> => {
+  try {
+    const v = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? "[]");
+    return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+};
 
 const SENT_NOTE = t("회의록·스마트 교정을 쓰면 사전 단어도 함께 AI 서비스로 보냅니다."); // words-ok: 탭 이름 `회의록`
 
@@ -25,6 +36,8 @@ export function DictionaryView({ onBack, notify }: { onBack: () => void; notify:
   const [editing, setEditing] = useState<{ term: string; value: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [skipsVocab, setSkipsVocab] = useState(false);
+  const [pairs, setPairs] = useState<[string, string][]>([]); // 사람이 고친 문장 쌍 (사전 제안의 재료)
+  const [dismissed, setDismissed] = useState(readDismissed);
   const track = useCapabilities().report?.doctor?.recommended_track;
 
   const load = useCallback(
@@ -36,6 +49,7 @@ export function DictionaryView({ onBack, notify }: { onBack: () => void; notify:
     [],
   );
   useEffect(() => void load(), [load]);
+  useEffect(() => void api.glossaryCorrections().then(setPairs, () => setPairs([])), []); // 제안은 덤이다: 실패하면 보이지 않는다
   // 사전 단어를 쓰지 않는 변환 엔진(Qwen이 아닌 계열)을 고른 사람에게만 알린다. 모르면 알리지 않는다
   useEffect(() => {
     void Promise.all([api.modelsList(), api.getSettings()]).then(
@@ -97,6 +111,16 @@ export function DictionaryView({ onBack, notify }: { onBack: () => void; notify:
   };
 
   const terms = list?.terms ?? [];
+  const suggestions = list ? suggestFromCorrections(pairs, terms, dismissed) : [];
+  const dismiss = (term: string) => {
+    const next = new Set(dismissed).add(term);
+    setDismissed(next);
+    try {
+      localStorage.setItem(DISMISSED_KEY, JSON.stringify([...next]));
+    } catch {
+      // 저장하지 못해도 이번에는 숨긴다
+    }
+  };
   const shown = matchTerms(terms, terms.length > FIND_MIN ? q : "");
   const used = new Set(terms.slice(0, list?.max ?? terms.length)); // terms는 최근 것부터
   const chip = (term: string) =>
@@ -183,6 +207,25 @@ export function DictionaryView({ onBack, notify }: { onBack: () => void; notify:
             </div>
           )}
         </div>
+
+        {suggestions.length > 0 && (
+          <Section title={t("고쳐 쓴 낱말")} description={t("대화 내용에서 고친 낱말입니다. 사전에 넣으면 다음 녹음부터 더 정확하게 알아듣습니다.")}>
+            <ul className="m-0 flex list-none flex-wrap gap-1.5 px-4 py-3">
+              {suggestions.map(({ term, count }) => (
+                <li key={term} className="flex h-7 items-center rounded-full border border-dashed border-border-strong bg-card text-[13px]">
+                  <button type="button" className="flex items-center gap-1 rounded-full py-1 pr-1 pl-2.5 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={t("‘{term}’ 사전에 추가", { term })} title={t("‘{term}’ 사전에 추가", { term })} disabled={busy} onClick={() => void add([term])}>
+                    <Plus className="size-3.5" aria-hidden />
+                    {term}
+                    <span className="text-xs text-subtle-foreground tabular-nums">{t("{n}번", { n: count })}</span>
+                  </button>
+                  <button type="button" className="mr-1 grid size-5 place-items-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={t("‘{term}’ 제안 무시", { term })} title={t("‘{term}’ 제안 무시", { term })} onClick={() => dismiss(term)}>
+                    <X className="size-3.5" aria-hidden />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
 
         {loadError ? (
           <div role="alert" className="text-[13px] text-destructive">
