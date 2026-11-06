@@ -38,7 +38,7 @@ import { LOCK_NOTICE, type AttachControls } from "./attach";
 import { ConvertPanel } from "./ConvertPanel";
 import { useConvertJob } from "./convertJobs";
 import { CONVERT_FIRST, deleteBlockedWhileConverting, isRecorded, keptNotice, recordedStats, type ConvertControls } from "./recorded";
-import { exportFormatsFor, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type SaveState } from "./memo";
+import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type SaveState } from "./memo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import { PolishBar } from "./PolishControls";
@@ -59,7 +59,7 @@ import { SegmentRow } from "@/components/note/SegmentRow";
 import { MemoRow } from "@/components/note/MemoRow";
 import { livePolish, nextSuggestion, pendingIds, suggestionMarks } from "./polish";
 
-/** 노트 머리의 내보내기 메뉴와 같은 일을 밖에서 부탁한다: format은 EXPORT_FORMATS의 형식 또는 "obsidian" */
+/** 노트 머리의 내보내기 메뉴와 같은 일을 밖에서 부탁한다: format은 EXPORT_FORMATS의 형식, "print"(PDF) 또는 "obsidian" */
 export type ExportReq = { id: string; format: string; nonce: number };
 
 export function MeetingView({
@@ -195,6 +195,7 @@ export function MeetingView({
     if (!exportReq || !detail || exportReq.nonce === doneReq.current) return; // 노트를 다 읽은 뒤에 한 번만
     doneReq.current = exportReq.nonce;
     if (exportReq.format === "obsidian") return void exp.toObsidian();
+    if (exportReq.format === "print") return void flushMemos().then((ok) => ok && exp.setPrintNonce((n) => n + 1)); // 노트 머리의 PDF와 같다: 쓰던 글까지
     const f = exportFormatsFor(memoNote, isRecorded(detail.info)).find((x) => x.format === exportReq.format);
     if (f) void exp.exportAs(f);
   }, [exportReq, detail]); // exp는 렌더마다 새로 만들어 넣지 않는다
