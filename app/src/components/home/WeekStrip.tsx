@@ -1,5 +1,5 @@
 // 홈의 `이번 주` 띠 (WORDS.md §4.31): 월~일 7칸에 날마다 캘린더 일정·노트 개수, 고른 날의 목록(일정 → 녹음, 노트 → 열기). 규칙은 week.ts
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { AudioLines, CalendarDays, ChevronLeft, ChevronRight, FileText, Mic } from "lucide-react";
 import type { CalendarEvent, MeetingInfo } from "../../api";
 import { attendeeLine, CARD_RECORD } from "../../calendar";
@@ -8,7 +8,7 @@ import { GatedButton } from "../../GatedButton";
 import { clock, t } from "../../i18n";
 import { dayParts } from "../../lib";
 import { isMemo, noteTime } from "../../memo";
-import { addDays, groupWeek, recordable, weekDays, weekStart, ymd, useWeekEvents, type WeekEvent } from "../../week";
+import { addDays, dayNotes, groupWeek, recordable, weekDays, weekStart, ymd, useWeekEvents, type WeekEvent } from "../../week";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 
@@ -70,7 +70,7 @@ export function WeekStrip({ notes, onOpen, onRecordEvent, recordGate, recording 
                 key={d}
                 type="button"
                 aria-pressed={d === day}
-                aria-label={t("{day}일 {weekday}요일 · 일정 {e} · 노트 {n}", { day: dp.day, weekday: dp.weekday, e: g.events.length, n: g.notes.length })}
+                aria-label={t("{day}일 {weekday}요일 · 일정 {e} · 노트 {n}", { day: dp.day, weekday: dp.weekday, e: g.events.length, n: dayNotes(g) })}
                 className={cn("flex flex-col items-center gap-1 py-2.5 outline-none transition-colors hover:bg-accent/60 focus-visible:bg-accent", d === day && "bg-accent")}
                 onClick={() => setPicked(d)}
               >
@@ -78,7 +78,7 @@ export function WeekStrip({ notes, onOpen, onRecordEvent, recordGate, recording 
                 <span className={cn("grid size-7 place-items-center rounded-full text-[13px] font-semibold tabular-nums", isToday && "bg-rec text-white")}>{dp.day}</span>
                 <span className="flex h-2 items-center gap-0.5" aria-hidden>
                   <Dots n={g.events.length} className="bg-primary" />
-                  <Dots n={g.notes.length} className="bg-muted-foreground/50" />
+                  <Dots n={dayNotes(g)} className="bg-muted-foreground/50" />
                 </span>
               </button>
             );
@@ -89,21 +89,33 @@ export function WeekStrip({ notes, onOpen, onRecordEvent, recordGate, recording 
           {!cur.events.length && !cur.notes.length && <p className="m-0 px-4 pt-1 pb-4 text-[13px] text-subtle-foreground">{t("일정과 노트가 없습니다")}</p>}
           <ul className="m-0 list-none p-0 pb-1.5">
             {cur.events.map((ev) => (
-              <EventRow key={`${ev.id}-${ev.start}`} ev={ev} now={now} gate={recordGate} recording={recording} onRecord={() => onRecordEvent(ev)} />
+              <Fragment key={`${ev.id}-${ev.start}`}>
+                <EventRow ev={ev} now={now} gate={recordGate} recording={recording} onRecord={() => onRecordEvent(ev)} />
+                {ev.notes.map((m) => (
+                  <NoteLine key={m.id} m={m} onOpen={onOpen} inEvent />
+                ))}
+              </Fragment>
             ))}
             {cur.notes.map((m) => (
-              <li key={m.id}>
-                <button type="button" className="flex w-full items-center gap-3 px-4 py-2 text-left outline-none hover:bg-accent/60 focus-visible:bg-accent" onClick={() => onOpen(m.id)}>
-                  {isMemo(m) ? <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden /> : <AudioLines className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
-                  <span className="min-w-0 flex-1 truncate text-[13px]">{m.title || t("제목 없음")}</span>
-                  <span className="shrink-0 text-xs text-subtle-foreground tabular-nums">{noteTime(m)}</span>
-                </button>
-              </li>
+              <NoteLine key={m.id} m={m} onOpen={onOpen} />
             ))}
           </ul>
         </div>
       </div>
     </section>
+  );
+}
+
+/** 노트 줄. inEvent: 위 일정으로 녹음한 노트 (일정 줄 아래에 들여 쓴다) */
+function NoteLine({ m, onOpen, inEvent = false }: { m: MeetingInfo; onOpen: (id: string) => void; inEvent?: boolean }) {
+  return (
+    <li>
+      <button type="button" className={cn("flex w-full items-center gap-3 py-2 pr-4 text-left outline-none hover:bg-accent/60 focus-visible:bg-accent", inEvent ? "pl-11" : "pl-4")} onClick={() => onOpen(m.id)}>
+        {isMemo(m) ? <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden /> : <AudioLines className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
+        <span className="min-w-0 flex-1 truncate text-[13px]">{m.title || t("제목 없음")}</span>
+        <span className="shrink-0 text-xs text-subtle-foreground tabular-nums">{noteTime(m)}</span>
+      </button>
+    </li>
   );
 }
 

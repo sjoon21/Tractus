@@ -39,6 +39,8 @@ export interface MeetingInfo {
   tracks_bytes?: number;
   /** 예시 노트 (온보딩, `tractus note sample`). 목록에 `예시` 표시 */
   sample?: boolean;
+  /** 캘린더 일정으로 시작한 노트의 일정 (event.json). 이번 주 띠가 일정과 잇는다 */
+  event?: { id?: string; title: string; start: string };
 }
 
 export interface Summary {

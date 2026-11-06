@@ -242,6 +242,9 @@ pub struct MeetingInfo {
     /// 예시 노트(온보딩)일 때만 싣는다
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub sample: bool,
+    /// 캘린더 일정으로 시작한 노트: {"id"?, "title", "start"} (event.json, 이번 주 띠가 일정과 잇는다)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Debug)]
@@ -314,6 +317,7 @@ fn info(dir: &Path, t: &Transcript) -> MeetingInfo {
         state: recorded_state(t),
         tracks_bytes: recorded_state(t).map(|_| dir_bytes(&dir.join("tracks"))),
         sample: t.sample == Some(true),
+        event: crate::calendar::note_event(dir), // event.json은 transcript.json보다 먼저 쓰여 목록 캐시가 놓치지 않는다
     }
 }
 

@@ -3,6 +3,7 @@
 // 빌드(index.html)에는 들어가지 않는다. `?lang=en`이면 화면도 가짜 데이터도 영어다(README 영어 스크린샷·데모).
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+import { addDays, weekStart } from "../week";
 import dataKo from "./data/meetings.json";
 import doctorKo from "./data/doctor.json";
 import modelsKo from "./data/models.json";
@@ -301,6 +302,13 @@ const glossaryAdd = (terms: string[]) => {
   return { added: fresh.length, skipped: terms.filter((x) => x.trim().length > 40).length };
 };
 
+/** 이번 주 화요일 9:30 (calendar_week의 데일리 스탠드업 s1) */
+const standupAt = () => {
+  const d = addDays(weekStart(new Date()), 1);
+  d.setHours(9, 30);
+  return d.toISOString();
+};
+
 const handlers: Record<string, (a: T) => unknown> = {
   glossary_list: () => ({ terms: glossary, max: 50 }),
   // 사전 제안: 사람이 고친 문장 쌍 (온톨로지는 두 번, Grafana 한 번, 말투 고침은 제안되지 않는다)
@@ -323,7 +331,8 @@ const handlers: Record<string, (a: T) => unknown> = {
   rec_send: fakeRecSend,
   marks_save: (a) => ((noteMarks = { ...noteMarks, [a.id]: a.marks }), { marks: a.marks }),
   summary_start: fakeSummary,
-  list_meetings: () => notes.map(info),
+  // 세 번째 노트는 이번 주 화요일 데일리 스탠드업(calendar_week의 s1)으로 녹음한 노트다: 이번 주 띠에서 일정 아래에 보인다
+  list_meetings: () => notes.map(info).map((m, i) => (i === 2 ? { ...m, event: { id: "s1", title: "", start: standupAt() } } : m)),
   note_sample: () => (sampleId = notes.find((n) => n.t.title.includes(Q3))?.t.meeting_id ?? notes[0].t.meeting_id),
   list_recordings: () => [],
   list_folders: () => [{ id: "f1", name: EN ? "Customers" : "고객사", parent: null, order: 0, created_at: "2026-10-01T09:00:00+09:00" }],

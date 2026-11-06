@@ -28,6 +28,8 @@ def test_clean_event_checks_title_times_and_attendees():
     ev = clean_event({**EVENT, "title": "주간\n개발", "calendar": 3, "attendees": ["김민수", "김민수", "", 7, "가" * 81, " 이지은 ", "guest@example.com"]})
     assert ev["title"] == "주간 개발" and ev["calendar"] == "" and ev["attendees"] == ["김민수", "이지은"]
     assert len(clean_event({**EVENT, "attendees": [f"사람{i}" for i in range(60)]})["attendees"]) == 50
+    assert clean_event({**EVENT, "id": "ABC-1:2"})["id"] == "ABC-1:2"  # 일정 ID는 노트와 잇는 데 쓴다
+    assert "id" not in clean_event({**EVENT, "id": "a\nb"}) and "id" not in clean_event({**EVENT, "id": "x" * 300}) and "id" not in clean_event({**EVENT, "id": 3})
     assert len(clean_event({**EVENT, "title": "가" * 300})["title"]) == 200  # 긴 제목은 잘라서 쓴다 (녹음을 막지 않는다)
 
 
