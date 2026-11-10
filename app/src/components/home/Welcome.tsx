@@ -1,4 +1,4 @@
-// 첫 화면: 시작 점검·곧 시작하는 일정 카드·만들기 카드·이번 주 띠(WeekStrip)·최근 노트.
+// 첫 화면: 곧 시작하는 일정·시작하기 목록·이번 주 띠(WeekStrip)·최근 노트·단축키. 만들기는 사이드바 녹음 단추·새 노트 메뉴가 맡는다(v3.106: 같은 일을 하는 큰 타일을 두지 않는다).
 import { useEffect, useMemo, useState } from "react";
 import { type CalendarEvent, type MeetingInfo } from "../../api";
 import { attendeeLine, CARD_LABEL, CARD_RECORD, eventWhen, useNextEvent } from "../../calendar";
@@ -11,7 +11,7 @@ import { useCapabilities } from "../../useCapabilities";
 import { locale, t } from "../../i18n";
 import type { NewNoteAction } from "../../menu";
 import { isMemo, noteTime } from "../../memo";
-import { AudioLines, Box, CalendarClock, ChevronRight, FileText, Mic, SquarePen, Stethoscope, Upload } from "lucide-react";
+import { AudioLines, Box, ChevronRight, FileText, Mic, Stethoscope } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { FlickeringGrid } from "@/components/ui/flickering-grid";
@@ -19,7 +19,7 @@ import { WeekStrip } from "./WeekStrip";
 
 const RECENT_MAX = 6;
 
-export function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, recordGate, convertGate, recording }: { notes: MeetingInfo[]; onOpen: (id: string) => void; onAction: (a: NewNoteAction) => void; onRecordEvent: (ev: CalendarEvent) => void; onSample: () => void; recordGate: Decision; convertGate: Decision; recording: boolean }) {
+export function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, recordGate, recording }: { notes: MeetingInfo[]; onOpen: (id: string) => void; onAction: (a: NewNoteAction) => void; onRecordEvent: (ev: CalendarEvent) => void; onSample: () => void; recordGate: Decision; recording: boolean }) {
   const caps = useCapabilities();
   const { openCheckup, openModels } = caps;
   const next = useNextEvent();
@@ -40,7 +40,6 @@ export function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, reco
     [["⌘B"], t("노트 목록 접기·펼치기")],
     [["⌥⌘B"], t("오른쪽 패널 접기·펼치기")],
   ];
-  const action = "flex flex-col items-start gap-3 rounded-lg border border-border bg-card p-4 text-left outline-none transition-colors hover:border-border-strong hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring/40 gated:opacity-50 [&_svg]:size-5";
   return (
     <section className="relative isolate flex h-full flex-col overflow-y-auto">
       <FlickeringGrid className="absolute inset-x-0 top-0 -z-10 h-[360px] [mask-image:radial-gradient(ellipse_70%_100%_at_50%_0%,black_20%,transparent_75%)]" />
@@ -55,40 +54,17 @@ export function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, reco
         <CoachMark id="ask" side="right" ready={!checklist && notes.some((n) => !n.sample)} />
         {next && <CoachMark id="calendar" ready={!checklist} />}
 
-        <div className="grid grid-cols-3 gap-3">
-          <GatedButton gate={recordGate} className={action} disabled={recording} onClick={() => onAction("record")}>
-            <span className="grid size-9 place-items-center rounded-full bg-rec-wash text-rec">
-              <Mic aria-hidden />
-            </span>
-            <span className="text-[13px] font-medium">{t("녹음 시작")}</span>
-          </GatedButton>
-          <button type="button" className={action} onClick={() => onAction("write")}>
-            <span className="grid size-9 place-items-center rounded-full bg-memo-wash text-memo">
-              <SquarePen aria-hidden />
-            </span>
-            <span className="flex w-full items-center justify-between text-[13px] font-medium">
-              {t("글쓰기")} <Kbd>⌘N</Kbd>
-            </span>
-          </button>
-          <GatedButton gate={convertGate} className={action} onClick={() => onAction("import")}>
-            <span className="grid size-9 place-items-center rounded-full bg-secondary text-muted-foreground">
-              <Upload aria-hidden />
-            </span>
-            <span className="text-[13px] font-medium">{t("파일 가져오기")}</span>
-          </GatedButton>
-        </div>
-
         <WeekStrip notes={notes} onOpen={onOpen} onRecordEvent={onRecordEvent} recordGate={recordGate} recording={recording} />
 
         {recent.length > 0 && (
           <section aria-labelledby="recent-title" className="flex flex-col gap-2">
-            <h2 id="recent-title" className="m-0 px-1 text-[13px] font-semibold">
+            <h2 id="recent-title" className="m-0 px-2 text-[13px] font-semibold">
               {t("최근 노트")}
             </h2>
-            <ul className="m-0 list-none divide-y divide-border overflow-hidden rounded-lg border border-border bg-card p-0">
+            <ul className="m-0 flex list-none flex-col p-0">
               {recent.map((m) => (
                 <li key={m.id}>
-                  <button type="button" className="flex w-full items-center gap-3 px-4 py-2.5 text-left outline-none hover:bg-accent/60 focus-visible:bg-accent" onClick={() => onOpen(m.id)}>
+                  <button type="button" className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left outline-none hover:bg-accent/60 focus-visible:bg-accent" onClick={() => onOpen(m.id)}>
                     {isMemo(m) ? <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden /> : <AudioLines className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
                     <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{m.title || t("제목 없음")}</span>
                     <span className="shrink-0 text-xs text-subtle-foreground tabular-nums">
@@ -101,12 +77,12 @@ export function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, reco
           </section>
         )}
 
-        <details className="group rounded-lg border border-border bg-card">
-          <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-2.5 text-[13px] font-semibold select-none">
-            {t("단축키")}
+        <details className="group">
+          <summary className="flex w-fit cursor-pointer list-none items-center gap-1 px-2 text-[13px] font-semibold select-none">
             <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" aria-hidden />
+            {t("단축키")}
           </summary>
-          <dl className="m-0 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-border px-4 py-3 text-[13px]">
+          <dl className="m-0 grid grid-cols-2 gap-x-6 gap-y-2 px-2 pt-3 text-[13px]">
             {keys.map(([ks, label]) => (
               <div key={label} className="flex items-center gap-3">
                 <dt className="flex w-16 shrink-0 gap-0.5">
@@ -120,12 +96,12 @@ export function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, reco
           </dl>
         </details>
 
-        <p className="m-0 flex gap-2">
-          <Button variant="outline" size="sm" onClick={openCheckup}>
+        <p className="m-0 -mt-4 flex gap-1">
+          <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={openCheckup}>
             <Stethoscope aria-hidden />
             {CHECKUP_LABEL}
           </Button>
-          <Button variant="outline" size="sm" onClick={openModels}>
+          <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={openModels}>
             <Box aria-hidden />
             {MODELS_LABEL}
           </Button>
@@ -144,12 +120,9 @@ function NextEventCard({ ev, gate, recording, onRecord }: { ev: CalendarEvent; g
   }, []);
   const people = attendeeLine(ev.attendees);
   return (
-    <section aria-label={CARD_LABEL} data-tip="calendar" className="flex items-center gap-4 rounded-lg border border-border bg-card/90 p-4 shadow-xs backdrop-blur-sm">
-      <span className="grid size-9 shrink-0 place-items-center rounded-full bg-rec-wash text-rec">
-        <CalendarClock className="size-5" aria-hidden />
-      </span>
+    <section aria-label={CARD_LABEL} data-tip="calendar" className="flex items-center gap-4 border-l-2 border-rec py-1 pl-4">
       <div className="min-w-0 flex-1">
-        <p className="m-0 text-xs font-medium text-muted-foreground tabular-nums">{eventWhen(ev, now)}</p>
+        <p className="m-0 text-xs font-medium text-rec tabular-nums">{eventWhen(ev, now)}</p>
         <p className="m-0 truncate text-[15px] font-semibold leading-6" title={ev.title}>
           {ev.title}
         </p>
