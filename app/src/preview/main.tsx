@@ -142,7 +142,7 @@ const fakeRecording = () => {
     levelTimer = setInterval(() => {
       t += 0.25;
       const talk = Math.sin(t * 1.3) > -0.2; // 말하는 구간과 쉬는 구간
-      const mic = talk ? -30 + 16 * Math.abs(Math.sin(t * 5.1)) + 6 * Math.random() : -52 + 4 * Math.random();
+      const mic = talk ? -40 + 26 * Math.random() : -54 + 5 * Math.random();
       rec({ event: "level", t, mic, system: null });
     }, 250);
   }, 50);

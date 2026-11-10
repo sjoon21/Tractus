@@ -91,8 +91,8 @@ export function RecordView({
         {(live || rec.phase === "starting" || rec.phase === "stopping") && (
           <>
             <div className="flex flex-col gap-3">
-              <LevelWave label={t("마이크")} db={rec.mic} tick={rec.t} present={rec.tracks.includes("mic")} />
-              {rec.mode === "hybrid" && <LevelWave label={t("시스템 오디오")} db={rec.system} tick={rec.t} present={rec.tracks.includes("system")} tone="system" />}
+              <LevelWave label={t("마이크")} db={rec.mic} tick={rec.t} present={rec.tracks.includes("mic")} live={rec.phase === "recording"} />
+              {rec.mode === "hybrid" && <LevelWave label={t("시스템 오디오")} db={rec.system} tick={rec.t} present={rec.tracks.includes("system")} live={rec.phase === "recording"} tone="system" />}
             </div>
 
             <form
