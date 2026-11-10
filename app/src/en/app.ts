@@ -190,6 +190,7 @@ export default {
   "이미 녹음 중입니다": "Already recording",
   "변환이 끝난 뒤에 녹음할 수 있습니다": "You can record after transcription finishes",
   "녹음 방식": "Recording mode",
+  "녹음 방식: {mode}": "Recording mode: {mode}",
   "노트 검색": "Search notes",
   "AI 어시스턴트 (⌘J)": "AI assistant (⌘J)",
   "{exts} — 창에 끌어 놓아도 됩니다": "{exts} — or drag files onto the window",

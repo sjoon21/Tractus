@@ -31,9 +31,10 @@ import { editQueue } from "./editQueue";
 import { ErrorDetail } from "./ErrorDetail";
 import { t } from "./i18n";
 import { bindIndexer, indexer } from "./indexer";
-import { baseName, errorView, isImeKey, isRecLive, IDLE_JOB, JOB_ERROR, IMPORT_EXTS, isImportable, isTypingTarget, recMode, REC_MODES, type RecMode } from "./lib";
+import { baseName, errorView, isImeKey, isRecLive, IDLE_JOB, JOB_ERROR, IMPORT_EXTS, isImportable, isTypingTarget, recMode, type RecMode } from "./lib";
 import { MeetingView, type ExportReq } from "./MeetingView";
 import type { NewNoteAction } from "./menu";
+import { RecModeIcon, RecordModeMenu } from "./RecordModeMenu";
 import { NewNoteMenu } from "./NewNoteMenu";
 import { dropMemo, exportFormatsFor, flushMemos, isMemo, settleMemo } from "./memo";
 import { RecordView } from "./RecordView";
@@ -762,16 +763,19 @@ export function App() {
 
         <div className="flex flex-col gap-1.5 px-3">
           <div className="flex gap-1.5">
-            <GatedButton
-              gate={recording || recordBlocked ? OK : recordGate}
-              className={cn(buttonVariants({ variant: recButtonView.live ? "rec" : "outline" }), "flex-1 justify-start gap-2 bg-background", recButtonView.live && "bg-rec", rec.phase === "paused" && "opacity-80")}
-              onClick={() => onRecordButton()}
-              aria-current={view.kind === "record"}
-            >
-              <span className={cn("size-2 shrink-0 rounded-full", recButtonView.live ? "bg-white" : "bg-rec", rec.phase === "recording" && "animate-rec-pulse")} aria-hidden />
-              <span>{recButtonView.text}</span>
-              {recButtonView.time && <time className="ml-auto tabular-nums opacity-90">{recButtonView.time}</time>}
-            </GatedButton>
+            <div className="flex min-w-0 flex-1">
+              <GatedButton
+                gate={recording || recordBlocked ? OK : recordGate}
+                className={cn(buttonVariants({ variant: recButtonView.live ? "rec" : "outline" }), "min-w-0 flex-1 justify-start gap-2 bg-background", !recording && "rounded-r-none", recButtonView.live && "bg-rec", rec.phase === "paused" && "opacity-80")}
+                onClick={() => onRecordButton()}
+                aria-current={view.kind === "record"}
+              >
+                <span className={cn("size-2 shrink-0 rounded-full", recButtonView.live ? "bg-white" : "bg-rec", rec.phase === "recording" && "animate-rec-pulse")} aria-hidden />
+                <span>{recButtonView.text}</span>
+                {recButtonView.time ? <time className="ml-auto tabular-nums opacity-90">{recButtonView.time}</time> : !recording && <RecModeIcon mode={mode} className="ml-auto text-muted-foreground" />}
+              </GatedButton>
+              {!recording && <RecordModeMenu mode={mode} onPick={chooseMode} className="-ml-px rounded-l-none" />}
+            </div>
             <NewNoteMenu
               onPick={onNewNote}
               tips={{ import: t("{exts} — 창에 끌어 놓아도 됩니다", { exts: IMPORT_EXTS.join(" ") }) }}
@@ -779,28 +783,16 @@ export function App() {
             />
           </div>
 
-          {!recording && recordNotice(convertGate) && (
-            <p className="px-1 text-xs text-muted-foreground" role="note">
+          {!recording && !convertGate.ok && (
+            <button
+              type="button"
+              className="self-start px-1 text-left text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              title={`${convertGate.reason} (${convertGate.fix.label})`}
+              onClick={() => caps.fixAction(convertGate.fix)}
+            >
               {recordNotice(convertGate)}
-            </p>
+            </button>
           )}
-
-          <div className="grid grid-cols-2 gap-0.5 rounded-md bg-sidebar-accent p-0.5" role="radiogroup" aria-label={t("녹음 방식")}>
-            {REC_MODES.map((m) => (
-              <button
-                key={m.mode}
-                type="button"
-                role="radio"
-                aria-checked={mode === m.mode}
-                title={m.note}
-                disabled={recording}
-                onClick={() => chooseMode(m.mode)}
-                className="h-6 whitespace-nowrap rounded-[5px] text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50 aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-xs"
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="mt-3 flex flex-col gap-px px-2">

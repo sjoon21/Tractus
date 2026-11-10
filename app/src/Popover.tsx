@@ -95,6 +95,8 @@ export interface MenuEntry {
   indent?: number;
   /** 못 쓰는 이유 (title로 말한다). 초점은 받되 아무 일도 하지 않는다 */
   disabled?: string;
+  /** 쓸 수 있을 때 가리키면 보이는 설명 */
+  title?: string;
   danger?: boolean;
   hint?: string;
   /** 앞에 가는 구분선 */
@@ -134,7 +136,7 @@ export function ItemMenu({ entries, close }: { entries: MenuEntry[]; close: Clos
           role={it.checked === undefined ? "menuitem" : "menuitemradio"}
           aria-checked={it.checked}
           aria-disabled={it.disabled ? true : undefined}
-          title={it.disabled}
+          title={it.disabled ?? it.title}
           tabIndex={-1}
           className={cn(MENU_ITEM, it.danger && "text-destructive")}
           style={it.indent ? { paddingLeft: 8 + it.indent * 14 } : undefined}
