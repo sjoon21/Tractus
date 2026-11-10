@@ -128,8 +128,6 @@ export default {
 
   // 노트 목록·정리 (NoteLibrary, NoteRow, NoteOrganizer, organize)
   "{day}일 {weekday}요일": "{weekday} {day}",
-  "목록에서 제목 찾기": "Filter by title",
-  "목록에서 제목으로 거르기": "Filter the list by title",
   "즐겨찾기 노트": "Favorite notes",
   "태그 (여럿을 고르면 모두 붙은 노트)": "Tags (pick several to show notes with all of them)",
   "노트 바로 열기": "Open a note",
