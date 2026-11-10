@@ -160,8 +160,8 @@ export const MODEL_LOAD_FAILED_ERROR = t("변환 엔진을 불러오지 못했�
 export const ASR_ENGINE_MISSING_WARNING = t("고른 기본 변환 엔진이 없어 메모리에 맞는 기본 엔진으로 변환했습니다. 모델 화면에서 받거나 다른 엔진을 고르세요.");
 
 /** 녹음 버튼 아래 안내: 녹음은 모델 없이도 된다. 변환을 못 하는 이유가 있을 때만 (없으면 null) */
-export const RECORD_NOTICE_MODELS = t("변환 엔진이 없어 녹음만 저장됩니다. 모델 화면에서 설치하면 변환할 수 있습니다");
-export const RECORD_NOTICE_FFMPEG = t("ffmpeg가 없어 녹음만 저장됩니다. 설치하면 변환할 수 있습니다");
+export const RECORD_NOTICE_MODELS = t("녹음만 저장됩니다 · 변환 엔진 설치");
+export const RECORD_NOTICE_FFMPEG = t("녹음만 저장됩니다 · ffmpeg 설치");
 export function recordNotice(d: Decision): string | null {
   if (d.ok) return null;
   return d.fix.kind === "checkup" ? RECORD_NOTICE_FFMPEG : RECORD_NOTICE_MODELS;

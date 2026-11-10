@@ -122,8 +122,8 @@ describe("녹음 버튼 아래 안내", () => {
   test("모델이 없으면 녹음만 저장된다고, ffmpeg만 없으면 ffmpeg를 말한다", () => {
     const m = decide(report([{ id: "convert", missing: ["asr-std"] }]), "convert");
     const f = decide(report([{ id: "convert", missing: ["ffmpeg"] }]), "convert");
-    expect(recordNotice(m)).toBe("변환 엔진이 없어 녹음만 저장됩니다. 모델 화면에서 설치하면 변환할 수 있습니다");
-    expect(recordNotice(f)).toBe("ffmpeg가 없어 녹음만 저장됩니다. 설치하면 변환할 수 있습니다");
+    expect(recordNotice(m)).toBe("녹음만 저장됩니다 · 변환 엔진 설치");
+    expect(recordNotice(f)).toBe("녹음만 저장됩니다 · ffmpeg 설치");
   });
 });
 

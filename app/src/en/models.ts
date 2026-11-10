@@ -46,8 +46,8 @@ export default {
     "Transcription engine files are missing. Install them in Models or check “Transcription engine location” in Settings.",
   "권장 변환 엔진이 없어 설치된 다른 변환 엔진으로 변환했습니다. 권장 엔진은 모델 화면에서 설치할 수 있습니다.":
     "The recommended transcription engine isn’t installed, so another installed engine was used. You can install the recommended engine in Models.",
-  "변환 엔진이 없어 녹음만 저장됩니다. 모델 화면에서 설치하면 변환할 수 있습니다": "No transcription engine, so recordings are only saved. Install one in Models to transcribe",
-  "ffmpeg가 없어 녹음만 저장됩니다. 설치하면 변환할 수 있습니다": "ffmpeg is missing, so recordings are only saved. Install it to transcribe",
+  "녹음만 저장됩니다 · 변환 엔진 설치": "Recordings only · Install a transcription engine",
+  "녹음만 저장됩니다 · ffmpeg 설치": "Recordings only · Install ffmpeg",
   "지금은 파일을 텍스트로 변환할 수 없습니다": "Files can’t be transcribed right now",
   "녹음을 저장했습니다. 지금은 텍스트로 변환할 수 없어 ‘변환 대기 중인 녹음’에 남겨 두었습니다. 준비가 끝나면 왼쪽 목록에서 변환하세요.":
     "Recording saved. It can’t be transcribed right now, so it’s waiting in “Waiting to transcribe”. Transcribe it from the sidebar when ready.",
