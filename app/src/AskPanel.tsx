@@ -182,7 +182,7 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
             <input type="date" className={DATE} aria-label={t("끝 날짜")} value={range.to} min={range.from || undefined} onChange={(e) => setRange({ ...range, to: e.target.value })} />
           </fieldset>
         )}
-        <div className="flex flex-col rounded-lg border border-input bg-background shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25">
+        <div className="flex flex-col rounded-xl border border-border bg-background transition-[border-color,box-shadow] focus-within:border-border-strong focus-within:shadow-sm">
           <textarea
             ref={inputRef}
             className="max-h-[14em] min-h-[3.25rem] w-full resize-none border-0 bg-transparent px-3 pt-2.5 pb-1 text-[14px] leading-6 outline-none [field-sizing:content] placeholder:text-subtle-foreground"
@@ -225,6 +225,8 @@ const EXAMPLES_ALL = [t("지난주에 정한 것을 정리해 줘"), t("내가 �
 const EXAMPLES_NOTE = [t("이 노트를 세 줄로 요약해 줘"), t("정한 것과 할 일을 알려 줘"), t("숫자나 날짜가 나온 부분은?")];
 
 const DATE = cn(inputClass, "h-7 w-auto px-1.5 text-xs");
+/** 기다리는 동안 상태 글자 위로 빛이 지나간다 (prompt-kit Text Shimmer). 움직임 줄이기면 그냥 글자 */
+const SHIMMER = "bg-[linear-gradient(90deg,var(--subtle-foreground)_0%,var(--subtle-foreground)_40%,var(--foreground)_50%,var(--subtle-foreground)_60%,var(--subtle-foreground)_100%)] bg-[length:200%_100%] bg-clip-text text-transparent animate-shine motion-reduce:animate-none motion-reduce:bg-none motion-reduce:text-subtle-foreground";
 
 function TurnItem({ turn: { question, state: s }, scope, onCite, notes, memoIds }: { turn: Turn; scope: AskScope; onCite: OnCite; notes?: ReadonlySet<string> | null; memoIds?: ReadonlySet<string> }) {
   const ctx = { meetingId: scope.kind === "meeting" ? scope.id : undefined, citations: s.citations, sources: s.sources, starts: scope.kind === "meeting" ? scope.starts : undefined };
@@ -233,7 +235,7 @@ function TurnItem({ turn: { question, state: s }, scope, onCite, notes, memoIds 
     <li className="flex flex-col gap-2 animate-in fade-in-0 slide-in-from-bottom-1 duration-300">
       <p className="m-0 ml-auto max-w-[88%] rounded-lg bg-foreground/[0.06] px-3 py-1.5 text-[14px] leading-6 whitespace-pre-wrap">{question}</p>
       {(s.answer || s.phase === "done") && (
-        <p className={cn("m-0 text-[14px] leading-6 whitespace-pre-wrap", s.phase === "answer" && "after:ml-0.5 after:inline-block after:h-[1em] after:w-[0.45em] after:animate-pulse after:bg-rec after:align-[-0.14em] after:content-['']")}>
+        <p className="m-0 text-[14px] leading-6 whitespace-pre-wrap">
           {answerParts(s.answer).map((p, i) => {
             if (p.kind === "text") return <Fragment key={i}>{p.text}</Fragment>;
             const to = citeTarget(p, ctx);
@@ -254,7 +256,7 @@ function TurnItem({ turn: { question, state: s }, scope, onCite, notes, memoIds 
         </p>
       )}
       <p className="m-0 flex items-center gap-2 text-xs text-subtle-foreground empty:hidden" role="status">
-        {status && !(s.phase === "answer" && s.answer) ? status : null}
+        {status && !(s.phase === "answer" && s.answer) ? <span className={SHIMMER}>{status}</span> : null}
         {s.phase === "done" && s.citations.length === 0 && <Badge>{t("근거 대화 없음")}</Badge>}
         {s.phase === "cancelled" && t("멈췄습니다")}
       </p>
