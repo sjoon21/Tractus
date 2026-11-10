@@ -33,7 +33,6 @@ export interface OrganizeValue {
   tree: TreeNode[];
   tags: TagCount[];
   filter: NoteFilter;
-  setQuery: (q: string) => void;
   /** 태그를 걸러내기에 넣거나 뺀다 (여럿이면 모두 붙은 노트) */
   toggleTag: (tag: string) => void;
   /** null: 폴더로 거르지 않음, "none": 폴더 없는 노트 */
@@ -116,7 +115,6 @@ export function useOrganizeState({ meetings, setMeetings, folders, setFolders, r
     });
   }, [folders, tags]);
 
-  const setQuery = useCallback((query: string) => setFilter((f) => ({ ...f, query })), []);
   const toggleTag = useCallback(
     (tag: string) =>
       setFilter((f) => (f.tags.some((t) => foldKey(t) === foldKey(tag)) ? { ...f, tags: f.tags.filter((t) => foldKey(t) !== foldKey(tag)) } : { ...f, tags: [...f.tags, tag] })),
@@ -198,10 +196,10 @@ export function useOrganizeState({ meetings, setMeetings, folders, setFolders, r
 
   return useMemo(
     () => ({
-      folders, tree, tags, filter, setQuery, toggleTag, selectFolder, clearFilters,
+      folders, tree, tags, filter, toggleTag, selectFolder, clearFilters,
       sort: prefs.sort, order: prefs.order, setSort, toggleOrder,
       metaOf: metaById, setFavorite, setTags, moveNote, createFolder, renameFolder, moveFolder, deleteFolder, tagFocus, requestTagFocus,
     }),
-    [folders, tree, tags, filter, setQuery, toggleTag, selectFolder, clearFilters, prefs, setSort, toggleOrder, metaById, setFavorite, setTags, moveNote, createFolder, renameFolder, moveFolder, deleteFolder, tagFocus, requestTagFocus],
+    [folders, tree, tags, filter, toggleTag, selectFolder, clearFilters, prefs, setSort, toggleOrder, metaById, setFavorite, setTags, moveNote, createFolder, renameFolder, moveFolder, deleteFolder, tagFocus, requestTagFocus],
   );
 }
