@@ -4,9 +4,10 @@ import { RECORD_LABEL } from "./attach";
 import { ErrorDetail } from "./ErrorDetail";
 import { t } from "./i18n";
 import { GateHint } from "./GatedButton";
+import { LevelWave } from "./LevelWave";
 import { useCapabilities } from "./useCapabilities";
 import { EditableMark } from "./MarkEdit";
-import { errorView, fmtTime, isRecLive, JOB_ERROR, levelFraction, liveHaltView, liveHalted, REC_MODES, STAGE_LABEL, warningText, type RecCommand } from "./lib";
+import { errorView, fmtTime, isRecLive, JOB_ERROR, liveHaltView, liveHalted, REC_MODES, STAGE_LABEL, warningText, type RecCommand } from "./lib";
 import { AFTER_ASK } from "./afterRecord";
 import { PAUSE_LABEL, PAUSE_TITLE, RESUME_LABEL, RESUME_TITLE } from "./pause";
 import { CONVERT_FAILED_TITLE, CONVERT_RETRY, SAVE_DONE_TITLE, SAVE_FAILED_TITLE, SAVE_RETRY, SAVING } from "./recorded";
@@ -89,9 +90,9 @@ export function RecordView({
 
         {(live || rec.phase === "starting" || rec.phase === "stopping") && (
           <>
-            <div className="flex flex-col gap-2.5 rounded-lg border border-border bg-card px-4 py-3">
-              <Meter label={t("마이크")} db={rec.mic} present={rec.tracks.includes("mic")} />
-              {rec.mode === "hybrid" && <Meter label={t("시스템 오디오")} db={rec.system} present={rec.tracks.includes("system")} />}
+            <div className="flex flex-col gap-3">
+              <LevelWave label={t("마이크")} db={rec.mic} tick={rec.t} present={rec.tracks.includes("mic")} />
+              {rec.mode === "hybrid" && <LevelWave label={t("시스템 오디오")} db={rec.system} tick={rec.t} present={rec.tracks.includes("system")} tone="system" />}
             </div>
 
             <form
@@ -261,19 +262,6 @@ function LivePane({ live, recording }: { live: LiveState; recording: boolean }) 
         )}
       </div>
     </section>
-  );
-}
-
-function Meter({ label, db, present }: { label: string; db: number | null; present: boolean }) {
-  const f = levelFraction(db);
-  return (
-    <div className={cn("grid grid-cols-[6.5rem_minmax(0,1fr)_3.5rem] items-center gap-3", !present && "opacity-50")}>
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <div className="h-1.5 overflow-hidden rounded-full bg-border" role="meter" aria-label={label} aria-valuemin={-60} aria-valuemax={0} aria-valuenow={db ?? -60}>
-        <div className="h-full origin-left rounded-full bg-[#34c759] transition-transform duration-75" style={{ transform: `scaleX(${f})` }} />
-      </div>
-      <span className="text-right text-xs text-subtle-foreground tabular-nums">{present ? (db === null ? "—" : `${Math.round(db)} dB`) : t("꺼짐")}</span>
-    </div>
   );
 }
 
