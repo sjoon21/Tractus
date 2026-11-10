@@ -58,7 +58,7 @@ export const ASK_BLOCKS_RECORD = t("방금 한 녹음을 어떻게 할지 먼저
 
 export const AFTER_ASK = {
   title: t("녹음을 끝냈습니다"),
-  body: (seconds: number) => t("녹음 길이 {time}. 지금 텍스트로 변환할까요? 나중에 변환하려면 노트로 저장해 두세요. 저장한 노트는 바로 들어 볼 수 있고, 노트에서 ‘텍스트로 변환’을 눌러 언제든 변환할 수 있습니다.", { time: fmtTime(seconds) }),
+  body: (seconds: number) => t("녹음 길이 {time}. 나중에 변환해도 노트로 저장되어 바로 들어 볼 수 있습니다.", { time: fmtTime(seconds) }),
   convert: t("바로 변환하기"),
   later: t("나중에 변환하기"),
   /** 묻는 창 뒤의 녹음 화면에 보이는 한 줄 (아직 변환도 저장도 시작하지 않았다) */

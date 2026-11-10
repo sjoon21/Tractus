@@ -123,8 +123,7 @@ export default {
 
   // pause.ts·panels.ts: 녹음 단추
   "소리 받기를 잠시 멈춥니다. 멈춘 시간은 녹음에 들어가지 않습니다": "Stops listening for now. Paused time isn’t recorded",
-  "녹음을 이어서 합니다": "Continue recording",
-  "일시정지 중입니다. 멈춘 시간은 녹음에 들어가지 않습니다. 마이크 사용 표시는 녹음을 끝낼 때까지 켜져 있습니다.": "Paused. Paused time isn’t recorded. The microphone indicator stays on until you end the recording.",
+  "녹음을 이어서 합니다. 마이크 사용 표시는 녹음을 끝낼 때까지 켜져 있습니다": "Continue recording. The microphone indicator stays on until you end the recording",
   "일시정지됨 {time}": "Paused {time}",
   "녹음 끝남": "Recording ended",
   "저장 중…": "Saving…",

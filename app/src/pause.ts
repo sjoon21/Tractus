@@ -6,8 +6,7 @@ import { fmtTime, type RecPhase } from "./lib";
 export const PAUSE_LABEL = t("일시정지");
 export const RESUME_LABEL = t("계속");
 export const PAUSE_TITLE = t("소리 받기를 잠시 멈춥니다. 멈춘 시간은 녹음에 들어가지 않습니다");
-export const RESUME_TITLE = t("녹음을 이어서 합니다");
-export const PAUSED_NOTE = t("일시정지 중입니다. 멈춘 시간은 녹음에 들어가지 않습니다. 마이크 사용 표시는 녹음을 끝낼 때까지 켜져 있습니다.");
+export const RESUME_TITLE = t("녹음을 이어서 합니다. 마이크 사용 표시는 녹음을 끝낼 때까지 켜져 있습니다");
 export const PAUSED_STATUS = (seconds: number) => t("일시정지됨 {time}", { time: fmtTime(seconds) });
 
 export interface RecButton {

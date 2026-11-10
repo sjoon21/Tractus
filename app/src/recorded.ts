@@ -87,7 +87,7 @@ export const ROW_QUEUED = t("변환 대기");
 export const CONVERT_LABEL = t("텍스트로 변환");
 export const CONVERT_RETRY = t("다시 변환");
 export const CONVERT_EMPTY_TITLE = t("아직 텍스트로 변환하지 않았습니다");
-export const CONVERT_EMPTY_BODY = t("녹음은 저장되어 있어 아래 플레이어로 들어 볼 수 있습니다. 준비가 되면 텍스트로 변환하세요. 변환하기 전에도 메모를 쓰고 제목·태그·폴더를 정리할 수 있습니다.");
+export const CONVERT_EMPTY_BODY = t("아래 플레이어로 들어 볼 수 있고, 변환하기 전에도 메모를 쓸 수 있습니다.");
 export const KEPT_LINE = (size: string) => t("원본 녹음 {size}를 보관 중입니다. 텍스트로 변환하면 지워집니다.", { size });
 export const KEPT_WARN = t("변환하지 않으면 용량을 계속 차지합니다.");
 export const KEPT_TITLE = (size: string) => t("원본 녹음 {size} 보관 중", { size });
