@@ -58,9 +58,9 @@ Speech recognition, speaker detection and search run on your Mac (Apple Silicon,
     <td width="50%">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/images/en/home-dark.png">
-        <img src="docs/images/en/home-light.png" alt="Home: quick actions and recent notes">
+        <img src="docs/images/en/home-light.png" alt="Home: upcoming event, this week and recent notes">
       </picture>
-      <p align="center"><b>Home</b> — record, write, import, recent notes</p>
+      <p align="center"><b>Home</b> — upcoming event, this week, recent notes</p>
     </td>
     <td width="50%">
       <picture>
@@ -76,7 +76,7 @@ Speech recognition, speaker detection and search run on your Mac (Apple Silicon,
         <source media="(prefers-color-scheme: dark)" srcset="docs/images/en/record-dark.png">
         <img src="docs/images/en/record-light.png" alt="Recording screen">
       </picture>
-      <p align="center"><b>Record</b> — level meter, bookmarks, timestamped memos</p>
+      <p align="center"><b>Record</b> — live waveform, bookmarks, timestamped memos</p>
     </td>
     <td width="50%">
       <picture>

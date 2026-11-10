@@ -3,7 +3,6 @@
 // 빌드(index.html)에는 들어가지 않는다. `?lang=en`이면 화면도 가짜 데이터도 영어다(README 영어 스크린샷·데모).
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
-import { addDays, weekStart } from "../week";
 import dataKo from "./data/meetings.json";
 import doctorKo from "./data/doctor.json";
 import modelsKo from "./data/models.json";
@@ -312,9 +311,10 @@ const glossaryAdd = (terms: string[]) => {
 };
 
 /** 이번 주 화요일 9:30 (calendar_week의 데일리 스탠드업 s1) */
+// week.ts를 불러오지 않는다: 언어를 정하기(../main) 전에 앱 모듈을 불러오면 그 모듈의 문구 상수가 한국어로 굳는다
 const standupAt = () => {
-  const d = addDays(weekStart(new Date()), 1);
-  d.setHours(9, 30);
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7) + 1, 9, 30);
   return d.toISOString();
 };
 

@@ -12,7 +12,7 @@ const scenes = [
   { name: "note", steps: [["text", L.note], ["wait", 700], ["text", "0:34"], ["wait", 300]] },
   { name: "home", steps: [["wait", 900]] },
   { name: "ask", steps: [["text", L.note], ["wait", 600], ["role", "tab", L.ask], ["wait", 500]] },
-  { name: "record", steps: [["text", L.record], ["wait", 700]] },
+  { name: "record", steps: [["text", L.record], ["wait", 9000]] }, // 파형이 화면을 채우게 기다린다
   { name: "memo", steps: [["text", L.memo], ["wait", 700]] },
   { name: "settings", steps: [["text", L.settings], ["wait", 700]] },
 ];

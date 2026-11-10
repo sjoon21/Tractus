@@ -57,9 +57,9 @@
     <td width="50%">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/images/home-dark.png">
-        <img src="docs/images/home-light.png" alt="홈: 빠른 동작과 최근 노트 목록">
+        <img src="docs/images/home-light.png" alt="홈: 곧 시작하는 일정, 이번 주, 최근 노트">
       </picture>
-      <p align="center"><b>홈</b> — 녹음·작성·가져오기와 최근 노트 목록</p>
+      <p align="center"><b>홈</b> — 곧 시작하는 일정, 이번 주, 최근 노트</p>
     </td>
     <td width="50%">
       <picture>
@@ -75,7 +75,7 @@
         <source media="(prefers-color-scheme: dark)" srcset="docs/images/record-dark.png">
         <img src="docs/images/record-light.png" alt="녹음 화면">
       </picture>
-      <p align="center"><b>녹음</b> — 오디오 레벨 미터, 북마크, 타임스탬프 메모</p>
+      <p align="center"><b>녹음</b> — 흐르는 파형, 북마크, 타임스탬프 메모</p>
     </td>
     <td width="50%">
       <picture>
