@@ -889,7 +889,7 @@ LLM 프롬프트(요약·AI 질문)도 이름 없는 참석자를 `참석자 N`�
 
 ### 4.31 이번 주 (홈, 2026-11-05)
 
-홈의 만들기 카드 아래, `최근 노트` 위. 월~일 7칸(오늘은 붉은 동그라미)에 일정 점·노트 점(3개까지, 넘으면 `+n`), 칸을 누르면 아래에 그날 목록. 코드는 `week.ts`·`components/home/WeekStrip.tsx`, 일정은 `calendar_week`(docs/design/calendar.md).
+홈의 시작하기 목록 아래, `최근 노트` 위(v3.106에 만들기 카드를 지웠다). 월~일 7칸(오늘은 붉은 동그라미)에 일정 점·노트 점(3개까지, 넘으면 `+n`), 칸을 누르면 아래에 그날 목록. 코드는 `week.ts`·`components/home/WeekStrip.tsx`, 일정은 `calendar_week`(docs/design/calendar.md).
 
 | 위치 | 문구 |
 | --- | --- |
