@@ -58,6 +58,7 @@ import { NoteRail } from "@/components/note/NoteRail";
 import { SegmentRow } from "@/components/note/SegmentRow";
 import { MemoRow } from "@/components/note/MemoRow";
 import { livePolish, nextSuggestion, pendingIds, suggestionMarks } from "./polish";
+import { Empty } from "@/components/ui/empty";
 
 /** 노트 머리의 내보내기 메뉴와 같은 일을 밖에서 부탁한다: format은 EXPORT_FORMATS의 형식, "print"(PDF) 또는 "obsidian" */
 export type ExportReq = { id: string; format: string; nonce: number };
@@ -441,10 +442,9 @@ export function MeetingView({
         )}
         {!memoNote && recorded && convert && <ConvertPanel id={id} job={convertJob} controls={convert} kept={keptNotice(info.tracks_bytes, info.created_at, Date.now())} />}
         {!memoNote && !recorded && segments.length === 0 && (
-          <div className="transcript-empty mx-auto my-16 max-w-sm text-center" role="status">
-            <p className="m-0 text-[13px] font-semibold">{t("인식된 대화가 없습니다")}</p>
-            <p className="mt-1.5 mb-0 text-xs leading-relaxed text-muted-foreground">{t("이 녹음에서 말소리를 찾지 못했습니다. 아래 플레이어로 녹음된 소리를 확인해 보세요. 마이크가 멀었거나 녹음이 너무 짧았을 수 있습니다.")}</p>
-          </div>
+          <Empty className="transcript-empty my-6" role="status" title={t("인식된 대화가 없습니다")}>
+            {t("이 녹음에서 말소리를 찾지 못했습니다. 아래 플레이어로 녹음된 소리를 확인해 보세요. 마이크가 멀었거나 녹음이 너무 짧았을 수 있습니다.")}
+          </Empty>
         )}
         {!memoNote && <PolishBar live={polishMap} marks={suggestionMarks(segments, polishMap)} running={polish.running} busy={deciding.size > 0} onDecide={decidePolish} onJump={(to) => { const n = to ?? nextSuggestion(segments, polishMap, polishAt.current); if (n) jumpTo(n); }} />}
         {!memoNote && <ol className={`transcript ${diarized ? "has-speakers" : ""} ${polish.running ? "is-polishing" : ""}`} ref={list}>

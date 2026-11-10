@@ -37,6 +37,7 @@ import { Button } from "@/components/ui/button";
 import { selectClass } from "@/components/ui/select";
 import { checkClass } from "@/components/ui/switch";
 import { cn } from "@/components/ui/utils";
+import { Empty } from "@/components/ui/empty";
 
 export interface SummariesPanelProps {
   id: string;
@@ -353,16 +354,9 @@ export function SummariesPanel(p: SummariesPanelProps) {
         </div>
       ) : (
         loaded && (
-          // 빈 요약: 위의 `요약 만들기`가 이 화면의 주 동작임을 알 수 있게 한 덩어리로 보인다
-          <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border-strong px-5 py-8 text-center">
-            <span className="grid size-9 place-items-center rounded-full bg-secondary text-muted-foreground">
-              <NotebookPen className="size-4.5" aria-hidden />
-            </span>
-            <p className="m-0 text-[13px] font-semibold">{t("아직 요약이 없습니다")}</p>
-            <p className="m-0 max-w-[30ch] text-xs leading-relaxed text-muted-foreground">
-              {p.memoNote ? t("위에서 요약 유형을 고르고 ‘요약 만들기’를 누르면 근거가 된 줄과 함께 정리합니다.") : t("위에서 요약 유형을 고르고 ‘요약 만들기’를 누르면 근거 대화와 함께 정리합니다.")}
-            </p>
-          </div>
+          <Empty title={t("아직 요약이 없습니다")}>
+            {p.memoNote ? t("위에서 요약 유형을 고르고 ‘요약 만들기’를 누르면 근거가 된 줄과 함께 정리합니다.") : t("위에서 요약 유형을 고르고 ‘요약 만들기’를 누르면 근거 대화와 함께 정리합니다.")}
+          </Empty>
         )
       )}
 

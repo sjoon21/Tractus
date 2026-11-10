@@ -46,6 +46,7 @@ macOS 노트 앱(Granola·Apple Notes) 톤. 무채색 바탕에 색은 의미로
 
 - `Button` — `variant`: `default`(그 화면의 주 동작 하나), `outline`, `secondary`, `ghost`(툴바·부차 동작), `destructive`(확인 창의 삭제), `rec`, `link`. `size`: `sm`·`default`·`lg`·`icon`·`icon-sm`. 옛 `.text-button`(밑줄 글자 단추)은 `ghost` `sm` 또는 `link`로.
 - `Input`, `Textarea`, `Select`(네이티브), `Switch`(켜고 끄는 설정), `checkClass`(체크박스·라디오), `Kbd`, `Badge`(`default`·`memo`·`rec`·`outline`), `Progress`(값 0..1 또는 null).
+- `Empty`(`components/ui/empty.tsx`) — 빈 상태. 제목 한 줄 + 짧은 설명 + 단추 하나까지, 상자·아이콘 칩 없이 가운데.
 - `Section` + `Row` — 설정처럼 이름/조작이 짝인 목록(macOS 시스템 설정의 묶음 카드). `PageHeader`(뒤로 + 제목 + 동작) + `PageBody`(가운데 읽기 폭).
 - `Dock` + `DockGroup`(`components/ui/dock.tsx`) — 가운데 화면 아래에 뜨는 알약 모양 도구 막대. 자주 쓰는 것(패널 탭·도구)만 모으고 묶음 사이는 구분선. 좁으면 가로 스크롤(줄을 바꾸지 않는다). 같은 동작을 도크와 다른 자리에 두 번 두지 않는다.
 - 메뉴·팝오버: `Popover`/`ItemMenu`(`src/Popover.tsx`), 클래스 `MENU`·`MENU_ITEM`(`src/components/menu.ts`).
@@ -59,5 +60,5 @@ macOS 노트 앱(Granola·Apple Notes) 톤. 무채색 바탕에 색은 의미로
 - **상자보다 여백 (v3.106)**: 구역은 제목과 여백으로 나눈다. 테두리 상자·그림자·흐림, 색 동그라미 안의 아이콘(아이콘 칩)은 묶음이 꼭 필요한 것(달력 칸, 닫을 수 있는 시작하기 목록)에만 쓴다. 사이드바·메뉴에 이미 있는 만들기 동작을 화면에 큰 타일로 다시 두지 않는다.
 - **동작**: 키보드·초점·`role`·`aria-*`·`id`(다른 곳이 찾는 것)·테스트가 찾는 클래스는 그대로 둔다. 로직은 바꾸지 않는다(이 작업은 겉모습이다).
 - **CSS**: 화면 모양은 Tailwind 클래스로 쓴다. 클래스 이름에 `aria-disabled`·`disabled` 글자를 쓰지 않는다(테스트가 HTML에서 그 속성을 찾는다): `gated:`·`off:` 변형을 쓴다.
-- **부품 갤러리**: `pnpm dev` 중 `/gallery.html`이 `components/ui`의 부품(색·글자 크기·Button·Badge·입력·Section·Dock·메뉴·대화상자)을 한 페이지에 모아 라이트·다크로 보여 준다(`src/preview/gallery.tsx`, 빌드에는 안 들어간다). 새 부품을 만들면 거기에 한 줄 더한다.
+- **부품 갤러리**: `pnpm dev` 중 `/gallery.html`이 `components/ui`의 부품(색·글자 크기·Button·Badge·Empty·입력·Section·Dock·메뉴·대화상자)을 한 페이지에 모아 라이트·다크로 보여 준다(`src/preview/gallery.tsx`, 빌드에는 안 들어간다). 새 부품을 만들면 거기에 한 줄 더한다.
 - **확인**: `pnpm dev`(또는 `pnpm tauri dev`) 중에 `/preview.html`이 가짜 데이터로 앱을 띄운다(`src/preview/main.tsx`). 라이트·다크, 창 폭 900·1280·1600에서 본다. 넘치는 글자·잘린 단추·가로 스크롤이 없어야 한다.

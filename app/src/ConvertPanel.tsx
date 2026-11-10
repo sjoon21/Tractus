@@ -2,7 +2,6 @@ import { ErrorDetail } from "./ErrorDetail";
 import { GatedButton } from "./GatedButton";
 import { warningText, type JobState } from "./lib";
 import { canQueueConvert, CONVERT_EMPTY_BODY, CONVERT_EMPTY_TITLE, CONVERT_FAILED_TITLE, CONVERT_LABEL, CONVERT_RETRY, convertPanelView, type ConvertControls } from "./recorded";
-import { AudioLines } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/components/ui/utils";
@@ -15,10 +14,7 @@ export function ConvertPanel({ id, job, controls, kept }: { id: string; job: Job
   const view = convertPanelView(job, controls.slot, controls.waitReason);
   const can = canQueueConvert(controls.slot, job);
   return (
-    <div className="mx-auto my-12 flex w-full max-w-md flex-col items-center gap-3 rounded-xl border border-border bg-card px-6 py-8 text-center" role="status" aria-live="polite">
-      <span className="grid size-10 place-items-center rounded-full bg-memo-wash text-memo">
-        <AudioLines className="size-5" aria-hidden />
-      </span>
+    <div className="mx-auto my-16 flex w-full max-w-md flex-col items-center gap-3 px-6 text-center" role="status" aria-live="polite">
       <p className="m-0 text-[15px] font-semibold">{view.phase === "error" ? CONVERT_FAILED_TITLE : CONVERT_EMPTY_TITLE}</p>
       {view.phase === "idle" && <p className="m-0 text-[13px] leading-relaxed text-muted-foreground">{CONVERT_EMPTY_BODY}</p>}
       {kept && (view.phase === "idle" || view.phase === "error") && (
