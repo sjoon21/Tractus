@@ -75,3 +75,14 @@ def test_release_texts_give_short_app_notes_and_a_linked_body(tmp_path):
     assert lines == ["한 줄 요약.", "One-line summary.", "https://sjoon21.github.io/Tractus/ko/releases/v1.2.3/"]  # 앱은 앞 3줄을 보인다
     body = (tmp_path / "body.md").read_text(encoding="utf-8")
     assert body.startswith("> 웹에서 보기") and "releases/v1.2.3/" in body and "version:" not in body
+
+
+def test_timeline_keeps_only_what_changed():
+    ko = "녹음과 메모를 내 Mac 안에서 텍스트로 바꿉니다. 이번 버전은 정리입니다.\n\n## 이번 버전에서 바뀐 것\n\n- 파형\n\n## 업데이트·설치\n\n- DMG\n\n## 요구 사항\n\n- M1"
+    out = rp.changes_only(ko, "ko")
+    assert out.startswith("이번 버전은 정리입니다.")
+    assert "### 이번 버전에서 바뀐 것" in out and "파형" in out
+    assert "DMG" not in out and "M1" not in out and "업데이트·설치" not in out
+    en = "Tractus turns recordings and memos into text on your Mac. **New: waveform.**\n\n- Waveform.\n- Install: open the DMG.\n\nGuides: [Setup](x)"
+    out = rp.changes_only(en, "en")
+    assert out.startswith("**New: waveform.**") and "Waveform." in out and "Install" not in out and "Guides" not in out

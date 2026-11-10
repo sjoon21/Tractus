@@ -134,13 +134,27 @@ pre .c { color: #8a8a91; }
 .article p, .article li { color: var(--fg); }
 .article ul { padding-left: 1.2em; }
 
-/* 릴리스 노트 (scripts/releases_page.py가 만든다): 목록은 최신순, 버전마다 한 페이지 */
-.release-list { list-style: none; padding: 0; margin: 0; }
-.release-list li { padding: 20px 0; border-top: 1px solid var(--line); }
-.release-list li a { font-size: 1.15rem; }
-.release-list time, .releases .meta time { color: var(--subtle); font-variant-numeric: tabular-nums; margin-left: 10px; }
-.releases .meta time { margin-left: 0; }
-.release-list p { margin: 6px 0 0; color: var(--muted); }
+/* 릴리스 노트 (scripts/releases_page.py가 만든다, 모양은 magicui changelog-template을 따름): 목록은 최신순 타임라인(왼쪽 날짜·버전, 오른쪽 선·점과 바뀐 것), 버전마다 한 페이지 */
+.article.is-timeline { max-width: 1000px; }
+.timeline { list-style: none; padding: 0; margin: 48px 0 0; }
+.timeline > li { display: grid; grid-template-columns: 11rem minmax(0, 1fr); }
+.timeline .when { position: sticky; top: 24px; align-self: start; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding-bottom: 40px; }
+.timeline time { color: var(--subtle); font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.timeline .ver { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--fg); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; background: var(--card); }
+.timeline .what { position: relative; padding: 0 0 56px 32px; border-left: 1px solid var(--line); }
+.timeline .what::before { content: ""; position: absolute; left: -6px; top: 9px; width: 11px; height: 11px; border-radius: 50%; background: var(--fg); box-shadow: 0 0 0 4px var(--bg); }
+.timeline > li:first-child .what::before { background: var(--rec); }
+.timeline .what h2 { font-size: 1.4rem; line-height: 1.35; letter-spacing: -0.02em; margin: 0 0 16px; max-width: 36em; text-wrap: pretty; }
+.timeline .what h2 a { color: var(--fg); }
+.timeline .what h3 { font-size: 1rem; margin: 1.6rem 0 8px; color: var(--muted); }
+.timeline .what p, .timeline .what li { font-size: 15.5px; }
+.timeline .what > :last-child { margin-bottom: 0; }
+@media (max-width: 760px) {
+  .timeline > li { grid-template-columns: minmax(0, 1fr); }
+  .timeline .when { position: static; flex-direction: row; align-items: center; padding-bottom: 14px; }
+  .timeline .what { border-left: 0; padding: 0 0 44px; }
+  .timeline .what::before { display: none; }
+}
 .releases h2 { font-size: 1.25rem; margin: 2.2rem 0 10px; }
 .releases code { font-family: var(--mono); font-size: 0.9em; overflow-wrap: anywhere; }
 .releases pre { overflow-x: auto; background: var(--wash); border-radius: var(--radius); padding: 12px 14px; }
