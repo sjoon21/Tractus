@@ -68,7 +68,7 @@ def parse(path: Path) -> Release:
     return Release(meta["version"], meta["date"], {"ko": meta["summary"], "en": meta["summary_en"]}, {"ko": ko, "en": en}, len(parts) == 1)
 
 
-def page(lang: str, depth: int, path: str, title: str, description: str, main: str, kind: str = "") -> str:
+def page(lang: str, depth: int, path: str, title: str, description: str, main: str) -> str:
     """사이트의 다른 페이지(benchmark)와 같은 머리·꼬리. depth = 사이트 뿌리까지 올라갈 단계 수"""
     T = TEXT[lang]
     up = "../" * depth
@@ -108,7 +108,7 @@ def page(lang: str, depth: int, path: str, title: str, description: str, main: s
   </nav>
 </header>
 <main class="wrap">
-<article class="article releases{(" " + kind) if kind else ""}">
+<article class="article releases">
 {main}
 </article>
 </main>
@@ -123,39 +123,6 @@ def page(lang: str, depth: int, path: str, title: str, description: str, main: s
 </body>
 </html>
 """
-
-
-# 목록(타임라인)에는 바뀐 것만 싣는다: 버전마다 같은 설치·파일·요구 사항 절과 영어 본문 끝의 설치·안내 줄은 버전 페이지에만
-BOILER = {"받을 파일", "업데이트·설치", "요구 사항", "설치"}
-EN_BOILER = re.compile(r"^(- (\*\*)?Install.*|Guides: .*)$", re.M)
-# 모든 노트 첫 문단 앞의 같은 앱 소개 문장
-INTRO = re.compile(r"\A(녹음과 메모를 내 Mac 안에서[^.]*\.|Tractus turns recordings and memos[^.]*\.)\s*")
-
-
-def changes_only(md: str, lang: str) -> str:
-    """버전 페이지 본문에서 매번 같은 절(BOILER)을 빼고, 절 제목을 한 단계 내린다(타임라인 안의 제목은 h3)"""
-    out, skip = [], False
-    for line in md.splitlines():
-        if line.startswith("## "):
-            skip = line[3:].strip() in BOILER
-            if not skip:
-                out.append("#" + line)
-            continue
-        if not skip:
-            out.append(line)
-    text = INTRO.sub("", "\n".join(out).strip())
-    return EN_BOILER.sub("", text) if lang == "en" else text
-
-
-def entry(r: Release, lang: str, md) -> str:
-    """타임라인 한 칸: 왼쪽에 날짜·버전(넓은 화면에서 붙어 따라온다), 오른쪽에 선·점과 요약·바뀐 것"""
-    e = html.escape
-    return (
-        f'  <li id="v{r.version}">\n'
-        f'    <div class="when"><time datetime="{r.date}">{r.date}</time><a class="ver" href="v{r.version}/">{r.version}</a></div>\n'
-        f'    <div class="what">\n      <h2><a href="v{r.version}/">{e(r.summary[lang])}</a></h2>\n'
-        f'{md.render(changes_only(r.body[lang], lang))}    </div>\n  </li>'
-    )
 
 
 def write(out: Path, rel: str, text: str) -> None:
@@ -177,9 +144,12 @@ def build(src: Path, out: Path) -> list[str]:
     for lang in ("en", "ko"):
         T = TEXT[lang]
         base = "" if lang == "en" else "ko/"
-        items = "\n".join(entry(r, lang, MD) for r in releases)
-        index = f'  <h1>{T["title"]}</h1>\n  <p class="meta">{T["lead"]}</p>\n  <ol class="timeline">\n{items}\n  </ol>'
-        write(out, f"{base}releases", page(lang, 1 if lang == "en" else 2, "releases/", T["title"], T["lead"], index, "is-timeline"))
+        items = "\n".join(
+            f'  <li><a href="v{r.version}/"><b>Tractus {r.version}</b></a> <time datetime="{r.date}">{r.date}</time><p>{e(r.summary[lang])}</p></li>'
+            for r in releases
+        )
+        index = f'  <h1>{T["title"]}</h1>\n  <p class="meta">{T["lead"]}</p>\n  <ol class="release-list">\n{items}\n  </ol>'
+        write(out, f"{base}releases", page(lang, 1 if lang == "en" else 2, "releases/", T["title"], T["lead"], index))
         for r in releases:
             note = f'  <p class="tldr">{T["ko_only"]}</p>\n' if lang == "en" and r.ko_only else ""
             gh = f"https://github.com/sjoon21/Tractus/releases/tag/v{r.version}"
