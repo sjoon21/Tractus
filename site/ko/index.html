@@ -51,7 +51,7 @@
     { "@type": "Question", "name": "녹음 파일이 외부로 전송되나요?", "acceptedAnswer": { "@type": "Answer", "text": "아니요. 음성 인식, 참석자 구분, 스마트 검색은 Apple MLX로 내 Mac 안에서 돕니다. 요약이나 AI 질문을 할 때 필요한 텍스트만, 고른 AI 서비스로 보냅니다." } },
     { "@type": "Question", "name": "어떤 Mac에서 쓸 수 있나요?", "acceptedAnswer": { "@type": "Answer", "text": "Apple Silicon(M1 이상) Mac, macOS 14.4 이상입니다. 메모리 16GB 이상을 권장하고, 8GB는 저사양 구성으로 씁니다." } },
     { "@type": "Question", "name": "클로바노트 대신 쓸 수 있나요?", "acceptedAnswer": { "@type": "Answer", "text": "녹음 → 텍스트 변환 → 요약 → 검색이라는 흐름은 같지만, 음성 인식을 클라우드가 아니라 내 Mac에서 하고 노트를 내가 가진 파일로 남긴다는 점이 다릅니다. 영어 용어가 섞인 한국어 회의에 맞춰 조정했습니다." } },
-    { "@type": "Question", "name": "한국어 음성 인식은 얼마나 정확한가요?", "acceptedAnswer": { "@type": "Answer", "text": "실제 한국어 회의(5.2시간)로 잰 결과, 기본 모델 Qwen3-ASR-1.7B의 글자 오류율은 9.49%로 Whisper-large-v3-turbo(14.92%)보다 오류가 36% 적었습니다. 노트 제목과 메모의 낱말, 자주 쓰는 단어를 함께 넣어 분야 용어를 더 정확하게 받아 적습니다." } }
+    { "@type": "Question", "name": "한국어 음성 인식은 얼마나 정확한가요?", "acceptedAnswer": { "@type": "Answer", "text": "실제 한국어 회의(5.2시간)로 잰 결과, 기본 모델 Qwen3-ASR-1.7B의 글자 오류율은 9.49%로 Whisper-large-v3-turbo(14.92%)보다 오류가 36% 적었습니다. 노트 제목과 메모의 낱말, 사전 단어를 함께 넣어 분야 용어를 더 정확하게 받아 적습니다." } }
   ]
 }
 </script>
@@ -106,7 +106,7 @@
         <p>Qwen3-ASR이 한국어·영어를 자동으로 감지해 받아 적고, 영어 용어가 섞인 한국어 회의에 강합니다. 참석자를 구분하고, 한 번 이름을 붙이면 다음 녹음부터 이름을 제안합니다.</p>
         <ul>
           <li>노트 제목과 메모의 낱말이 분야 용어 인식을 돕습니다</li>
-          <li>잘못 들은 용어를 고치면 자주 쓰는 단어로 추가하자고 제안합니다</li>
+          <li>잘못 들은 용어를 고치면 사전에 추가하자고 제안합니다</li>
           <li>단어 싱크: 재생 중인 단어를 강조하고 단어를 눌러 그 자리부터 듣기</li>
         </ul>
       </div>
@@ -178,7 +178,7 @@ QA 기간 부족으로 일주일 미뤘습니다.
     <details><summary>녹음 파일이 외부로 전송되나요?</summary><p>아니요. 음성 인식, 참석자 구분, 스마트 검색은 Apple MLX로 내 Mac 안에서 돕니다. 요약이나 AI 질문을 할 때 필요한 텍스트만, 고른 AI 서비스로 보냅니다.</p></details>
     <details><summary>어떤 Mac에서 쓸 수 있나요?</summary><p>Apple Silicon(M1 이상) Mac, macOS 14.4 이상입니다. 메모리 16GB 이상을 권장하고, 8GB는 저사양 구성으로 씁니다. ffmpeg가 필요합니다(<code>brew install ffmpeg</code>).</p></details>
     <details><summary>클로바노트 대신 쓸 수 있나요?</summary><p>녹음 → 텍스트 변환 → 요약 → 검색이라는 흐름은 같지만, 음성 인식을 클라우드가 아니라 내 Mac에서 하고 노트를 내가 가진 파일로 남긴다는 점이 다릅니다. 영어 용어가 섞인 한국어 회의에 맞춰 조정했습니다.</p></details>
-    <details><summary>한국어 음성 인식은 얼마나 정확한가요?</summary><p>실제 한국어 회의(5.2시간)로 잰 결과, 기본 모델 Qwen3-ASR-1.7B의 글자 오류율은 9.49%로 Whisper-large-v3-turbo(14.92%)보다 오류가 36% 적었습니다. 노트 제목과 메모의 낱말, 자주 쓰는 단어를 함께 넣어 분야 용어를 더 정확하게 받아 적습니다.</p></details>
+    <details><summary>한국어 음성 인식은 얼마나 정확한가요?</summary><p>실제 한국어 회의(5.2시간)로 잰 결과, 기본 모델 Qwen3-ASR-1.7B의 글자 오류율은 9.49%로 Whisper-large-v3-turbo(14.92%)보다 오류가 36% 적었습니다. 노트 제목과 메모의 낱말, 사전 단어를 함께 넣어 분야 용어를 더 정확하게 받아 적습니다.</p></details>
     <details><summary>Apple 서명을 받았나요?</summary><p>아직 받지 않았습니다. 처음 열 때 "확인되지 않은 개발자" 경고가 나오면 시스템 설정 › 개인정보 보호 및 보안에서 '그래도 열기'를 누르세요. 자세한 내용은 <a href="https://github.com/sjoon21/Tractus/blob/main/docs/setup.md">설치 안내</a>에 있습니다.</p></details>
   </section>
 </main>
