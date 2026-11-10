@@ -10,15 +10,12 @@ import { NoteRow } from "./NoteRow";
 import { DEFAULT_FOLD, filterNotes, folderPath, groupByMonth, groupForList, isFiltered, monthIsOpen, parseFold, SORTS, sortNotes, type ListGroup, type MonthGroup, type SidebarFold, type SortKey } from "./organize";
 import { useOrganize } from "./useOrganize";
 import { ArrowDown, ArrowUp, ChevronRight, X } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/components/ui/utils";
 import { SIDE_HEAD } from "@/components/sidebar";
 
 const COUNT = "ml-auto font-normal text-subtle-foreground tabular-nums";
 const CHIP = "inline-flex h-6 items-center gap-1 rounded-md border border-border bg-background px-2 text-xs hover:bg-accent [&_svg]:size-3";
 
-/** 제목으로 거르는 칸은 노트가 이만큼 쌓였을 때부터 보인다 (적을 때는 위 검색창으로 충분하다) */
-const FILTER_MIN = 8;
 const FOLD_KEY = "tractus.sidebar.fold";
 
 function readFold(): SidebarFold {
@@ -76,7 +73,6 @@ export function NoteLibrary({
   const shown = useMemo(() => filterNotes(sorted, org.filter, org.folders), [sorted, org.filter, org.folders]);
   const groups = useMemo(() => groupForList(shown, org.sort), [shown, org.sort]);
   const filtered = isFiltered(org.filter);
-  const showFilter = notes.length >= FILTER_MIN || !!org.filter.query;
   const folderLabel = org.filter.folder === "none" ? t("폴더 없음") : org.filter.folder ? folderPath(org.folders, org.filter.folder) : "";
 
   const rows = (items: readonly MeetingInfo[]) => items.map((m) => <NoteRow key={m.id} m={m} active={m.id === activeId} onOpen={onOpen} slot={convertSlots?.get(m.id) ?? null} onConvert={onConvert} />);
@@ -101,7 +97,7 @@ export function NoteLibrary({
     const id = `side-month-${m.key}`;
     return (
       <section key={m.key} className="mt-1">
-        <h3 className={cn("sticky z-10 m-0 bg-sidebar", showFilter ? "top-8" : "top-0")}>
+        <h3 className="sticky top-0 z-10 m-0 bg-sidebar">
           <button type="button" className={cn(SIDE_HEAD, "group/head w-full rounded-md outline-none hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/40")} aria-expanded={open} aria-controls={id} aria-label={t("{month}, 노트 {n}개", { month: label, n: m.count })} onClick={() => !filtered && toggleMonth(m.key, open)}>
             <span>{label}</span>
             <ChevronRight className={cn("size-3 opacity-0 transition group-hover/head:opacity-100", !open && "opacity-60", open && "rotate-90")} aria-hidden />
@@ -116,22 +112,6 @@ export function NoteLibrary({
   if (notes.length === 0 && org.folders.length === 0) return null; // 아무것도 없을 때는 도구도 보이지 않는다 (App의 빈 상태 안내만)
   return (
     <>
-      {showFilter && <div className="sticky -top-2 z-20 -mt-2 bg-sidebar px-1 pt-2 pb-1">
-        <Input
-          type="search"
-          className="h-7 bg-background/70 text-xs"
-          placeholder={t("목록에서 제목 찾기")}
-          aria-label={t("목록에서 제목으로 거르기")}
-          value={org.filter.query}
-          onChange={(e) => org.setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape" && org.filter.query && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              org.setQuery("");
-            }
-          }}
-        />
-      </div>}
 
       {favorites.length > 0 && (
         <section className="mt-2">

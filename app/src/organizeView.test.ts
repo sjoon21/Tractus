@@ -18,7 +18,7 @@ const notes = [note("N1", "예산 회의", { favorite: true, tags: ["회의", "Q
 const value = (over: Partial<OrganizeValue> = {}): OrganizeValue => {
   const noop = async () => true;
   return {
-    folders, tree: buildFolderTree(folders, notes), tags: collectTags(notes), filter: NO_FILTER, setQuery() {}, toggleTag() {}, selectFolder() {}, clearFilters() {},
+    folders, tree: buildFolderTree(folders, notes), tags: collectTags(notes), filter: NO_FILTER, toggleTag() {}, selectFolder() {}, clearFilters() {},
     sort: "updated", order: "desc", setSort() {}, toggleOrder() {},
     metaOf: (id) => ({ favorite: id === "N1", tags: id === "N1" ? ["회의", "Q3"] : [], folder: id === "N1" ? "F2" : null }),
     setFavorite: noop, setTags: noop, moveNote: noop, createFolder: async () => null, renameFolder: noop, moveFolder: noop, deleteFolder: noop, tagFocus: null, requestTagFocus() {},
