@@ -6,13 +6,13 @@ const OUT = process.argv[2];
 const EN = process.argv[3] === "en";
 const W = 1360, H = 850, DPR = 1.5;
 const L = EN
-  ? { note: "Q3 budget planning", ask: "Ask AI", record: "Start recording", memo: "Skyline Trading interview notes", settings: "Settings" }
-  : { note: "3분기 예산 계획 회의", ask: "AI 질문", record: "녹음 시작", memo: "하늘상사 인터뷰 메모", settings: "설정" };
+  ? { note: "Q3 budget planning", ask: "Ask AI", record: "Record", memo: "Skyline Trading interview notes", settings: "Settings" }
+  : { note: "3분기 예산 계획 회의", ask: "AI 질문", record: "녹음", memo: "하늘상사 인터뷰 메모", settings: "설정" };
 const scenes = [
   { name: "note", steps: [["text", L.note], ["wait", 700], ["text", "0:34"], ["wait", 300]] },
   { name: "home", steps: [["wait", 900]] },
   { name: "ask", steps: [["text", L.note], ["wait", 600], ["role", "tab", L.ask], ["wait", 500]] },
-  { name: "record", steps: [["text", L.record], ["wait", 700]] },
+  { name: "record", steps: [["role", "button", L.record], ["wait", 9000]] }, // 파형이 화면을 채우게 기다린다
   { name: "memo", steps: [["text", L.memo], ["wait", 700]] },
   { name: "settings", steps: [["text", L.settings], ["wait", 700]] },
 ];
@@ -29,7 +29,7 @@ for (const scheme of ["light", "dark"]) {
     for (const [k, a, b] of sc.steps) {
       if (k === "wait") await page.waitForTimeout(a);
       else if (k === "text") await page.getByText(a, { exact: false }).first().click();
-      else if (k === "role") await page.getByRole(a, { name: b }).first().click();
+      else if (k === "role") await page.getByRole(a, { name: b, exact: true }).first().click();
     }
     await page.mouse.move(W - 5, H - 5);
     await page.waitForTimeout(300);
