@@ -100,8 +100,7 @@ export default {
   "변환 대기": "Queued",
   "다시 변환": "Transcribe again",
   "아직 텍스트로 변환하지 않았습니다": "Not transcribed yet",
-  "녹음은 저장되어 있어 아래 플레이어로 들어 볼 수 있습니다. 준비가 되면 텍스트로 변환하세요. 변환하기 전에도 메모를 쓰고 제목·태그·폴더를 정리할 수 있습니다.":
-    "The recording is saved, and you can listen to it with the player below. Transcribe it when you’re ready. Before that, you can still write memos and set the title, tags, and folder.",
+  "아래 플레이어로 들어 볼 수 있고, 변환하기 전에도 메모를 쓸 수 있습니다.": "Listen with the player below. You can write memos before transcribing.",
   "원본 녹음 {size}를 보관 중입니다. 텍스트로 변환하면 지워집니다.": "Keeping the original recording ({size}). It’s deleted after transcription.",
   "변환하지 않으면 용량을 계속 차지합니다.": "It keeps taking up space until you transcribe it.",
   "원본 녹음 {size} 보관 중": "Original recording kept ({size})",
@@ -129,9 +128,8 @@ export default {
   "녹음 끝": "Recording ended",
   "녹음 오류": "Recording error",
   "녹음 종료": "Stop recording",
-  "메모를 쓰고 Enter — 지금 시각과 함께 저장됩니다": "Type a memo and press Enter — saved with the current time",
+  "메모 (Enter)": "Memo (Enter)",
   "{label} (미리보기)": "{label} (preview)",
-  "녹음 종료 후 고품질 텍스트로 정돈됩니다": "A higher-quality transcript is made after you stop recording",
   "실시간 텍스트 변환 내용": "Live transcription",
   "말씀하시면 실시간으로 기록됩니다": "Start speaking to see live transcription",
   꺼짐: "Off",
@@ -188,8 +186,7 @@ export default {
   // afterRecord
   "방금 한 녹음을 어떻게 할지 먼저 정해 주세요": "First choose what to do with the recording you just made",
   "녹음을 끝냈습니다": "Recording finished",
-  "녹음 길이 {time}. 지금 텍스트로 변환할까요? 나중에 변환하려면 노트로 저장해 두세요. 저장한 노트는 바로 들어 볼 수 있고, 노트에서 ‘텍스트로 변환’을 눌러 언제든 변환할 수 있습니다.":
-    "Length {time}. Transcribe it now? To transcribe later, save it as a note. You can listen to a saved note right away and transcribe it anytime with “Transcribe”.",
+  "녹음 길이 {time}. 나중에 변환해도 노트로 저장되어 바로 들어 볼 수 있습니다.": "Length {time}. If you transcribe later, it’s saved as a note you can listen to right away.",
   "바로 변환하기": "Transcribe now",
   "나중에 변환하기": "Transcribe later",
   "녹음을 끝냈습니다. 지금 변환할지 정해 주세요.": "Recording finished. Choose whether to transcribe now.",

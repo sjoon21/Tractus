@@ -72,11 +72,12 @@ describe("RecordView (일시정지·끝낸 뒤)", () => {
     expect(h).not.toContain("일시정지됨");
   });
 
-  test("일시정지 중: `계속`, 안내, 멈춘 시계(깜빡이지 않음), 북마크·종료·메모는 켜져 있다", () => {
+  test("일시정지 중: `계속`(마이크 표시 안내는 단추 title), 안내 상자 없음, 멈춘 시계(깜빡이지 않음), 북마크·종료·메모는 켜져 있다", () => {
     const h = html(rec({ phase: "paused", t: 754 }));
     expect(h).toContain("일시정지됨");
     expect(h).toMatch(/>계속<\/button>/);
-    expect(h).toContain("마이크 사용 표시는 녹음을 끝낼 때까지 켜져 있습니다");
+    expect(h).toMatch(/title="녹음을 이어서 합니다\. 마이크 사용 표시는[^"]*"/);
+    expect(h).not.toContain("일시정지 중입니다");
     expect(h).toContain("12:34");
     expect(h).toContain("is-paused");
     expect(h).not.toContain("is-live");

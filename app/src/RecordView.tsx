@@ -8,7 +8,7 @@ import { useCapabilities } from "./useCapabilities";
 import { EditableMark } from "./MarkEdit";
 import { errorView, fmtTime, isRecLive, JOB_ERROR, levelFraction, liveHaltView, liveHalted, REC_MODES, STAGE_LABEL, warningText, type RecCommand } from "./lib";
 import { AFTER_ASK } from "./afterRecord";
-import { PAUSE_LABEL, PAUSE_TITLE, PAUSED_NOTE, RESUME_LABEL, RESUME_TITLE } from "./pause";
+import { PAUSE_LABEL, PAUSE_TITLE, RESUME_LABEL, RESUME_TITLE } from "./pause";
 import { CONVERT_FAILED_TITLE, CONVERT_RETRY, SAVE_DONE_TITLE, SAVE_FAILED_TITLE, SAVE_RETRY, SAVING } from "./recorded";
 import { Bookmark, Pause, Play, Square } from "lucide-react";
 import { Dock, DockGroup } from "@/components/ui/dock";
@@ -70,9 +70,8 @@ export function RecordView({
             {fmtTime(rec.t)}
           </time>
           {rec.phase !== "idle" && mode && (
-            <p className="m-0 max-w-md text-xs leading-relaxed text-muted-foreground">
-              <strong className="mr-1.5 font-medium text-foreground">{mode.label}</strong>
-              {mode.note}
+            <p className="m-0 text-xs font-medium text-muted-foreground" title={mode.note}>
+              {mode.label}
             </p>
           )}
         </header>
@@ -95,11 +94,6 @@ export function RecordView({
               {rec.mode === "hybrid" && <Meter label={t("시스템 오디오")} db={rec.system} present={rec.tracks.includes("system")} />}
             </div>
 
-            {paused && (
-              <p className={NOTICE} role="status">
-                {PAUSED_NOTE}
-              </p>
-            )}
             <form
               className="relative"
               onSubmit={(e) => {
@@ -122,7 +116,7 @@ export function RecordView({
                 }}
                 onCompositionStart={() => (composing.current = true)}
                 onCompositionEnd={() => (composing.current = false)}
-                placeholder={t("메모를 쓰고 Enter — 지금 시각과 함께 저장됩니다")}
+                placeholder={t("메모 (Enter)")}
                 aria-label={t("메모")}
                 disabled={!live}
               />
@@ -227,7 +221,6 @@ function LivePane({ live, recording }: { live: LiveState; recording: boolean }) 
     <section className="flex flex-col gap-2" aria-labelledby="live-title">
       <p className="m-0 flex items-baseline justify-between gap-3 px-1">
         <span id="live-title" className="text-[13px] font-semibold">{t("{label} (미리보기)", { label: STAGE_LABEL.live })}</span>
-        <span className="text-xs text-muted-foreground">{t("녹음 종료 후 고품질 텍스트로 정돈됩니다")}</span>
       </p>
       {liveHalted(live, recording) && (
         <div className={NOTICE} role="status">
