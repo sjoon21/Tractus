@@ -234,7 +234,8 @@ export default {
   "위키에 붙일 회의록 전체 (마크다운)": "Full minutes to paste into a wiki (Markdown)", // words-ok: 회의록은 문서 이름
   "회의록을 마크다운으로 복사했습니다": "Copied the minutes as Markdown", // words-ok: 회의록은 문서 이름
   "이전 형식의 회의록입니다. ‘회의록 만들기’를 누르면 새 형식으로 만듭니다.": "These minutes use the old format. Click “Create minutes” to make them in the new format.", // words-ok: 회의록은 문서 이름
-  "아직 회의록이 없습니다. ‘회의록 만들기’를 누르면 안건·조율 사항·할 일을 근거 대화와 함께 정리합니다.": "No minutes yet. Click “Create minutes” to get topics, agreements and to-dos with the conversation they came from.", // words-ok: 회의록은 문서 이름
+  "아직 회의록이 없습니다": "No minutes yet", // words-ok: 회의록은 문서 이름
+  "‘회의록 만들기’를 누르면 안건·조율 사항·할 일을 근거 대화와 함께 정리합니다.": "Click “Create minutes” to get topics, agreements and to-dos with the conversation they came from.", // words-ok: 회의록은 문서 이름
   "회의록을 다시 만들까요?": "Recreate the minutes?", // words-ok: 회의록은 문서 이름
   "회의록을 삭제할까요?": "Delete the minutes?", // words-ok: 회의록은 문서 이름
   "노트와 대화 내용은 그대로 남습니다. 회의록은 언제든 다시 만들 수 있습니다.": "The note and transcript stay. You can create minutes again at any time.", // words-ok: 회의록은 문서 이름

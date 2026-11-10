@@ -12,6 +12,7 @@ import { DIALOG, DIALOG_BODY, DIALOG_FOOTER, DIALOG_TEXT, DIALOG_TITLE } from "@
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import { Progress } from "@/components/ui/progress";
+import { Empty } from "@/components/ui/empty";
 import { Row, Section } from "@/components/ui/section";
 import { Select } from "@/components/ui/select";
 import { Switch, checkClass } from "@/components/ui/switch";
@@ -127,6 +128,12 @@ function Gallery() {
           <Progress value={0.35} />
           <Progress value={null} />
         </div>
+      </Block>
+
+      <Block title="Empty" note="빈 상태: 제목 한 줄 + 짧은 설명 + 단추 하나까지 (상자·아이콘 칩 없음)">
+        <Empty className="max-w-sm" title="아직 요약이 없습니다" action={<Button size="sm">요약 만들기</Button>}>
+          위에서 요약 유형을 고르고 ‘요약 만들기’를 누르면 근거 대화와 함께 정리합니다.
+        </Empty>
       </Block>
 
       <Block title="입력" note="Input · Textarea · Select · Switch · 체크박스·라디오">
