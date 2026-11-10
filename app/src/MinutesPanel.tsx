@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/input";
 import { cn } from "@/components/ui/utils";
+import { Empty } from "@/components/ui/empty";
 
 const MAKE = t("회의록 만들기"); // words-ok: 회의록은 문서 이름
 const REDO = t("다시 만들기");
@@ -30,7 +31,8 @@ const DOC = t("회의록"); // words-ok: 회의록은 문서 이름
 const COPY_TITLE = t("위키에 붙일 회의록 전체 (마크다운)"); // words-ok
 const COPIED = t("회의록을 마크다운으로 복사했습니다"); // words-ok
 const LEGACY_NOTE = t("이전 형식의 회의록입니다. ‘회의록 만들기’를 누르면 새 형식으로 만듭니다."); // words-ok
-const EMPTY = t("아직 회의록이 없습니다. ‘회의록 만들기’를 누르면 안건·조율 사항·할 일을 근거 대화와 함께 정리합니다."); // words-ok
+const EMPTY_TITLE = t("아직 회의록이 없습니다"); // words-ok
+const EMPTY = t("‘회의록 만들기’를 누르면 안건·조율 사항·할 일을 근거 대화와 함께 정리합니다."); // words-ok
 const REDO_TITLE = t("회의록을 다시 만들까요?"); // words-ok
 const DELETE_TITLE = t("회의록을 삭제할까요?"); // words-ok
 const DELETE_BODY = t("노트와 대화 내용은 그대로 남습니다. 회의록은 언제든 다시 만들 수 있습니다."); // words-ok
@@ -256,9 +258,7 @@ export function MinutesPanel(p: {
       ) : (
         loaded &&
         !running && (
-          <p className="m-0 max-w-[34ch] text-[13px] leading-relaxed text-muted-foreground">
-            {EMPTY}
-          </p>
+          <Empty title={EMPTY_TITLE}>{EMPTY}</Empty>
         )
       )}
 
