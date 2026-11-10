@@ -125,6 +125,7 @@ const llm = {
 // 녹음 시작: 녹음 중 화면을 보이게 이벤트를 흉내 낸다
 // 녹음 중 메모·북마크: rec_send의 mark_edit·mark_delete가 고친 목록을 marks 이벤트로 돌려준다 (녹음 프로그램과 같다)
 let recMarks: T[] = [];
+let levelTimer: ReturnType<typeof setInterval> | undefined;
 const fakeRecording = () => {
   const rec = (payload: T) => void emit("rec", payload);
   recMarks = [
@@ -134,8 +135,16 @@ const fakeRecording = () => {
   ];
   setTimeout(() => {
     rec({ event: "started", dir: "/tmp/preview-rec", tracks: ["mic"], started_at: new Date().toISOString() });
-    rec({ event: "level", t: 83.4, mic: -18, system: null });
     recMarks.forEach((m) => rec({ event: "mark", ...m }));
+    // 0.25초마다 말소리처럼 오르내리는 레벨 (녹음 프로그램과 같은 간격). 화면 확인용이라 멈추지 않는다
+    let t = 83.4;
+    clearInterval(levelTimer);
+    levelTimer = setInterval(() => {
+      t += 0.25;
+      const talk = Math.sin(t * 1.3) > -0.2; // 말하는 구간과 쉬는 구간
+      const mic = talk ? -40 + 26 * Math.random() : -54 + 5 * Math.random();
+      rec({ event: "level", t, mic, system: null });
+    }, 250);
   }, 50);
   return "/tmp/preview-rec";
 };
