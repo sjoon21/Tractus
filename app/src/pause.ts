@@ -28,7 +28,7 @@ export function recButton(o: { phase: RecPhase; t: number; saving: boolean; conv
   if (o.saving) return { text: t("저장 중…"), time: null, live: false };
   if (o.converting) return { text: t("변환 중…"), time: null, live: false };
   if (o.waiting) return { text: t("변환 대기 중…"), time: null, live: false };
-  return { text: t("녹음 시작"), time: null, live: false };
+  return { text: t("녹음"), time: null, live: false };
 }
 
 /** 화면 시계의 기준: 마지막으로 헬퍼가 알린 녹음 시각(초, 일시정지한 시간을 뺀다)과 그 순간의 화면 시계(ms) */

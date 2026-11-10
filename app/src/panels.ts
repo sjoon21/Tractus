@@ -29,7 +29,7 @@ export const toggleLabel = (side: Side, collapsed: boolean): { label: string; ti
 };
 
 /** 접힌 왼쪽 띠의 녹음 단추 이름 */
-export const RAIL_REC_LABEL = { idle: t("녹음 시작"), live: t("녹음 중"), asking: t("녹음 끝남"), converting: t("변환 중…") } as const;
+export const RAIL_REC_LABEL = { idle: t("녹음"), live: t("녹음 중"), asking: t("녹음 끝남"), converting: t("변환 중…") } as const;
 /** 접힌 띠의 배지: 목록에서만 보이는 '변환 대기 중인 녹음'이 있음을 알린다 */
 export const railPendingLabel = (n: number): string => t("변환 대기 중인 녹음 {n}개", { n });
 /** 접힌 띠의 단추 상태: 파일 가져오기도 변환이다 */

@@ -4,8 +4,8 @@ import { clockAt, PAUSED_STATUS, recButton, resumedStartMs } from "./pause";
 const base = { phase: "idle" as const, t: 0, saving: false, converting: false, waiting: false };
 
 describe("사이드바 녹음 단추", () => {
-  test("쉬는 중은 `녹음 시작`", () => {
-    expect(recButton(base)).toEqual({ text: "녹음 시작", time: null, live: false });
+  test("쉬는 중은 `녹음`", () => {
+    expect(recButton(base)).toEqual({ text: "녹음", time: null, live: false });
   });
 
   test("녹음 중은 시계와 함께, 붉은 점이 깜빡인다", () => {
