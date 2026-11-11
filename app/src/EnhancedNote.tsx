@@ -2,10 +2,10 @@
 // 만들기는 요약과 같은 작업(summary_start --template enhanced)이고, 결과는 요약 목록의 한 칸(summaries/enhanced.json)이다.
 // 내 메모 편집기는 전환해도 언마운트하지 않는다 (쓰던 글을 잃지 않게 숨기기만 한다).
 import { useCallback, useEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
-import { LoaderCircle } from "lucide-react";
+import { Copy, LoaderCircle } from "lucide-react";
 import { api, errText, useJob, type JobState } from "./api";
 import type { Notify } from "./App";
-import { ENHANCE_HINT, ENHANCE_LABEL, ENHANCED_KEY, enhancedView, EXTRA_TITLE, findEnhanced, memoTabShowing, NO_MEMO_NOTICE, REDO_LABEL, RUNNING_TEXT, staleNotice, VIEW_DONE, VIEW_MINE } from "./enhanced";
+import { ENHANCE_HINT, ENHANCE_LABEL, ENHANCED_KEY, enhancedMarkdown, enhancedView, EXTRA_TITLE, findEnhanced, memoTabShowing, NO_MEMO_NOTICE, REDO_LABEL, RUNNING_TEXT, staleNotice, VIEW_DONE, VIEW_MINE } from "./enhanced";
 import { ErrorDetail } from "./ErrorDetail";
 import { t } from "./i18n";
 import { fmtTime } from "./lib";
@@ -15,7 +15,7 @@ import { staleSentence, type EditKind } from "./memo";
 import type { MemoTarget } from "./MemoView";
 import { OpenSettings } from "./OpenSettings";
 import type { SummaryDoc, SummaryItem, SummarySection } from "./summaries";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { CHIP } from "@/components/panel/chip";
 import { CoachMark } from "./CoachMark";
 import { markOnboard } from "./onboarding";
@@ -115,6 +115,23 @@ export function EnhancedNote(p: {
               </button>
             ))}
           </div>
+        )}
+        {seeingDone && doc && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground hover:text-foreground"
+            aria-label={t("복사")}
+            title={t("완성된 노트 복사 (마크다운)")}
+            onClick={() =>
+              navigator.clipboard.writeText(enhancedMarkdown(doc)).then(
+                () => notify({ text: t("완성된 노트를 마크다운으로 복사했습니다") }),
+                (e) => notify({ text: t("복사하지 못했습니다: {error}", { error: errText(e) }), error: true }),
+              )
+            }
+          >
+            <Copy />
+          </Button>
         )}
         <div className="ml-auto flex items-center gap-1">
           <LlmServicePicker services={services} disabled={running} />

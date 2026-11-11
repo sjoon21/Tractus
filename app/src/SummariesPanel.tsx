@@ -54,9 +54,6 @@ export interface SummariesPanelProps {
   editKinds: { current: EditKind[] };
   /** 항목의 근거 칩 (시각·메모 줄) */
   chip: (ids: string[]) => ReactNode;
-  starts: Map<string, number>;
-  /** 복사용 메모 줄 번호 (메모 노트는 줄 번호를 붙이지 않는다) */
-  memoLines: Map<string, number> | undefined;
   notify: Notify;
   onRunning: (running: boolean) => void;
   /** 고른 요약 (복사·인쇄가 쓴다) */
@@ -298,7 +295,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
                 aria-label={t("요약 복사")}
                 title={t("요약 복사 (마크다운)")}
                 onClick={() =>
-                  navigator.clipboard.writeText(docMarkdown(selected, p.starts, p.memoLines)).then(
+                  navigator.clipboard.writeText(docMarkdown(selected)).then(
                     () => notify({ text: t("요약을 마크다운으로 복사했습니다") }),
                     (e) => notify({ text: t("복사하지 못했습니다: {error}", { error: errText(e) }), error: true }),
                   )
@@ -314,7 +311,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
                   aria-label={t("메모로 보내기")}
                   title={t("이 요약을 내 메모 끝에 붙입니다 (할 일은 체크박스로)")}
                   disabled={busy || p.blocked}
-                  onClick={() => void p.onToMemo?.(docMarkdown(selected, p.starts, p.memoLines))}
+                  onClick={() => void p.onToMemo?.(docMarkdown(selected))}
                 >
                   <NotebookPen />
                 </Button>

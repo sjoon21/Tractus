@@ -16,6 +16,8 @@ export default {
   "요약 복사": "Copy summary",
   "요약 복사 (마크다운)": "Copy summary (Markdown)",
   "요약을 마크다운으로 복사했습니다": "Summary copied as Markdown",
+  "완성된 노트 복사 (마크다운)": "Copy finished note (Markdown)",
+  "완성된 노트를 마크다운으로 복사했습니다": "Finished note copied as Markdown",
   "복사하지 못했습니다: {error}": "Couldn’t copy: {error}",
   "다시 만들기": "Regenerate",
   "요약 방법을 알 수 없어 다시 만들 수 없습니다": "Can’t regenerate: the instructions for this summary are unknown",

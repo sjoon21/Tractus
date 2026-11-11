@@ -1,7 +1,7 @@
 // 요약 유형과 한 노트의 여러 요약 (docs/desktop.md §2.13). 화면이 쓰는 순수 로직: 파일 → 화면 모델, 순서, 복사 마크다운, 유형 고르기, 직접 요약 입력 검사.
 // 렌더링은 SummariesPanel.tsx, 대기열은 summaryQueue.ts. 옛 요약(summary.json의 결정 사항·할 일·주제)은 `legacy`로 그대로 두고 화면·복사·인쇄가 옛 경로를 쓴다.
 import { t } from "./i18n";
-import { evidenceLabel, summaryMarkdown, type SummaryLike } from "./lib";
+import { summaryMarkdown, type SummaryLike } from "./lib";
 
 /** 기본 요약(summary.json)의 key와 이름 */
 export const DEFAULT_KEY = "meeting";
@@ -143,20 +143,19 @@ export function afterDelete(docs: SummaryDoc[], key: string): string | null {
 
 // ── 복사 (마크다운) ──
 
-/** '요약 복사' 마크다운: 옛 요약은 옛 형식 그대로, 새 요약은 개요 + 섹션. 항목마다 근거 시각(메모는 `메모 n번째 줄`)을 붙인다 */
-export function docMarkdown(doc: SummaryDoc, starts: Map<string, number>, memoLines?: Map<string, number>): string {
-  if (doc.legacy) return summaryMarkdown(doc.legacy, starts, memoLines);
-  const at = (i: string[]) => {
-    const label = evidenceLabel(i, starts, memoLines);
-    return label === null ? "" : ` (${label})`;
-  };
-  const line = (s: SectionStyle, n: number, it: SummaryItem) => {
+/** 섹션 항목 → 마크다운 줄 (할 일은 체크박스, 번호 섹션은 번호) */
+export const sectionLines = (s: SummarySection): string[] =>
+  s.items.map((it, i) => {
     const who = [it.owner, it.due].filter(Boolean).join(", ");
-    const mark = s === "checklist" ? "- [ ] " : s === "numbered" ? `${n}. ` : "- ";
-    return `${mark}${it.text}${who ? ` — ${who}` : ""}${at(it.segment_ids)}`;
-  };
+    const mark = s.style === "checklist" ? "- [ ] " : s.style === "numbered" ? `${i + 1}. ` : "- ";
+    return `${mark}${it.text}${who ? ` — ${who}` : ""}`;
+  });
+
+/** '요약 복사'·'메모로 보내기' 마크다운: 옛 요약은 옛 형식 그대로, 새 요약은 개요 + 섹션. 근거 시각은 붙이지 않는다 (summaryMarkdown) */
+export function docMarkdown(doc: SummaryDoc): string {
+  if (doc.legacy) return summaryMarkdown(doc.legacy);
   const parts = doc.overview.trim() ? [["## " + t("요약"), "", doc.overview, ""]] : [];
-  for (const s of doc.sections) if (s.items.length) parts.push([`## ${s.heading}`, "", ...s.items.map((it, i) => line(s.style, i + 1, it)), ""]);
+  for (const s of doc.sections) if (s.items.length) parts.push([`## ${s.heading}`, "", ...sectionLines(s), ""]);
   return parts.flat().join("\n");
 }
 
