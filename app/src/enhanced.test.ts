@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { enhancedView, findEnhanced, memoTabShowing } from "./enhanced";
+import { enhancedMarkdown, enhancedView, findEnhanced, memoTabShowing } from "./enhanced";
 import { parseSummaryDoc, parseSummaryDocs, rerunSpec } from "./summaries";
 
 const raw = {
@@ -55,5 +55,13 @@ describe("노트 완성 문서", () => {
     expect(memoTabShowing(true, "done", 100, { segId: "m0003", nonce: 200 })).toBe("mine"); // 칩으로 줄을 가리킴
     expect(memoTabShowing(true, "done", 300, { segId: "m0003", nonce: 200 })).toBe("done"); // 그 뒤 사용자가 완성된 노트로 바꿈
     expect(memoTabShowing(true, "mine", 300, null)).toBe("mine");
+  });
+});
+
+describe("완성된 노트 복사", () => {
+  it("화면 순서대로 마크다운: 내 메모 섹션(세부 없는 것도 제목은 남김) · 메모에 없던 내용 · 할 일, 근거 시각 없음", () => {
+    expect(enhancedMarkdown(parseSummaryDoc(raw)!)).toBe(
+      ["## 예산 다시 확인", "", "- p95 800ms", "", "## 북마크 1:35", "", "## 메모에 없던 내용", "", "### 릴리스 일정", "", "- 다음 릴리스", "", "## 할 일", "", "- [ ] 분석 공유 — 김민수, 수요일", ""].join("\n"),
+    );
   });
 });
