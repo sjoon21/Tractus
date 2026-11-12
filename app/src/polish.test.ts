@@ -1,9 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { Segment } from "./lib";
-import { bulkAcceptIds, livePolish, nextSuggestion, pendingIds, suggestionMarks, termsFromSuggestions, wordDiff, type PolishSuggestion } from "./polish";
+import { bulkAcceptIds, bulkGroups, livePolish, nextSuggestion, pendingIds, suggestionMarks, termsFromSuggestions, wordDiff, type PolishSuggestion } from "./polish";
 
 const seg = (id: string, text: string, corrected: string | null = null): Segment => ({ id, start: 0, end: 1, text, corrected_text: corrected });
 const sug = (id: string, before: string, text: string, flags: string[] = []): PolishSuggestion => ({ id, start: 0, before, text, kind: "term", flags });
+
+describe("bulkGroups", () => {
+  it("groups unflagged suggestions by kind in a fixed order and drops empty groups", () => {
+    const k = (x: PolishSuggestion, kind: string) => ({ ...x, kind });
+    const segs = ["s0001", "s0002", "s0003", "s0004"].map((i) => seg(i, i));
+    const live = livePolish(segs, [k(sug("s0001", "s0001", "a"), "term"), k(sug("s0002", "s0002", "b"), "style"), k(sug("s0003", "s0003", "c"), "style"), k(sug("s0004", "s0004", "3", ["number"]), "number")]);
+    expect(bulkGroups(live)).toEqual([
+      { label: "문장 다듬기", ids: ["s0002", "s0003"] },
+      { label: "용어", ids: ["s0001"] },
+    ]);
+  });
+});
 
 describe("livePolish", () => {
   it("keeps only suggestions whose line has not changed since", () => {

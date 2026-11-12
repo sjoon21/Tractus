@@ -888,18 +888,14 @@ export interface SummaryLike {
   action_items: { task: string; owner: string | null; due: string | null; segment_ids: string[] }[];
 }
 
-/** '요약 복사' 마크다운. 항목에는 근거 시각을 붙인다. memoLines: 녹음 노트 메모의 줄 ID → 줄 번호(`메모 3번째 줄`) */
-export function summaryMarkdown(s: SummaryLike, starts: Map<string, number>, memoLines?: Map<string, number>): string {
-  const at = (ids: string[]) => {
-    const label = evidenceLabel(ids, starts, memoLines);
-    return label === null ? "" : ` (${label})`;
-  };
+/** '요약 복사' 마크다운. 근거 시각은 붙이지 않는다(붙여 넣는 곳에서는 읽기 방해만 된다, 2026-11-11 소유자) */
+export function summaryMarkdown(s: SummaryLike): string {
   const section = (title: string, lines: string[]) => (lines.length ? [`## ${title}`, "", ...lines, ""] : []);
   return [
     ...section(t("요약"), [s.summary]),
-    ...section(t("결정 사항"), s.decisions.map((d) => `- ${d.text}${at(d.segment_ids)}`)),
-    ...section(t("할 일"), s.action_items.map((a) => `- [ ] ${a.task}${a.owner || a.due ? ` — ${[a.owner, a.due].filter(Boolean).join(", ")}` : ""}${at(a.segment_ids)}`)),
-    ...section(t("주제"), s.topics.map((t) => `- ${t.title}${at(t.segment_ids)}`)),
+    ...section(t("결정 사항"), s.decisions.map((d) => `- ${d.text}`)),
+    ...section(t("할 일"), s.action_items.map((a) => `- [ ] ${a.task}${a.owner || a.due ? ` — ${[a.owner, a.due].filter(Boolean).join(", ")}` : ""}`)),
+    ...section(t("주제"), s.topics.map((t) => `- ${t.title}`)),
   ].join("\n");
 }
 

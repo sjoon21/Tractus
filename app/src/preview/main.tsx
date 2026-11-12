@@ -226,7 +226,7 @@ const fakePolish = (a: T) => {
     const original = s.text;
     s.text = words.map((w: string, j: number) => (j === k ? garble(w) : w)).join(" ");
     const flags = i % 9 === 4 ? ["number"] : i % 9 === 7 ? ["rewrite"] : [];
-    made.push({ id: s.id, start: s.start, before: s.text, text: original, kind: "term", flags });
+    made.push({ id: s.id, start: s.start, before: s.text, text: original, kind: flags[0] === "number" ? "number" : (["style", "term", "style", "name"] as const)[i % 4], flags });
   });
   polishPending.set(a.id, []);
   const thirds = [0, 1, 2].map((w) => segs.slice(Math.floor((w * segs.length) / 3), Math.floor(((w + 1) * segs.length) / 3)));

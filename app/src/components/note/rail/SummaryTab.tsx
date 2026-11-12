@@ -26,8 +26,6 @@ export function SummaryTab({ onSelect, sendToMemo }: { onSelect: (d: SummaryDoc 
       editSeqRef={n.edit.editSeqRef}
       editKinds={n.edit.editKinds}
       chip={(ids) => <TimeChip ids={ids} starts={n.railStarts} onSeek={n.seekTo} memo={n.memoLines.size > 0 ? { lines: n.memoLines, onPick: n.openMemoLine, tagged: !n.memoNote } : null} />}
-      starts={n.railStarts}
-      memoLines={n.memoNote ? undefined : n.memoLines}
       notify={n.notify}
       onRunning={n.setRunning.summary}
       onSelect={onSelect}

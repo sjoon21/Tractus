@@ -45,6 +45,25 @@ export function livePolish(segments: Segment[], list: PolishSuggestion[]): Map<s
 /** 모두 받기의 대상: 표시(number·rewrite)가 없는 제안 */
 export const bulkAcceptIds = (live: Map<string, PolishSuggestion>): string[] => [...live.values()].filter((x) => x.flags.length === 0).map((x) => x.id);
 
+/** 한꺼번에 수락할 묶음 (제안의 kind, 코어 polish.Edit). 문장 다듬기가 가장 많아 앞에 둔다 */
+const KIND_GROUPS: { kind: string; label: string }[] = [
+  { kind: "style", label: t("문장 다듬기") },
+  { kind: "term", label: t("용어") },
+  { kind: "name", label: t("이름") },
+  { kind: "word", label: t("잘못 들은 말") },
+  { kind: "number", label: t("숫자") },
+];
+export const GROUP_ACCEPT = t("한꺼번에 수락");
+export const groupAcceptTitle = (label: string, n: number) => t("{label} 제안 {n}개를 모두 수락합니다. 확인 표시가 있는 제안은 빠집니다", { label, n });
+export const ACCEPT_KEY_TITLE = t("수락 (Enter)");
+export const REJECT_KEY_TITLE = t("거절 (⌫)");
+
+/** 종류별 한꺼번에 수락: 표시 없는 제안만, 비어 있는 묶음은 뺀다 */
+export function bulkGroups(live: Map<string, PolishSuggestion>): { label: string; ids: string[] }[] {
+  const ok = bulkAcceptIds(live);
+  return KIND_GROUPS.map((g) => ({ label: g.label, ids: ok.filter((id) => live.get(id)!.kind === g.kind) })).filter((g) => g.ids.length > 0);
+}
+
 /** afterId 다음(대화 순서)의 제안 ID. 끝이면 처음 것, 없으면 undefined */
 export function nextSuggestion(segments: Segment[], live: Map<string, PolishSuggestion>, afterId?: string): string | undefined {
   const at = new Map(segments.map((s, i) => [s.id, i]));

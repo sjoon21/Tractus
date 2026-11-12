@@ -17,12 +17,12 @@ describe("코어가 실제로 만든 녹음 노트의 메모", () => {
     expect([...lines]).toEqual([["m0001", 1], ["m0002", 3], ["m0003", 4]]);
   });
 
-  test("요약의 m-ID 근거가 `메모 n번째 줄`로 나온다 (시각과 섞이면 쉼표)", () => {
+  test("요약의 m-ID 근거가 `메모 n번째 줄`로 나온다 (시각과 섞이면 쉼표). 복사 글에는 근거를 붙이지 않는다", () => {
     const sum = read("summary.json");
     const starts = new Map([["s0001", 0]]);
-    const md = summaryMarkdown(sum, starts, lines);
-    expect(md).toContain("- 새 견적은 하늘상사에서 받기로 결정 (메모 3번째 줄)");
-    expect(md).toContain("(0:00, 메모 1번째 줄)");
+    const md = summaryMarkdown(sum);
+    expect(md).toContain("- 새 견적은 하늘상사에서 받기로 결정\n");
+    expect(md).not.toContain("메모 1번째 줄");
     expect(evidenceLabel(["m0003", "m0002"], starts, lines)).toBe("메모 3번째 줄");
   });
 

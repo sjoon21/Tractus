@@ -403,7 +403,7 @@ describe("memo citations in recording notes", () => {
     expect(isMemoCite({ segment_id: "s0003" }, false)).toBe(false); // 녹음의 대화
     expect(isMemoCite({ segment_id: "m0003" }, false)).toBe(true); // 녹음 노트의 메모 줄
   });
-  test("evidence label combines the time and the memo line; copy markdown shows 메모 n번째 줄", () => {
+  test("evidence label combines the time and the memo line; copy markdown leaves it out", () => {
     const starts = new Map([["s0002", 65]]);
     const lines = new Map([["m0004", 4], ["m0001", 1]]);
     expect(evidenceLabel(["s0002", "m0004", "m0001"], starts, lines)).toBe("1:05, 메모 1번째 줄");
@@ -411,9 +411,7 @@ describe("memo citations in recording notes", () => {
     expect(evidenceLabel(["s0002"], starts, lines)).toBe("1:05");
     expect(evidenceLabel(["m0009"], starts, lines)).toBeNull();
     expect(evidenceLabel(["s0002"], starts)).toBe("1:05"); // 메모가 없는 옛 노트
-    const md = summaryMarkdown({ summary: "요약", topics: [], decisions: [{ text: "결정", segment_ids: ["m0004"] }], action_items: [] }, starts, lines);
-    expect(md).toContain("- 결정 (메모 4번째 줄)");
-    expect(summaryMarkdown({ summary: "요약", topics: [], decisions: [{ text: "결정", segment_ids: ["m0004"] }], action_items: [] }, starts)).toContain("- 결정\n");
+    expect(summaryMarkdown({ summary: "요약", topics: [], decisions: [{ text: "결정", segment_ids: ["m0004"] }], action_items: [] })).toContain("- 결정\n");
   });
 });
 

@@ -42,6 +42,10 @@ export function NotePlayer({
           onTimeUpdate={(e) => {
             const a = e.currentTarget;
             setT(a.currentTime);
+            if (pb.stopAt.current !== null && a.currentTime >= pb.stopAt.current) {
+              pb.stopAt.current = null;
+              a.pause();
+            }
             const to = skip && !a.paused ? silenceSkip(visible, a.currentTime) : null;
             if (to !== null) {
               setSaved((s) => s + (to - a.currentTime));

@@ -67,7 +67,7 @@ describe("유형 고르기 목록", () => {
 describe("요약 탭", () => {
   const props: SummariesPanelProps = {
     id: "N1", memoNote: false, rev: 0, prepare: async () => true, blocked: false, editSeq: 0, editSeqRef: { current: 0 }, editKinds: { current: [] },
-    chip, starts: new Map(), memoLines: undefined, notify() {}, onRunning() {}, onSelect() {}, onChanged() {},
+    chip, notify() {}, onRunning() {}, onSelect() {}, onChanged() {},
   };
   test("처음 그릴 때는 유형 단추와 만들기 단추만 (요약은 아직 읽는 중)", () => {
     const out = html(createElement(SummariesPanel, props));
