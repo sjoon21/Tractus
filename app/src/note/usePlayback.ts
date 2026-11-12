@@ -33,8 +33,11 @@ export function usePlayback(audioPath: string | null | undefined) {
   const [follow, setFollow] = useState(true);
   const [audioError, setAudioError] = useState<string | null>(null);
 
+  // 한 문장만 듣기(playClip)의 끝: 재생이 여기를 넘으면 멈춘다 (NotePlayer onTimeUpdate). 다른 이동은 지운다
+  const stopAt = useRef<number | null>(null);
   // 모든 이동은 여기를 거친다 (클릭, 단축키, 무음 건너뛰기, 검색 결과)
   const seekTo = useCallback((sec: number, play = true) => {
+    stopAt.current = null;
     const a = audio.current;
     const to = Math.max(0, Math.min(sec, a && Number.isFinite(a.duration) ? a.duration : Infinity));
     setT(to);
@@ -43,6 +46,15 @@ export function usePlayback(audioPath: string | null | undefined) {
     a.currentTime = to;
     if (play) void a.play().catch(() => {});
   }, []);
+  /** start~end만 재생하고 멈춘다. 화면은 따라가지 않는다 (지금 보는 자리를 지킨다) */
+  const playClip = useCallback(
+    (start: number, end: number) => {
+      seekTo(start, true);
+      stopAt.current = end;
+      setFollow(false);
+    },
+    [seekTo],
+  );
 
   // 재생 속도 (5.1). 피치는 유지한다(preservesPitch 기본값). 다음에 열 때도 같은 속도
   const [rate, setRate] = useState(readRate);
@@ -94,7 +106,7 @@ export function usePlayback(audioPath: string | null | undefined) {
     return () => void (a && releaseVoiceBoost(a));
   }, [audioPath]);
 
-  return { audio, pos, setT, duration, setDuration, playing, setPlaying, follow, setFollow, audioError, setAudioError, seekTo, rate, setRate, volume, setVolume, muted, setMuted, skip, setSkip, saved, setSaved, voice, voiceError, toggleVoice };
+  return { audio, stopAt, playClip, pos, setT, duration, setDuration, playing, setPlaying, follow, setFollow, audioError, setAudioError, seekTo, rate, setRate, volume, setVolume, muted, setMuted, skip, setSkip, saved, setSaved, voice, voiceError, toggleVoice };
 }
 
 export type Playback = ReturnType<typeof usePlayback>;
