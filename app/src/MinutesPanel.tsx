@@ -123,7 +123,7 @@ export function MinutesPanel(p: {
   };
 
   const copy = (text: string, done: string) =>
-    navigator.clipboard.writeText(text).then(
+    api.copyText(text).then(
       () => notify({ text: done }),
       (e) => notify({ text: t("복사하지 못했습니다: {error}", { error: errText(e) }), error: true }),
     );
