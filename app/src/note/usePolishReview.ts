@@ -8,7 +8,10 @@ import { nextSuggestion, NO_SUGGESTIONS, termsFromSuggestions, type PolishSugges
 import { usePolish } from "../PolishControls";
 import type { Note } from "./useNote";
 
-export function usePolishReview({ id, notify, note, setFollow, list }: { id: string; notify: Notify; note: Note; setFollow: (f: boolean) => void; list: RefObject<HTMLOListElement | null> }) {
+/** onArrive: 제안으로 옮겨 간 뒤 (확인 표시가 있으면 그 문장을 들려준다, MeetingView) */
+export function usePolishReview({ id, notify, note, setFollow, list, onArrive }: { id: string; notify: Notify; note: Note; setFollow: (f: boolean) => void; list: RefObject<HTMLOListElement | null>; onArrive?: (s: PolishSuggestion) => void }) {
+  const arrive = useRef(onArrive);
+  arrive.current = onArrive;
   const { data, queue, noteSaved, suggestTerms } = note;
   const { undoStack } = note.text;
   const { confirmed, commit } = data;
@@ -37,6 +40,8 @@ export function usePolishReview({ id, notify, note, setFollow, list }: { id: str
     row?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
     row?.querySelector<HTMLButtonElement>(".seg-polish button")?.focus({ preventScroll: true });
     // 어디로 왔는지 보이게 제안 상자를 잠깐 밝힌다
+    const s = polishLive.current.get(jump.id);
+    if (s) arrive.current?.(s);
     if (!reduce) row?.querySelector(".seg-polish")?.animate([{ boxShadow: "0 0 0 4px color-mix(in srgb, var(--ring) 60%, transparent)" }, { boxShadow: "0 0 0 0 transparent" }], { duration: 1400, easing: "ease-out" });
   }, [jump]);
   /** 제안 받기·버리기: 줄에 세워 코어가 고친 회의를 돌려준다. 받은 문장은 ⌘Z로 되돌릴 수 있고, 받은 용어·이름 교정은 모아서 사전 단어로 제안한다 */
