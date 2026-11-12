@@ -30,6 +30,7 @@ const NO_DUE = t("기한 미정");
 const DOC = t("회의록"); // words-ok: 회의록은 문서 이름
 const COPY_TITLE = t("위키에 붙일 회의록 전체 (마크다운)"); // words-ok
 const COPIED = t("회의록을 마크다운으로 복사했습니다"); // words-ok
+const OVERVIEW = t("회의 개요"); // words-ok: 회의록 문서의 머리글 (코어 Markdown `## 회의 개요`와 같다)
 const LEGACY_NOTE = t("이전 형식의 회의록입니다. ‘회의록 만들기’를 누르면 새 형식으로 만듭니다."); // words-ok
 const EMPTY_TITLE = t("아직 회의록이 없습니다"); // words-ok
 const EMPTY = t("‘회의록 만들기’를 누르면 안건·조율 사항·할 일을 근거 대화와 함께 정리합니다."); // words-ok
@@ -192,6 +193,14 @@ export function MinutesPanel(p: {
             )}
             <Editable value={m.agenda} label={t("주요 안건")} className="text-[14px] font-medium leading-6 text-foreground" onSave={(v) => commit(setLine(m, { kind: "agenda" }, v))} />
           </header>
+          {m.summary.length > 0 && (
+            <section className="flex flex-col gap-0.5" aria-label={OVERVIEW}>
+              <h3 className="m-0 text-xs font-semibold text-subtle-foreground">{OVERVIEW}</h3>
+              {m.summary.map((x, i) => (
+                <Row key={i} line={x} chip={p.chip} strong onSave={(v) => commit(setLine(m, { kind: "summary", i }, v))} />
+              ))}
+            </section>
+          )}
 
           {m.topics.map((tp, ti) => (
             <section key={ti} className="flex flex-col gap-2" aria-label={tp.title}>
@@ -200,6 +209,9 @@ export function MinutesPanel(p: {
                 <Editable value={tp.title} className="min-w-0 flex-1 text-[13px] font-semibold" onSave={(v) => commit(setLine(m, { kind: "title", topic: ti }, v))} />
                 {tp.open && <Badge variant="memo">{t("추가 논의 필요")}</Badge>}
               </div>
+              {tp.background.map((x, i) => (
+                <Row key={i} line={x} chip={p.chip} onSave={(v) => commit(setLine(m, { kind: "background", topic: ti, i }, v))} />
+              ))}
               <Lines title={t("조율 사항")} lines={tp.agreed} chip={p.chip} path={(i) => ({ kind: "agreed", topic: ti, i })} m={m} commit={commit} strong />
               <Lines title={t("논의 내용")} lines={tp.discussed} chip={p.chip} path={(i) => ({ kind: "discussed", topic: ti, i })} m={m} commit={commit} />
               {tp.points.map((pt, pi) => (

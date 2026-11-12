@@ -34,18 +34,20 @@ def action(text: str, *ids: str, team=None, owner=None, due=None, note=None) -> 
 def reply(topics=None, actions=None, agenda="해외 카드, 리포트, 환불", next_meeting=None) -> str:
     topics = topics if topics is not None else [
         {"title": "해외 카드 정산", "open": False,
+         "background": [line("환율 공급사 계약이 늦어져 해외 카드 정산 일정이 불확실해졌다.", "s0003")],
          "discussed": [line("환율을 하루 한 번만 받아 실시간 정산이 안 됨", "s0003"), line("플랫폼팀은 하루 1440번 호출 비용을 걱정함", "s0004")],
          "agreed": [line("해외 카드는 2.0 범위에서 빼고 2.1에서 다시 봄", "s0005")],
          "points": [{"label": "기술적 이슈", "details": [{**line("환율 공급사 계약이 아직임", "s0003"), "children": [line("하루 1회 수신", "s0003")]}]}],
          "approach": []},
-        {"title": "환불 정책", "open": True, "discussed": [line("부분 환불 허용 여부", "s0016")], "agreed": [], "points": [], "approach": []},
+        {"title": "환불 정책", "open": True, "background": [], "discussed": [line("부분 환불 허용 여부", "s0016")], "agreed": [], "points": [], "approach": []},
     ]
     actions = actions if actions is not None else [
         action("원화 결제 범위 문서 정리", "s0021", "s0022", owner="김지훈 (정산팀)", due="다음 주 수요일"),
         action("새벽 배치 분할 방식 검토", "s0023", team="플랫폼팀"),  # s0023은 "저희는"뿐: 팀을 말하지 않았다
         action("재무팀 미팅 잡기", "s0025", team="기획팀", due="금요일"),  # 화자 이름이 기획팀, 기한은 말하지 않았다
     ]
-    return json.dumps({"agenda": agenda, "topics": topics, "actions": actions, "next_meeting": next_meeting or []}, ensure_ascii=False)
+    summary = [line("2.0 정산 범위를 정하려고 모였고, 해외 카드는 2.1로 미루기로 했다.", "s0005"), line("환불 정책은 정하지 못해 다음에 다시 보기로 했다.", "s0016")]
+    return json.dumps({"agenda": agenda, "summary": summary, "topics": topics, "actions": actions, "next_meeting": next_meeting or []}, ensure_ascii=False)
 
 
 def make(reply_text: str) -> dict:
@@ -99,7 +101,7 @@ def test_auto_label_and_suggested_names_never_become_owner():
 
 
 def test_numbers_missing_from_the_evidence_are_marked_not_dropped():
-    m = make(reply(topics=[{"title": "해외", "open": False, "discussed": [line("12개 통화 지원 안", "s0002"), line("하루 1440번 호출", "s0004")],
+    m = make(reply(topics=[{"title": "해외", "open": False, "background": [], "discussed": [line("12개 통화 지원 안", "s0002"), line("하루 1440번 호출", "s0004")],
                             "agreed": [], "points": [], "approach": []}]))
     d = m["topics"][0]["discussed"]
     assert d[0]["unverified"] == ["12"] and d[0]["text"] == "12개 통화 지원 안"  # 대화는 "열두 개"
@@ -144,7 +146,7 @@ def test_numbers_compare_whole_numbers_and_include_the_note():
 def test_unknown_or_missing_evidence_is_rejected():
     import pytest
 
-    for bad in (reply(actions=[action("검토", "s9999")]), reply(actions=[action("검토")]), reply(topics=[])):
+    for bad in (reply(actions=[action("검토", "s9999")]), reply(actions=[action("검토")]), reply(topics=[]), reply(actions=[action("참석자 3은 배포 준비", "s0021")])):
         with pytest.raises(ValueError):
             make(bad)
 
@@ -165,6 +167,21 @@ def test_one_format_draws_every_part_that_has_content():
     assert "- **기술적 이슈**\n    - 환율 공급사 계약이 아직임\n        - 하루 1회 수신" in md
     assert "| 원화 결제 범위 문서 정리 | 정산팀 · 김지훈 | 기한 다음 주 수요일 |" in md
     assert "| 새벽 배치 분할 방식 검토 | 담당 미정 |  |" in md
+    # 회의 개요(서술식 단락)는 주요 안건 아래, 안건 배경은 안건 제목 바로 아래 (v3.117)
+    assert "**주요 안건:** 해외 카드, 리포트, 환불\n\n## 회의 개요\n\n2.0 정산 범위를 정하려고 모였고, 해외 카드는 2.1로 미루기로 했다. 환불 정책은 정하지 못해 다음에 다시 보기로 했다.\n\n## 논의 사항 요약" in md
+    assert "### 1) 해외 카드 정산\n\n환율 공급사 계약이 늦어져 해외 카드 정산 일정이 불확실해졌다.\n\n- **기술적 이슈**" in md
+    assert "### 2) [추가 논의 필요] 환불 정책\n\n- 부분 환불 허용 여부\n" in md
+
+
+def test_minutes_made_before_the_overview_still_draw_and_save(home, fake):
+    old = make(reply())
+    old.pop("summary")
+    for tp in old["topics"]:
+        tp.pop("background")
+    md = minutes.markdown(data(old), transcript())
+    assert "회의 개요" not in md and "### 1) 해외 카드 정산\n\n- **기술적 이슈**" in md
+    edited = minutes.edited(old, transcript())
+    assert edited["summary"] == [] and edited["topics"][0]["background"] == []
 
 
 def test_parts_without_content_are_not_drawn():
@@ -264,11 +281,15 @@ def test_save_edits_fields_drops_emptied_lines_and_marks_edited(home, fake):
     m["actions"][1] = {**m["actions"][1], "owner": "박서연", "due": "금요일"}  # 사람이 정한 값은 근거와 대조하지 않는다
     m["topics"][0]["discussed"][0]["text"] = "  "  # 비우면 지운다
     m["topics"][0]["agreed"][0]["text"] = "해외 카드는 2.1에서 12개 통화로"
+    m["summary"][1]["text"] = ""  # 개요 문장도 비우면 지운다
+    m["topics"][0]["background"][0]["text"] = "계약이 늦어졌다."
     r = run("minutes", mid, "save", input=json.dumps({"minutes": m}, ensure_ascii=False))
     assert r.exit_code == 0, r.output
     out = json.loads(r.stdout)
     assert out["edited_at"] and (out["minutes"]["actions"][1]["owner"], out["minutes"]["actions"][1]["due"]) == ("박서연", "금요일")
     assert len(out["minutes"]["topics"][0]["discussed"]) == 1
+    assert [x["text"] for x in out["minutes"]["summary"]] == ["2.0 정산 범위를 정하려고 모였고, 해외 카드는 2.1로 미루기로 했다."]
+    assert out["minutes"]["topics"][0]["background"][0]["text"] == "계약이 늦어졌다."
     assert out["minutes"]["topics"][0]["agreed"][0]["unverified"] == ["12"]  # 고친 문장으로 다시 잰다
     assert "박서연" in (d / "summaries" / "minutes.md").read_text(encoding="utf-8")
     saved = json.loads((d / "summaries" / "minutes.json").read_text(encoding="utf-8"))

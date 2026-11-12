@@ -281,18 +281,20 @@ const minutesFor = (id: string) => {
   return EN
     ? {
         agenda: "Payments API latency, release date, onboarding docs",
+        summary: [L("We met because payments API latency has been climbing since last week and the release date depends on it.", 1), L("We agreed to raise the connection pool first and left where the onboarding docs live for next time.", 2)],
         topics: [
-          { title: "Payments API latency", open: false, discussed: [L("p95 rose to 800 ms since last week", 1, { unverified: ["800"] }), L("The connection pool fills up", 1)], agreed: [L("Raise the pool size from 20 to 50", 2)], points: [{ label: "Technical issue", details: [{ ...L("Pool exhaustion at peak", 1), children: [L("Slow queries hold connections", 2)] }] }], approach: [] },
-          { title: "Onboarding docs", open: true, discussed: [L("Notion or Confluence?", 3)], agreed: [], points: [], approach: [] },
+          { title: "Payments API latency", open: false, background: [L("p95 started rising after last week's deploy and support tickets followed.", 1)], discussed: [L("p95 rose to 800 ms since last week", 1, { unverified: ["800"] }), L("The connection pool fills up", 1)], agreed: [L("Raise the pool size from 20 to 50", 2)], points: [{ label: "Technical issue", details: [{ ...L("Pool exhaustion at peak", 1), children: [L("Slow queries hold connections", 2)] }] }], approach: [] },
+          { title: "Onboarding docs", open: true, background: [], discussed: [L("Notion or Confluence?", 3)], agreed: [], points: [], approach: [] },
         ],
         actions: [{ ...L("Share the slow-query analysis", 2), team: null, owner: "Minsu Kim", due: "Wednesday", note: null }, { ...L("Draft the onboarding outline", 3), team: null, owner: null, due: null, note: null }],
         next_meeting: [L("Next Tuesday", 3)],
       }
     : {
         agenda: "결제 API latency, 릴리스 일정, 온보딩 문서",
+        summary: [L("지난주부터 결제 API 응답이 느려져 릴리스 일정에 영향이 있는지 보려고 모였다.", 1), L("connection pool을 먼저 늘리기로 했고, 온보딩 문서를 어디에 둘지는 다음에 다시 보기로 했다.", 2)],
         topics: [
-          { title: "결제 API latency", open: false, discussed: [L("지난주부터 p95가 800ms까지 오름", 1, { unverified: ["800"] }), L("DB connection pool이 꽉 참", 1)], agreed: [L("pool size를 20에서 50으로 올리기로 함", 2)], points: [{ label: "기술적 이슈", details: [{ ...L("피크 시간에 pool 고갈", 1), children: [L("slow query가 연결을 오래 잡음", 2)] }] }], approach: [] },
-          { title: "온보딩 문서", open: true, discussed: [L("Notion과 Confluence 중 어디에 둘지", 3)], agreed: [], points: [], approach: [] },
+          { title: "결제 API latency", open: false, background: [L("지난주 배포 뒤 p95가 오르기 시작했고 고객 문의도 늘었다.", 1)], discussed: [L("지난주부터 p95가 800ms까지 오름", 1, { unverified: ["800"] }), L("DB connection pool이 꽉 참", 1)], agreed: [L("pool size를 20에서 50으로 올리기로 함", 2)], points: [{ label: "기술적 이슈", details: [{ ...L("피크 시간에 pool 고갈", 1), children: [L("slow query가 연결을 오래 잡음", 2)] }] }], approach: [] },
+          { title: "온보딩 문서", open: true, background: [], discussed: [L("Notion과 Confluence 중 어디에 둘지", 3)], agreed: [], points: [], approach: [] },
         ],
         actions: [{ ...L("slow query 분석 공유", 2), team: null, owner: "김민수", due: "수요일", note: null }, { ...L("온보딩 목차 초안", 3), team: null, owner: null, due: null, note: null }],
         next_meeting: [L("다음 주 화요일", 3)],
