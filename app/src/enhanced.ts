@@ -1,7 +1,7 @@
 // 노트 완성: 내 메모를 뼈대로 대화 내용의 세부를 붙인 완성된 노트 (docs/design/enhanced-notes.md, WORDS.md §4.22).
 // 코어가 summaries/enhanced.json(요약 v2 + kind·part·source·at)로 저장한다. 여기는 화면이 쓰는 문구와 순수 계산만 둔다.
 import { t } from "./i18n";
-import type { SummaryDoc, SummarySection } from "./summaries";
+import { sectionLines, type SummaryDoc, type SummarySection } from "./summaries";
 
 export const ENHANCED_KEY = "enhanced";
 export const ENHANCE_LABEL = t("노트 완성");
@@ -33,4 +33,15 @@ export function enhancedView(doc: SummaryDoc): { memo: SummarySection[]; extra: 
     todos: doc.sections.filter((s) => s.part === "todos" && s.items.length > 0),
     noMemo: memo.length === 0,
   };
+}
+
+/** '복사' 마크다운: 화면 순서대로 내 메모 섹션 · 메모에 없던 내용 · 할 일. 근거 시각은 붙이지 않는다 (요약 복사와 같다) */
+export function enhancedMarkdown(doc: SummaryDoc): string {
+  const v = enhancedView(doc);
+  const block = (h: string, s: SummarySection) => [h, ...(s.items.length ? ["", ...sectionLines(s)] : []), ""];
+  return [
+    ...v.memo.flatMap((s) => block(`## ${s.heading}`, s)),
+    ...(v.extra.length ? [`## ${EXTRA_TITLE}`, "", ...v.extra.flatMap((s) => block(`### ${s.heading}`, s))] : []),
+    ...v.todos.flatMap((s) => block(`## ${s.heading}`, s)),
+  ].join("\n");
 }

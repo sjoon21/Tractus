@@ -2,8 +2,9 @@
 // list.json은 Rust 쪽 meetings.rs의 reads_the_trio_home_written_by_the_real_core가 같은 파일과 맞춰 본다.
 import { describe, expect, test } from "vitest";
 import type { MeetingInfo } from "./api";
+import { evidenceLabel } from "./lib";
 import { collectTags, filterNotes, NO_FILTER, sortNotes, type Folder } from "./organize";
-import { docMarkdown, parseSummaryDoc, parseSummaryDocs, tabLabels } from "./summaries";
+import { parseSummaryDoc, parseSummaryDocs, tabLabels } from "./summaries";
 
 const files = import.meta.glob("../../tests/fixtures/trio_home/**/*.json", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 const json = (p: string) => JSON.parse(files[`../../tests/fixtures/trio_home/${p}`]);
@@ -52,12 +53,13 @@ describe("코어가 쓴 요약 파일", () => {
     expect(docs[1].prompt).toBeNull(); // 기본 유형은 방법을 저장하지 않는다
   });
 
-  test("녹음을 덧붙이며 옮긴 메모 줄 근거(m####)가 복사 문장에 `메모 n번째 줄`로 나온다", () => {
+  test("녹음을 덧붙이며 옮긴 메모 줄 근거(m####)가 `메모 n번째 줄`로 나온다", () => {
     const memo = new Map<string, number>(json(`${noteDir(A)}/transcript.json`).memo.lines.map((l: { id: string; line: number }) => [l.id, l.line]));
     const todo = docs.find((d) => d.key === "todo")!;
     expect(todo.sections[0].items.flatMap((i) => i.segment_ids)).toContain("m0002");
-    expect(docMarkdown(todo, new Map(), memo)).toContain("메모 3번째 줄");
-    expect(docMarkdown(docs[0], new Map(), memo)).toContain("메모 3번째 줄"); // 옛 스키마 요약도 같은 줄로 옮겨졌다
+    const labels = (items: { segment_ids: string[] }[]) => items.map((i) => evidenceLabel(i.segment_ids, new Map(), memo));
+    expect(labels(todo.sections[0].items)).toContain("메모 3번째 줄");
+    expect(labels([...docs[0].legacy!.decisions, ...docs[0].legacy!.action_items, ...docs[0].legacy!.topics])).toContain("메모 3번째 줄"); // 옛 스키마 요약도 같은 줄로 옮겨졌다
   });
 
   test("옛 노트의 옛 요약은 그대로 읽힌다", () => {
