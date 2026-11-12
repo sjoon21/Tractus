@@ -21,6 +21,8 @@ export interface MPoint {
 export interface MTopic {
   title: string;
   open: boolean;
+  /** 안건의 배경·지금 상황 (서술식, v3.117 전 회의록은 빈 목록) */
+  background: MLine[];
   discussed: MLine[];
   agreed: MLine[];
   points: MPoint[];
@@ -34,6 +36,8 @@ export interface MAction extends MLine {
 }
 export interface Minutes {
   agenda: string;
+  /** 회의 개요 (서술식 문장들, v3.117 전 회의록은 빈 목록) */
+  summary: MLine[];
   topics: MTopic[];
   actions: MAction[];
   next_meeting: MLine[];
@@ -68,9 +72,11 @@ export function parseShown(raw: unknown): MinutesShown | null {
   return {
     minutes: {
       agenda: str(m.agenda),
+      summary: lines(m.summary),
       topics: arr(m.topics).filter(isObj).map((tp) => ({
         title: str(tp.title),
         open: tp.open === true,
+        background: lines(tp.background),
         discussed: lines(tp.discussed),
         agreed: lines(tp.agreed),
         points: arr(tp.points).filter(isObj).map((p) => ({
@@ -94,8 +100,9 @@ export function parseShown(raw: unknown): MinutesShown | null {
 /** 고칠 수 있는 줄의 자리. 비운 줄은 코어가 지운다 */
 export type LinePath =
   | { kind: "agenda" }
+  | { kind: "summary"; i: number }
   | { kind: "title"; topic: number }
-  | { kind: "discussed" | "agreed" | "approach"; topic: number; i: number }
+  | { kind: "background" | "discussed" | "agreed" | "approach"; topic: number; i: number }
   | { kind: "detail"; topic: number; point: number; i: number }
   | { kind: "child"; topic: number; point: number; i: number; child: number }
   | { kind: "action"; i: number }
@@ -110,8 +117,11 @@ export function setLine(m: Minutes, p: LinePath, text: string): Minutes {
   switch (p.kind) {
     case "agenda":
       return { ...m, agenda: text };
+    case "summary":
+      return { ...m, summary: replaceAt(m.summary, p.i, (x) => withText(x, text)) };
     case "title":
       return topic(p.topic, (tp) => ({ ...tp, title: text }));
+    case "background":
     case "discussed":
     case "agreed":
     case "approach":

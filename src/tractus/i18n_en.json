@@ -346,6 +346,7 @@
  "제목이나 대화 내용에 쓸 수 없는 글자가 있습니다.": "The title or transcript contains characters that can’t be used.",
  "조율 사항": "Agreed",
  "주요 안건": "Agenda",
+ "회의 개요": "Overview",
  "주제": "Topics",
  "주제 {topics}개, 결정 {decisions}개, 할 일 {actions}개": "{topics} topics, {decisions} decisions, {actions} to-dos",
  "준비됨": "ready",

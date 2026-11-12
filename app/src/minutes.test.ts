@@ -3,10 +3,12 @@ import { missing, parseShown, setActionField, setLine, whoOf, type Minutes } fro
 
 const M: Minutes = {
   agenda: "안건",
+  summary: [{ text: "정산 범위를 정했다.", segment_ids: ["s0005"] }],
   topics: [
     {
       title: "해외 카드",
       open: false,
+      background: [{ text: "계약이 늦어졌다.", segment_ids: ["s0003"] }],
       discussed: [{ text: "환율 하루 1회", segment_ids: ["s0003"] }],
       agreed: [{ text: "2.1에서 다시 봄", segment_ids: ["s0005"] }],
       points: [{ label: "기술적 이슈", details: [{ text: "계약 아직", segment_ids: ["s0003"], children: [{ text: "공급사", segment_ids: ["s0003"] }] }] }],
@@ -16,6 +18,20 @@ const M: Minutes = {
   actions: [{ text: "문서 정리", segment_ids: ["s0021"], team: "정산팀", owner: "김지훈", due: null, note: null }],
   next_meeting: [],
 };
+
+describe("회의 개요·안건 배경 (v3.117)", () => {
+  test("old minutes without them read as empty lists", () => {
+    const { summary: _s, ...rest } = M;
+    const raw = { minutes: { ...rest, topics: M.topics.map(({ background: _b, ...tp }) => tp) }, attendees: [], title: "T", generated_at: null, edited_at: null, markdown: "", short: "" };
+    const s = parseShown(raw)!;
+    expect(s.minutes.summary).toEqual([]);
+    expect(s.minutes.topics[0].background).toEqual([]);
+  });
+  test("sentences can be edited one at a time", () => {
+    expect(setLine(M, { kind: "summary", i: 0 }, "새 개요").summary[0]).toEqual({ text: "새 개요", segment_ids: ["s0005"] });
+    expect(setLine(M, { kind: "background", topic: 0, i: 0 }, "새 배경").topics[0].background[0].text).toBe("새 배경");
+  });
+});
 
 describe("parseShown", () => {
   test("reads the core's show output and keeps number marks", () => {

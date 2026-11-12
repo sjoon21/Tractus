@@ -56,6 +56,7 @@ class Point(_Strict):
 class Topic(_Strict):
     title: str = Field(description="안건 이름")  # i18n-ok: AI 프롬프트
     open: bool = Field(description="정하지 못하고 넘어간 안건이면 true")  # i18n-ok: AI 프롬프트
+    background: list[Line] = Field(description="이 안건이 나온 배경·지금 상황. 서술식 1~2문장, 없으면 빈 목록")  # i18n-ok: AI 프롬프트
     discussed: list[Line]
     agreed: list[Line]
     points: list[Point]
@@ -73,6 +74,7 @@ class Action(_Strict):
 
 class Minutes(_Strict):
     agenda: str = Field(description="다룬 안건 한 줄")  # i18n-ok: AI 프롬프트
+    summary: list[Line] = Field(description="회의 개요. 서술식 2~4문장, 문장 하나가 한 줄")  # i18n-ok: AI 프롬프트
     topics: list[Topic]
     actions: list[Action]
     next_meeting: list[Line] = Field(description="다음에 볼 날. 말했을 때만 0개 또는 1개")  # i18n-ok: AI 프롬프트
@@ -97,10 +99,14 @@ def build_input(transcript: dict, glossary: list[str] = ()) -> str:
     return body + ("\n\n" + "\n".join(extra) if extra else "")
 
 
+# 사용자가 이름을 붙이지 않은 화자의 화면 이름. 회의록 문장에 쓰면 다시 요청한다 (프롬프트 규칙을 코어가 지킨다, v3.117)
+_AUTO_LABEL = re.compile(r"참석자\s*\d+|화자\s*\d+")  # i18n-ok: AI 출력 검사
+
+
 def _lines(m: Minutes) -> list:
-    out: list = []
+    out: list = list(m.summary)
     for tp in m.topics:
-        out += tp.discussed + tp.agreed + tp.approach
+        out += tp.background + tp.discussed + tp.agreed + tp.approach
         for p in tp.points:
             for d in p.details:
                 out += [d, *d.children]
@@ -117,6 +123,8 @@ def check(m: Minutes, transcript: dict) -> None:
         raise ValueError(f"근거 segment_ids가 빈 줄: {empty[:10]}")  # words-ok: LLM 재시도·stderr 전용  # i18n-ok: AI 프롬프트
     if not m.topics:
         raise ValueError("안건(topics)이 비어 있습니다")  # words-ok: LLM 재시도·stderr 전용  # i18n-ok: AI 프롬프트
+    if auto := [x.text for x in lines if _AUTO_LABEL.search(x.text)]:
+        raise ValueError(f"자동 이름(참석자 N)을 쓴 줄 (주어 없이 쓴다): {auto[:5]}")  # words-ok: LLM 재시도·stderr 전용  # i18n-ok: AI 프롬프트
 
 
 # --- 근거 대조 (결정적, 재요청 없음) ---
@@ -220,6 +228,7 @@ def clean(m: Minutes, transcript: dict) -> dict:
     def topic(tp: Topic) -> dict:
         return {
             "title": _flat(tp.title), "open": tp.open,
+            "background": [_line(x, transcript) for x in tp.background[:2]],
             "discussed": [_line(x, transcript) for x in tp.discussed],
             "agreed": [] if tp.open and not tp.agreed else [_line(x, transcript) for x in tp.agreed],
             "points": [{"label": _flat(p.label), "details": [{**_line(d, transcript), "children": [_line(c, transcript) for c in d.children]} for d in p.details]}
@@ -228,7 +237,7 @@ def clean(m: Minutes, transcript: dict) -> dict:
         }
 
     nxt = [_line(x, transcript) for x in m.next_meeting[:1] if due_said(x.text, transcript, x.segment_ids)]  # 말한 표현 그대로일 때만
-    return {"agenda": _flat(m.agenda), "topics": [topic(tp) for tp in m.topics], "actions": [clean_action(a, transcript) for a in m.actions], "next_meeting": nxt}
+    return {"agenda": _flat(m.agenda), "summary": [_line(x, transcript) for x in m.summary[:4]], "topics": [topic(tp) for tp in m.topics], "actions": [clean_action(a, transcript) for a in m.actions], "next_meeting": nxt}
 
 
 def attendees(transcript: dict, event: dict | None) -> list[str]:
@@ -272,8 +281,13 @@ def _topic_title(tp: dict, n: int | None) -> str:
     return f"{n}) {mark}{tp['title']}" if n else f"{mark}{tp['title']}"
 
 
+def _para(lines: list[dict]) -> str:
+    """서술식 칸(회의 개요·안건 배경): 문장을 이어 한 단락으로."""
+    return " ".join(x["text"] for x in lines)
+
+
 def _body(tp: dict) -> list[str]:
-    out = []
+    out = [_para(bg), ""] if (bg := tp.get("background")) else []
     for p in tp["points"]:
         out.append(f"- **{p['label']}**")
         for d in p["details"]:
@@ -281,8 +295,10 @@ def _body(tp: dict) -> list[str]:
             out += [f"        - {c['text']}" for c in d["children"]]
     if tp["approach"]:
         out += ["", f"**{t('접근 방식 정리')}**: {tp['approach'][0]['text']}"]
-    if not out:  # 이름표 없이 논의만 있는 안건
-        out = [f"- {x['text']}" for x in tp["discussed"] + tp["agreed"]]
+    if not tp["points"] and not tp["approach"]:  # 이름표 없이 논의만 있는 안건
+        out += [f"- {x['text']}" for x in tp["discussed"] + tp["agreed"]]
+    while out and not out[-1]:
+        out.pop()
     return out
 
 
@@ -301,7 +317,7 @@ def _actions(actions: list[dict]) -> list[str]:
 
 def markdown(data: dict, transcript: dict) -> str:
     """위키용 회의록 Markdown (`복사`·md 파일·내보내기). 사용자가 고친 칸도 minutes 안에 있다.
-    부분은 내용이 있을 때만 그린다: 일시·참석·주요 안건 → 논의 사항 요약 표(안건 2개 이상) → 회의 내용 → 향후 예정 작업 → 다음에 볼 날."""
+    부분은 내용이 있을 때만 그린다: 일시·참석·주요 안건 → 회의 개요(v3.117) → 논의 사항 요약 표(안건 2개 이상) → 회의 내용 → 향후 예정 작업 → 다음에 볼 날."""
     m, date = data["minutes"], _date(transcript)
     out = [f"# [{date}] {data['title']}" if date else f"# {data['title']}", ""]
     head = [f"{t('일시')}: {held}" if (held := _held(transcript)) else "", f"{t('참석')}: {', '.join(people)}" if (people := data.get("attendees")) else ""]
@@ -309,6 +325,8 @@ def markdown(data: dict, transcript: dict) -> str:
         out += ["  \n".join(head), ""]
     if m["agenda"]:
         out += [f"**{t('주요 안건')}:** {m['agenda']}", ""]
+    if summary := m.get("summary"):
+        out += [f"## {t('회의 개요')}", "", _para(summary), ""]  # words-ok: 회의록 머리글 (문서 종류)
     if len(m["topics"]) >= 2:
         out += [f"## {t('논의 사항 요약')}", "", f"| {t('구분')} | {t('논의 내용')} | {t('조율 사항')} |", "| --- | --- | --- |"]
         out += [f"| **{_esc(_topic_title(tp, None))}** | {_cell(tp['discussed'])} | {_cell(tp['agreed']) or ('• ' + t('추가 논의 필요') if tp['open'] else '')} |" for tp in m["topics"]]
@@ -361,7 +379,7 @@ def write(d: Path, transcript: dict, minutes: dict, people: list[str], provider:
     data = {"schema_version": SCHEMA_VERSION, "meeting_id": transcript["meeting_id"], "template": KEY, "template_name": NAME, "kind": KEY,
             "prompt_hash": hashlib.sha256(system_prompt().encode()).hexdigest()[:12], "provider": provider, "model": model,
             "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-            "title": transcript["title"], "overview": minutes["agenda"], "minutes": minutes, "attendees": people, "edited_at": None,
+            "title": transcript["title"], "overview": _para(minutes["summary"]) or minutes["agenda"], "minutes": minutes, "attendees": people, "edited_at": None,
             "sections": to_sections(minutes)}
     _save(d, data, transcript)
     return KEY
@@ -397,6 +415,7 @@ class _SPoint(_Strict):
 class _STopic(_Strict):
     title: str
     open: bool
+    background: list[_SLine] = []  # v3.117 전 회의록에는 없다
     discussed: list[_SLine]
     agreed: list[_SLine]
     points: list[_SPoint]
@@ -412,6 +431,7 @@ class _SAction(_SLine):
 
 class _SMinutes(_Strict):
     agenda: str
+    summary: list[_SLine] = []  # v3.117 전 회의록에는 없다
     topics: list[_STopic]
     actions: list[_SAction]
     next_meeting: list[_SLine] = []
@@ -443,10 +463,10 @@ def edited(raw: object, transcript: dict) -> dict:
     topics = []
     for tp in m.topics:
         points = [{"label": _flat(p.label), "details": [{**y, "children": keep(d.children)} for d in p.details if (y := ln(d))]} for p in tp.points]
-        topics.append({"title": _flat(tp.title), "open": tp.open, "discussed": keep(tp.discussed), "agreed": keep(tp.agreed),
+        topics.append({"title": _flat(tp.title), "open": tp.open, "background": keep(tp.background)[:2], "discussed": keep(tp.discussed), "agreed": keep(tp.agreed),
                        "points": [p for p in points if p["details"]], "approach": keep(tp.approach)[:1]})
     actions = [{**y, **{k: _flat(getattr(a, k)) or None for k in ("team", "owner", "due", "note")}} for a in m.actions if (y := ln(a))]
-    return {"agenda": _flat(m.agenda), "topics": [tp for tp in topics if tp["title"]], "actions": actions, "next_meeting": keep(m.next_meeting)[:1]}
+    return {"agenda": _flat(m.agenda), "summary": keep(m.summary)[:4], "topics": [tp for tp in topics if tp["title"]], "actions": actions, "next_meeting": keep(m.next_meeting)[:1]}
 
 
 def save_edit(d: Path, transcript: dict, raw: object) -> dict:
@@ -457,7 +477,7 @@ def save_edit(d: Path, transcript: dict, raw: object) -> dict:
     if not data or data.get("kind") != KEY:
         raise ValueError(NO_MINUTES)
     m = edited(raw, transcript)
-    data = {**data, "minutes": m, "overview": m["agenda"], "sections": to_sections(m), "edited_at": datetime.now().astimezone().isoformat(timespec="seconds")}
+    data = {**data, "minutes": m, "overview": _para(m["summary"]) or m["agenda"], "sections": to_sections(m), "edited_at": datetime.now().astimezone().isoformat(timespec="seconds")}
     _save(d, data, transcript)
     return show(data, transcript)
 

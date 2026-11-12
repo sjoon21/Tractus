@@ -246,6 +246,7 @@ export default {
   "짧은 판을 복사했습니다": "Copied the short version",
   "참석": "Attendees",
   "주요 안건": "Agenda",
+  "회의 개요": "Overview", // words-ok: 회의록 머리글
   "추가 논의 필요": "Needs more discussion",
   "조율 사항": "Agreed",
   "논의 내용": "Discussion",
