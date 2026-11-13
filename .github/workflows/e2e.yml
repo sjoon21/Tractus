@@ -43,7 +43,7 @@ jobs:
           cat "$RUNNER_TEMP/vite.log"; exit 1
       - name: 스모크
         run: scripts/e2e/smoke.sh "$RUNNER_TEMP/e2e-shots"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: e2e-shots
