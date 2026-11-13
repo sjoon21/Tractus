@@ -5,6 +5,7 @@
 mod ask;
 mod attach;
 mod calendar;
+mod calls;
 mod mini;
 mod deferred;
 mod edits;
@@ -313,6 +314,8 @@ pub fn run() {
             });
             app.manage(AppState { settings: Mutex::new(settings.clone()), config_path, mcp, rec: Arc::default(), asks: Arc::default(), live: Arc::default(), busy: Arc::default(), index: Arc::default() });
             app.manage(tray::TrayState::default());
+            app.manage(calls::CallState::default());
+            calls::start(app.handle()); // 통화 감지: 설정이 꺼져 있으면 3초마다 설정만 본다
             app.state::<tray::TrayState>().apply(app.handle(), &settings); // 아이콘을 못 만들어도(OS가 거절) 앱은 계속 뜬다
             Ok(())
         })
@@ -339,6 +342,8 @@ pub fn run() {
             tray::tray_show_if_hidden,
             tray::set_tray_prefs,
             tray::set_mini_recorder,
+            calls::call_action,
+            calls::set_call_prefs,
             deferred::set_after_record,
             edits::note_sample,
             obsidian::set_obsidian,
