@@ -33,6 +33,8 @@ jobs:
       UV_PYTHON_PREFERENCE: only-managed
     steps:
       - uses: actions/checkout@v7
+      - name: 시간대 Asia/Seoul (conftest의 TZ는 Windows에서 먹지 않는다)
+        run: tzutil /s "Korea Standard Time"
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true

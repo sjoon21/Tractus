@@ -6,8 +6,9 @@ import time
 import pytest
 
 # 녹음 시각(+09:00)을 로컬 시각으로 바꿔 비교하는 시험이 있다. 한국 밖의 Mac·UTC인 CI 러너에서도 같게 시간대를 고정한다
-os.environ["TZ"] = "Asia/Seoul"
-time.tzset()
+if hasattr(time, "tzset"):  # Windows에는 없고 C 런타임이 TZ=Asia/Seoul을 잘못 읽는다: windows-core.yml이 러너 시간대를 tzutil로 맞춘다
+    os.environ["TZ"] = "Asia/Seoul"
+    time.tzset()
 
 from tractus import paths
 
