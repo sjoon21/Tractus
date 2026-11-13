@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -100,7 +100,7 @@ impl McpClient {
 }
 
 fn connect(spec: Spawn, id: u64) -> Result<Conn, String> {
-    let mut cmd = Command::new(&spec.program);
+    let mut cmd = crate::procs::command(&spec.program);
     cmd.args(&spec.args).envs(spec.env.iter().cloned()).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit());
     if let Some(cwd) = &spec.cwd {
         cmd.current_dir(cwd);

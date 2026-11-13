@@ -5,7 +5,6 @@ use super::{attach, calendar, cancel_index, hold, is_busy, meetings, procs, rele
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::Path;
-use std::process::Command;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 
@@ -88,7 +87,7 @@ pub fn rec_start(app: AppHandle, state: State<'_, AppState>, flags: Vec<String>,
             calendar::discard(&dir);
         })?;
     }
-    let mut cmd = Command::new(s.rec_path());
+    let mut cmd = procs::command(s.rec_path());
     cmd.arg("record").arg("--out").arg(&dir).args(&flags).envs(s.child_env());
     if s.fake_recorder {
         cmd.arg("--fake");

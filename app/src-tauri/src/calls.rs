@@ -4,7 +4,7 @@
 // 판단 규칙(통화 앱 목록·도우미 프로세스·일정 맞추기·한 통화 한 번·마이크를 놓으면 닫은 것 잊기·10초 유예)은
 // Yogurt(FrigadeHQ/yogurt, MIT, Copyright (c) Frigade) app/src/main/detect.ts·watch.ts를 옮겨 다시 썼다.
 use std::collections::HashMap;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -306,7 +306,7 @@ fn poll(app: &AppHandle) {
         }
         return;
     }
-    let Ok(out) = Command::new(s.rec_path()).arg("mic-apps").envs(s.child_env()).stdin(Stdio::null()).stderr(Stdio::null()).output() else { return };
+    let Ok(out) = crate::procs::command(s.rec_path()).arg("mic-apps").envs(s.child_env()).stdin(Stdio::null()).stderr(Stdio::null()).output() else { return };
     let Ok(v) = serde_json::from_slice::<Value>(&out.stdout) else { return };
     let list = |k: &str, f: fn(&Value) -> Option<&str>| v[k].as_array().map(|a| a.iter().filter_map(f).map(String::from).collect::<Vec<_>>()).unwrap_or_default();
     let (mic, running) = (list("mic", |x| x["bundle_id"].as_str()), list("running", Value::as_str));
@@ -349,6 +349,10 @@ fn refresh_mini(app: &AppHandle) {
 
 /// 앱이 뜰 때 한 번: 3초마다 보는 스레드. 설정이 꺼져 있으면 녹음 프로그램을 부르지 않는다
 pub fn start(app: &AppHandle) {
+    // 통화 앱 목록은 macOS 앱(번들 ID)이다. 다른 플랫폼은 아직 보지 않는다
+    if cfg!(not(target_os = "macos")) {
+        return;
+    }
     let calls = app.state::<CallState>();
     let mut g = calls.lock();
     if g.started {
