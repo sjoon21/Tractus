@@ -513,6 +513,9 @@ impl Inner {
         }
         if self.shown_title != view.title {
             let _ = tray.set_title(view.title.as_deref());
+            // Windows 알림 영역은 제목을 그리지 않는다: 경과 시간은 툴팁으로 (docs/internal/windows-port.md §5)
+            #[cfg(windows)]
+            let _ = tray.set_tooltip(Some(view.title.as_deref().map_or(TOOLTIP.to_string(), |t| format!("{TOOLTIP} {t}"))));
             self.shown_title = view.title.clone();
         }
         if self.shown_recording_icon != Some(view.recording_icon) {
@@ -644,6 +647,7 @@ pub fn hides_on_close(app: &AppHandle) -> bool {
 }
 
 /// Dock 아이콘을 눌렀을 때(macOS) 숨은 창을 다시 보인다
+#[cfg(target_os = "macos")]
 pub fn reopen(app: &AppHandle, has_visible_windows: bool) {
     if !has_visible_windows {
         show_main(app);

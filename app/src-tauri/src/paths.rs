@@ -15,15 +15,22 @@ pub struct Resolved {
 
 pub struct Bin {
     env: &'static str,
-    /// `<앱>/Contents/Resources/` 아래
+    /// 번들 자료 폴더 아래: macOS `<앱>/Contents/Resources/`, Windows는 실행 파일이 있는 폴더
     bundle: &'static str,
     /// 저장소 루트 아래 (컴파일할 때 소스 위치로 계산)
     repo: &'static str,
     known: &'static [&'static str],
 }
 
+#[cfg(not(windows))]
 pub const TRACTUS: Bin = Bin { env: "TRACTUS_BIN", bundle: "runtime/bin/tractus", repo: ".venv/bin/tractus", known: &["~/.local/bin/tractus", "/opt/homebrew/bin/tractus"] };
+#[cfg(not(windows))]
 pub const REC: Bin = Bin { env: "TRACTUS_REC_BIN", bundle: "bin/tractus-rec", repo: "recorder/.build/release/tractus-rec", known: &[] };
+// Windows (Stage 0, docs/internal/windows-port.md §7.3): 번들 배치는 아직 없다. 실행 파일 이름(.exe)과 venv의 Scripts/, 녹음 프로그램 recorder/win/(Rust)만 정해 둔다
+#[cfg(windows)]
+pub const TRACTUS: Bin = Bin { env: "TRACTUS_BIN", bundle: "runtime/bin/tractus.exe", repo: ".venv/Scripts/tractus.exe", known: &["~/.local/bin/tractus.exe"] };
+#[cfg(windows)]
+pub const REC: Bin = Bin { env: "TRACTUS_REC_BIN", bundle: "bin/tractus-rec.exe", repo: "recorder/win/target/release/tractus-rec.exe", known: &[] };
 
 #[cfg(test)]
 thread_local! {
@@ -40,9 +47,12 @@ fn lossy(p: PathBuf) -> String {
 }
 
 impl Bin {
-    /// 실행 파일(`<앱>/Contents/MacOS/…`) 기준 번들 안 후보: `<앱>/Contents/Resources/<bundle>`
+    /// 실행 파일(`<앱>/Contents/MacOS/…`) 기준 번들 안 후보: `<앱>/Contents/Resources/<bundle>`. Windows는 `<설치 폴더>/<bundle>`(Tauri가 자료를 실행 파일 옆에 둔다)
     fn in_bundle(&self, exe: Option<&Path>) -> Option<PathBuf> {
-        exe.and_then(|e| Some(e.parent()?.parent()?.join("Resources").join(self.bundle)))
+        let dir = exe?.parent()?;
+        #[cfg(not(windows))]
+        let dir = dir.parent()?.join("Resources");
+        Some(dir.join(self.bundle))
     }
 
     /// 직접 지정·환경변수를 뺀 자동 후보 (우선순위 순)
@@ -138,6 +148,15 @@ mod tests {
         d
     }
 
+    /// (실행 파일, 번들 자료 폴더): macOS `<앱>.app/Contents/{MacOS,Resources}`, Windows는 실행 파일 옆
+    fn layout(d: &Path, app: &str) -> (PathBuf, PathBuf) {
+        if cfg!(windows) {
+            (d.join(app).join("app.exe"), d.join(app))
+        } else {
+            (d.join(format!("{app}.app/Contents/MacOS/app")), d.join(format!("{app}.app/Contents/Resources")))
+        }
+    }
+
     fn touch(p: &Path) -> String {
         fs::create_dir_all(p.parent().unwrap()).unwrap();
         fs::write(p, "").unwrap();
@@ -147,8 +166,8 @@ mod tests {
     #[test]
     fn user_then_env_then_bundle_in_that_order() {
         let d = tmp("order");
-        let exe = d.join("Tractus.app/Contents/MacOS/tractus-app");
-        let bundled = touch(&d.join("Tractus.app/Contents/Resources/runtime/bin/tractus"));
+        let (exe, res) = layout(&d, "Tractus");
+        let bundled = touch(&res.join(TRACTUS.bundle));
         let (mine, from_env) = (touch(&d.join("mine")), touch(&d.join("env")));
         let r = |user: &str, env: Option<&str>| TRACTUS.resolve(user, env.map(String::from), Some(&exe));
         assert_eq!(r(&mine, Some(&from_env)), Resolved { path: mine.clone(), source: "custom" });
@@ -162,36 +181,35 @@ mod tests {
     #[test]
     fn bundle_path_is_relative_to_the_running_exe_and_recorder_has_its_own_folder() {
         let d = tmp("bundle");
-        let exe = d.join("A.app/Contents/MacOS/app");
-        let core = touch(&d.join("A.app/Contents/Resources/runtime/bin/tractus"));
-        let rec = touch(&d.join("A.app/Contents/Resources/bin/tractus-rec"));
+        let (exe, res) = layout(&d, "A");
+        let (core, rec) = (touch(&res.join(TRACTUS.bundle)), touch(&res.join(REC.bundle)));
         assert_eq!(TRACTUS.resolve("", None, Some(&exe)), Resolved { path: core, source: "bundle" });
         assert_eq!(REC.resolve("", None, Some(&exe)), Resolved { path: rec, source: "bundle" });
         // 번들에 없으면 다음 후보(저장소 → 설치 위치)로. 이 Mac의 후보를 끄고 아무것도 없을 때를 본다
         NO_AUTO.set(true);
         let none = TRACTUS.resolve("", None, Some(&exe));
         assert_eq!(none.source, "none");
-        assert!(none.path.ends_with(".venv/bin/tractus"), "{}", none.path); // 안내용: 빌드할 곳
+        assert!(none.path.ends_with(TRACTUS.repo), "{}", none.path); // 안내용: 빌드할 곳
         NO_AUTO.set(false);
     }
 
     #[test]
     fn is_bundled_only_when_the_core_sits_next_to_the_exe_in_resources() {
         let d = tmp("bundled");
-        let exe = d.join("Tractus.app/Contents/MacOS/tractus-app");
+        let (exe, res) = layout(&d, "Tractus");
         assert!(!is_bundled(Some(&exe)), "runtime/ 이 없으면 저장소 빌드다");
-        touch(&d.join("Tractus.app/Contents/Resources/runtime/bin/tractus"));
+        touch(&res.join(TRACTUS.bundle));
         assert!(is_bundled(Some(&exe)));
         assert!(!is_bundled(None));
     }
 
     #[test]
     fn defaults_are_recognised_so_save_never_pins_them() {
-        let repo_default = repo_root().join(".venv/bin/tractus").to_string_lossy().into_owned();
+        let repo_default = repo_root().join(TRACTUS.repo).to_string_lossy().into_owned();
         assert!(TRACTUS.is_default(&repo_default));
-        assert!(TRACTUS.is_default("~/.local/bin/tractus"));
+        assert!(TRACTUS.is_default(TRACTUS.known[0]));
         assert!(!TRACTUS.is_default("/somewhere/else/tractus"));
-        assert!(REC.is_default(&repo_root().join("recorder/.build/release/tractus-rec").to_string_lossy()));
+        assert!(REC.is_default(&repo_root().join(REC.repo).to_string_lossy()));
     }
 
     #[test]

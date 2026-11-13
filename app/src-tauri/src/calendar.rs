@@ -5,7 +5,7 @@ use crate::i18n::{t, tv};
 use crate::{blocking, procs, AppState, Settings};
 use serde_json::{json, Value};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use tauri::State;
 
 /// 홈 카드: 진행 중이거나 이 분 안에 시작하는 일정
@@ -19,7 +19,7 @@ const MAX_ID: usize = 256;
 /// `tractus-rec calendar <args>` → stdout 한 줄 JSON
 fn run(s: &Settings, args: &[String]) -> Result<Value, String> {
     let rec = s.rec_path();
-    let out = Command::new(&rec).arg("calendar").args(args).envs(s.child_env()).stdin(Stdio::null()).output().map_err(|e| procs::cannot_run(&rec.to_string_lossy(), e))?;
+    let out = procs::command(&rec).arg("calendar").args(args).envs(s.child_env()).stdin(Stdio::null()).output().map_err(|e| procs::cannot_run(&rec.to_string_lossy(), e))?;
     if !out.status.success() {
         return Err(tv("캘린더를 읽지 못했습니다\n{detail}", &[("detail", String::from_utf8_lossy(&out.stderr).trim().to_string())]));
     }

@@ -374,6 +374,7 @@ mod tests {
         assert!(note_title_args("a b", "x").is_err());
     }
 
+    #[cfg(unix)] // 예시 경로가 유닉스 절대 경로다
     #[test]
     fn export_command_args() {
         let out = Path::new("/Users/me/Desktop/2026-10-02_주간회의.docx");
@@ -387,6 +388,7 @@ mod tests {
         assert!(export_args("../x", "txt", out, &[], None).is_err());
     }
 
+    #[cfg(unix)] // 예시 경로가 유닉스 절대 경로다
     #[test]
     fn export_picks_summaries_and_parts() {
         let out = Path::new("/Users/me/Desktop/a.md");

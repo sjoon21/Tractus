@@ -166,6 +166,13 @@ async fn copy_rich(text: String, html: String) -> Result<(), String> {
 }
 
 /// 프로그램을 띄워 stdin에 쓰고 끝나기를 기다린다 (클립보드 쓰기용)
+/// macOS 밖에서는 오류: 화면은 webview 클립보드를 쓴다
+#[cfg(not(target_os = "macos"))]
+fn pipe_to(program: &str, _args: &[&str], _input: &[u8]) -> Result<(), String> {
+    Err(format!("{program}: macOS only"))
+}
+
+#[cfg(target_os = "macos")]
 fn pipe_to(program: &str, args: &[&str], input: &[u8]) -> Result<(), String> {
     use std::io::Write;
     let mut child = std::process::Command::new(program)
@@ -531,6 +538,7 @@ mod tests {
         drop(b);
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn cancel_index_kills_a_running_refresh_and_ignores_an_empty_slot() {
         let slot = IndexSlot::default();
@@ -578,6 +586,6 @@ mod tests {
         assert_eq!(detail, "No such file or directory (os error 2)");
         // 실행해 보면 실제 OS 오류도 같은 꼴이다
         let real = procs::cannot_run("/nonexistent/tractus", Command::new("/nonexistent/tractus").spawn().unwrap_err());
-        assert!(real.lines().next().is_some_and(|l| !l.contains("os error")) && real.contains("os error 2"), "{real}");
+        assert!(real.lines().next().is_some_and(|l| !l.contains("os error")) && real.contains("os error"), "{real}"); // macOS 2, Windows 3
     }
 }

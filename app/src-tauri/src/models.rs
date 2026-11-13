@@ -444,8 +444,15 @@ fn start(slot: &Slot, cmd: Command, job: &str, emit: impl Fn(Value) + Send + Syn
     Ok(())
 }
 
+#[cfg(unix)]
 fn signal(pid: u32, sig: &str) {
     let _ = Command::new("/bin/kill").arg(format!("-{sig}")).arg(pid.to_string()).status();
+}
+
+/// shortcut: Windows에는 SIGTERM이 없어 TERM도 바로 끝낸다(받은 부분은 남고 다시 받으면 이어진다), 코어가 stdin 정지를 받게 되면 그것으로 바꾼다
+#[cfg(windows)]
+fn signal(pid: u32, _sig: &str) {
+    let _ = procs::command("taskkill").args(["/F", "/T", "/PID", &pid.to_string()]).status();
 }
 
 /// 받기를 멈춘다: SIGTERM(코어가 깨끗이 멈추고 받은 부분은 남긴다), `kill_after` 뒤에도 남아 있으면 SIGKILL. 받는 중이 아니면 false
@@ -570,6 +577,7 @@ mod tests {
         let old = model_row(&json!({"id": "vad", "state": "installed"})).unwrap();
         assert_eq!((old.engine, old.custom), (None, false));
     }
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
     use std::sync::mpsc::channel;
@@ -602,6 +610,7 @@ mod tests {
         assert!(download_args(&(0..17).map(|i| format!("m{i}")).collect::<Vec<_>>(), None).is_err());
     }
 
+    #[cfg(unix)] // 예시 경로가 유닉스 절대 경로다
     #[test]
     fn move_args_take_an_absolute_destination_only() {
         assert_eq!(move_args("/Volumes/ext/models").unwrap(), ["models", "move", "--yes", "/Volumes/ext/models"]);
@@ -796,6 +805,7 @@ mod tests {
         d
     }
 
+    #[cfg(unix)] // 가짜 프로그램은 sh 스크립트다: 이것을 쓰는 시험은 Windows에서 돌지 않는다
     fn script(dir: &Path, name: &str, body: &str) -> std::path::PathBuf {
         let p = dir.join(name);
         std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
@@ -819,6 +829,7 @@ mod tests {
         assert!(r.core_error.unwrap().contains("Tractus 엔진을 실행할 수 없습니다"));
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn doctor_report_with_old_core_has_no_doctor_but_keeps_reason() {
         // `doctor` 명령이 없는 옛 코어: 종료 코드 2 + stderr 마지막 줄
@@ -865,6 +876,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d0);
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn doctor_report_runs_the_core_with_argv() {
         let d = tmp("core");
@@ -876,6 +888,7 @@ mod tests {
         assert_eq!(r.doctor.unwrap().capabilities[0].missing, ["aligner"]);
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn start_runs_one_download_at_a_time_and_clears_on_exit() {
         let d = tmp("start");
@@ -904,6 +917,7 @@ mod tests {
         assert!(slot.lock().unwrap().is_none());
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn instant_exit_does_not_leave_a_stale_slot() {
         let d = tmp("instant");
@@ -915,6 +929,7 @@ mod tests {
         assert!(slot.lock().unwrap().is_none());
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn stop_sends_sigterm_and_lets_the_core_finish_cleanly() {
         let d = tmp("stop");
@@ -931,6 +946,7 @@ mod tests {
         assert!(!stop(&slot, Duration::from_secs(30))); // 받는 중이 아니면 아무 일도 없다
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn stop_kills_a_process_that_ignores_sigterm() {
         let d = tmp("kill");

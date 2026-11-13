@@ -80,6 +80,7 @@ mod tests {
 
     use super::*;
 
+    #[cfg(unix)] // 예시 경로가 유닉스 절대 경로다
     #[test]
     fn send_args_pass_values_with_equals_and_reject_bad_input() {
         assert_eq!(send_args("01ABC", Path::new("/v"), None, false, false).unwrap(), ["obsidian", "01ABC", "--vault=/v"]);

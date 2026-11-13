@@ -33,6 +33,10 @@ tauri-plugin-process = "2"
 minisign-verify = "0.3"
 base64 = "0.22"
 
+# Windows의 trash는 COM 스레드 모델을 골라야 컴파일된다(Windows 지원 0단계). 이 표는 Windows 빌드에만 붙는다: macOS 빌드는 그대로다
+[target.'cfg(windows)'.dependencies]
+trash = { version = "5", default-features = false, features = ["coinit_apartmentthreaded"] }
+
 # 개발 빌드의 디버그 정보를 줄 번호만 남긴다 (역추적은 그대로, 깨끗한 개발 빌드의 target이 약 28% 작다: docs/setup.md 2026-10-15 실측).
 # 증분 컴파일은 기본값(켜짐)을 그대로 둔다. 릴리스 빌드(install.sh)에는 영향이 없다.
 [profile.dev]

@@ -2133,6 +2133,7 @@ tractus.onnx_mlx
 tractus.organize
 tractus.organize_cli
 tractus.paths
+tractus.platform_compat
 tractus.polish
 tractus.prompts
 tractus.sample_note

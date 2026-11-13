@@ -681,7 +681,7 @@ mod tests {
         }
         fs::create_dir_all(rec.join("01EMPTY")).unwrap(); // recording.json 없음
         let got = pending_recordings(&home);
-        assert_eq!(got.iter().map(|p| p.dir.rsplit('/').next().unwrap()).collect::<Vec<_>>(), vec!["01NEW", "01OLD"]);
+        assert_eq!(got.iter().map(|p| Path::new(&p.dir).file_name().unwrap().to_str().unwrap()).collect::<Vec<_>>(), vec!["01NEW", "01OLD"]);
         assert_eq!(got[0].duration, None);
         assert_eq!(got[1].duration, Some(12.5));
 
@@ -850,7 +850,7 @@ mod tests {
         if std::env::var_os("UPDATE_TRIO_FIXTURE").is_some() {
             fs::write(&want, &json).unwrap();
         }
-        assert_eq!(json, fs::read_to_string(&want).unwrap());
+        assert_eq!(json, fs::read_to_string(&want).unwrap().replace("\r\n", "\n")); // Windows checkout은 CRLF일 수 있다
 
         let id = "01M4T7YEJWABPHP3GATPMX8MYT";
         let a = l.iter().find(|i| i.id == id).unwrap();

@@ -9,12 +9,11 @@
 """
 
 import json
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from tractus import align, diarize, embed, paths, voices
+from tractus import align, diarize, embed, paths, platform_compat, voices
 from tractus.i18n import t
 
 LEVELS = ("required", "recommended", "optional")
@@ -28,7 +27,7 @@ MIN_MEMORY = 8 * 1024**3
 
 
 def physical_memory() -> int:
-    return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    return platform_compat.physical_memory()
 
 
 @dataclass(frozen=True)

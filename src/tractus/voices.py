@@ -6,7 +6,6 @@ ARCHITECTURE.md §2.5. 임베딩은 생체정보다(개인정보보호법 제23�
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 from contextlib import contextmanager
@@ -15,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from tractus.i18n import t
+from tractus.platform_compat import lock_file, restrict_to_owner
 
 if TYPE_CHECKING:
     import numpy as np
@@ -198,7 +198,7 @@ def profiles_lock(home: Path):
     home.mkdir(parents=True, exist_ok=True)
     fd = os.open(home / ".voices.lock", os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        lock_file(fd)
         yield
     finally:
         os.close(fd)
@@ -211,7 +211,7 @@ def save_profiles(home: Path, data: dict) -> None:
     tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
-        os.fchmod(fd, 0o600)  # 남아 있던 임시 파일이면 O_CREAT 권한이 적용되지 않는다
+        restrict_to_owner(fd)  # 남아 있던 임시 파일이면 O_CREAT 권한이 적용되지 않는다
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(json.dumps(data, ensure_ascii=False))
             f.flush()

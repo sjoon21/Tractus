@@ -86,6 +86,7 @@ pub fn trash_recording(home: &Path, dir: &Path, is_busy: impl Fn(&str) -> bool, 
 /// 실제 휴지통 호출. macOS는 NSFileManager(`trashItemAtURL`)를 쓴다: Finder 자동화 권한 없이 동작하고,
 /// 'Put Back'은 일부 시스템에서 안 보일 수 있지만 휴지통에서 꺼내 되돌릴 수 있다.
 pub fn to_trash(path: &Path) -> Result<(), String> {
+    #[allow(unused_mut)] // macOS만 지우는 방법을 바꾼다
     let mut ctx = ::trash::TrashContext::default();
     #[cfg(target_os = "macos")]
     {
