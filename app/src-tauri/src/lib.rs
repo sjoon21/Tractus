@@ -586,6 +586,6 @@ mod tests {
         assert_eq!(detail, "No such file or directory (os error 2)");
         // 실행해 보면 실제 OS 오류도 같은 꼴이다
         let real = procs::cannot_run("/nonexistent/tractus", Command::new("/nonexistent/tractus").spawn().unwrap_err());
-        assert!(real.lines().next().is_some_and(|l| !l.contains("os error")) && real.contains("os error 2"), "{real}");
+        assert!(real.lines().next().is_some_and(|l| !l.contains("os error")) && real.contains("os error"), "{real}"); // macOS 2, Windows 3
     }
 }

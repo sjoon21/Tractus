@@ -610,6 +610,7 @@ mod tests {
         assert!(download_args(&(0..17).map(|i| format!("m{i}")).collect::<Vec<_>>(), None).is_err());
     }
 
+    #[cfg(unix)] // 예시 경로가 유닉스 절대 경로다
     #[test]
     fn move_args_take_an_absolute_destination_only() {
         assert_eq!(move_args("/Volumes/ext/models").unwrap(), ["models", "move", "--yes", "/Volumes/ext/models"]);

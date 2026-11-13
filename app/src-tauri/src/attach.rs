@@ -142,7 +142,7 @@ mod tests {
                 write_attach(&rec, id).unwrap();
             }
         }
-        let mut got: Vec<_> = meetings::pending_recordings(&home).into_iter().map(|p| (p.dir.rsplit('/').next().unwrap().to_string(), p.attach_to)).collect();
+        let mut got: Vec<_> = meetings::pending_recordings(&home).into_iter().map(|p| (Path::new(&p.dir).file_name().unwrap().to_string_lossy().into_owned(), p.attach_to)).collect();
         got.sort();
         assert_eq!(got, [("01PLAIN".to_string(), None), ("01WITH".to_string(), Some("01MEMO".to_string()))]);
         let _ = fs::remove_dir_all(&home);

@@ -441,7 +441,7 @@ mod tests {
     fn settings_defaults_and_env() {
         let s = Settings { home: "~/Tractus".into(), models_dir: String::new(), ..Default::default() };
         assert!(s.tractus_bin.is_empty() && s.rec_bin.is_empty()); // 자동: 경로를 저장하지 않는다
-        assert!(s.tractus_resolved().path.ends_with("/.venv/bin/tractus"));
+        assert!(s.tractus_resolved().path.ends_with(if cfg!(windows) { ".venv/Scripts/tractus.exe" } else { "/.venv/bin/tractus" }));
         let env = s.child_env();
         assert!(env.iter().any(|(k, v)| k == "TRACTUS_HOME" && !v.starts_with('~')));
         assert!(!env.iter().any(|(k, _)| k == "TRACTUS_MODELS_DIR"));
@@ -458,6 +458,7 @@ mod tests {
     }
 
     /// 깨끗한 Mac(데이터 폴더가 아직 없음): 번들 코어를 부르기 전에 폴더가 만들어져 실행이 된다
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn missing_home_is_created_so_the_core_can_run() {
         let home = std::env::temp_dir().join(format!("tractus-fresh-{}", std::process::id())).join("Tractus");
