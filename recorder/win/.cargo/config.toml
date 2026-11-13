@@ -1,0 +1,3 @@
+# 정적 CRT: Visual C++ 재배포 패키지를 깔지 않은 PC에서도 tractus-rec.exe가 돈다 (Yogurt와 같다)
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -1,0 +1,58 @@
+# Windows 녹음 프로그램(recorder/win, Rust) — docs/windows/README.md Stage 0.
+# 빌드·단위 시험·`--fake` 계약 시험, 그리고 오디오 장치가 없는 러너에서 실제 녹음·점검이 죽지 않고 계약대로 끝나는지 본다.
+# 실제 마이크·시스템 소리 녹음 시험(가상 사운드 카드)은 Windows 실기기 단계에서 더한다 (docs/windows/README.md).
+name: windows-recorder
+
+on:
+  pull_request:
+    paths: ["recorder/win/**", ".github/workflows/windows-recorder.yml"]
+  push:
+    branches: [main]
+    paths: ["recorder/win/**"]
+  schedule:
+    - cron: "0 3 * * 1" # 매주 월요일
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 빌드 · 시험 (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: recorder/win
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: recorder/win
+      - run: cargo build --release --locked
+      - run: cargo test --locked
+      - name: VC++ 런타임에 기대지 않는다 (정적 CRT)
+        shell: pwsh
+        working-directory: recorder/win
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
+          $deps = & $dumpbin.FullName /dependents target\release\tractus-rec.exe | Out-String
+          Write-Output $deps
+          if ($deps -match 'VCRUNTIME|MSVCP') { throw "VC++ 런타임 DLL에 기댄다" }
+      - name: 장치 없는 러너에서 점검·녹음이 계약대로 끝난다
+        run: |
+          set +e
+          bin=target/release/tractus-rec.exe
+          $bin check; echo "check 종료 $?"
+          $bin mic-permission; echo "mic-permission 종료 $?"
+          out=$(echo stop | timeout 20 $bin record --out "$RUNNER_TEMP/rec"); code=$?
+          echo "$out"; echo "record 종료 $code"
+          # 장치가 없으면 경고 뒤 error 이벤트·종료 코드 1, 있으면 started…stopped·종료 코드 0. 어느 쪽이든 stdout은 JSON Lines만
+          echo "$out" | python -c "import sys,json; [json.loads(l) for l in sys.stdin if l.strip()]" || exit 1
+          [ $code -eq 0 ] || [ $code -eq 1 ] || exit 1

@@ -142,6 +142,10 @@ channels; `tractus transcribe --diarizer fluid` runs it always.
    mapping, decide / call-gone rules, from app/src/main/detect.ts and watch.ts)
    and recorder/Sources/tractus-rec/MicApps.swift (Core Audio process list,
    from app/native/yogurt-mac/main.swift). Rewritten in Rust/Swift for Tractus.
+   Windows recorder: recorder/win/src/win.rs (WASAPI microphone, process
+   loopback with endpoint fallback, device notifications, QPC clock) and
+   recorder/win/src/gap.rs (silence filler), adapted from
+   app/native/yogurt-audio-win/src/win/mod.rs and gap.rs to Tractus's WAV contract.
    MIT License
 
    Copyright (c) 2026 Frigade
