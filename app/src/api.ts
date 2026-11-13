@@ -9,6 +9,7 @@ import type { ModelsList } from "./models";
 import { clockAt, resumedStartMs, type ClockAnchor } from "./pause";
 import type { Folder, MetaPatch, NoteMeta, SortKey, SortOrder } from "./organize";
 import { parseShown, type Minutes } from "./minutes";
+import { markdownToHtml } from "./richCopy";
 import type { PolishSuggestion } from "./polish";
 import { parseSummaryDocs, type TemplateInfo } from "./summaries";
 import type { TrayWire } from "./tray";
@@ -140,6 +141,11 @@ export interface Settings {
   tray_enabled?: boolean;
   /** 창을 닫아도 앱을 끝내지 않고 메뉴 막대에 남긴다. 아이콘이 떠 있을 때만 뜻이 있다. 없으면 켜짐 */
   keep_in_tray?: boolean;
+  /** 녹음 중 메인 창을 보고 있지 않으면 작은 녹음 창을 띄운다 (mini.rs). 없으면 켜짐 */
+  mini_recorder?: boolean;
+  /** 통화 감지 (calls.rs): 통화 앱이 마이크를 쓰면 녹음할지 묻는다(없으면 켜짐), 통화가 끝나면 녹음을 끝낸다(없으면 꺼짐) */
+  call_detect?: boolean;
+  call_autostop?: boolean;
   /** 녹음을 끝내면: "ask" | "convert" | "later". 없거나 모르는 값이면 매번 묻는다 (afterRecord.afterRecord) */
   after_record?: string;
   /** AI 서비스·스마트 검색 방식은 llm_* 명령으로 따로 저장한다 (여기 값은 저장 때 무시된다) */
@@ -376,6 +382,12 @@ export const api = {
   setCheckupDone: (done: boolean) => invoke<void>("set_checkup_done", { done }),
   /** 메뉴 막대 아이콘 설정 두 개를 바로 적용하고 저장한다 (다시 시작하지 않아도 된다) */
   setTrayPrefs: (trayEnabled: boolean, keepInTray: boolean) => invoke<void>("set_tray_prefs", { trayEnabled, keepInTray }),
+  /** 마이크 권한 (permissions.rs). request면 처음일 때 macOS가 묻는다 */
+  micPermission: (request = false) => invoke<"granted" | "denied" | "undetermined">("mic_permission", { request }),
+  /** 시스템 설정의 마이크(`mic`)·화면 및 시스템 오디오 녹음(`audio`) 칸 */
+  openPrivacy: (pane: "mic" | "audio") => invoke<void>("open_privacy", { pane }),
+  setMiniRecorder: (enabled: boolean) => invoke<void>("set_mini_recorder", { enabled }),
+  setCallPrefs: (detect: boolean, autostop: boolean) => invoke<void>("set_call_prefs", { detect, autostop }),
   /** 메뉴 막대에 보일 상태 (tray.ts createTraySender가 같은 값을 다시 보내지 않게 거른다) */
   trayUpdate: (payload: TrayWire) => invoke<void>("tray_update", { payload }),
   /** 지금 창을 닫으면 숨기기만 하는가 (메뉴 막대에 남기기) */
@@ -386,6 +398,19 @@ export const api = {
   updateAvailable: () => invoke<boolean>("update_available"),
   /** 그 버전의 릴리스 노트 페이지를 브라우저로 연다 (Rust가 주소를 만든다: 화면은 버전만 넘긴다) */
   openReleaseNotes: (version: string) => invoke<void>("open_release_notes", { version }),
+  /** 클립보드에 쓰기: 웹뷰 API가 거절하면(창이 막 활성화된 클릭 등) 앱(pbcopy)으로 다시 쓴다 */
+  copyText: (text: string): Promise<void> => navigator.clipboard.writeText(text).catch((e) => invoke<void>("copy_text", { text }).catch(() => Promise.reject(e))),
+  /** 클립보드에 Markdown과 서식(HTML)을 함께 쓰기: 메일·문서에 붙이면 제목·목록·표가 남는다. 웹뷰가 거절하면 앱(osascript)으로, 그것도 안 되면 글만 */
+  copyRich: async (markdown: string): Promise<void> => {
+    const html = markdownToHtml(markdown);
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "text/plain": new Blob([markdown], { type: "text/plain" }), "text/html": new Blob([html], { type: "text/html" }) })]);
+    } catch (e) {
+      await invoke<void>("copy_rich", { text: markdown, html })
+        .catch(() => invoke<void>("copy_text", { text: markdown }))
+        .catch(() => Promise.reject(e));
+    }
+  },
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setRecMode: (mode: string) => invoke<void>("set_rec_mode", { mode }),

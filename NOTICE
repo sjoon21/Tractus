@@ -135,3 +135,31 @@ channels; `tractus transcribe --diarizer fluid` runs it always.
    File used: app/src/components/ui/obsidian-logo.tsx (path copied, brand color #7C3AED)
    License: CC0-1.0 (the icon artwork). Obsidian and its logo are trademarks of
    Dynalist Inc. and are shown only to identify where a note is sent.
+
+12. Yogurt (call detection rules and the microphone process list)
+   https://github.com/FrigadeHQ/yogurt (main branch, read 2026-11-13)
+   Files adapted: app/src-tauri/src/calls.rs (call app list, helper process
+   mapping, decide / call-gone rules, from app/src/main/detect.ts and watch.ts)
+   and recorder/Sources/tractus-rec/MicApps.swift (Core Audio process list,
+   from app/native/yogurt-mac/main.swift). Rewritten in Rust/Swift for Tractus.
+   MIT License
+
+   Copyright (c) 2026 Frigade
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included in all
+   copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.

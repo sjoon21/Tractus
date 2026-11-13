@@ -128,6 +128,72 @@
 
 외부 AI 서비스 API 키가 없어도 녹음, 음성 인식(STT), 화자 분리, 로컬 검색, 파일 내보내기 등 핵심 기능은 온디바이스에서 완전히 동작합니다. 자세한 데이터 흐름은 [동작 방식](docs/how-it-works.md#무엇이-이-mac에-남고-무엇이-나가는가)에서 확인하실 수 있습니다.
 
+## 자주 묻는 질문
+
+<details><summary><strong>"확인되지 않은 개발자"라고 나옵니다. 괜찮은가요?</strong></summary>
+
+<br>
+
+> Tractus는 개인 오픈소스 프로젝트라 Apple 서명·공증(유료 개발자 계정 필요)을 받지 않았습니다. Releases의 DMG는 이 저장소에서 만들고, 릴리스마다 SHA-256 체크섬을 함께 올립니다. 처음 열 때 시스템 설정 › 개인정보 보호 및 보안에서 `그래도 열기`를 누르거나 `xattr -dr com.apple.quarantine /Applications/Tractus.app`을 실행하세요. 앱 안 업데이트는 프로젝트의 업데이트 키로 서명돼 있고 설치 전에 검사합니다.
+
+</details>
+
+<details><summary><strong>인터넷 없이, AI 키 없이도 쓸 수 있나요?</strong></summary>
+
+<br>
+
+> 네. 녹음, 텍스트 변환, 참석자 구분, 단어 싱크, 검색, 내보내기는 모두 Mac에서 돌고 모델을 받은 뒤에는 인터넷 없이 됩니다. 요약·회의록·노트 완성·AI 질문만 AI 서비스가 필요하고, 이것도 내 Mac에서 도는 모델(Ollama·LM Studio 같은 OpenAI 호환 서버)로 돌릴 수 있습니다.
+
+</details>
+
+<details><summary><strong>얼마나 받고, 메모리는 얼마나 필요한가요?</strong></summary>
+
+<br>
+
+> 저사양 구성은 모델 약 1.2GB에 메모리 8GB로 돕니다. 표준 구성(가장 정확한 변환, 참석자, 단어 싱크, 스마트 검색)은 약 4.6GB이고 메모리 16GB를 권합니다. 전부 받으면 약 5.7GB입니다. 앱 DMG는 166MB입니다. 변환 엔진 하나로 시작해 나머지는 모델 화면에서 나중에 받아도 됩니다.
+
+</details>
+
+<details><summary><strong>회의에 봇이 들어가나요?</strong></summary> <!-- words-ok -->
+
+<br>
+
+> 아니요. Tractus는 내 마이크와, 화상 통화라면 Mac에서 나오는 소리(시스템 소리)를 녹음합니다. 녹음한다는 것을 다른 분들께 알려 주세요.
+
+</details>
+
+<details><summary><strong>노트와 녹음은 어디에 있나요?</strong></summary>
+
+<br>
+
+> `~/Tractus/meetings/` 아래 노트마다 폴더 하나입니다: 압축한 오디오, `transcript.json`, Markdown, 자막, 요약. 모델은 따로 고르지 않으면 앱 설정 폴더(`~/Library/Application Support/dev.tractus.app/models`)에 있습니다. API 키는 같은 폴더의 서비스별 파일(권한 `0600`)에만 두고 노트 폴더에는 두지 않습니다.
+
+</details>
+
+<details><summary><strong>AI 에이전트(MCP)는 무엇을 보고 할 수 있나요?</strong></summary>
+
+<br>
+
+> MCP 서버와 Claude Code 플러그인은 내 Mac에서 돌고 노트 폴더만 읽습니다. 도구 여섯 개는 읽기만 하고(상태, 검색, 목록, 대화 내용, 요약, 할 일), `save_summary` 하나만 검사를 거쳐 요약을 저장합니다. MCP 서버는 AI 모델을 부르지 않고 API 키도 받지 않습니다. 에이전트가 읽은 내용은 그 에이전트의 AI 서비스로 갈 수 있습니다.
+
+</details>
+
+<details><summary><strong>어떤 언어를 알아듣나요?</strong></summary>
+
+<br>
+
+> 변환 엔진이 언어를 스스로 알아내고 한국어, 영어, 섞어 쓴 말을 잘 받아 적습니다. 중국어·일본어 등 Qwen3-ASR이 지원하는 다른 언어도 됩니다. 제품 이름·사람 이름은 사전에 넣으면 더 정확해집니다. 앱 화면은 한국어와 영어입니다.
+
+</details>
+
+<details><summary><strong>Windows나 Intel Mac에서도 되나요?</strong></summary>
+
+<br>
+
+> 아직은 아닙니다. 기기 안 모델이 Apple Silicon(MLX)에서 돕니다. Windows 지원은 시작했고 단계적으로 나옵니다. [로드맵](docs/roadmap.md)을 보세요.
+
+</details>
+
 ## 문서
 
 | 문서 | 내용 |

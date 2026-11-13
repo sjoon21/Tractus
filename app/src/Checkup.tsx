@@ -9,7 +9,7 @@ import { cn } from "@/components/ui/utils";
 import { api, errText } from "./api";
 import type { Fix } from "./caps";
 import { t } from "./i18n";
-import { checkupHeadline, checkupSections, STATUS_LABEL, type CheckupRow } from "./checkupRows";
+import { checkupHeadline, checkupSections, STATUS_LABEL, type CheckupRow, type MicPermission } from "./checkupRows";
 import { DownloadPanel, PresetButtons, useModelsList } from "./ModelsSettings";
 import { isPathFix } from "./paths";
 import { runPathFix } from "./pathFix";
@@ -41,6 +41,14 @@ export function Checkup({ onClose }: { onClose: () => void }) {
   }, []);
 
   // 쓸 수 있는 AI 서비스(키가 등록돼 있거나 이 Mac 주소의 직접 입력)가 하나라도 있는가
+  // 마이크 권한: 열 때, 다시 확인할 때, 시스템 설정에서 돌아올 때(창이 초점을 받을 때) 다시 읽는다
+  const [mic, setMic] = useState<MicPermission | null>(null);
+  const loadMic = useCallback(() => api.micPermission().then(setMic, () => setMic(null)), []);
+  useEffect(() => {
+    void loadMic();
+    window.addEventListener("focus", loadMic);
+    return () => window.removeEventListener("focus", loadMic);
+  }, [loadMic]);
   const loadKey = useCallback(() => api.llmSettings().then((s) => setKeySaved(s.registered.length > 0), () => setKeySaved(null)), []);
   useEffect(() => void loadKey(), [loadKey]);
   // 받기가 끝나면 점검도 다시 한다 (필수 모델 행이 바뀐다)
@@ -52,10 +60,13 @@ export function Checkup({ onClose }: { onClose: () => void }) {
 
   const recheck = async () => {
     setChecking(true);
-    await Promise.all([caps.refresh(), load(), loadKey()]);
+    await Promise.all([caps.refresh(), load(), loadKey(), loadMic()]);
     setChecking(false);
   };
   const fix = (f: Fix) => {
+    // 권한은 점검 안에서 끝낸다 (닫지 않는다): 묻기는 답을 받은 뒤, 시스템 설정은 돌아와 초점을 받을 때 다시 읽는다
+    if (f.kind === "mic-request") return void api.micPermission(true).then(setMic, () => setMic(null));
+    if (f.kind === "privacy-mic" || f.kind === "privacy-audio") return void api.openPrivacy(f.kind === "privacy-mic" ? "mic" : "audio").catch(() => {});
     if (isPathFix(f.kind)) {
       // 경로 고르기는 점검 안에서 끝낸다 (닫지 않는다). 고른 뒤 바로 다시 점검한다
       runPathFix(f.kind).then(
@@ -71,12 +82,12 @@ export function Checkup({ onClose }: { onClose: () => void }) {
     caps.fixAction(f);
   };
   const copy = (row: CheckupRow) =>
-    navigator.clipboard.writeText(row.copy ?? "").then(
+    api.copyText(row.copy ?? "").then(
       () => setCopied({ id: row.id, ok: true }),
       () => setCopied({ id: row.id, ok: false }),
     );
 
-  const sections = checkupSections({ report: caps.report, models: list, keySaved });
+  const sections = checkupSections({ report: caps.report, models: list, keySaved, mic });
   return (
     <dialog
       ref={dialog}

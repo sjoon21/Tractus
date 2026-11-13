@@ -234,3 +234,16 @@ describe("routeTrayAction", () => {
     for (const raw of [null, undefined, 5, "record_start", [], {}, { action: "quit" }, { action: 3 }]) expect(routeTrayAction(raw, idle)).toBeNull();
   });
 });
+
+describe("routeTrayAction: 통화 감지의 녹음 (calls.rs)", () => {
+  const idle = { recPhase: "idle" as const, transcribing: false };
+  test("일정이 오면 그 일정으로, 이상하면 일정 없이 시작한다", () => {
+    const event = { id: "E1", title: "주간 동기화", start: "2026-11-13T14:00:00+09:00", end: "2026-11-13T15:00:00+09:00", calendar: "업무", attendees: ["김지훈", 3] };
+    expect(routeTrayAction({ action: "record_call", event }, idle)).toEqual({ kind: "call", event: { ...event, attendees: ["김지훈"] } });
+    expect(routeTrayAction({ action: "record_call", event: { id: 1 } }, idle)).toEqual({ kind: "call", event: null });
+    expect(routeTrayAction({ action: "record_call", event: null }, idle)).toEqual({ kind: "call", event: null });
+  });
+  test("이미 녹음 중이면 아무것도 하지 않는다", () => {
+    expect(routeTrayAction({ action: "record_call" }, { recPhase: "recording", transcribing: false })).toBeNull();
+  });
+});

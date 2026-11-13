@@ -101,8 +101,13 @@ export default {
   "선택 모델이 모두 있습니다": "All optional models are installed",
   "없는 기능: {features}. 필요할 때 설치하세요.": "Not installed: {features}. Install them when you need them.",
   마이크: "Microphone",
-  "처음 녹음할 때 macOS가 허락을 묻습니다. 앱이 미리 확인할 수는 없습니다. 거절했다면 시스템 설정 > 개인정보 보호 및 보안 > 마이크에서 Tractus를 켜세요.":
-    "macOS asks for permission the first time you record. The app can’t check this ahead of time. If you denied it, turn on Tractus in System Settings > Privacy & Security > Microphone.",
+  "처음 녹음할 때 macOS가 허락을 묻습니다. 거절했다면 시스템 설정 > 개인정보 보호 및 보안 > 마이크에서 Tractus를 켜세요.":
+    "macOS asks for permission the first time you record. If you denied it, turn on Tractus in System Settings > Privacy & Security > Microphone.",
+  "마이크 권한이 꺼져 있어 녹음할 수 없습니다. 시스템 설정 > 개인정보 보호 및 보안 > 마이크에서 Tractus를 켜세요.":
+    "Microphone access is off, so Tractus can’t record. Turn on Tractus in System Settings > Privacy & Security > Microphone.",
+  "아직 묻지 않았습니다. 지금 허락해 두면 첫 녹음이 바로 시작됩니다.": "Not asked yet. Allow it now so your first recording starts right away.",
+  "지금 허락하기": "Allow now",
+  "허락되어 있습니다": "Allowed",
   "시스템 오디오": "System audio",
   "화상·하이브리드 녹음에서 상대방 소리를 받을 때 처음 한 번 묻습니다. 거절했다면 시스템 설정 > 개인정보 보호 및 보안 > 화면 및 시스템 오디오 녹음에서 켜세요.":
     "macOS asks once, the first time a video or hybrid recording captures other people’s audio. If you denied it, turn it on in System Settings > Privacy & Security > Screen & System Audio Recording.",
@@ -114,7 +119,7 @@ export default {
   "AI 요약·질문": "AI summaries and questions",
   안내: "Info",
   "확인 중…": "Checking…",
-  "권한 안내": "Permissions",
+  권한: "Permissions",
   "사용할 수 없는 항목 {n}개": ["{n} item unavailable", "{n} items unavailable"],
   "확인 필요 {n}개": ["{n} needs attention", "{n} need attention"],
   "모두 괜찮습니다": "Everything looks good",

@@ -109,7 +109,7 @@ const detail = (id: string): T => {
   };
 };
 
-const settings = { tractus_bin: "", rec_bin: "", home: "~/Tractus", models_dir: "", fake_recorder: false, rec_mode: "in_person", live_captions: false, checkup_done: true, tray_enabled: true, keep_in_tray: true, after_record: "ask", obsidian_vault: "/Users/me/Documents/My Vault", obsidian_audio: false };
+const settings = { tractus_bin: "", rec_bin: "", home: "~/Tractus", models_dir: "", fake_recorder: false, rec_mode: "in_person", live_captions: false, checkup_done: true, tray_enabled: true, keep_in_tray: true, mini_recorder: true, after_record: "ask", obsidian_vault: "/Users/me/Documents/My Vault", obsidian_audio: false };
 const llm = {
   default: "upstage",
   profiles: Object.fromEntries(["upstage", "openai", "claude", "gemini", "custom"].map((p) => [p, { base_url: "", model: "" }])),
@@ -397,6 +397,8 @@ const handlers: Record<string, (a: T) => unknown> = {
   set_asr_engine: ({ id }: T) => void Object.assign(settings, { asr_engine: id ?? "" }),
   templates_list: () => (templates as T).templates,
   llm_settings: () => llm,
+  mic_permission: () => "undetermined",
+  open_privacy: () => null,
   llm_config: () => ({ provider: "upstage", model: "solar-pro2", host: "api.upstage.ai", remote: true, key_present: true }),
   llm_key_status: (a) => ({ saved: a.provider === "upstage" || a.provider === "claude" }),
   voices_list: () => ({ people: [], needs_reenroll: false, model_present: true }),
