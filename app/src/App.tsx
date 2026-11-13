@@ -521,13 +521,14 @@ export function App() {
     if (liveOn) convert.preempt();
   };
   /** event: 홈의 `곧 시작하는 일정` 카드에서 시작한 녹음 (일정 제목·참석자를 녹음 폴더에 남긴다) */
-  const onRecordButton = (event?: CalendarEvent) => {
+  /** recMode: 통화 감지에서 시작한 녹음은 상대 목소리가 들어가게 언제나 `화상·하이브리드` (calls.rs) */
+  const onRecordButton = (event?: CalendarEvent, recMode: RecMode = mode) => {
     if (!recording && !recordBlocked && !recordGate.ok) return notifyBlocked(recordGate); // 새 노트 메뉴의 `녹음 시작`
     if (!recording && !recordBlocked) {
       pauseConvert();
       resetRec();
       setUnconverted(false);
-      void startRec(mode, null, event);
+      void startRec(recMode, null, event);
     }
     void go({ kind: "record" });
   };
@@ -557,9 +558,10 @@ export function App() {
     const route = routeTrayAction(raw, { recPhase: recPhaseRef.current, transcribing: recordBlocked });
     if (!route) return;
     // 메뉴를 빠르게 두 번 눌러도 다시 그리기 전에 두 번째가 들어올 수 있다: 보낸 즉시 단계를 앞당겨 둔다
-    if (route.kind === "start") {
+    if (route.kind === "start" || route.kind === "call") {
       if (recordGate.ok) recPhaseRef.current = "starting";
-      onRecordButton();
+      if (route.kind === "call") onRecordButton(route.event ?? undefined, "hybrid");
+      else onRecordButton();
     } else if (route.kind === "stop") {
       recPhaseRef.current = "stopping";
       void sendRec("stop");

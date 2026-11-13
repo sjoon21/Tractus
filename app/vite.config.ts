@@ -10,5 +10,5 @@ export default defineConfig({
   clearScreen: false,
   server: { port: 1420, strictPort: true, watch: { ignored: ["**/src-tauri/**"] } },
   // 메인 창(index.html)과 메뉴 막대 팝오버 창(tray.html, tray.rs) 두 페이지
-  build: { target: "safari17", rollupOptions: { input: { main: path.resolve(__dirname, "index.html"), tray: path.resolve(__dirname, "tray.html") } } },
+  build: { target: "safari17", rollupOptions: { input: { main: path.resolve(__dirname, "index.html"), tray: path.resolve(__dirname, "tray.html"), mini: path.resolve(__dirname, "mini.html") } } },
 });

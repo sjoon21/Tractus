@@ -1,6 +1,7 @@
 // 메뉴 막대(트레이) 아이콘과 화면의 연결 (docs/desktop.md §3.1, 이슈 #1). 순수 로직만 둔다: Rust(tray.rs)는 메뉴를 그리고, 화면은 상태를 밀어 주고 이벤트를 받는다.
 // 메뉴의 녹음 시작·종료·북마크는 창의 단추와 같은 길로 처리한다 (App.tsx가 routeTrayAction의 결과를 같은 함수에 연결한다).
 
+import type { CalendarEvent } from "./api";
 import { isRecLive, type RecPhase } from "./lib";
 
 export type TrayPhase = "idle" | "recording" | "paused" | "converting";
@@ -120,7 +121,7 @@ export function createTraySender(send: (p: TrayWire) => Promise<void> | void): (
   };
 }
 
-export type TrayRoute = { kind: "start" } | { kind: "pause" } | { kind: "resume" } | { kind: "stop" } | { kind: "bookmark" } | { kind: "open"; id: string };
+export type TrayRoute = { kind: "start" } | { kind: "call"; event: CalendarEvent | null } | { kind: "pause" } | { kind: "resume" } | { kind: "stop" } | { kind: "bookmark" } | { kind: "open"; id: string };
 
 /** 창에서 이미 녹음하거나 마무리하는 중인 단계 (사이드바의 `recording`) */
 const REC_ACTIVE = new Set<RecPhase>(["starting", "recording", "paused", "stopping"]);
@@ -132,6 +133,13 @@ export function routeTrayAction(raw: unknown, s: { recPhase: RecPhase; transcrib
   switch (action) {
     case "record_start":
       return REC_ACTIVE.has(s.recPhase) || s.transcribing ? null : { kind: "start" };
+    case "record_call": {
+      // 통화 감지의 `녹음` (calls.rs): 그 통화의 일정이 있으면 함께 온다. 모양이 이상하면 일정 없이 시작한다
+      if (REC_ACTIVE.has(s.recPhase) || s.transcribing) return null;
+      const ev = (raw as { event?: unknown }).event as Partial<CalendarEvent> | null | undefined;
+      const ok = !!ev && typeof ev === "object" && typeof ev.id === "string" && typeof ev.title === "string" && typeof ev.start === "string" && typeof ev.end === "string";
+      return { kind: "call", event: ok ? { id: ev.id!, title: ev.title!, start: ev.start!, end: ev.end!, calendar: typeof ev.calendar === "string" ? ev.calendar : "", attendees: Array.isArray(ev.attendees) ? ev.attendees.filter((a): a is string => typeof a === "string") : [] } : null };
+    }
     case "record_pause":
       return s.recPhase === "recording" ? { kind: "pause" } : null;
     case "record_resume":

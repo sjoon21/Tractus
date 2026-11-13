@@ -122,8 +122,9 @@ export function MinutesPanel(p: {
     });
   };
 
-  const copy = (text: string, done: string) =>
-    navigator.clipboard.writeText(text).then(
+  /** rich: 서식(HTML)도 함께 (위키·메일용 회의록). 짧은 판은 메신저용이라 글만 */
+  const copy = (text: string, done: string, rich = false) =>
+    (rich ? api.copyRich(text) : api.copyText(text)).then(
       () => notify({ text: done }),
       (e) => notify({ text: t("복사하지 못했습니다: {error}", { error: errText(e) }), error: true }),
     );
@@ -151,7 +152,7 @@ export function MinutesPanel(p: {
       <div className="flex flex-wrap items-center gap-1">
         {shown && (
           <div className="flex items-center text-muted-foreground">
-            <Button variant="ghost" size="icon-sm" className="text-inherit hover:text-foreground" aria-label={t("복사")} title={COPY_TITLE} onClick={() => void copy(shown.markdown, COPIED)}>
+            <Button variant="ghost" size="icon-sm" className="text-inherit hover:text-foreground" aria-label={t("복사")} title={COPY_TITLE} onClick={() => void copy(shown.markdown, COPIED, true)}>
               <Copy />
             </Button>
             <Button variant="ghost" size="icon-sm" className="text-inherit hover:text-foreground" aria-label={t("짧게 복사")} title={t("메신저로 바로 보낼 짧은 판 (정한 것·할 일·아직 안 정한 것)")} onClick={() => void copy(shown.short, t("짧은 판을 복사했습니다"))}>
