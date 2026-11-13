@@ -124,7 +124,7 @@ export function EnhancedNote(p: {
             aria-label={t("복사")}
             title={t("완성된 노트 복사 (마크다운)")}
             onClick={() =>
-              navigator.clipboard.writeText(enhancedMarkdown(doc)).then(
+              api.copyRich(enhancedMarkdown(doc)).then(
                 () => notify({ text: t("완성된 노트를 마크다운으로 복사했습니다") }),
                 (e) => notify({ text: t("복사하지 못했습니다: {error}", { error: errText(e) }), error: true }),
               )

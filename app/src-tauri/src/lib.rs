@@ -142,6 +142,43 @@ fn open_release_notes(version: String) -> Result<(), String> {
     tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string())
 }
 
+/// 클립보드에 글 쓰기. WKWebView의 navigator.clipboard는 창이 막 활성화된 클릭 등에서 NotAllowedError를 내므로 화면이 이것으로 물러난다.
+/// 앱 환경에는 LANG이 없어 pbcopy가 한글을 깨뜨린다: UTF-8을 명시한다
+#[tauri::command]
+fn copy_text(text: String) -> Result<(), String> {
+    pipe_to("/usr/bin/pbcopy", &[], text.as_bytes())
+}
+
+/// 서식(HTML)과 글(Markdown)을 함께 클립보드에 쓴다: 메일·문서는 HTML을, 글만 받는 곳은 Markdown을 가져간다.
+/// pbcopy는 HTML을 못 쓰므로 osascript(JXA)로 NSPasteboard에 쓴다. 스크립트는 고정이고 내용은 stdin JSON으로만 넘긴다(코드에 끼워 넣지 않는다)
+const COPY_RICH_JXA: &str = r#"ObjC.import("AppKit");
+var o = JSON.parse($.NSString.alloc.initWithDataEncoding($.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile, $.NSUTF8StringEncoding).js);
+var pb = $.NSPasteboard.generalPasteboard;
+pb.clearContents;
+if (!(pb.setStringForType($(o.html), $.NSPasteboardTypeHTML) && pb.setStringForType($(o.text), $.NSPasteboardTypeString))) throw new Error("pasteboard");"#;
+
+#[tauri::command]
+async fn copy_rich(text: String, html: String) -> Result<(), String> {
+    let input = serde_json::json!({ "text": text, "html": html }).to_string();
+    // osascript는 띄우는 데 0.1초 남짓 걸린다: 화면 스레드를 막지 않게
+    blocking(move || pipe_to("/usr/bin/osascript", &["-l", "JavaScript", "-e", COPY_RICH_JXA], input.as_bytes())).await
+}
+
+/// 프로그램을 띄워 stdin에 쓰고 끝나기를 기다린다 (클립보드 쓰기용)
+fn pipe_to(program: &str, args: &[&str], input: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let mut child = std::process::Command::new(program)
+        .args(args)
+        .env("LANG", "en_US.UTF-8")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    child.stdin.take().ok_or("stdin")?.write_all(input).map_err(|e| e.to_string())?;
+    let status = child.wait().map_err(|e| e.to_string())?;
+    if status.success() { Ok(()) } else { Err(format!("{program}: {status}")) }
+}
+
 #[tauri::command]
 async fn list_meetings(state: State<'_, AppState>) -> Result<Vec<meetings::MeetingInfo>, String> {
     let home = state.settings().home();
@@ -329,6 +366,8 @@ pub fn run() {
             settings::set_ui_lang,
             paths::update_available,
             open_release_notes,
+            copy_text,
+            copy_rich,
             settings::save_settings,
             settings::set_rec_mode,
             settings::set_asr_engine,

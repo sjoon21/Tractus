@@ -9,6 +9,7 @@ import type { ModelsList } from "./models";
 import { clockAt, resumedStartMs, type ClockAnchor } from "./pause";
 import type { Folder, MetaPatch, NoteMeta, SortKey, SortOrder } from "./organize";
 import { parseShown, type Minutes } from "./minutes";
+import { markdownToHtml } from "./richCopy";
 import type { PolishSuggestion } from "./polish";
 import { parseSummaryDocs, type TemplateInfo } from "./summaries";
 import type { TrayWire } from "./tray";
@@ -393,6 +394,19 @@ export const api = {
   updateAvailable: () => invoke<boolean>("update_available"),
   /** 그 버전의 릴리스 노트 페이지를 브라우저로 연다 (Rust가 주소를 만든다: 화면은 버전만 넘긴다) */
   openReleaseNotes: (version: string) => invoke<void>("open_release_notes", { version }),
+  /** 클립보드에 쓰기: 웹뷰 API가 거절하면(창이 막 활성화된 클릭 등) 앱(pbcopy)으로 다시 쓴다 */
+  copyText: (text: string): Promise<void> => navigator.clipboard.writeText(text).catch((e) => invoke<void>("copy_text", { text }).catch(() => Promise.reject(e))),
+  /** 클립보드에 Markdown과 서식(HTML)을 함께 쓰기: 메일·문서에 붙이면 제목·목록·표가 남는다. 웹뷰가 거절하면 앱(osascript)으로, 그것도 안 되면 글만 */
+  copyRich: async (markdown: string): Promise<void> => {
+    const html = markdownToHtml(markdown);
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "text/plain": new Blob([markdown], { type: "text/plain" }), "text/html": new Blob([html], { type: "text/html" }) })]);
+    } catch (e) {
+      await invoke<void>("copy_rich", { text: markdown, html })
+        .catch(() => invoke<void>("copy_text", { text: markdown }))
+        .catch(() => Promise.reject(e));
+    }
+  },
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setRecMode: (mode: string) => invoke<void>("set_rec_mode", { mode }),
