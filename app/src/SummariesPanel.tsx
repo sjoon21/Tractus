@@ -295,7 +295,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
                 aria-label={t("요약 복사")}
                 title={t("요약 복사 (마크다운)")}
                 onClick={() =>
-                  api.copyText(docMarkdown(selected)).then(
+                  api.copyRich(docMarkdown(selected)).then(
                     () => notify({ text: t("요약을 마크다운으로 복사했습니다") }),
                     (e) => notify({ text: t("복사하지 못했습니다: {error}", { error: errText(e) }), error: true }),
                   )
