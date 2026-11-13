@@ -1,0 +1,51 @@
+# 미리보기 e2e 스모크 (scripts/e2e/smoke.mjs): 앱 화면을 가짜 데이터로 띄워 홈·노트·오른쪽 탭·메모·녹음·⌘K·설정·시작 점검을
+# 한국어·영어로 눌러 보고, 페이지 오류·console.error·HTTP 오류가 없는지 본다. 단계마다 찍은 스크린샷은 아티팩트로 남긴다.
+# 미리보기는 브라우저 화면만이라 Linux 러너로 충분하다(Tauri·코어는 돌리지 않는다).
+name: e2e
+
+on:
+  pull_request:
+    paths: ["app/**", "scripts/e2e/**", ".github/workflows/e2e.yml"]
+  push:
+    branches: [main]
+    paths: ["app/**", "scripts/e2e/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    name: 미리보기 스모크
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: app
+      - name: 미리보기 서버
+        working-directory: app
+        run: |
+          nohup pnpm dev > "$RUNNER_TEMP/vite.log" 2>&1 &
+          for i in $(seq 60); do curl -sf -o /dev/null http://localhost:1420/preview.html && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/vite.log"; exit 1
+      - name: 스모크
+        run: scripts/e2e/smoke.sh "$RUNNER_TEMP/e2e-shots"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-shots
+          path: ${{ runner.temp }}/e2e-shots
+          retention-days: 7
