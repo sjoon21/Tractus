@@ -1,6 +1,6 @@
 """copyleft 의존성 검사 (CLAUDE.md: GPL·LGPL·AGPL 금지). CI와 손으로 같은 명령을 쓴다.
 
-    uv run python scripts/check_licenses.py            # Python(지금 환경) + npm(app/) + Rust(app/src-tauri)
+    uv run python scripts/check_licenses.py            # Python(지금 환경) + npm(app/) + Rust(app/src-tauri, recorder/win)
     uv run python scripts/check_licenses.py --only py  # 하나만: py | npm | cargo
 
 라이선스 식에 GPL 계열이 아닌 선택지가 하나라도 있으면(`MIT OR GPL-2.0`) 통과다. MPL-2.0 같은 파일 단위 copyleft는 막지 않는다.
@@ -43,8 +43,12 @@ def npm_pkgs() -> list[tuple[str, str]]:
 
 
 def cargo_pkgs() -> list[tuple[str, str]]:
-    raw = subprocess.run(["cargo", "metadata", "--format-version", "1", "--locked"], cwd=ROOT / "app" / "src-tauri", check=True, capture_output=True, text=True).stdout
-    return [(p["name"], p.get("license") or "") for p in json.loads(raw)["packages"]]
+    # 앱(app/src-tauri)과 Windows 녹음 프로그램(recorder/win). cargo metadata는 모든 대상(Windows 의존성 포함)을 낸다
+    out = []
+    for crate in (ROOT / "app" / "src-tauri", ROOT / "recorder" / "win"):
+        raw = subprocess.run(["cargo", "metadata", "--format-version", "1", "--locked"], cwd=crate, check=True, capture_output=True, text=True).stdout
+        out += [(p["name"], p.get("license") or "") for p in json.loads(raw)["packages"]]
+    return out
 
 
 def main() -> int:

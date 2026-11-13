@@ -1,0 +1,39 @@
+# Windows 녹음 프로그램 `tractus-rec.exe` (docs/windows/README.md, Stage 0).
+# macOS의 Swift `tractus-rec`(recorder/)과 같은 계약(docs/desktop.md §1)을 지킨다: 앱·코어는 바꾸지 않는다.
+# WASAPI 부분(src/win.rs, src/gap.rs)은 Yogurt(FrigadeHQ/yogurt, MIT)의 app/native/yogurt-audio-win에서 옮겼다 (NOTICE 12번).
+# 운영체제와 상관없는 부분(약속·WAV·소리 크기·가짜 신호)은 Mac에서도 `cargo test`·`--fake`로 돈다.
+[package]
+name = "tractus-rec"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[[bin]]
+name = "tractus-rec"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+# 로컬 시간대 오프셋이 붙은 ISO 시각 (recording.json `started_at`, Swift `isoLocal`과 같은 꼴)
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-core = "=0.62.2"
+windows = { version = "=0.62.2", features = [
+  "Win32_Foundation",
+  "Win32_Devices_FunctionDiscovery",
+  "Win32_Media_Audio",
+  "Win32_Security", # CreateEventW
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Performance",
+  "Win32_System_Threading",
+  "Win32_System_Variant",
+  "Win32_UI_Shell_PropertiesSystem",
+] }
+
+[profile.release]
+lto = true
+codegen-units = 1
