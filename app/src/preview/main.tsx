@@ -109,7 +109,7 @@ const detail = (id: string): T => {
   };
 };
 
-const settings = { tractus_bin: "", rec_bin: "", home: "~/Tractus", models_dir: "", fake_recorder: false, rec_mode: "in_person", live_captions: false, checkup_done: true, tray_enabled: true, keep_in_tray: true, after_record: "ask", obsidian_vault: "/Users/me/Documents/My Vault", obsidian_audio: false };
+const settings = { tractus_bin: "", rec_bin: "", home: "~/Tractus", models_dir: "", fake_recorder: false, rec_mode: "in_person", live_captions: false, checkup_done: true, tray_enabled: true, keep_in_tray: true, mini_recorder: true, after_record: "ask", obsidian_vault: "/Users/me/Documents/My Vault", obsidian_audio: false };
 const llm = {
   default: "upstage",
   profiles: Object.fromEntries(["upstage", "openai", "claude", "gemini", "custom"].map((p) => [p, { base_url: "", model: "" }])),

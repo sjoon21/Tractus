@@ -141,6 +141,8 @@ export interface Settings {
   tray_enabled?: boolean;
   /** 창을 닫아도 앱을 끝내지 않고 메뉴 막대에 남긴다. 아이콘이 떠 있을 때만 뜻이 있다. 없으면 켜짐 */
   keep_in_tray?: boolean;
+  /** 녹음 중 메인 창을 보고 있지 않으면 작은 녹음 창을 띄운다 (mini.rs). 없으면 켜짐 */
+  mini_recorder?: boolean;
   /** 녹음을 끝내면: "ask" | "convert" | "later". 없거나 모르는 값이면 매번 묻는다 (afterRecord.afterRecord) */
   after_record?: string;
   /** AI 서비스·스마트 검색 방식은 llm_* 명령으로 따로 저장한다 (여기 값은 저장 때 무시된다) */
@@ -377,6 +379,7 @@ export const api = {
   setCheckupDone: (done: boolean) => invoke<void>("set_checkup_done", { done }),
   /** 메뉴 막대 아이콘 설정 두 개를 바로 적용하고 저장한다 (다시 시작하지 않아도 된다) */
   setTrayPrefs: (trayEnabled: boolean, keepInTray: boolean) => invoke<void>("set_tray_prefs", { trayEnabled, keepInTray }),
+  setMiniRecorder: (enabled: boolean) => invoke<void>("set_mini_recorder", { enabled }),
   /** 메뉴 막대에 보일 상태 (tray.ts createTraySender가 같은 값을 다시 보내지 않게 거른다) */
   trayUpdate: (payload: TrayWire) => invoke<void>("tray_update", { payload }),
   /** 지금 창을 닫으면 숨기기만 하는가 (메뉴 막대에 남기기) */

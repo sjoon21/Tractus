@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { readTheme, saveTheme, THEME_OPTIONS, type ThemePref } from "./themePref";
 import { LANG_OPTIONS, readLangPref, t, type LangPref } from "./i18n";
 import { api, errDetail, errText, type McpStatus, type Settings, type VoiceList, type VoicePerson } from "./api";
+import { MINI_HINT, MINI_LABEL } from "./trayText";
 import { AFTER_SETTING, afterRecord, type AfterRecord } from "./afterRecord";
 import { ErrorDetail } from "./ErrorDetail";
 import { CHECKUP_OPEN, MODELS_OPEN } from "./caps";
@@ -84,6 +85,20 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack, toUpdate }: { o
     }
   };
 
+  // 녹음 미니 창도 바로 적용한다 (mini.rs). 옛 설정 파일에는 값이 없고, 없으면 켜짐이다
+  const miniOn = s?.mini_recorder !== false;
+  const setMini = async (on: boolean) => {
+    try {
+      await api.setMiniRecorder(on);
+      setS((cur) => cur && { ...cur, mini_recorder: on });
+      setMsg(null);
+      setMsgDetail(null);
+    } catch (err) {
+      setMsg(errText(err));
+      setMsgDetail(errDetail(err));
+    }
+  };
+
   // `녹음을 끝내면`도 저장 단추를 기다리지 않고 바로 저장한다 (끝낼 때 묻는 창의 `다음부터 묻지 않기`와 같은 값)
   const after = afterRecord(s?.after_record);
   const setAfter = async (value: AfterRecord) => {
@@ -149,6 +164,12 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack, toUpdate }: { o
         <ThemeSection />
 
         <Section title={t("녹음")}>
+          <Row
+            label={MINI_LABEL}
+            hint={MINI_HINT}
+            htmlFor="mini-recorder"
+            control={<Switch id="mini-recorder" checked={miniOn} onChange={(e) => void setMini(e.target.checked)} />}
+          />
           <Row
             label={AFTER_SETTING.label}
             hint={AFTER_SETTING.hint}

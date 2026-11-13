@@ -151,6 +151,8 @@ export default {
   "창을 열지 않고 메뉴 막대에서 녹음하고 노트를 엽니다.": "Record and open notes from the menu bar without opening the window.",
   "창을 닫아도 메뉴 막대에 남기기": "Keep in the menu bar when the window closes",
   "창을 닫아도 녹음과 변환이 이어집니다. 끝내려면 ⌘Q를 누르세요.": "Recording and transcription continue after you close the window. Press ⌘Q to quit.",
+  "녹음 중 작은 창 띄우기": "Show a small recorder while recording",
+  "Tractus 창을 보고 있지 않을 때 화면 구석에 녹음 시각과 종료 단추를 띄웁니다. 끌어서 옮길 수 있습니다.": "When you're not looking at the Tractus window, a small bar with the recording time and Stop floats in a corner of the screen. Drag it anywhere.",
 
   // useOrganize.ts
   "목록 순서를 저장하지 못했습니다: {error}": "Couldn’t save the sort order: {error}",
