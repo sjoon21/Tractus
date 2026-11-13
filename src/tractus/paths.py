@@ -40,6 +40,8 @@ def tool_bin(env: str, name: str, repo_rel: str) -> Path:
     존재하는 첫 후보를 돌려주고, 없으면 저장소 배치일 때 저장소 경로, 아니면 번들 경로(안내와 점검 표시용)."""
     if value := os.environ.get(env):
         return Path(value)
+    if sys.platform == "win32":  # Windows 실행 파일은 .exe가 붙는다 (번들 배치는 아직 정하지 않아 아래 .app 갈래에 걸리지 않는다)
+        name, repo_rel = f"{name}.exe", f"{repo_rel}.exe"
     exe = Path(sys.executable)  # resolve하지 않는다: venv의 python은 링크다
     repo = REPO_ROOT / repo_rel
     if exe.parts[-6:-1][1:] != ("Contents", "Resources", "runtime", "bin") or not exe.parts[-6].endswith(".app"):  # 앱 번들의 파이썬이 아니면 ~/bin 같은 엉뚱한 곳을 보지 않는다
