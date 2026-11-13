@@ -516,6 +516,11 @@ class Index:
             hits.append(Hit(row[0], row[1], row[2], json.loads(row[3]), row[4], row[5], round(score[cid], 5), matched, dist))
         return SearchResult(query=query, hits=hits, vector_used=vec is not None)
 
+    def meeting_ids(self, date_from: str | None = None, date_to: str | None = None) -> list[str]:
+        """색인된 노트 ID, 최근 것부터 (날짜는 준 것만 건다)."""
+        cond, args = self._filters(date_from, date_to, None, "date", "meeting_id")
+        return [r[0] for r in self.db.execute(f"SELECT meeting_id FROM meetings WHERE 1=1{cond} ORDER BY date DESC, meeting_id DESC", args)]
+
     def meeting_dir(self, meeting_id: str) -> Path | None:
         row = self.db.execute("SELECT dir FROM meetings WHERE meeting_id=?", (meeting_id,)).fetchone()
         return Path(row[0]) if row else None
