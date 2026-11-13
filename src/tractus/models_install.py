@@ -7,7 +7,6 @@
 
 import contextlib
 import errno
-import fcntl
 import fnmatch
 import re
 import hashlib
@@ -26,6 +25,7 @@ from typing import Callable, Iterator
 from tractus import diarize, paths
 from tractus import models_registry as reg
 from tractus.i18n import t
+from tractus.platform_compat import lock_file, pid_alive, unlock_file
 
 Emit = Callable[..., None]
 DISK_MARGIN = 1.1  # 남은 용량 ≥ 받을 크기 × 1.1
@@ -50,7 +50,7 @@ def download_lock(root: Path) -> Iterator[None]:
     root.mkdir(parents=True, exist_ok=True)
     f = (root / reg.LOCK_NAME).open("a+")
     try:
-        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock_file(f, blocking=False)
     except OSError:
         f.close()
         raise ModelError(code="busy", message=t("다른 모델 받기가 이미 진행 중입니다")) from None
@@ -61,7 +61,7 @@ def download_lock(root: Path) -> Iterator[None]:
         yield
     finally:
         f.truncate(0)
-        fcntl.flock(f, fcntl.LOCK_UN)
+        unlock_file(f)
         f.close()
 
 
@@ -70,10 +70,9 @@ def lock_held(root: Path) -> bool:
     ponytail: 강제 종료로 PID가 남고 같은 번호를 다른 프로세스가 쓰면 잘못 true. 받기는 flock이 따로 막는다."""
     try:
         pid = int((root / reg.LOCK_NAME).read_text().strip())
-        os.kill(pid, 0)
     except (OSError, ValueError) as e:
-        return isinstance(e, PermissionError)
-    return True
+        return isinstance(e, PermissionError)  # Windows: 받는 쪽이 잠근 바이트를 읽으면 PermissionError = 진행 중
+    return pid_alive(pid)
 
 
 # ── 오류 분류 ────────────────────────────────────────────────────────────────

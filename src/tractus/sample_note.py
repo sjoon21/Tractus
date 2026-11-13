@@ -4,7 +4,6 @@
 transcript.json의 `"sample": true`로 가른다: 검색 색인·MCP 목록·전체 AI 질문에 넣지 않는다. 지우는 방법은 다른 노트와 같다(휴지통).
 """
 
-import fcntl
 import json
 import os
 import shutil
@@ -13,6 +12,7 @@ from pathlib import Path
 
 from tractus import enhance, summarize
 from tractus.i18n import lang, t
+from tractus.platform_compat import lock_file
 from tractus.notes import derive_lines
 from tractus.organize import iter_notes
 from tractus.store import MEMOS_FILE, SCHEMA_VERSION, _write_atomic, is_sample, meeting_dir_name, new_ulid, save_transcript
@@ -53,7 +53,7 @@ def create(home: Path) -> tuple[Path, bool]:
     meetings.mkdir(parents=True, exist_ok=True)
     fd = os.open(meetings / LOCK, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        lock_file(fd)
         if found := find(home):
             return found, False
         return _make(meetings), True

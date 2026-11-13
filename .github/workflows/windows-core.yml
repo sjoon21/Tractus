@@ -1,0 +1,61 @@
+# Windows 이식 0단계 (docs/internal/windows-port.md §2): 코어(src/tractus)가 Windows에서 불러와지고 모델 없는 단위 테스트가 도는지 본다.
+# 앱·녹음 프로그램·모델(slow)은 보지 않는다. 고른 테스트만 반드시 통과해야 하고, 전체 테스트는 실패 목록만 요약에 남긴다(실제 Windows PC에서 이어 간다).
+name: Windows core
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1" # 매주 월요일 03:00 UTC
+  pull_request:
+    paths:
+      - "src/tractus/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/windows-core.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: 코어 (Windows pytest)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      UV_PYTHON_PREFERENCE: only-managed
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - run: uv sync --locked
+      - name: 불러오기 (CLI·MCP)
+        run: uv run python -c "import tractus.cli, tractus.mcp_server"
+      - name: 고른 테스트 (반드시 통과)
+        run: uv run pytest -q tests/test_platform_compat.py
+      - name: 전체 테스트 (실패 목록만 요약)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          uv run pytest -q -rfE --tb=line -p no:cacheprovider 2>&1 | tee pytest.txt
+      - name: 실패 목록
+        if: always()
+        run: |
+          {
+            echo "## Windows 전체 테스트"
+            echo
+            tail -n 1 pytest.txt 2>/dev/null || echo "(결과 없음)"
+            echo
+            echo '```'
+            grep -E '^(FAILED|ERROR) ' pytest.txt 2>/dev/null || echo "실패 없음"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

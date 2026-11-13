@@ -4,7 +4,6 @@
 suggested는 목소리 프로필이 맞춘 **제안**이다(voices.py). 이름이 없는 화자에만 있고, 표시 이름·md·vtt·요약·MCP·내보내기에 쓰지 않는다."""
 
 import copy
-import fcntl
 import json
 import os
 import re
@@ -19,6 +18,7 @@ from typing import Callable
 
 from tractus.asr import Segment
 from tractus.i18n import t
+from tractus.platform_compat import lock_file
 
 SR = 16000
 SCHEMA_VERSION = 2  # 2: segment.speaker("S1"…), 최상위 speakers·diarization. 1도 그대로 읽는다
@@ -73,7 +73,7 @@ def edit_glossary(path: Path, fn: Callable[[list[str]], list[str]]) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path.parent / GLOSSARY_LOCK, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        lock_file(fd)
         lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else _glossary_header().splitlines()
         out = fn(list(lines))
         if out == lines:
@@ -361,7 +361,7 @@ def note_lock(d: Path):
         return
     fd = os.open(d / LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        lock_file(fd)
         _held.dirs = {*held, key}
         try:
             yield

@@ -10,7 +10,6 @@
 읽는 쪽은 모두 너그럽다: 키가 없거나 모양이 달라도(옛 노트·손상) 정리하지 않은 노트로 본다.
 """
 
-import fcntl
 import json
 import os
 import unicodedata
@@ -20,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 from tractus.i18n import t
+from tractus.platform_compat import lock_file
 from tractus.store import _write_atomic, edit_transcript, is_memo, is_recorded, new_ulid, note_lock, one_line, read_transcript, render_files
 
 FOLDERS_FILE = "folders.json"
@@ -197,7 +197,7 @@ def folders_lock(home: Path):
     home.mkdir(parents=True, exist_ok=True)
     fd = os.open(home / FOLDERS_LOCK, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        lock_file(fd)
         yield
     finally:
         os.close(fd)
