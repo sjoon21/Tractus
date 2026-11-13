@@ -156,7 +156,7 @@ def ask(
     progress_json: bool = typer.Option(False, "--progress-json", help="이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
 ) -> None:
     """노트에 질문한다. stdin: {"question": "…", "history": [{"role", "content"}]} 또는 질문 평문.
-    공급자에는 질문, 최근 대화, 근거 세그먼트만 보낸다. 답의 문장마다 [s0012] 인용이 붙는다."""
+    공급자에는 질문, 최근 대화, 근거 세그먼트(모아 묻는 질문은 노트에 저장된 요약 줄도)만 보낸다. 답의 문장마다 [s0012] 인용이 붙는다."""
     from tractus import ask as qa
 
     common.Events.enabled = progress_json
@@ -179,7 +179,7 @@ def ask(
         idx = Index(home_dir(), embedder=load_embedder(models_dir()))  # 질의 임베딩 때만 모델을 올린다 (LazyEmbedder)
         try:
             idx.sync(embed=False)  # 새 벡터는 만들지 않는다: 노트가 많으면 몇 분 걸린다. 벡터 없는 청크는 키워드로 찾힌다
-            return qa.search_sources(idx, question, history, **kw)
+            return qa.search_sources(idx, question, history, **kw) if kw.get("meeting_id") else qa.global_sources(idx, question, history, **kw)
         finally:
             idx.close()
 

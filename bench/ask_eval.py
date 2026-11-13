@@ -6,7 +6,10 @@
 --memo: 사용자 메모가 달린 가상 녹음 노트 3건(tests/fixtures/eval/memo_meetings)과 답이 메모에만 있는 질문 6개(ask_memo_questions.jsonl)를 더한다.
 가상 회의만 원격 공급자로 보낸다. 사용자 회의($TRACTUS_HOME)나 AI Hub 데이터는 읽지 않는다(임시 홈에 복사해 색인).
 
-질문 유형: meeting(회의 범위, 전사 전체), cross(전체 범위), date(전체 범위 + 기간), none(답이 없음), follow(후속 질문, --followups).
+--recap: 여러 노트의 결정·할 일·요약을 모아 묻는 질문 5개(ask_recap_questions.jsonl, 정답은 가상 회의 요약의 근거 세그먼트)를 더한다.
+
+질문 유형: meeting(회의 범위, 전사 전체), cross(전체 범위), date(전체 범위 + 기간), none(답이 없음), follow(후속 질문, --followups),
+recap(전체 범위의 결정·할 일·요약 모으기, --recap).
 지표:
   source_recall   전체 범위(cross/date) 질문에서 정답 세그먼트가 LLM에 보낸 근거에 들어 있는 비율 (검색 단계).
                   회의 범위는 전사 전체를 보내 늘 1이라 뺀다. 근거 비율(보낸 세그먼트 / 말뭉치 세그먼트)을 함께 본다:
@@ -51,7 +54,7 @@ def run_one(q: dict, idx: Index, transcripts: dict, client, provider: str, model
     if q.get("meeting"):
         scope, get = "meeting", lambda: qa.transcript_sources(transcripts[q["meeting"]])
     else:
-        scope, get = "global", lambda: qa.search_sources(idx, q["question"], None if alone else history, date_from=q.get("from"), date_to=q.get("to"))
+        scope, get = "global", lambda: qa.global_sources(idx, q["question"], None if alone else history, date_from=q.get("from"), date_to=q.get("to"))
     t0, ttft, sources, done = time.perf_counter(), None, [], None
     for ev in qa.ask(client, provider, model, q["question"], history, scope, get):
         if ev["event"] == "sources":
@@ -84,10 +87,13 @@ def report(qs: list[dict], rs: list[dict], corpus: int) -> None:
     print(f"no_evidence {sum(REFUSAL in r['answer'] and not r['cited'] for _, r in none) / len(none):.2f}")
     print(f"latency TTFT p50 {statistics.median(ttft):.2f}s max {max(ttft):.2f}s / 전체 p50 {statistics.median(total):.2f}s max {max(total):.2f}s"
           if ttft else f"latency 전체 p50 {statistics.median(total):.2f}s")
-    for t in ("meeting", "cross", "date", "follow"):
+    for t in ("meeting", "cross", "date", "follow", "recap"):
         sub = [(q, r) for q, r in ans if q["type"] == t]
         if sub:
-            print(f"  {t}: hit {sum(bool(r['cited'] & pairs(q['gold'])) for q, r in sub) / len(sub):.2f} (n={len(sub)})")
+            c, g = sum(len(r["cited"]) for _, r in sub), sum(len(pairs(q["gold"])) for q, _ in sub)
+            print(f"  {t}: hit {sum(bool(r['cited'] & pairs(q['gold'])) for q, r in sub) / len(sub):.2f} "
+                  f"precision {sum(len(r['cited'] & (pairs(q['gold']) | pairs(q.get('ok')))) for q, r in sub) / max(c, 1):.2f} "
+                  f"recall {sum(len(r['cited'] & pairs(q['gold'])) for q, r in sub) / max(g, 1):.2f} 인용 {c} (n={len(sub)})")
     memo = [(q, r) for q, r in ans if all(sid.startswith("m") for _, sid in pairs(q["gold"]))]  # 답이 사용자 메모에만 있는 질문 (--memo)
     if memo:
         print(f"  memo(답이 메모에만 있음): hit {sum(bool(r['cited'] & pairs(q['gold'])) for q, r in memo) / len(memo):.2f} "
@@ -101,6 +107,7 @@ def main() -> None:
     ap.add_argument("--no-vector", action="store_true", help="임베딩 모델 없이 키워드 검색만")
     ap.add_argument("--followups", action="store_true", help="후속 질문(ask_followups.jsonl)도 함께")
     ap.add_argument("--memo", action="store_true", help="메모가 달린 가상 노트와 메모 질문(ask_memo_questions.jsonl)도 함께")
+    ap.add_argument("--recap", action="store_true", help="결정·할 일·요약을 모아 묻는 질문(ask_recap_questions.jsonl)도 함께")
     ap.add_argument("--alone", action="store_true", help="후속 질문 검색에 이전 질문을 쓰지 않는다 (v3.16 동작, 비교용)")
     ap.add_argument("-v", "--verbose", action="store_true", help="질문별 답을 출력")
     args = ap.parse_args()
@@ -111,6 +118,8 @@ def main() -> None:
         qs += [json.loads(line) for line in (EVAL / "ask_followups.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
     if args.memo:
         qs += [json.loads(line) for line in (EVAL / "ask_memo_questions.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    if args.recap:
+        qs += [json.loads(line) for line in (EVAL / "ask_recap_questions.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
     embedder = None if args.no_vector else load_embedder(ROOT / "models")
 
     with tempfile.TemporaryDirectory() as tmp:
