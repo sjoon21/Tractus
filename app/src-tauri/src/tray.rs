@@ -558,6 +558,11 @@ impl TrayState {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// 지금 녹음 단계 (통화 감지가 본다)
+    pub fn phase(&self) -> Phase {
+        self.lock().payload.phase
+    }
+
     pub fn exists(&self) -> bool {
         self.lock().tray.is_some()
     }

@@ -81,6 +81,14 @@ fn next_args(hidden: &[String]) -> Vec<String> {
     a
 }
 
+/// 지금·곧 시작하는 일정들 (통화 감지, calls.rs). 연결하지 않았거나 실패하면 빈 목록. 블로킹이라 UI 스레드에서 부르지 않는다
+pub fn next_events(s: &Settings) -> Vec<Value> {
+    if !s.calendar_enabled {
+        return Vec::new();
+    }
+    run(s, &next_args(&s.calendar_hidden)).ok().and_then(|v| v["events"].as_array().cloned()).unwrap_or_default()
+}
+
 /// 홈 카드: 곧 시작하는 일정들 (시작 순). 연결하지 않았거나 권한이 없으면 빈 목록
 #[tauri::command]
 pub async fn calendar_next(state: State<'_, AppState>) -> Result<Value, String> {

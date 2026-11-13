@@ -8,6 +8,7 @@ let usage = """
 사용법:
   tractus-rec record --out <dir> [--no-mic] [--no-system] [--echo-cancel] [--fake]
   tractus-rec check
+  tractus-rec mic-apps
   tractus-rec calendar access|request|list|next [--ahead 분] [--exclude 캘린더ID]…
   tractus-rec calendar range --from YYYY-MM-DD [--days N] [--exclude 캘린더ID]…
 """
@@ -91,6 +92,7 @@ let args = Array(CommandLine.arguments.dropFirst())
 switch args.first {
 case "record": runRecord(Array(args.dropFirst()))
 case "check": runCheck()
+case "mic-apps": runMicApps()
 case "calendar": runCalendar(Array(args.dropFirst()))
 default:
     fputs(usage + "\n", stderr)

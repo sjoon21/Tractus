@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { readTheme, saveTheme, THEME_OPTIONS, type ThemePref } from "./themePref";
 import { LANG_OPTIONS, readLangPref, t, type LangPref } from "./i18n";
 import { api, errDetail, errText, type McpStatus, type Settings, type VoiceList, type VoicePerson } from "./api";
-import { MINI_HINT, MINI_LABEL } from "./trayText";
+import { CALL_DETECT_HINT, CALL_DETECT_LABEL, CALL_STOP_HINT, CALL_STOP_LABEL, MINI_HINT, MINI_LABEL } from "./trayText";
 import { AFTER_SETTING, afterRecord, type AfterRecord } from "./afterRecord";
 import { ErrorDetail } from "./ErrorDetail";
 import { CHECKUP_OPEN, MODELS_OPEN } from "./caps";
@@ -99,6 +99,21 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack, toUpdate }: { o
     }
   };
 
+  // 통화 감지 (calls.rs)도 바로 적용한다. 옛 설정 파일에는 값이 없다: 묻기는 켜짐, 저절로 끝내기는 꺼짐
+  const callOn = s?.call_detect !== false;
+  const autoStopOn = s?.call_autostop === true;
+  const setCall = async (detect: boolean, autostop: boolean) => {
+    try {
+      await api.setCallPrefs(detect, autostop);
+      setS((cur) => cur && { ...cur, call_detect: detect, call_autostop: autostop });
+      setMsg(null);
+      setMsgDetail(null);
+    } catch (err) {
+      setMsg(errText(err));
+      setMsgDetail(errDetail(err));
+    }
+  };
+
   // `녹음을 끝내면`도 저장 단추를 기다리지 않고 바로 저장한다 (끝낼 때 묻는 창의 `다음부터 묻지 않기`와 같은 값)
   const after = afterRecord(s?.after_record);
   const setAfter = async (value: AfterRecord) => {
@@ -169,6 +184,14 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack, toUpdate }: { o
             hint={MINI_HINT}
             htmlFor="mini-recorder"
             control={<Switch id="mini-recorder" checked={miniOn} onChange={(e) => void setMini(e.target.checked)} />}
+          />
+          <Row label={CALL_DETECT_LABEL} hint={CALL_DETECT_HINT} htmlFor="call-detect" control={<Switch id="call-detect" checked={callOn} onChange={(e) => void setCall(e.target.checked, autoStopOn)} />} />
+          <Row
+            label={CALL_STOP_LABEL}
+            hint={CALL_STOP_HINT}
+            htmlFor="call-autostop"
+            className={callOn ? undefined : "opacity-60"}
+            control={<Switch id="call-autostop" checked={autoStopOn && callOn} disabled={!callOn} onChange={(e) => void setCall(callOn, e.target.checked)} />}
           />
           <Row
             label={AFTER_SETTING.label}

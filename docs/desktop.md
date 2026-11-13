@@ -89,6 +89,10 @@ Swift Package 실행 파일. 마이크는 AVAudioEngine, 시스템 오디오는 
 
 권한 상태를 JSON 한 줄로 출력하고 종료한다: `{"mic":"granted|denied|undetermined","system":"ok|zero|error","macos":"26.6"}`. `system`은 1초 동안 tap을 열어 0이 아닌 표본이 들어오는지 본다(재생 중인 소리가 없으면 `zero`일 수 있으니 참고용).
 
+### `tractus-rec mic-apps` (v3.121)
+
+지금 마이크를 쓰는 프로세스를 JSON 한 줄로 출력하고 종료한다: `{"mic": [{"bundle_id": "us.zoom.xos", "pid": 123}], "running": ["보이는 앱 bundle id", …], "now": "2026-11-13T14:05:00+09:00"}`. Core Audio 프로세스 객체 목록(macOS 14+)의 `IsRunningInput`을 읽는다(소리·마이크 권한 없음). bundle id가 없는 프로세스(명령줄 도구)는 `""`. 자기 자신은 뺀다. `now`는 캘린더 일정과 같은 꼴의 로컬 시각이다. 통화 감지(§3.9)가 3초마다 부른다.
+
 ### `tractus-rec calendar access|request|list|next` (v3.38)
 
 macOS 캘린더(EventKit) 읽기. 설계: [docs/design/calendar.md](design/calendar.md). 모두 한 줄 JSON이고 권한이 없으면 목록은 빈 채 성공한다.
@@ -1064,6 +1068,18 @@ macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음�
 - **Rust 문장**(오류·메뉴 막대)은 `t()`/`tv()`(`i18n.rs`) + `en.json`. **코어**는 앱이 모든 실행에 싣는 `TRACTUS_LANG`(`child_env`)이 `en`일 때만 영어다(`tractus/i18n.py` + `i18n_en.json`. 셸의 `LANG`은 보지 않는다). 코어가 옮기는 것: 앱·터미널로 가는 오류·경고·`console.print`, 모델·기능 이름과 안내(`models list`·`doctor`), 내보낸 문서(txt·md·srt·vtt·csv·docx·Obsidian, 이름 없는 참석자는 `Speaker N`). 옮기지 않는 것: MCP 출력, `store.stamp()`(앱이 검색 결과에서 읽는다), 노트 폴더 파일(`transcript.md`·`vtt`·`summary.md`), 노트에 저장되는 기본 제목, AI 프롬프트 — 줄 끝 `i18n-ok`. 권한 창 문구는 `locales/{ko,en}.lproj/InfoPlist.strings`(macOS 언어를 따른다).
 - **3단계(v3.46): AI 결과·노트 데이터.** 영어 화면이면 요약·노트 완성 프롬프트의 결과 언어 규칙 한 줄을 "영어로 쓴다"로 바꾼다(`i18n.ai_prompt`, 프롬프트 본문은 한국어 그대로, 한국어 화면의 프롬프트는 바뀌지 않는다). AI 질문은 원래대로 질문의 언어로 답하고, 근거가 없을 때의 답(`ask.NO_EVIDENCE`)은 화면 언어다. 요약 유형 이름·설명은 유형 파일의 `name_en`·`description_en`. 노트에 저장되는 것은 **만들 때의 화면 언어**다: 기본 제목(`녹음 HH:MM`/`Recording HH:MM`, `메모 HH:MM`/`Memo HH:MM`), 요약·완성된 노트의 머리말, `template_name`, `transcript.md`·`vtt`, 새 `glossary.md` 머리말, 예시 노트(`sample_note_en.json`, 같은 가상 회의를 옮긴 것). 이미 있는 노트는 바뀌지 않는다. `store.stamp()`·MCP 출력·검색 색인·프롬프트 안의 참석자 표시(`참석자 N`)는 그대로다.
 - **검사**: Rust `i18n.rs` 테스트·`tests/test_i18n.py`(AST)가 같은 규칙(빠진 번역·쓰이지 않는 번역·자리표시자·`t()` 밖 한국어)을 본다. 화면은 `i18n.test.ts`가 빠진 번역·쓰이지 않는 번역·두 사전에 겹친 키·자리표시자 불일치·영어 값의 한국어·`t()` 밖에 남은 한국어 문자열/JSX 글자(주석 제외, 언어와 상관없는 데이터는 줄 끝 `i18n-ok`)를 잡는다. 템플릿 문자열 안의 `t()`는 검사가 못 보므로 `t()`를 템플릿 문자열에 넣지 않는다. 미리보기는 `/preview.html?lang=en-US`.
+
+### 3.9 통화 감지 (v3.121)
+
+통화 앱이 마이크를 쓰기 시작하면 녹음 미니 창(§3.1)에 `녹음할까요?` 카드를 띄우고, 그 통화로 시작한 녹음은 통화 앱이 마이크를 놓으면 끝낼지 묻는다(설정에 따라 끝낸다). 구현은 `app/src-tauri/src/calls.rs`, 녹음 프로그램 `tractus-rec mic-apps`(`MicApps.swift`), 카드는 `MiniRecorder.tsx` `CallCardView`. 규칙은 Yogurt(FrigadeHQ/yogurt, MIT)의 `detect.ts`·`watch.ts`를 옮겨 다시 썼다(NOTICE 12번).
+
+- **보는 것.** 3초마다 `tractus-rec mic-apps` → `{"mic": [{"bundle_id", "pid"}], "running": [보이는 앱 bundle id], "now": 로컬 ISO 시각}`. Core Audio 프로세스 객체 목록(macOS 14+)의 `IsRunningInput`만 읽는다: 소리를 듣지 않고 마이크 권한도 쓰지 않는다. 설정이 꺼져 있으면 녹음 프로그램을 부르지 않는다.
+- **통화 앱.** Zoom·Teams·Webex·FaceTime·Slack·Discord·WhatsApp·카카오톡·NAVER WORKS(`calls::APPS`), 도우미 프로세스(`us.zoom.CptHost`, `com.apple.avconferenced`, WebKit·Firefox 도우미)는 주인 앱이 실행 중일 때만 그 앱으로 친다. 브라우저(Chrome·Arc·Dia·Safari·Edge·Firefox·Brave·Whale)는 캘린더를 연결했고 지금 일정(시작이 앞뒤 10분 안, 끝나지 않음)이 있을 때만 통화로 본다(탭 제목은 읽지 않는다: 자동화 권한이 필요하다). 녹음 프로그램 자신(bundle id 없음)은 통화가 아니다.
+- **묻기 (`decide`).** 녹음 중이 아니고 통화 앱이 마이크를 쓰면 카드 `start`(일정이 있으면 일정 제목, 없으면 `{앱} 통화가 시작됐습니다` + `녹음할까요?`, 단추 `녹음`·닫기). 한 통화는 키 하나(`event:<id>:<start>` 또는 `app:<id>`)로 한 번만 묻는다. 닫거나 15초가 지나면 닫은 것으로 치고, 그 앱이 마이크를 놓으면 잊는다(다음 통화는 다시 묻는다). 녹음을 끝낸 뒤 아직 마이크를 쥔 통화도 다시 묻지 않는다.
+- **녹음.** `녹음` → 이벤트 `tray-action` `{"action": "record_call", "event": 일정|null}`(메인 창) → 화면이 `화상·하이브리드`로(상대 목소리가 들어가게) 그 일정과 함께 시작한다(`routeTrayAction` → `onRecordButton(event, "hybrid")`). 다른 길로 시작한 녹음도 시작 6초 안에 마이크를 쓴 통화 앱에 묶인다.
+- **끝내기 (`call_gone`).** 묶인 통화 앱이 이 녹음 동안 마이크를 쓴 적이 있고 놓은 지 10초가 지나면: 설정 `call_autostop`이 켜져 있으면 `record_stop`, 아니면(기본) 카드 `end`(`통화가 끝났습니다` + `녹음을 끝낼까요?`, `녹음 종료`·`계속`, `계속`은 5분 동안 다시 묻지 않는다). 통화로 돌아오면 카드를 거둔다. 통화를 본 적 없는 녹음은 끝내지 않고, 일정은 녹음을 끝내지 않는다.
+- **카드와 미니 창.** 카드가 있으면 미니 창은 설정·메인 창 초점과 상관없이 보인다(`mini::visible`). 상태는 `tray-popover`의 `call` 칸(`{"kind", "app", "title"}`), 단추는 명령 `call_action(action)`(`record`·`dismiss`·`stop`·`keep`).
+- **설정** (바로 적용, 명령 `set_call_prefs`): `call_detect`(기본 `true`, `통화가 시작되면 녹음할지 묻기`), `call_autostop`(기본 `false`, `통화가 끝나면 녹음 끝내기`).
 
 ## 4. B안 판정 기준 (D안으로 갈지 정할 때)
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MiniRecorderView, miniLevel } from "./MiniRecorder";
+import { CallCardView, MiniRecorderView, miniLevel } from "./MiniRecorder";
 import { EMPTY_POPOVER, type PopoverState } from "./TrayPopover";
 
 const rec: PopoverState = { ...EMPTY_POPOVER, phase: "recording", started_at_ms: 1_000, can: { start: false, pause: true, resume: false, stop: true, bookmark: true } };
@@ -25,5 +25,22 @@ describe("녹음 미니 창", () => {
     expect(miniLevel(-60, null)).toBe(0);
     expect(miniLevel(-30, -6)).toBeCloseTo(0.9);
     expect(miniLevel(null, null)).toBe(0);
+  });
+});
+
+describe("통화 감지 카드", () => {
+  it("통화가 시작되면 일정 제목(없으면 앱 이름)과 녹음·닫기", () => {
+    const withEvent = renderToStaticMarkup(<CallCardView call={{ kind: "start", app: "Zoom", title: "주간 동기화" }} onCall={() => {}} />);
+    expect(withEvent).toContain("주간 동기화");
+    expect(withEvent).toContain("녹음할까요?");
+    expect(withEvent).toContain("닫기");
+    expect(renderToStaticMarkup(<CallCardView call={{ kind: "start", app: "Zoom", title: "" }} onCall={() => {}} />)).toContain("Zoom 통화가 시작됐습니다");
+  });
+
+  it("통화가 끝나면 녹음 종료·계속", () => {
+    const html = renderToStaticMarkup(<CallCardView call={{ kind: "end", app: "Teams", title: "" }} onCall={() => {}} />);
+    expect(html).toContain("통화가 끝났습니다");
+    expect(html).toContain("녹음 종료");
+    expect(html).toContain("계속");
   });
 });

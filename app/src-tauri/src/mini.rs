@@ -9,7 +9,7 @@ use crate::AppState;
 
 pub const MINI_WINDOW: &str = "mini";
 const MAIN_WINDOW: &str = "main";
-const WIDTH: f64 = 236.0;
+const WIDTH: f64 = 320.0;
 const HEIGHT: f64 = 56.0;
 /// 화면 오른쪽 위에서 떨어진 거리 (pt). 메뉴 막대(24pt) 아래
 const MARGIN: f64 = 12.0;
@@ -17,8 +17,9 @@ const TOP: f64 = 36.0;
 
 /// 미니 창을 보일까: 설정이 켜져 있고, 녹음(일시정지 포함) 중이고, 메인 창을 보고 있지 않을 때.
 /// 메인 창에 초점이 있으면 녹음 화면이 같은 단추를 이미 보인다
-pub fn visible(enabled: bool, phase: Phase, main_focused: bool) -> bool {
-    enabled && matches!(phase, Phase::Recording | Phase::Paused) && !main_focused
+/// 통화 감지의 카드(`녹음할까요?`·`끝낼까요?`)가 있으면 설정·초점과 상관없이 보인다 (calls.rs)
+pub fn visible(enabled: bool, phase: Phase, main_focused: bool, card: bool) -> bool {
+    card || enabled && matches!(phase, Phase::Recording | Phase::Paused) && !main_focused
 }
 
 fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
@@ -46,11 +47,12 @@ fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
 }
 
 /// 상태·초점·설정이 바뀌었다: 미니 창을 보이거나 숨기고, 보이면 새 상태를 보낸다. 메인 스레드에서 부른다
-pub fn sync(app: &AppHandle, phase: Phase, state: Value) {
+pub fn sync(app: &AppHandle, phase: Phase, mut state: Value) {
     let enabled = app.try_state::<AppState>().is_none_or(|s| s.settings().mini_recorder);
     let main_focused = app.get_webview_window(MAIN_WINDOW).is_some_and(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false) && w.is_focused().unwrap_or(false));
+    let card = app.try_state::<crate::calls::CallState>().map_or(Value::Null, |c| c.card_json());
     let existing = app.get_webview_window(MINI_WINDOW);
-    if !visible(enabled, phase, main_focused) {
+    if !visible(enabled, phase, main_focused, !card.is_null()) {
         if let Some(w) = existing {
             let _ = w.hide();
         }
@@ -66,6 +68,7 @@ pub fn sync(app: &AppHandle, phase: Phase, state: Value) {
             }
         },
     };
+    state["call"] = card;
     let _ = win.emit("tray-popover", state);
     if !win.is_visible().unwrap_or(false) {
         let _ = win.show();
@@ -85,12 +88,13 @@ mod tests {
 
     #[test]
     fn shows_only_while_recording_away_from_the_main_window() {
-        assert!(visible(true, Phase::Recording, false));
-        assert!(visible(true, Phase::Paused, false));
-        assert!(!visible(true, Phase::Recording, true), "메인 창을 보고 있으면 녹음 화면이 같은 단추를 보인다");
-        assert!(!visible(false, Phase::Recording, false), "설정을 끄면 보이지 않는다");
+        assert!(visible(true, Phase::Recording, false, false));
+        assert!(visible(true, Phase::Paused, false, false));
+        assert!(!visible(true, Phase::Recording, true, false), "메인 창을 보고 있으면 녹음 화면이 같은 단추를 보인다");
+        assert!(!visible(false, Phase::Recording, false, false), "설정을 끄면 보이지 않는다");
         for p in [Phase::Idle, Phase::Converting] {
-            assert!(!visible(true, p, false));
+            assert!(!visible(true, p, false, false));
         }
+        assert!(visible(false, Phase::Idle, true, true), "통화 카드는 언제나 보인다");
     }
 }

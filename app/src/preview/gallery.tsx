@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { MENU, MENU_ITEM } from "@/components/menu";
 import { resolveTheme, type ThemePref } from "../themePref"; // applyTheme은 Tauri 창 API를 불러 브라우저에서 못 쓴다: data-theme만 직접 정한다
 import { cn } from "@/components/ui/utils";
-import { MiniRecorderView } from "../MiniRecorder";
+import { CallCardView, MiniRecorderView } from "../MiniRecorder";
 import { EMPTY_POPOVER, type PopoverState } from "../TrayPopover";
 
 const applyTheme = (p: ThemePref) => void (document.documentElement.dataset.theme = resolveTheme(p, matchMedia("(prefers-color-scheme: dark)").matches));
@@ -197,13 +197,19 @@ function Gallery() {
         </div>
       </Block>
 
-      <Block title="녹음 미니 창 (MiniRecorderView)" note="녹음 중 Tractus 창을 보고 있지 않을 때 화면 구석에 뜬다 (mini.rs, 창 236×56)">
+      <Block title="녹음 미니 창 (MiniRecorderView)" note="녹음 중 Tractus 창을 보고 있지 않을 때 화면 구석에 뜬다 (mini.rs, 창 320×56)">
         <div className="flex flex-wrap gap-4">
-          <div className="w-[236px] p-1.5">
+          <div className="w-[320px] p-1.5">
             <MiniRecorderView state={MINI_REC} nowMs={MINI_REC.started_at_ms! + 754_000} level={0.7} onAction={() => {}} />
           </div>
-          <div className="w-[236px] p-1.5">
+          <div className="w-[320px] p-1.5">
             <MiniRecorderView state={{ ...MINI_REC, phase: "paused", elapsed_ms: 3_725_000, can: { ...MINI_REC.can, pause: false, resume: true } }} nowMs={0} level={0} onAction={() => {}} />
+          </div>
+          <div className="w-[320px] p-1.5">
+            <CallCardView call={{ kind: "start", app: "Zoom", title: "주간 제품 동기화" }} onCall={() => {}} />
+          </div>
+          <div className="w-[320px] p-1.5">
+            <CallCardView call={{ kind: "end", app: "Teams", title: "" }} onCall={() => {}} />
           </div>
         </div>
       </Block>

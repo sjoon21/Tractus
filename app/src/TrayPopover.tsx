@@ -25,6 +25,8 @@ export interface PopoverState {
   progress_pct?: number | null;
   can: { start: boolean; pause: boolean; resume: boolean; stop: boolean; bookmark: boolean };
   recent: { id: string; label: string }[];
+  /** 통화 감지의 카드 (녹음 미니 창만, calls.rs). 없으면 null */
+  call?: { kind: "start" | "end"; app: string; title: string } | null;
 }
 
 export const EMPTY_POPOVER: PopoverState = { phase: "idle", status: "", started_at_ms: null, elapsed_ms: null, can: { start: false, pause: false, resume: false, stop: false, bookmark: false }, recent: [] };

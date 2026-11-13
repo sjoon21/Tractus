@@ -41,6 +41,10 @@ pub struct Settings {
     pub keep_in_tray: bool,
     /// 녹음 중 메인 창을 보고 있지 않으면 화면 구석에 작은 녹음 창을 띄운다 (mini.rs). 기본 켜짐
     pub mini_recorder: bool,
+    /// 통화 앱이 마이크를 쓰기 시작하면 녹음할지 묻는다 (calls.rs). 기본 켜짐
+    pub call_detect: bool,
+    /// 통화로 시작한 녹음을 통화 앱이 마이크를 놓으면 끝낸다. 끄면(기본) 끝낼지 묻는다
+    pub call_autostop: bool,
     /// 녹음을 끝내면: "ask"(매번 묻기) | "convert"(바로 텍스트로 변환) | "later"(노트로 저장만 하고 나중에 변환). 모르는 값은 화면이 "ask"로 읽는다 (docs/desktop.md §3.3)
     pub after_record: String,
     /// 요약·질문에서 서비스를 따로 고르지 않을 때 쓰는 AI 서비스 (llm_key::PROVIDERS의 이름). 키는 settings.json이 아니라 서비스별 파일에 있다 (llm_key.rs)
@@ -86,6 +90,8 @@ impl Default for Settings {
             tray_enabled: true,
             keep_in_tray: true,
             mini_recorder: true,
+            call_detect: true,
+            call_autostop: false,
             after_record: "ask".into(),
             llm_default: llm_key::DEFAULT_PROVIDER.into(),
             llm_profiles: BTreeMap::new(),
