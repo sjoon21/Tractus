@@ -108,8 +108,10 @@ impl Default for Settings {
     }
 }
 
+/// `~/`를 홈 폴더로. Windows에는 HOME이 없어 USERPROFILE을 본다
 pub(crate) fn expand(p: &str) -> PathBuf {
-    match (p.strip_prefix("~/"), std::env::var_os("HOME")) {
+    let home = if cfg!(windows) { std::env::var_os("USERPROFILE") } else { std::env::var_os("HOME") };
+    match (p.strip_prefix("~/"), home) {
         (Some(rest), Some(h)) => PathBuf::from(h).join(rest),
         _ => PathBuf::from(p),
     }
@@ -181,13 +183,15 @@ impl Settings {
     pub(crate) fn child_env(&self) -> Vec<(String, String)> {
         let mut env = vec![
             ("TRACTUS_HOME".into(), self.home().to_string_lossy().into_owned()),
-            // GUI 앱의 PATH에는 Homebrew가 없다. ffmpeg를 찾으려면 넣어야 한다
-            ("PATH".into(), "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".into()),
             ("PYTHONUNBUFFERED".into(), "1".into()), // 진행 이벤트가 버퍼에 묶이지 않게
             ("PYTHONIOENCODING".into(), "utf-8".into()),
             // 오류를 rich 상자 대신 평문 한 줄로 (stderr 마지막 줄을 그대로 보여 준다)
             ("TYPER_USE_RICH".into(), "0".into()),
         ];
+        // GUI 앱의 PATH에는 Homebrew가 없다. ffmpeg를 찾으려면 넣어야 한다 (Windows는 사용자 PATH를 그대로 물려준다)
+        if cfg!(target_os = "macos") {
+            env.push(("PATH".into(), "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".into()));
+        }
         if !self.models_dir.is_empty() {
             env.push(("TRACTUS_MODELS_DIR".into(), expand(&self.models_dir).to_string_lossy().into_owned()));
         }
@@ -245,7 +249,8 @@ impl Settings {
     /// tractus CLI는 현재 폴더의 .env/.env.local(API 키)을 읽는다. 저장소 .venv의 실행 파일이면 저장소 루트에서 실행한다.
     pub(crate) fn tractus_cwd(&self) -> PathBuf {
         let bin = self.tractus_path();
-        match bin.parent().filter(|p| p.ends_with(".venv/bin")).and_then(Path::parent).and_then(Path::parent) {
+        // Windows venv는 실행 파일을 Scripts/에 둔다
+        match bin.parent().filter(|p| p.ends_with(".venv/bin") || p.ends_with(".venv/Scripts")).and_then(Path::parent).and_then(Path::parent) {
             Some(repo) => repo.to_path_buf(),
             None => {
                 // 깨끗한 Mac에는 데이터 폴더가 아직 없다: 없는 폴더에서는 실행이 ENOENT로 실패하므로 먼저 만든다 (만들지 못하면 그대로 두고 실행이 오류를 말한다)
@@ -257,7 +262,7 @@ impl Settings {
     }
 
     pub(crate) fn tractus<S: AsRef<OsStr>>(&self, args: &[S]) -> Command {
-        let mut cmd = Command::new(self.tractus_path());
+        let mut cmd = crate::procs::command(self.tractus_path());
         cmd.args(args).envs(self.child_env()).current_dir(self.tractus_cwd());
         cmd
     }
@@ -437,11 +442,11 @@ mod tests {
     fn settings_defaults_and_env() {
         let s = Settings { home: "~/Tractus".into(), models_dir: String::new(), ..Default::default() };
         assert!(s.tractus_bin.is_empty() && s.rec_bin.is_empty()); // 자동: 경로를 저장하지 않는다
-        assert!(s.tractus_resolved().path.ends_with("/.venv/bin/tractus"));
+        assert!(s.tractus_resolved().path.ends_with(if cfg!(windows) { ".venv/Scripts/tractus.exe" } else { "/.venv/bin/tractus" }));
         let env = s.child_env();
         assert!(env.iter().any(|(k, v)| k == "TRACTUS_HOME" && !v.starts_with('~')));
         assert!(!env.iter().any(|(k, _)| k == "TRACTUS_MODELS_DIR"));
-        assert!(env.iter().any(|(k, v)| k == "TRACTUS_REC_BIN" && v.ends_with("/recorder/.build/release/tractus-rec")));
+        assert!(env.iter().any(|(k, v)| k == "TRACTUS_REC_BIN" && v.ends_with(if cfg!(windows) { "recorder/win/target/release/tractus-rec.exe" } else { "/recorder/.build/release/tractus-rec" })));
         // typer의 rich 오류 상자 대신 평문 "Error: …" 한 줄 (앱은 stderr 마지막 줄을 보여 준다)
         assert!(env.iter().any(|(k, v)| k == "TYPER_USE_RICH" && v == "0"));
         // 저장소 .venv 실행 파일이면 저장소 루트에서 실행 (.env.local을 읽도록)
@@ -454,6 +459,7 @@ mod tests {
     }
 
     /// 깨끗한 Mac(데이터 폴더가 아직 없음): 번들 코어를 부르기 전에 폴더가 만들어져 실행이 된다
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn missing_home_is_created_so_the_core_can_run() {
         let home = std::env::temp_dir().join(format!("tractus-fresh-{}", std::process::id())).join("Tractus");
@@ -467,6 +473,7 @@ mod tests {
 
     /// 번들 배치(<앱>/Contents/Resources/runtime/bin/tractus)를 앱 해석기가 찾고, ~/Tractus 가 없는 Mac에서도 그 코어가 실제로 뜬다.
     /// 코어는 저장소가 없으니 .venv/bin 이 아니고, 실행 폴더는 (만들어 둔) 데이터 폴더다
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn bundled_core_spawns_on_a_mac_without_the_data_folder() {
         let root = std::env::temp_dir().join(format!("tractus-bundle-{}", std::process::id()));
@@ -661,6 +668,7 @@ mod tests {
     }
 
     /// 연결 테스트·모델 목록: `tractus llm test|models`를 인수 없이 (서비스·주소·AI 모델은 환경변수로) 돌리고 키를 선택한 서비스의 변수에만 싣는다. 코어는 가짜 스크립트
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn llm_test_runs_the_core_with_injected_env() {
         use std::os::unix::fs::PermissionsExt;

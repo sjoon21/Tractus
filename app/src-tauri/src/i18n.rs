@@ -4,7 +4,6 @@
 
 use serde_json::Value;
 use std::collections::HashMap;
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
@@ -59,12 +58,21 @@ pub fn tv(ko: &str, vars: &[(&str, String)]) -> String {
 }
 
 /// `defaults read -g AppleLanguages`의 첫 항목 (예: `ko-KR`). 못 읽으면 None
+#[cfg(target_os = "macos")]
 pub fn system_lang() -> Option<String> {
-    let out = Command::new("/usr/bin/defaults").args(["read", "-g", "AppleLanguages"]).output().ok()?;
+    let out = std::process::Command::new("/usr/bin/defaults").args(["read", "-g", "AppleLanguages"]).output().ok()?;
     first_language(&String::from_utf8_lossy(&out.stdout))
 }
 
+/// macOS 밖: `LANG`이 있으면 그것, 없으면 None(한국어).
+/// shortcut: Windows 표시 언어(GetUserDefaultLocaleName)는 읽지 않는다, Windows 화면 작업(Stage 1) 때 정한다
+#[cfg(not(target_os = "macos"))]
+pub fn system_lang() -> Option<String> {
+    std::env::var("LANG").ok().filter(|l| !l.is_empty())
+}
+
 /// `(\n    "ko-KR",\n    en\n)` 모양에서 첫 항목. 따옴표는 있을 수도 없을 수도 있다
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn first_language(plist: &str) -> Option<String> {
     plist
         .lines()

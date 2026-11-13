@@ -14,6 +14,15 @@ use std::time::Duration;
 
 const STDERR_TAIL: usize = 20;
 
+/// 하위 프로세스는 모두 이것으로 만든다: Windows에서 콘솔 창이 뜨지 않게 CREATE_NO_WINDOW를 단다 (macOS는 `Command::new` 그대로)
+pub fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    #[allow(unused_mut)]
+    let mut cmd = Command::new(program);
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000); // CREATE_NO_WINDOW
+    cmd
+}
+
 /// 실행 파일을 띄우지 못했을 때의 오류. 첫 줄은 화면 문장 (WORDS.md), 둘째 줄은 OS 오류 문구('자세히').
 /// 녹음 헬퍼(tractus-rec)와 코어(tractus)를 이름으로 가른다
 pub fn cannot_run(program: &str, e: impl std::fmt::Display) -> String {
@@ -148,6 +157,7 @@ fn kill(child: &Mutex<Child>) {
 mod tests {
     use super::*;
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn forwards_json_lines_with_tag_then_exit() {
         let mut cmd = Command::new("/bin/sh");
@@ -162,6 +172,7 @@ mod tests {
         assert_eq!(got[2], json!({"event": "exit", "code": 1, "stderr": "got stop", "job": "J1"}));
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn kill_ends_with_exit_event() {
         let mut cmd = Command::new("/bin/sh");
@@ -176,6 +187,7 @@ mod tests {
         let _ = child.lock().unwrap().kill(); // 이미 끝난 뒤의 kill은 무해하다
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn stoppable_stops_on_stop_line() {
         let mut cmd = Command::new("/bin/sh");
@@ -190,6 +202,7 @@ mod tests {
         assert_eq!(got[1]["code"], 0);
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn stoppable_is_killed_after_timeout() {
         let mut cmd = Command::new("/bin/sh");

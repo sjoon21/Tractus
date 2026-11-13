@@ -9,7 +9,6 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::io::Read;
 use std::process::{Child, Output, Stdio};
@@ -158,7 +157,8 @@ pub fn load(dir: &Path, provider: &str) -> Option<String> {
     Some(raw.trim().to_string()).filter(|k| !k.is_empty())
 }
 
-/// 임시 파일(0600으로 만든다) → rename. 덮어쓸 때도 권한을 0600으로 맞춘다
+/// 임시 파일(0600으로 만든다) → rename. 덮어쓸 때도 권한을 0600으로 맞춘다.
+/// Windows는 사용자별 앱 설정 폴더(%APPDATA%)의 기본 ACL에 맡긴다. shortcut: ACL 좁히기·DPAPI 암호화는 하지 않는다, Windows 배포(Stage 1) 전에 정한다
 pub fn save(dir: &Path, provider: &str, raw: &str) -> Result<(), String> {
     let file = file_name(check_provider(provider)?);
     let key = validate(raw)?;
@@ -166,8 +166,13 @@ pub fn save(dir: &Path, provider: &str, raw: &str) -> Result<(), String> {
     fs::create_dir_all(dir).map_err(fail)?;
     let tmp = dir.join(format!("{file}.tmp"));
     let written = (|| {
-        let mut f = fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp)?;
-        f.set_permissions(fs::Permissions::from_mode(0o600))?; // 임시 파일이 남아 있었어도
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
+        let mut f = opts.open(&tmp)?;
+        #[cfg(unix)]
+        f.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600))?; // 임시 파일이 남아 있었어도
         f.write_all(key.as_bytes())?;
         f.sync_all()?;
         fs::rename(&tmp, dir.join(&file))
@@ -571,6 +576,7 @@ pub async fn llm_models(state: State<'_, AppState>, provider: Option<String>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::process::Command;
 
     const KEY: &str = "test-key-123";
@@ -581,7 +587,9 @@ mod tests {
         d
     }
 
+    #[cfg(unix)]
     fn mode(p: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
         fs::metadata(p).unwrap().permissions().mode() & 0o777
     }
 
@@ -647,8 +655,10 @@ mod tests {
         fs::remove_dir_all(&d).unwrap();
     }
 
+    #[cfg(unix)] // 0600 권한 검사: Windows는 권한 비트가 없다
     #[test]
     fn save_creates_0600_and_rewrite_keeps_it() {
+        use std::os::unix::fs::PermissionsExt;
         for provider in ["upstage", "gemini"] {
             let d = tmp(&format!("save-{provider}")).join("config"); // 폴더가 없어도 만든다
             let file = file_name(provider);
@@ -902,6 +912,7 @@ mod tests {
         assert_eq!(parse_models(list, "", true).models.len(), 5);
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn test_process_is_killed_after_the_deadline() {
         let spawn = |script: &str| Command::new("sh").args(["-c", script]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();

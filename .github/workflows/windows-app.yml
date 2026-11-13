@@ -1,0 +1,50 @@
+# Windows 지원 0단계 (docs/internal/windows-port.md §7.3): 앱(app/src-tauri)이 Windows에서 컴파일되고 단위 테스트가 도는지만 본다.
+# 설치본·서명·배포는 하지 않는다. Mac에서는 ring의 빌드 스크립트가 MSVC를 요구해 Windows용 확인을 할 수 없어 러너에서 돈다.
+# sh 스크립트·유닉스 신호를 쓰는 테스트는 #[cfg(unix)]로 빠진다.
+name: Windows app
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 1 * * 1" # 매주 월요일 10:00 KST
+  pull_request:
+    paths:
+      - "app/src-tauri/**"
+      - ".github/workflows/windows-app.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: 앱 (cargo check · cargo test, Windows)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: build (tsc + vite. cargo가 dist를 읽는다)
+        run: pnpm build
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - run: cargo check --locked --all-targets
+        working-directory: app/src-tauri
+      - run: cargo test --locked
+        working-directory: app/src-tauri

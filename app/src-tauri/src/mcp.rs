@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -100,7 +100,7 @@ impl McpClient {
 }
 
 fn connect(spec: Spawn, id: u64) -> Result<Conn, String> {
-    let mut cmd = Command::new(&spec.program);
+    let mut cmd = crate::procs::command(&spec.program);
     cmd.args(&spec.args).envs(spec.env.iter().cloned()).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit());
     if let Some(cwd) = &spec.cwd {
         cmd.current_dir(cwd);
@@ -175,6 +175,7 @@ mod tests {
     use super::*;
 
     /// 가짜 MCP 서버: 잡음 줄을 먼저 찍고, initialize 전 tools/call은 거부하고, "crash" 도구를 부르면 죽는다.
+    #[cfg(unix)] // /usr/bin/python3로 띄운다
     const FAKE: &str = r#"
 import json, sys
 print("not json noise", flush=True)
@@ -200,10 +201,12 @@ for line in sys.stdin:
             print(json.dumps({"jsonrpc": "2.0", "id": m["id"], "result": {"content": [{"type": "text", "text": json.dumps(out)}], "structuredContent": out, "isError": False}}), flush=True)
 "#;
 
+    #[cfg(unix)]
     fn client() -> McpClient {
         McpClient::new(Spawn { program: "/usr/bin/python3".into(), args: vec!["-c".into(), FAKE.into()], env: vec![], cwd: None })
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn handshake_then_tool_call() {
         let c = client();
@@ -212,11 +215,13 @@ for line in sys.stdin:
         assert_eq!(r["isError"], false);
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn jsonrpc_error_is_err() {
         assert_eq!(client().call_tool("bad", json!({})).unwrap_err(), "bad args");
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn restarts_after_crash() {
         let c = client();
@@ -227,6 +232,7 @@ for line in sys.stdin:
         assert_ne!(pid1, pid2);
     }
 
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn concurrent_calls_get_their_own_responses() {
         let c = Arc::new(client());
@@ -242,6 +248,7 @@ for line in sys.stdin:
     }
 
     /// 설정 저장(set_spawn)은 연결 중인 호출을 기다리지 않고, 다음 호출은 새 명령으로 띄운다.
+    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn set_spawn_does_not_wait_for_connect_and_takes_effect() {
         let slow = Spawn { program: "/usr/bin/python3".into(), args: vec!["-c".into(), format!("import time; time.sleep(2)\n{FAKE}")], env: vec![], cwd: None };
