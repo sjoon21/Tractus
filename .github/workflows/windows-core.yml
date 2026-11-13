@@ -34,6 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: 시간대 Asia/Seoul (conftest의 TZ는 Windows에서 먹지 않는다)
+        shell: pwsh # Git Bash는 /s를 경로로 바꾼다
         run: tzutil /s "Korea Standard Time"
       - uses: astral-sh/setup-uv@v7
         with:
