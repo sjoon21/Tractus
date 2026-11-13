@@ -578,6 +578,13 @@ impl TrayState {
         g.payload = next;
         g.sync(app);
         emit_popover(app, &g.payload);
+        crate::mini::sync(app, g.payload.phase, popover_state(&g.payload, now_ms()));
+    }
+
+    /// 메인 창의 초점·녹음 미니 창 설정이 바뀌었다: 미니 창을 다시 맞춘다 (상태는 그대로)
+    pub fn sync_mini(&self, app: &AppHandle) {
+        let g = self.lock();
+        crate::mini::sync(app, g.payload.phase, popover_state(&g.payload, now_ms()));
     }
 
     /// 설정대로 아이콘을 만들거나 없앤다 (다시 시작하지 않아도 된다). 만들지 못하면 기록만 하고 계속한다
@@ -610,6 +617,7 @@ impl TrayState {
     /// 화면 언어가 바뀌었다: 메뉴를 새 언어로 다시 그린다.
     /// 팝오버 창은 없앤다: 문구가 창을 불러올 때 정해지므로(`trayMain.tsx`) 다음 클릭에 새 언어로 다시 만든다
     pub fn relabel(&self, app: &AppHandle) {
+        crate::mini::relabel(app);
         if let Some(w) = app.get_webview_window(POPOVER_WINDOW) {
             let _ = w.destroy();
         }
@@ -681,6 +689,15 @@ pub fn tray_popover_action(app: AppHandle, id: String) {
         hide_popover(&app);
     }
     on_menu_event(&app, &id);
+}
+
+/// 설정 화면의 `녹음 중 작은 창 띄우기`. 바로 적용하고 그 키만 저장한다
+#[tauri::command]
+pub fn set_mini_recorder(app: AppHandle, state: State<'_, AppState>, tray: State<'_, TrayState>, enabled: bool) -> Result<(), String> {
+    crate::patch_settings(&state.config_path, |raw| crate::merge_flag(raw, "mini_recorder", enabled))?;
+    state.settings.lock().unwrap().mini_recorder = enabled;
+    tray.sync_mini(&app);
+    Ok(())
 }
 
 /// 팝오버에서 Esc를 눌렀다: 다른 숨기기와 같은 길로 숨긴다

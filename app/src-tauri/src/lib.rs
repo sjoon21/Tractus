@@ -5,6 +5,7 @@
 mod ask;
 mod attach;
 mod calendar;
+mod mini;
 mod deferred;
 mod edits;
 mod glossary;
@@ -285,6 +286,8 @@ pub fn run() {
             }
             // 메뉴 막대 팝오버는 다른 곳을 누르면 닫힌다
             tauri::WindowEvent::Focused(false) if window.label() == tray::POPOVER_WINDOW => tray::popover_blurred(window.app_handle()),
+            // 메인 창을 떠나면 녹음 미니 창이 뜨고, 돌아오면 숨는다 (mini.rs)
+            tauri::WindowEvent::Focused(_) if window.label() == "main" => window.app_handle().state::<tray::TrayState>().sync_mini(window.app_handle()),
             _ => {}
         })
         // 회의 오디오: media://localhost/<경로> (media.rs). 파일 읽기는 UI 스레드 밖에서
@@ -335,6 +338,7 @@ pub fn run() {
             tray::tray_hides_on_close,
             tray::tray_show_if_hidden,
             tray::set_tray_prefs,
+            tray::set_mini_recorder,
             deferred::set_after_record,
             edits::note_sample,
             obsidian::set_obsidian,

@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "mini-recorder",
+  "description": "녹음 미니 창(mini.rs): 앱 명령, 이벤트 수신(상태·녹음 소리 크기), 창 끌기(data-tauri-drag-region), 창 테마만 허용한다. 보이기·숨기기는 Rust가 한다",
+  "windows": [
+    "mini"
+  ],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-theme"
+  ]
+}
