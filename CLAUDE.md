@@ -233,6 +233,7 @@ scripts/check_words.sh                              # WORDS.md §5 금지어 검
 uv run python scripts/check_licenses.py             # copyleft(GPL·LGPL·AGPL) 의존성 검사: Python·npm·Rust
 scripts/demo/make_demo.sh [--lang en]              # README 데모 GIF(docs/images/demo.gif, 영어는 demo-en.gif) 다시 만들기 (pnpm dev 미리보기 + Chrome + ffmpeg, 가짜 데이터만)
 scripts/screenshots/make_shots.sh [--lang en]       # README 스크린샷(docs/images/*.png, 영어는 docs/images/en/) 다시 만들기
+scripts/e2e/smoke.sh [스크린샷 폴더]                 # 미리보기 e2e 스모크 (pnpm dev 미리보기 + Chrome, 한국어·영어 흐름, 오류 0개). CI: .github/workflows/e2e.yml
 scripts/site.sh [_site]                             # 소개 사이트(site/ + docs/images 스크린샷) 모으기. 배포는 .github/workflows/pages.yml → https://sjoon21.github.io/Tractus/
 uv run pytest -m slow                               # 실제 모델 테스트
 uv run pytest -m llm                                # 실제 LLM API 스모크 (키 있는 공급자만)
