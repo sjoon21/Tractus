@@ -140,6 +140,21 @@ fn open_release_notes(version: String) -> Result<(), String> {
     tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string())
 }
 
+/// 클립보드에 글 쓰기. WKWebView의 navigator.clipboard는 창이 막 활성화된 클릭 등에서 NotAllowedError를 내므로 화면이 이것으로 물러난다.
+/// 앱 환경에는 LANG이 없어 pbcopy가 한글을 깨뜨린다: UTF-8을 명시한다
+#[tauri::command]
+fn copy_text(text: String) -> Result<(), String> {
+    use std::io::Write;
+    let mut child = std::process::Command::new("/usr/bin/pbcopy")
+        .env("LANG", "en_US.UTF-8")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    child.stdin.take().ok_or("stdin")?.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+    let status = child.wait().map_err(|e| e.to_string())?;
+    if status.success() { Ok(()) } else { Err(format!("pbcopy: {status}")) }
+}
+
 #[tauri::command]
 async fn list_meetings(state: State<'_, AppState>) -> Result<Vec<meetings::MeetingInfo>, String> {
     let home = state.settings().home();
@@ -323,6 +338,7 @@ pub fn run() {
             settings::set_ui_lang,
             paths::update_available,
             open_release_notes,
+            copy_text,
             settings::save_settings,
             settings::set_rec_mode,
             settings::set_asr_engine,
