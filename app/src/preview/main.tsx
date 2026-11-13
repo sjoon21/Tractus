@@ -397,6 +397,8 @@ const handlers: Record<string, (a: T) => unknown> = {
   set_asr_engine: ({ id }: T) => void Object.assign(settings, { asr_engine: id ?? "" }),
   templates_list: () => (templates as T).templates,
   llm_settings: () => llm,
+  mic_permission: () => "undetermined",
+  open_privacy: () => null,
   llm_config: () => ({ provider: "upstage", model: "solar-pro2", host: "api.upstage.ai", remote: true, key_present: true }),
   llm_key_status: (a) => ({ saved: a.provider === "upstage" || a.provider === "claude" }),
   voices_list: () => ({ people: [], needs_reenroll: false, model_present: true }),

@@ -18,6 +18,7 @@ mod models;
 mod obsidian;
 mod organize;
 mod paths;
+mod permissions;
 mod procs;
 mod quit;
 mod recording;
@@ -346,6 +347,8 @@ pub fn run() {
             calendar::calendar_next,
             calendar::calendar_week,
             calendar::calendar_privacy,
+            permissions::mic_permission,
+            permissions::open_privacy,
             deferred::recording_finish,
             deferred::convert_note,
             models::models_list,

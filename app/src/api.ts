@@ -376,6 +376,10 @@ export const api = {
   setCheckupDone: (done: boolean) => invoke<void>("set_checkup_done", { done }),
   /** 메뉴 막대 아이콘 설정 두 개를 바로 적용하고 저장한다 (다시 시작하지 않아도 된다) */
   setTrayPrefs: (trayEnabled: boolean, keepInTray: boolean) => invoke<void>("set_tray_prefs", { trayEnabled, keepInTray }),
+  /** 마이크 권한 (permissions.rs). request면 처음일 때 macOS가 묻는다 */
+  micPermission: (request = false) => invoke<"granted" | "denied" | "undetermined">("mic_permission", { request }),
+  /** 시스템 설정의 마이크(`mic`)·화면 및 시스템 오디오 녹음(`audio`) 칸 */
+  openPrivacy: (pane: "mic" | "audio") => invoke<void>("open_privacy", { pane }),
   /** 메뉴 막대에 보일 상태 (tray.ts createTraySender가 같은 값을 다시 보내지 않게 거른다) */
   trayUpdate: (payload: TrayWire) => invoke<void>("tray_update", { payload }),
   /** 지금 창을 닫으면 숨기기만 하는가 (메뉴 막대에 남기기) */

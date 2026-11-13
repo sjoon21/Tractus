@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { DoctorReport } from "./caps";
-import { BREW_FFMPEG, checkupHeadline, checkupSections, macosAtLeast, type CheckupSection } from "./checkupRows";
+import { BREW_FFMPEG, checkupHeadline, checkupSections, macosAtLeast, permissionRows, type CheckupSection } from "./checkupRows";
 import type { ModelRow, ModelsList } from "./models";
 
 const tool = (found: boolean) => ({ found, path: found ? "/usr/bin/x" : null, version: found ? "7.1" : null });
@@ -161,5 +161,20 @@ describe("checkupHeadline", () => {
   });
   test("문제가 없으면 모두 괜찮다고 한다", () => {
     expect(checkupHeadline(checkupSections({ report: report(), models: list("vad", "asr-std", "diarizer", "aligner", "embedding", "voices", "fluid"), keySaved: true }))).toBe("모두 괜찮습니다");
+  });
+});
+
+describe("권한 줄", () => {
+  test("마이크는 실제 상태에 따라 고칠 길이 다르다", () => {
+    const mic = (m: Parameters<typeof permissionRows>[0]) => permissionRows(m)[0];
+    expect(mic("granted")).toMatchObject({ status: "ok" });
+    expect(mic("granted").fix).toBeUndefined();
+    expect(mic("denied")).toMatchObject({ status: "blocked", fix: { kind: "privacy-mic" } });
+    expect(mic("undetermined")).toMatchObject({ status: "info", fix: { kind: "mic-request" } });
+    expect(mic(null)).toMatchObject({ status: "info", fix: { kind: "privacy-mic" } });
+    expect(permissionRows("granted")[1]).toMatchObject({ id: "system-audio", fix: { kind: "privacy-audio" } });
+  });
+  test("거절된 마이크는 점검 제목에 사용할 수 없는 항목으로 센다", () => {
+    expect(checkupHeadline([{ id: "permissions", title: "", rows: permissionRows("denied") }])).toContain("1");
   });
 });
