@@ -192,15 +192,24 @@ function modelRows(report: DoctorReport | null, models: ModelsList | null): Chec
   return rows;
 }
 
-const PERMISSION_ROWS: CheckupRow[] = [
-  { id: "mic", label: t("마이크"), status: "info", detail: t("처음 녹음할 때 macOS가 허락을 묻습니다. 앱이 미리 확인할 수는 없습니다. 거절했다면 시스템 설정 > 개인정보 보호 및 보안 > 마이크에서 Tractus를 켜세요.") },
-  {
-    id: "system-audio",
-    label: t("시스템 오디오"),
-    status: "info",
-    detail: t("화상·하이브리드 녹음에서 상대방 소리를 받을 때 처음 한 번 묻습니다. 거절했다면 시스템 설정 > 개인정보 보호 및 보안 > 화면 및 시스템 오디오 녹음에서 켜세요."),
-  },
-];
+export type MicPermission = "granted" | "denied" | "undetermined";
+export const OPEN_PRIVACY = t("시스템 설정 열기");
+
+/** 마이크는 녹음 프로그램이 읽은 실제 상태(permissions.rs), 시스템 오디오는 미리 알 수 없어 안내만. mic가 null이면 읽지 못했다 */
+export function permissionRows(mic: MicPermission | null): CheckupRow[] {
+  const micRow: CheckupRow =
+    mic === "granted"
+      ? { id: "mic", label: t("마이크"), status: "ok", detail: t("허락되어 있습니다") }
+      : mic === "denied"
+        ? { id: "mic", label: t("마이크"), status: "blocked", detail: t("마이크 권한이 꺼져 있어 녹음할 수 없습니다. 시스템 설정 > 개인정보 보호 및 보안 > 마이크에서 Tractus를 켜세요."), fix: { kind: "privacy-mic", label: OPEN_PRIVACY } }
+        : mic === "undetermined"
+          ? { id: "mic", label: t("마이크"), status: "info", detail: t("아직 묻지 않았습니다. 지금 허락해 두면 첫 녹음이 바로 시작됩니다."), fix: { kind: "mic-request", label: t("지금 허락하기") } }
+          : { id: "mic", label: t("마이크"), status: "info", detail: t("처음 녹음할 때 macOS가 허락을 묻습니다. 거절했다면 시스템 설정 > 개인정보 보호 및 보안 > 마이크에서 Tractus를 켜세요."), fix: { kind: "privacy-mic", label: OPEN_PRIVACY } };
+  return [
+    micRow,
+    { id: "system-audio", label: t("시스템 오디오"), status: "info", detail: t("화상·하이브리드 녹음에서 상대방 소리를 받을 때 처음 한 번 묻습니다. 거절했다면 시스템 설정 > 개인정보 보호 및 보안 > 화면 및 시스템 오디오 녹음에서 켜세요."), fix: { kind: "privacy-audio", label: OPEN_PRIVACY } },
+  ];
+}
 
 function aiRows(keySaved: boolean | null): CheckupRow[] {
   if (keySaved === null) return [{ id: "key", label: t("API 키"), status: "info", detail: t("확인 중…") }];
@@ -211,14 +220,14 @@ function aiRows(keySaved: boolean | null): CheckupRow[] {
   ];
 }
 
-export function checkupSections(o: { report: DoctorReport | null; models: ModelsList | null; keySaved: boolean | null }): CheckupSection[] {
+export function checkupSections(o: { report: DoctorReport | null; models: ModelsList | null; keySaved: boolean | null; mic?: MicPermission | null }): CheckupSection[] {
   const data = dataRows(o.report);
   return [
     { id: "system", title: t("시스템"), rows: systemRows(o.report, o.models) },
     { id: "tools", title: t("도구"), rows: toolRows(o.report) },
     ...(data.length > 0 ? [{ id: "data" as const, title: t("저장 위치"), rows: data }] : []),
     { id: "models", title: t("모델"), rows: modelRows(o.report, o.models) },
-    { id: "permissions", title: t("권한 안내"), rows: PERMISSION_ROWS },
+    { id: "permissions", title: t("권한"), rows: permissionRows(o.mic ?? null) },
     { id: "ai", title: t("AI 요약·질문"), rows: aiRows(o.keySaved) },
   ];
 }

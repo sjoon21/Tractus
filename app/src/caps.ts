@@ -52,7 +52,7 @@ export interface DoctorReport {
 }
 
 /** pick-*: 파일·폴더를 골라 설정에 저장 / auto-*: 직접 지정을 지우고 자동으로. 시작 점검 화면이 직접 처리한다 (pathFix.ts) */
-export type FixKind = "models" | "checkup" | "settings" | "pick-tractus" | "auto-tractus" | "pick-rec" | "auto-rec" | "pick-home";
+export type FixKind = "models" | "checkup" | "settings" | "pick-tractus" | "auto-tractus" | "pick-rec" | "auto-rec" | "pick-home" | "mic-request" | "privacy-mic" | "privacy-audio";
 export interface Fix {
   kind: FixKind;
   label: string;

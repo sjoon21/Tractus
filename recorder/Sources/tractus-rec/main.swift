@@ -8,6 +8,7 @@ let usage = """
 사용법:
   tractus-rec record --out <dir> [--no-mic] [--no-system] [--echo-cancel] [--fake]
   tractus-rec check
+  tractus-rec mic-permission [--request]
   tractus-rec mic-apps
   tractus-rec calendar access|request|list|next [--ahead 분] [--exclude 캘린더ID]…
   tractus-rec calendar range --from YYYY-MM-DD [--days N] [--exclude 캘린더ID]…
@@ -88,10 +89,24 @@ func runCheck() -> Never {
     exit(0)
 }
 
+/// 마이크 권한만 본다 (시작 점검, 앱 permissions.rs). --request면 처음일 때 macOS가 묻는다(앱의 하위 프로세스라 Tractus 이름으로 뜬다)
+func runMicPermission(_ args: [String]) -> Never {
+    if args.contains("--request"), AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined { _ = micAllowed() }
+    let mic: String
+    switch AVCaptureDevice.authorizationStatus(for: .audio) {
+    case .authorized: mic = "granted"
+    case .notDetermined: mic = "undetermined"
+    default: mic = "denied"
+    }
+    emit(["mic": mic])
+    exit(0)
+}
+
 let args = Array(CommandLine.arguments.dropFirst())
 switch args.first {
 case "record": runRecord(Array(args.dropFirst()))
 case "check": runCheck()
+case "mic-permission": runMicPermission(Array(args.dropFirst()))
 case "mic-apps": runMicApps()
 case "calendar": runCalendar(Array(args.dropFirst()))
 default:

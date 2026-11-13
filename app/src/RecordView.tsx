@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import type { JobState, LiveState, RecState } from "./api";
+import { api, type JobState, type LiveState, type RecState } from "./api";
+import { OPEN_PRIVACY } from "./checkupRows";
 import { RECORD_LABEL } from "./attach";
 import { ErrorDetail } from "./ErrorDetail";
 import { t } from "./i18n";
@@ -77,11 +78,20 @@ export function RecordView({
           )}
         </header>
 
-        {rec.warnings.map((w) => (
-          <p key={w.code} className={NOTICE} role="alert">
-            {warningText(w)}
-          </p>
-        ))}
+        {rec.warnings.map((w) => {
+          // 권한 경고는 그 자리에서 시스템 설정을 연다 (permissions.rs)
+          const pane = w.code === "mic_denied" ? "mic" : w.code === "system_zero" ? "audio" : null;
+          return (
+            <p key={w.code} className={cn(NOTICE, pane && "flex items-center gap-3")} role="alert">
+              <span className="min-w-0 flex-1">{warningText(w)}</span>
+              {pane && (
+                <Button size="sm" variant="outline" className="shrink-0" onClick={() => void api.openPrivacy(pane).catch(() => {})}>
+                  {OPEN_PRIVACY}
+                </Button>
+              )}
+            </p>
+          );
+        })}
         {rec.error && (
           <p className={cn(NOTICE, "border-destructive/30 bg-destructive/8 whitespace-pre-wrap text-destructive")} role="alert">
             {rec.error}
