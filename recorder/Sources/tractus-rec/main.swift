@@ -9,6 +9,7 @@ let usage = """
   tractus-rec record --out <dir> [--no-mic] [--no-system] [--echo-cancel] [--fake]
   tractus-rec check
   tractus-rec mic-permission [--request]
+  tractus-rec mic-apps
   tractus-rec calendar access|request|list|next [--ahead 분] [--exclude 캘린더ID]…
   tractus-rec calendar range --from YYYY-MM-DD [--days N] [--exclude 캘린더ID]…
 """
@@ -106,6 +107,7 @@ switch args.first {
 case "record": runRecord(Array(args.dropFirst()))
 case "check": runCheck()
 case "mic-permission": runMicPermission(Array(args.dropFirst()))
+case "mic-apps": runMicApps()
 case "calendar": runCalendar(Array(args.dropFirst()))
 default:
     fputs(usage + "\n", stderr)

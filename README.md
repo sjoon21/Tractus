@@ -130,6 +130,72 @@ The plugin bundles the MCP tools (search, transcripts, summaries, to-dos), a mee
 
 Without any AI key you can still record, transcribe, detect speakers, search and export. Details: [How it works](docs/en/how-it-works.md).
 
+## FAQ
+
+<details><summary><strong>macOS says the developer can't be verified. Is that safe?</strong></summary>
+
+<br>
+
+> Tractus is a personal open-source project and isn't signed or notarized by Apple (that needs a paid developer account). The DMG on Releases is built from this repository, and each release lists its SHA-256 checksum. To open it the first time, go to System Settings › Privacy & Security and click `Open Anyway`, or run `xattr -dr com.apple.quarantine /Applications/Tractus.app`. In-app updates are signed with the project's own update key and checked before installing.
+
+</details>
+
+<details><summary><strong>Does it work offline, or without an AI key?</strong></summary>
+
+<br>
+
+> Yes. Recording, transcription, speaker detection, word sync, search and export run on your Mac and work offline once the models are downloaded. Only summaries, minutes, enhanced notes and Ask AI need an AI service, and you can point those at a model running on your own Mac (any OpenAI-compatible server such as Ollama or LM Studio).
+
+</details>
+
+<details><summary><strong>How much does it download, and how much memory does it need?</strong></summary>
+
+<br>
+
+> The lite setup is about 1.2 GB of models and runs on 8 GB of memory. The standard setup (best transcription, speakers, word sync, smart search) is about 4.6 GB and wants 16 GB of memory. Everything is about 5.7 GB. The app itself is a 166 MB DMG. You can start with one transcription engine and add the rest later from the Models screen.
+
+</details>
+
+<details><summary><strong>Does Tractus join my meeting?</strong></summary>
+
+<br>
+
+> No bot joins. Tractus records your microphone, and for video calls also the sound playing on your Mac (system audio). Please let the other people know you're recording.
+
+</details>
+
+<details><summary><strong>Where are my notes and recordings?</strong></summary>
+
+<br>
+
+> In `~/Tractus/meetings/`, one folder per note: compressed audio, `transcript.json`, Markdown, subtitles and summaries. Models live in the app's settings folder (`~/Library/Application Support/dev.tractus.app/models`) unless you choose another place. API keys are kept in per-service files there with `0600` permissions, never in your notes folder.
+
+</details>
+
+<details><summary><strong>What can AI agents (MCP) see and do?</strong></summary>
+
+<br>
+
+> The MCP server and Claude Code plugin run on your Mac and read only your notes folder. Six tools only read (status, search, list, transcript, summaries, to-dos); one, `save_summary`, writes a summary after validating it. The MCP server never calls an AI model itself and never gets your API keys. Whatever the agent reads may be sent to that agent's own AI service.
+
+</details>
+
+<details><summary><strong>Which languages does it understand?</strong></summary>
+
+<br>
+
+> The transcription engine detects the language by itself and handles Korean, English and mixed speech well; it also covers Chinese, Japanese and other languages Qwen3-ASR supports. Add product names and people's names to the Dictionary to improve recognition. The app's screens are in English and Korean.
+
+</details>
+
+<details><summary><strong>Windows or Intel Macs?</strong></summary>
+
+<br>
+
+> Not yet. On-device models run on Apple Silicon (MLX). Windows support has started and will come in stages; follow the [roadmap](docs/roadmap.md).
+
+</details>
+
 ## Documentation
 
 User guides are in English; the developer docs (CLI, models, benchmark, architecture) are in Korean for now.

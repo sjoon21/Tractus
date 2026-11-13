@@ -82,7 +82,7 @@ export function Checkup({ onClose }: { onClose: () => void }) {
     caps.fixAction(f);
   };
   const copy = (row: CheckupRow) =>
-    navigator.clipboard.writeText(row.copy ?? "").then(
+    api.copyText(row.copy ?? "").then(
       () => setCopied({ id: row.id, ok: true }),
       () => setCopied({ id: row.id, ok: false }),
     );
