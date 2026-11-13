@@ -445,7 +445,7 @@ mod tests {
         let env = s.child_env();
         assert!(env.iter().any(|(k, v)| k == "TRACTUS_HOME" && !v.starts_with('~')));
         assert!(!env.iter().any(|(k, _)| k == "TRACTUS_MODELS_DIR"));
-        assert!(env.iter().any(|(k, v)| k == "TRACTUS_REC_BIN" && v.ends_with("/recorder/.build/release/tractus-rec")));
+        assert!(env.iter().any(|(k, v)| k == "TRACTUS_REC_BIN" && v.ends_with(if cfg!(windows) { "recorder/win/target/release/tractus-rec.exe" } else { "/recorder/.build/release/tractus-rec" })));
         // typer의 rich 오류 상자 대신 평문 "Error: …" 한 줄 (앱은 stderr 마지막 줄을 보여 준다)
         assert!(env.iter().any(|(k, v)| k == "TYPER_USE_RICH" && v == "0"));
         // 저장소 .venv 실행 파일이면 저장소 루트에서 실행 (.env.local을 읽도록)
