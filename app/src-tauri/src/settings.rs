@@ -249,7 +249,8 @@ impl Settings {
     /// tractus CLI는 현재 폴더의 .env/.env.local(API 키)을 읽는다. 저장소 .venv의 실행 파일이면 저장소 루트에서 실행한다.
     pub(crate) fn tractus_cwd(&self) -> PathBuf {
         let bin = self.tractus_path();
-        match bin.parent().filter(|p| p.ends_with(".venv/bin")).and_then(Path::parent).and_then(Path::parent) {
+        // Windows venv는 실행 파일을 Scripts/에 둔다
+        match bin.parent().filter(|p| p.ends_with(".venv/bin") || p.ends_with(".venv/Scripts")).and_then(Path::parent).and_then(Path::parent) {
             Some(repo) => repo.to_path_buf(),
             None => {
                 // 깨끗한 Mac에는 데이터 폴더가 아직 없다: 없는 폴더에서는 실행이 ENOENT로 실패하므로 먼저 만든다 (만들지 못하면 그대로 두고 실행이 오류를 말한다)
