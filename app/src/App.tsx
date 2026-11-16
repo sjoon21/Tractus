@@ -524,7 +524,7 @@ export function App() {
   };
   /** event: 홈의 `곧 시작하는 일정` 카드에서 시작한 녹음 (일정 제목·참석자를 녹음 폴더에 남긴다) */
   /** recMode: 통화 감지에서 시작한 녹음은 상대 목소리가 들어가게 언제나 `화상·하이브리드` (calls.rs) */
-  /** 일정에 준비한 메모(글만 있는 노트)가 있으면 그 노트에 녹음을 추가한다 (week.eventAction: 이번 주 띠·곧 시작하는 일정 카드·통화 감지가 모두 여기를 지난다). 변환 중이라 추가할 수 없으면 전처럼 새 노트로 녹음한다 */
+  /** 일정에 준비한 메모(글만 있는 노트)가 있으면 그 노트에 녹음을 추가한다 (week.eventAction: 이번 주 띠·곧 시작하는 일정 카드·통화 감지가 모두 여기를 지난다). 변환 중이거나 그 노트를 다른 작업이 쓰는 중이라 추가할 수 없으면 전처럼 새 노트로 녹음한다 (startAttachRecord) */
   const onRecordButton = (event?: CalendarEvent, recMode: RecMode = mode) => {
     if (!recording && !recordBlocked && !recordGate.ok) return notifyBlocked(recordGate); // 새 노트 메뉴의 `녹음 시작`
     const act = event ? eventAction(event, meetings) : null;
@@ -592,8 +592,13 @@ export function App() {
       dispatchAttach({ type: "record", target: t });
       resetRec();
       setUnconverted(false);
-      void startRec(recMode, t.id, event);
       void go({ kind: "record" });
+      // 일정의 준비한 메모에 추가하지 못하면(요약·질문이 그 노트를 쓰는 중 등) 녹음을 놓치지 않게 전처럼 새 노트로 녹음한다
+      if (!(await startRec(recMode, t.id, event)) && event) {
+        dispatchAttach({ type: "abort" });
+        resetRec();
+        void startRec(recMode, null, event);
+      }
     },
     [recording, transcribing, recordGate, notifyBlocked, mode, resetRec, startRec, go],
   );

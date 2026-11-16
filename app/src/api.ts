@@ -543,8 +543,10 @@ export function useRecorder(onStopped: (dir: string, seconds: number) => void) {
     setLive(IDLE_LIVE);
     try {
       await invoke<string>("rec_start", { flags: recFlags(mode), target: target ?? null, event: event ?? null });
+      return true;
     } catch (e) {
       setRec({ ...IDLE_REC, mode, phase: "error", error: errText(e) });
+      return false;
     }
   }, []);
 

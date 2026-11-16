@@ -37,12 +37,15 @@ describe("일정과 노트 잇기", () => {
   const standup = { ...ev("스탠드업", "2026-11-03T09:30:00+09:00", "2026-11-03T10:00:00+09:00"), id: "E1" };
   const withEvent = (id: string, event: MeetingInfo["event"]) => ({ ...note(id, "2026-11-03T09:31:00"), event }) as MeetingInfo;
 
-  test("시작 시각이 같고 일정 ID가 같으면 (ID가 없는 옛 노트는 제목이 같으면) 이어진다", () => {
+  test("일정 ID가 같고 시작한 날이 같으면 (ID가 없는 옛 노트는 제목과 시작 시각이 같으면) 이어진다", () => {
     expect(linked(standup, withEvent("a", { id: "E1", title: "이름을 바꿈", start: "2026-11-03T00:30:00Z" }))).toBe(true); // 같은 순간이면 표기가 달라도
     expect(linked(standup, withEvent("b", { title: "스탠드업", start: "2026-11-03T09:30:00+09:00" }))).toBe(true);
     expect(linked(standup, withEvent("c", { id: "E2", title: "스탠드업", start: "2026-11-03T09:30:00+09:00" }))).toBe(false); // 다른 일정
     expect(linked(standup, withEvent("d", { id: "E1", title: "스탠드업", start: "2026-11-10T09:30:00+09:00" }))).toBe(false); // 반복 일정의 다른 회차
     expect(linked(standup, note("e", "2026-11-03T09:31:00"))).toBe(false);
+    // 메모를 준비한 뒤 같은 날 안에서 시각이 옮겨져도 잇는다 (ID 없는 옛 노트는 시각이 같아야)
+    expect(linked(standup, withEvent("f", { id: "E1", title: "스탠드업", start: "2026-11-03T09:00:00+09:00" }))).toBe(true);
+    expect(linked(standup, withEvent("g", { title: "스탠드업", start: "2026-11-03T09:00:00+09:00" }))).toBe(false);
   });
 
   test("이어진 노트는 일정 아래로 가고 그날 노트 목록에서는 빠진다 (개수는 그대로)", () => {
@@ -74,6 +77,10 @@ describe("일정으로 할 일 (메모 준비 → 그 노트에 녹음)", () => 
   });
   test("글만 있는 노트가 이어져 있으면 그 노트에 녹음: 여럿이면 가장 최근에 만든 것", () => {
     expect(eventAction(standup, [memo("a", "2026-11-02T10:00:00"), memo("b", "2026-11-02T18:00:00"), recorded("r", "2026-11-03T09:31:00"), other])).toMatchObject({ kind: "record-into", note: { id: "b" } });
+  });
+  test("메모를 준비한 뒤 일정이 같은 날 다른 시각으로 옮겨져도 그 노트에 녹음", () => {
+    const moved = { ...standup, start: "2026-11-03T10:30:00+09:00", end: "2026-11-03T11:00:00+09:00" };
+    expect(eventAction(moved, [memo("a", "2026-11-02T10:00:00")])).toMatchObject({ kind: "record-into", note: { id: "a" } });
   });
   test("이어진 노트가 모두 녹음 노트면 전처럼 새 노트", () => {
     expect(eventAction(standup, [recorded("r", "2026-11-03T09:31:00")])).toEqual({ kind: "record-new" });

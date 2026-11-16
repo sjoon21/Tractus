@@ -29,11 +29,13 @@ export type DayEvent = WeekEvent & { notes: MeetingInfo[] };
 /** notes: 일정에 이어지지 않은 그날의 노트 */
 export type Day = { events: DayEvent[]; notes: MeetingInfo[] };
 
-/** 이 일정으로 시작한 노트인가: 시작 시각이 같고, 일정 ID가 같다 (ID를 남기기 전의 노트는 제목이 같다) */
+/** 이 일정으로 시작한(또는 메모를 준비한) 노트인가: 일정 ID가 같고 시작한 날이 같다(미리 준비한 뒤 같은 날 안에서 시각이 옮겨져도 잇는다.
+ * 반복 일정은 ID를 함께 쓰므로 날로 가른다). ID를 남기기 전의 노트는 제목과 시작 시각이 같다 */
 export function linked(ev: WeekEvent, n: Pick<MeetingInfo, "event">): boolean {
   const e = n.event;
-  if (!e || new Date(e.start).getTime() !== new Date(ev.start).getTime()) return false;
-  return e.id ? e.id === ev.id : e.title === ev.title;
+  if (!e) return false;
+  if (e.id) return e.id === ev.id && ymd(new Date(e.start)) === ymd(new Date(ev.start));
+  return e.title === ev.title && new Date(e.start).getTime() === new Date(ev.start).getTime();
 }
 
 /** 일정이 걸친 날들 (시작 날부터 끝나기 직전까지. 종일 일정의 끝은 다음 날 0시라 그날은 빼진다) */
