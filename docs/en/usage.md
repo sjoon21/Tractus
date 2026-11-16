@@ -46,7 +46,7 @@ How to create, refine and find notes in the app. Terminal commands are in [CLI](
   - To get teams as subjects, add the team to the attendee's name (e.g. `Daniel Kim (Payments)`), or name the speaker after the team.
   - Before the meeting ends, say the to-dos with owners and due dates out loud once; the minutes keep only what was said. Check names, dates and numbers before you send them.
   - Adding your field's terms to `Vocabulary` improves both transcription and how terms are written in the minutes.
-- **Ask AI:** `Ask AI` on the right answers from this note; ⌘J (`AI assistant` in the sidebar) searches all your notes. Click a time in an answer to jump to the supporting line. If there's nothing to back the answer, it says `No supporting lines`. Before sending, Tractus shows which AI service will receive what.
+- **Ask AI:** `Ask AI` on the right answers from this note; ⌘J (`AI assistant` in the sidebar) searches all your notes. Click a time in an answer to jump to the supporting line. If there's nothing to back the answer, it says `No supporting lines`. In ⌘J, `Folder to ask about` next to the date range limits the search to one folder (including its subfolders), and a narrowed answer shows `Searched:` below it. Before sending, Tractus shows which AI service will receive what.
 
 </details>
 
@@ -61,7 +61,7 @@ How to create, refine and find notes in the app. Terminal commands are in [CLI](
 - **Record from a calendar event:** `Settings` › `Calendar` › `Connect calendar`. Events in progress or starting within 15 minutes appear as cards on Home; click `Record this event` to record with the event title. The event's attendee names help recognition for that recording, and you can pick them with a button when naming speakers. Other accounts such as Google show up too, as long as they're added to macOS Calendar.
 - **This week:** the `This week` strip on Home shows each day from Monday to Sunday with dots for events and the notes made that day. Click a day for its list of events and notes; events today that haven't ended can be recorded from there. For an event that hasn't ended, `Prepare memo` lets you write a memo in advance; recording that event then adds the recording to that memo. Use ‹ › to see other weeks. Without a connected calendar it shows notes only.
 - **Send to Obsidian:** `Export` › `Obsidian`. Choose your vault folder once, and each note goes into the vault's `Tractus` folder as a single Markdown file (mirroring your Tractus folder structure). It includes the enhanced note, summaries (to-dos as checkboxes) and the transcript, collapsed. Sending again updates the same file. If the file was edited in Obsidian, Tractus asks before overwriting it. To include audio, turn it on in `Settings` › `Obsidian`.
-- **Delete:** `Delete` in the note header moves the note's folder to the macOS Trash. There's no permanent delete.
+- **Delete:** `Delete` in the note header, `…` › `Delete…` on a note row in the sidebar, or the `Delete` button that appears when you swipe a row left with two fingers on the trackpad. Every way asks first and warns that the note's memos, summaries and question history go with it. Deleting moves the note's folder to the macOS Trash; there's no permanent delete.
 
 </details>
 
