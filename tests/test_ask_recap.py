@@ -140,3 +140,53 @@ def test_cli_ask_recap_question_answers_from_summaries(cli_env, monkeypatch):
     assert "[노트 요약]" in client.calls[0]["messages"][-1]["content"]
     assert all("segment_id" in s for s in ev[1]["sources"])
     assert ev[-1]["citations"][0]["segment_id"] == "s0011"
+
+
+# ── 폴더·태그 범위 ────────────────────────────────────────────────────
+
+
+def test_followup_search_keeps_the_folder_filter():
+    calls = []
+    idx = type("Idx", (), {"search": lambda self, q, limit, **kw: calls.append(kw) or type("R", (), {"hits": []})()})()
+    qa._hits(idx, "그건 언제까지야?", [{"role": "user", "content": "예산안 제출"}], meeting_ids={BUDGET})
+    assert len(calls) == 2 and all(c["meeting_ids"] == {BUDGET} for c in calls)  # 단독 질문 + 직전 질문을 보탠 검색 둘 다
+
+
+def test_cli_ask_folder_scope_narrows_search_and_recap(cli_env, monkeypatch):
+    from tractus import organize
+
+    work = organize.create_folder(cli_env, "업무")
+    team = organize.create_folder(cli_env, "팀", parent=work["id"])
+    organize.set_note_meta(cli_env, note_dir(cli_env, BUDGET), {"folder": team["id"]})  # 하위 폴더의 노트도 들어간다
+    organize.set_note_meta(cli_env, note_dir(cli_env, MOBILE), {"folder": work["id"], "tags": ["출시"]})
+    # 모아 묻는 질문(요약 줄): 폴더 안 노트만
+    r, ev, client = run_ask(monkeypatch, [f"채용 공고 [{BUDGET}#s0011]."], '{"question": "모든 노트의 할 일을 모아 줘"}', "--folder", "업무")
+    assert r.exit_code == 0, r.output
+    prompt = client.calls[0]["messages"][-1]["content"]
+    assert "[노트 요약]" in prompt and {s["meeting_id"] for s in ev[1]["sources"]} == {BUDGET, MOBILE}
+    assert not any(m in prompt for m in (SEARCH, OKR, DAON))
+    assert ev[-1]["scope"] == {"folder": work["id"], "folder_name": "업무"}
+    # 기간을 함께 준 모아 묻는 질문도 폴더 안 노트만
+    r, ev, _ = run_ask(monkeypatch, ["x"], '{"question": "모든 노트의 할 일을 모아 줘"}', "--folder", work["id"], "--from", "2020-01-01")
+    assert r.exit_code == 0 and ev[1]["sources"] and {s["meeting_id"] for s in ev[1]["sources"]} <= {BUDGET, MOBILE}
+    # 검색 질문: 폴더 밖 노트(SEARCH)는 찾지 않는다. 태그도 같이 좁힌다
+    r, ev, _ = run_ask(monkeypatch, ["x"], '{"question": "자동완성 성능 개선"}', "--folder", work["id"], "--tag", "출시", "--from", "2026-01-01")
+    assert r.exit_code == 0 and {s["meeting_id"] for s in ev[1]["sources"]} <= {MOBILE}
+    assert ev[-1]["scope"] == {"from": "2026-01-01", "folder": work["id"], "folder_name": "업무", "tag": ["출시"]}
+    # 폴더 없는 노트만
+    r, ev, _ = run_ask(monkeypatch, ["x"], '{"question": "모든 노트의 할 일을 모아 줘"}', "--folder", "none")
+    assert r.exit_code == 0 and ev[1]["sources"] and not {s["meeting_id"] for s in ev[1]["sources"]} & {BUDGET, MOBILE}
+    assert ev[-1]["scope"] == {"folder": "none"}
+
+
+def test_cli_ask_empty_folder_answers_no_evidence_and_unknown_folder_fails(cli_env, monkeypatch):
+    from tractus import organize
+
+    empty = organize.create_folder(cli_env, "빈 폴더")
+    r, ev, client = run_ask(monkeypatch, ["x"], '{"question": "모든 노트의 할 일을 모아 줘"}', "--folder", empty["id"])
+    assert r.exit_code == 0, r.output
+    assert ev[-1]["answer"] == qa.NO_EVIDENCE and ev[-1]["no_evidence"] and client.calls == [] and ev[1]["sources"] == []
+    r, ev, _ = run_ask(monkeypatch, ["x"], '{"question": "예산"}', "--folder", "없는 폴더")
+    assert r.exit_code == 1 and ev[0]["event"] == "error"
+    r, ev, _ = run_ask(monkeypatch, ["x"], '{"question": "예산"}')
+    assert "scope" not in ev[-1]  # 범위를 좁히지 않은 답은 예전과 같다

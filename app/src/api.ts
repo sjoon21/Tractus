@@ -243,6 +243,8 @@ export interface AskArgs {
   meeting: string | null;
   from: string | null;
   to: string | null;
+  /** 전체 범위 질문만: 폴더 ID(하위 폴더 포함) 또는 "none"(폴더 없는 노트) */
+  folder?: string | null;
   question: string;
   history: ChatMessage[];
   /** 이번 질문에 쓸 AI 서비스 (없으면 기본 서비스) */

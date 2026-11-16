@@ -288,7 +288,7 @@ stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없
 ### 2.5 `tractus ask` (회의 질의, Phase 6)
 
 ```text
-tractus ask [--meeting <회의>] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--provider P] [--model M] [--save] --progress-json
+tractus ask [--meeting <회의>] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--folder <ID|이름|none>] [--tag T]… [--provider P] [--model M] [--save] --progress-json
 ```
 
 stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없이) `TYPER_USE_RICH=0`을 준다. 사람이 터미널에서 쓸 때는 질문 평문도 받는다(`{`로 시작하지 않으면 평문).
@@ -307,6 +307,8 @@ stdin으로 JSON 객체 하나를 받는다. 앱은 argv로 실행하고(셸 없
 인용 정리(`ask.finalize`): 나란히 붙은 인용 무리마다 같은 인용은 한 번, 노트마다 3개까지 남기고, 근거 노트가 4개 이상일 때 절반 넘는 노트를 한꺼번에 인용한 무리는 지운다(받은 근거를 다 붙인 인용이라 근거가 되지 않는다).
 
 `--from`·`--to`는 전체 범위에서만 쓴다. `--save`는 `--meeting`과 함께만 쓸 수 있다(아니면 `error`, 종료 코드 1).
+
+**폴더·태그 범위(v3.131).** `--folder`(폴더 ID·이름, 하위 폴더 포함, `none`이면 폴더 없는 노트)와 `--tag`(여러 번 주면 모두 붙은 노트)는 `tractus search`·`notes list`와 같은 규칙(`organize.matching_ids`)으로 노트를 고르고, 전체 범위의 **모든 근거 경로**에 건다: 검색 청크(키워드·벡터), 후속 질문에 직전 질문을 보탠 검색, 모아 묻는 질문이 요약을 읽을 노트 고르기(`recap_sources`). 맞는 노트가 없으면 오류가 아니라 LLM을 부르지 않는 근거 없는 답(`sources: []`, `no_evidence: true`)이다. 없는 폴더·잘못된 태그는 `error`(종료 코드 1). `--meeting`과 함께 주면 무시한다(기간과 같다). 범위를 좁힌 전체 범위 답의 `done`에는 `scope`가 붙는다: `{"from"?, "to"?, "folder"?: ID 또는 "none", "folder_name"?: 그때의 폴더 이름, "tag"?: [..]}`(좁히지 않았으면 키가 없다). 앱은 답 아래에 `검색 범위: ‘업무’ 폴더 · 11/3–11/10`으로 보인다. 전체 범위 답은 `chat.json`에 저장되지 않으므로(`--save`는 `--meeting` 전용) `scope`는 이벤트와 화면의 턴 상태에만 있다. 앱의 전체 노트 질문 서랍은 `기간 지정` 옆에 폴더 고르기(`모든 폴더`·`폴더 없음`·폴더 나무)를 두고 고른 폴더 ID 또는 `none`을 `ask_start`의 `folder`로 넘긴다(Rust `ask_args`가 ULID 모양·`none`만 받는다, 노트 안 질문에는 거절). 고른 값은 저장하지 않는다. 태그 고르기는 앱에 없다(CLI만).
 
 이벤트 (stdout JSON Lines):
 
