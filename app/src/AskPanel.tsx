@@ -5,7 +5,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { api, errFull, errText, type ChatEntry } from "./api";
 import { ErrorDetail } from "./ErrorDetail";
 import { t } from "./i18n";
-import { answerParts, askReduce, citeLabel, citeTarget, isAsking, isMemoCite, isNoteGone, isTaggedMemo, scopeLabel, sendNotice, START_ASK, trimHistory, turnsHistory, type AskEvent, type AskSource, type AskState, type LlmConfig } from "./ask";
+import { answerParts, askReduce, citeLabel, citeTarget, isAsking, isMemoCite, isNoteGone, askFolder, isTaggedMemo, scopeLabel, sendNotice, START_ASK, trimHistory, turnsHistory, type AskEvent, type AskSource, type AskState, type LlmConfig } from "./ask";
 import { APP_ERROR, fmtTime, isImeKey } from "./lib";
 import { KEY_CHANGED, llmErrorView } from "./llmKey";
 import { LlmServicePicker, useLlmServices } from "./LlmServicePicker";
@@ -51,7 +51,7 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds, folders = []
   const [range, setRange] = useState({ from: "", to: "" });
   const [rangeOpen, setRangeOpen] = useState(false); // 기간은 필요할 때만 편다 (값이 있으면 늘 보인다)
   const [pickedFolder, setFolder] = useState(""); // "" 모든 노트, "none" 폴더 없는 노트, 폴더 ID
-  const folder = pickedFolder === "none" || folders.some((f) => f.id === pickedFolder) ? pickedFolder : ""; // 지워진 폴더는 고르지 않은 것으로
+  const folder = askFolder(pickedFolder, folders.map((f) => f.id));
   const services = useLlmServices("ask");
   const provider = services.provider;
   const composing = useRef(false);

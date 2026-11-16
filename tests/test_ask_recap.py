@@ -166,6 +166,9 @@ def test_cli_ask_folder_scope_narrows_search_and_recap(cli_env, monkeypatch):
     assert "[노트 요약]" in prompt and {s["meeting_id"] for s in ev[1]["sources"]} == {BUDGET, MOBILE}
     assert not any(m in prompt for m in (SEARCH, OKR, DAON))
     assert ev[-1]["scope"] == {"folder": work["id"], "folder_name": "업무"}
+    # 기간을 함께 준 모아 묻는 질문도 폴더 안 노트만
+    r, ev, _ = run_ask(monkeypatch, ["x"], '{"question": "모든 노트의 할 일을 모아 줘"}', "--folder", work["id"], "--from", "2020-01-01")
+    assert r.exit_code == 0 and ev[1]["sources"] and {s["meeting_id"] for s in ev[1]["sources"]} <= {BUDGET, MOBILE}
     # 검색 질문: 폴더 밖 노트(SEARCH)는 찾지 않는다. 태그도 같이 좁힌다
     r, ev, _ = run_ask(monkeypatch, ["x"], '{"question": "자동완성 성능 개선"}', "--folder", work["id"], "--tag", "출시", "--from", "2026-01-01")
     assert r.exit_code == 0 and {s["meeting_id"] for s in ev[1]["sources"]} <= {MOBILE}

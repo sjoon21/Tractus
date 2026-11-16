@@ -164,6 +164,10 @@ export function scopeLabel(s: AskScopeUsed | undefined): string | null {
   return parts.length ? t("검색 범위: {scope}", { scope: parts.join(" · ") }) : null;
 }
 
+/** 질문 범위 폴더: 지워진 폴더, 폴더가 하나도 없을 때의 "none"(고를 단추가 사라진다)은 고르지 않은 것("")으로 */
+export const askFolder = (picked: string, folderIds: readonly string[]): string =>
+  (picked === "none" && folderIds.length > 0) || folderIds.includes(picked) ? picked : "";
+
 /** 녹음 노트에 사용자가 적은 메모의 줄인가 (`source: "memo"` 또는 `m0003`). 칩 글자에 `메모`를 붙이는 쪽 */
 export const isTaggedMemo = (c: { segment_id: string; source?: string }): boolean => c.source === "memo" || isMemoLineId(c.segment_id);
 

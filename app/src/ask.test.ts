@@ -8,6 +8,7 @@ import {
   isAsking,
   isNoteGone,
   scopeLabel,
+  askFolder,
   sendNotice,
   START_ASK,
   trimHistory,
@@ -197,6 +198,16 @@ describe("코어가 실제로 낸 메모 질문 이벤트", () => {
     const target = citeTarget({ meetingId: null, segId: "s0007" }, { meetingId: MID, citations: end.citations, sources: end.sources });
     expect(target).toEqual({ meetingId: MID, segId: "s0007", t: 0, line: 2 });
     expect(citeLabel(target!.t, { memo: true, line: target!.line })).toBe("2번째 줄");
+  });
+});
+
+describe("askFolder", () => {
+  test("지워진 폴더와 폴더가 없을 때의 폴더 없음은 고르지 않은 것으로", () => {
+    expect(askFolder("f1", ["f1", "f2"])).toBe("f1");
+    expect(askFolder("gone", ["f1"])).toBe("");
+    expect(askFolder("none", ["f1"])).toBe("none");
+    expect(askFolder("none", [])).toBe("");
+    expect(askFolder("", ["f1"])).toBe("");
   });
 });
 
