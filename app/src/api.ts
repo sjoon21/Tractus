@@ -305,7 +305,8 @@ export const api = {
   /** `tractus marks <노트> save`: 녹음 중 남긴 메모·북마크를 고치거나 지운 목록을 저장한다 */
   marksSave: (id: string, marks: Memo[]) => invoke<{ marks: Memo[] }>("marks_save", { id, marks }),
   /** `tractus note new`: 새 메모 노트(기본 제목 `메모 HH:MM`). 만든 노트 ID */
-  noteNew: (title?: string) => invoke<{ meeting_id: string }>("note_new", { title: title ?? null }),
+  /** event: 일정 전에 준비하는 메모 (노트 폴더에 event.json, 제목이 없으면 일정 제목) */
+  noteNew: (title?: string, event?: CalendarEvent) => invoke<{ meeting_id: string }>("note_new", { title: title ?? null, event: event ?? null }),
   /** `tractus note save`: 메모 본문 전체를 저장한다 (메모 노트는 본문, 녹음 노트는 메모 탭의 글). 코어가 만든 줄 수와 고친 노트. 노트별 줄(editQueue)에 세워서 부른다 */
   noteSave: (id: string, body: string) => invoke<{ segments: number; meeting: MeetingDetail }>("note_save", { id, body }),
   /** `tractus note title`: 제목 바꾸기(녹음·메모). 폴더 이름은 그대로다. 코어가 정한 제목 */
@@ -544,8 +545,10 @@ export function useRecorder(onStopped: (dir: string, seconds: number) => void) {
     setLive(IDLE_LIVE);
     try {
       await invoke<string>("rec_start", { flags: recFlags(mode), target: target ?? null, event: event ?? null });
+      return true;
     } catch (e) {
       setRec({ ...IDLE_REC, mode, phase: "error", error: errText(e) });
+      return false;
     }
   }, []);
 

@@ -22,10 +22,13 @@ import { resolveTheme, type ThemePref } from "../themePref"; // applyTheme은 Ta
 import { cn } from "@/components/ui/utils";
 import { CallCardView, MiniRecorderView } from "../MiniRecorder";
 import { EMPTY_POPOVER, type PopoverState } from "../TrayPopover";
+import type { MeetingInfo } from "../api";
+import { OK } from "../caps";
+import { EventRow } from "../components/home/WeekStrip";
+import type { DayEvent } from "../week";
 import { NoteRow } from "../NoteRow";
 import { setSwiped } from "../noteSwipe";
 import { deleteDialogText } from "../remove";
-import type { MeetingInfo } from "../api";
 
 const SWIPE_NOTE: MeetingInfo = { id: "gallery-swipe", dir: "/Users/me/Tractus/meetings/2026-11-16_주간_동기화_01ABC", title: "주간 제품 동기화", created_at: "2026-11-16T10:00:00+09:00", duration_sec: 1820, segments: 120, has_summary: true, tags: ["제품"] };
 const DELETE_TEXT = deleteDialogText({ kind: "note", id: SWIPE_NOTE.id, title: SWIPE_NOTE.title, dir: SWIPE_NOTE.dir });
@@ -45,7 +48,19 @@ const TEXTS: [string, string][] = [
   ["배지·단축키", "text-[11px]"],
 ];
 
-const MINI_REC: PopoverState = { ...EMPTY_POPOVER, phase: "recording", started_at_ms: 1_000_000, can: { start: false, pause: true, resume: false, stop: true, bookmark: true } };
+// 이번 주 일정 줄의 네 상태 (지금 = 11월 17일 9:00)
+const ROW_NOW = new Date(2026, 10, 17, 9, 0);
+const at = (d: number, h: number, m = 0) => new Date(2026, 10, d, h, m).toISOString();
+const rowEvent = (id: string, title: string, d: number, h: number, notes: MeetingInfo[] = []): DayEvent => ({ id, title, start: at(d, h), end: at(d, h + 1), calendar: "회사", attendees: ["김민수", "이지은"], notes });
+const rowNote = (id: string, title: string, ev: { id: string; title: string; start: string }, kind?: "memo"): MeetingInfo => ({ id, dir: "", title, created_at: "2026-11-16T18:00:00+09:00", duration_sec: kind ? 0 : 1800, segments: 0, has_summary: false, kind, event: ev });
+const ROWS: DayEvent[] = [
+  rowEvent("g1", "오늘 · 준비한 메모 없음 (메모 준비 + 녹음)", 17, 10),
+  rowEvent("g2", "오늘 · 준비한 메모 있음 (녹음은 그 노트에)", 17, 14),
+  rowEvent("g3", "오늘 · 녹음 노트만 있음 (새 노트로 녹음)", 17, 16),
+  rowEvent("g4", "내일 · 메모 준비만", 18, 11),
+].map((ev) => ({ ...ev, notes: ev.id === "g2" ? [rowNote("n2", "주간 점검 메모", ev, "memo")] : ev.id === "g3" ? [rowNote("n3", "주간 점검", ev)] : [] }));
+
+const MINI_REC: PopoverState ={ ...EMPTY_POPOVER, phase: "recording", started_at_ms: 1_000_000, can: { start: false, pause: true, resume: false, stop: true, bookmark: true } };
 
 function Block({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
@@ -219,6 +234,14 @@ function Gallery() {
             <CallCardView call={{ kind: "end", app: "Teams", title: "" }} onCall={() => {}} />
           </div>
         </div>
+      </Block>
+
+      <Block title="이번 주 일정 줄 (EventRow)" note="week.eventAction: 이어진 노트 없음 → 메모 준비(끝나지 않은 일정) · 준비한 메모 → 녹음은 그 노트에 추가 · 녹음 노트뿐 → 새 노트. 녹음 단추는 오늘 일정만">
+        <ul className="m-0 list-none overflow-hidden rounded-lg border border-border bg-card p-0 py-1.5">
+          {ROWS.map((ev) => (
+            <EventRow key={ev.id} ev={ev} now={ROW_NOW} gate={OK} recording={false} onRecord={() => {}} onPrepare={() => {}} />
+          ))}
+        </ul>
       </Block>
 
       <Block title="노트 줄 밀어서 삭제 (NoteRow · noteSwipe)" note="트랙패드로 줄을 왼쪽으로 밀면 줄 끝에 삭제 단추. 바깥을 누르면 닫힌다 (아래 단추로 다시 연다)">

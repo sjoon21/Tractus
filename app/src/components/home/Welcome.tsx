@@ -19,7 +19,7 @@ import { WeekStrip } from "./WeekStrip";
 
 const RECENT_MAX = 6;
 
-export function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, recordGate, recording }: { notes: MeetingInfo[]; onOpen: (id: string) => void; onAction: (a: NewNoteAction) => void; onRecordEvent: (ev: CalendarEvent) => void; onSample: () => void; recordGate: Decision; recording: boolean }) {
+export function Welcome({ notes, onOpen, onAction, onRecordEvent, onPrepareEvent, onSample, recordGate, recording }: { notes: MeetingInfo[]; onOpen: (id: string) => void; onAction: (a: NewNoteAction) => void; onRecordEvent: (ev: CalendarEvent) => void; onPrepareEvent: (ev: CalendarEvent) => void; onSample: () => void; recordGate: Decision; recording: boolean }) {
   const caps = useCapabilities();
   const { openCheckup, openModels } = caps;
   const next = useNextEvent();
@@ -54,7 +54,7 @@ export function Welcome({ notes, onOpen, onAction, onRecordEvent, onSample, reco
         <CoachMark id="ask" side="right" ready={!checklist && notes.some((n) => !n.sample)} />
         {next && <CoachMark id="calendar" ready={!checklist} />}
 
-        <WeekStrip notes={notes} onOpen={onOpen} onRecordEvent={onRecordEvent} recordGate={recordGate} recording={recording} />
+        <WeekStrip notes={notes} onOpen={onOpen} onRecordEvent={onRecordEvent} onPrepareEvent={onPrepareEvent} recordGate={recordGate} recording={recording} />
 
         {recent.length > 0 && (
           <section aria-labelledby="recent-title" className="flex flex-col gap-2">

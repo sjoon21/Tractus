@@ -1,14 +1,15 @@
 // 홈의 `이번 주` 띠 (WORDS.md §4.31): 월~일 7칸에 날마다 캘린더 일정·노트 개수, 고른 날의 목록(일정 → 녹음, 노트 → 열기). 규칙은 week.ts
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { AudioLines, CalendarDays, ChevronLeft, ChevronRight, FileText, Mic } from "lucide-react";
+import { AudioLines, CalendarDays, ChevronLeft, ChevronRight, FileText, Mic, SquarePen } from "lucide-react";
 import type { CalendarEvent, MeetingInfo } from "../../api";
-import { attendeeLine, CARD_RECORD } from "../../calendar";
+import { ADD_TITLE } from "../../attach";
+import { attendeeLine, CARD_RECORD, PREPARE_MEMO } from "../../calendar";
 import type { Decision } from "../../caps";
 import { GatedButton } from "../../GatedButton";
 import { clock, t } from "../../i18n";
 import { dayParts } from "../../lib";
 import { isMemo, noteTime } from "../../memo";
-import { addDays, dayNotes, groupWeek, recordable, weekDays, weekStart, ymd, useWeekEvents, type WeekEvent } from "../../week";
+import { addDays, dayNotes, eventAction, groupWeek, preparable, recordable, weekDays, weekStart, ymd, useWeekEvents, type DayEvent } from "../../week";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 
@@ -18,7 +19,7 @@ const hm = (iso: string) => {
   return clock(d.getHours(), d.getMinutes());
 };
 
-export function WeekStrip({ notes, onOpen, onRecordEvent, recordGate, recording }: { notes: readonly MeetingInfo[]; onOpen: (id: string) => void; onRecordEvent: (ev: CalendarEvent) => void; recordGate: Decision; recording: boolean }) {
+export function WeekStrip({ notes, onOpen, onRecordEvent, onPrepareEvent, recordGate, recording }: { notes: readonly MeetingInfo[]; onOpen: (id: string) => void; onRecordEvent: (ev: CalendarEvent) => void; onPrepareEvent: (ev: CalendarEvent) => void; recordGate: Decision; recording: boolean }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
@@ -90,7 +91,7 @@ export function WeekStrip({ notes, onOpen, onRecordEvent, recordGate, recording 
           <ul className="m-0 list-none p-0 pb-1.5">
             {cur.events.map((ev) => (
               <Fragment key={`${ev.id}-${ev.start}`}>
-                <EventRow ev={ev} now={now} gate={recordGate} recording={recording} onRecord={() => onRecordEvent(ev)} />
+                <EventRow ev={ev} now={now} gate={recordGate} recording={recording} onRecord={() => onRecordEvent(ev)} onPrepare={() => onPrepareEvent(ev)} />
                 {ev.notes.map((m) => (
                   <NoteLine key={m.id} m={m} onOpen={onOpen} inEvent />
                 ))}
@@ -132,8 +133,10 @@ function Dots({ n, className }: { n: number; className: string }) {
   );
 }
 
-function EventRow({ ev, now, gate, recording, onRecord }: { ev: WeekEvent; now: Date; gate: Decision; recording: boolean; onRecord: () => void }) {
+/** 일정 줄. 이어진 노트가 없으면 `메모 준비`(끝나지 않은 일정), 녹음 단추는 오늘 일정만. 준비한 메모가 있으면 녹음은 그 노트에 추가된다 (week.eventAction) */
+export function EventRow({ ev, now, gate, recording, onRecord, onPrepare }: { ev: DayEvent; now: Date; gate: Decision; recording: boolean; onRecord: () => void; onPrepare: () => void }) {
   const people = attendeeLine(ev.attendees);
+  const act = eventAction(ev, ev.notes);
   return (
     <li className="flex items-center gap-3 px-4 py-2">
       <CalendarDays className="size-4 shrink-0 text-primary" aria-hidden />
@@ -144,8 +147,14 @@ function EventRow({ ev, now, gate, recording, onRecord }: { ev: WeekEvent; now: 
         </span>
         {people && <span className="block truncate text-xs text-subtle-foreground">{people}</span>}
       </span>
+      {act.kind === "prepare" && preparable(ev, now) && (
+        <Button variant="ghost" size="sm" onClick={onPrepare}>
+          <SquarePen aria-hidden />
+          {PREPARE_MEMO}
+        </Button>
+      )}
       {recordable(ev, now) && (
-        <GatedButton gate={gate} className={buttonVariants({ variant: "outline", size: "sm" })} disabled={recording} onClick={onRecord}>
+        <GatedButton gate={gate} className={buttonVariants({ variant: "outline", size: "sm" })} disabled={recording} title={act.kind === "record-into" ? ADD_TITLE : undefined} onClick={onRecord}>
           <Mic aria-hidden />
           {CARD_RECORD}
         </GatedButton>

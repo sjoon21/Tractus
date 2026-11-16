@@ -80,6 +80,26 @@ def test_new_rejects_bad_input_and_creates_nothing(home, raw):
     assert not (home / "meetings").exists() or not list((home / "meetings").iterdir())
 
 
+def test_new_with_event_links_note_like_a_recording(home):
+    """일정 전에 준비하는 메모: event.json을 녹음처럼 노트 폴더에 쓰고, 제목이 없으면 일정 제목 (docs/desktop.md §2.19)"""
+    from tractus.calendar_event import load_event
+
+    ev = {"id": "E1:2", "title": "주간 " + "가" * 130, "start": "2026-11-17T10:00:00+09:00", "end": "2026-11-17T11:00:00+09:00", "attendees": ["김민수", "a@b.c"]}
+    _, d = new(home, event=ev, body="안건")
+    t = read_transcript(d)
+    assert t["kind"] == "memo" and t["title"] == ev["title"][: notes.MAX_TITLE] and t["body"] == "안건"  # 긴 일정 제목은 노트 제목 한도로 자른다
+    assert load_event(d) == {"id": "E1:2", "title": ev["title"], "start": ev["start"], "end": ev["end"], "calendar": "", "attendees": ["김민수"]}
+    _, d2 = new(home, event=ev, title="내 제목")
+    assert read_transcript(d2)["title"] == "내 제목" and load_event(d2)["id"] == "E1:2"
+
+
+@pytest.mark.parametrize("event", [{"title": "", "start": "2026-11-17T10:00:00", "end": "2026-11-17T11:00:00"}, {"title": "t", "start": "x", "end": "y"}, "주간"])
+def test_new_rejects_bad_event_and_creates_nothing(home, event):
+    r = run("note", "new", input=json.dumps({"event": event}))
+    assert r.exit_code == 2 and last_line(r) == "일정 정보가 올바르지 않습니다"
+    assert not (home / "meetings").exists() or not list((home / "meetings").iterdir())
+
+
 def test_new_rejects_long_title_and_long_body(home):
     assert run("note", "new", input=json.dumps({"title": "가" * 121})).exit_code == 2
     r = run("note", "new", input=json.dumps({"body": "가" * (notes.MAX_BODY + 1)}))

@@ -154,6 +154,7 @@ export default {
   "끈 캘린더의 일정은 홈에 보이지 않습니다.": "Events from calendars turned off here are hidden from Home.",
   "곧 시작하는 일정": "Upcoming event",
   "이 일정으로 녹음": "Record this event",
+  "메모 준비": "Prepare memo",
   "진행 중": "In progress",
   "곧 시작": "Starting soon",
   "{n}분 뒤": "in {n} min",

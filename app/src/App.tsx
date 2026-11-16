@@ -5,6 +5,7 @@ import { useImportQueue } from "./useImportQueue";
 import { useFileDrop } from "./useFileDrop";
 import { useTranscribeQueue } from "./useTranscribeQueue";
 import { useWorkScheduler } from "./useWorkScheduler";
+import { eventAction } from "./week";
 import { SidebarJobs } from "@/components/sidebar/SidebarJobs";
 import { LeftoverRecordings } from "@/components/sidebar/LeftoverRecordings";
 import { SidebarFooter } from "@/components/sidebar/SidebarFooter";
@@ -209,11 +210,12 @@ export function App() {
   );
   // 새 메모 (⌘N): 빈 메모 노트를 만들고 열면 본문에 초점이 간다
   const [creating, setCreating] = useState(false);
-  const newMemo = useCallback(async () => {
+  // event: 이번 주 띠의 `메모 준비` (일정과 이은 메모, 그 일정의 녹음은 이 노트에 추가된다: week.eventAction)
+  const newMemo = useCallback(async (event?: CalendarEvent) => {
     if (creating) return;
     setCreating(true);
     try {
-      const { meeting_id } = await api.noteNew();
+      const { meeting_id } = await api.noteNew(undefined, event);
       openMeeting(meeting_id); // 노트 화면은 스스로 읽는다: 목록 새로 읽기를 기다리지 않고 바로 연다 (노트가 많으면 목록이 느리다)
       void refresh();
     } catch (e) {
@@ -522,8 +524,11 @@ export function App() {
   };
   /** event: 홈의 `곧 시작하는 일정` 카드에서 시작한 녹음 (일정 제목·참석자를 녹음 폴더에 남긴다) */
   /** recMode: 통화 감지에서 시작한 녹음은 상대 목소리가 들어가게 언제나 `화상·하이브리드` (calls.rs) */
+  /** 일정에 준비한 메모(글만 있는 노트)가 있으면 그 노트에 녹음을 추가한다 (week.eventAction: 이번 주 띠·곧 시작하는 일정 카드·통화 감지가 모두 여기를 지난다). 변환 중이거나 그 노트를 다른 작업이 쓰는 중이라 추가할 수 없으면 전처럼 새 노트로 녹음한다 (startAttachRecord) */
   const onRecordButton = (event?: CalendarEvent, recMode: RecMode = mode) => {
     if (!recording && !recordBlocked && !recordGate.ok) return notifyBlocked(recordGate); // 새 노트 메뉴의 `녹음 시작`
+    const act = event ? eventAction(event, meetings) : null;
+    if (act?.kind === "record-into" && !recording && !recordBlocked && !transcribing && attachRef.current.phase === "idle") return void startAttachRecord({ id: act.note.id, title: act.note.title }, recMode, event);
     if (!recording && !recordBlocked) {
       pauseConvert();
       resetRec();
@@ -579,7 +584,7 @@ export function App() {
 
   // 글만 있는 노트에 녹음 추가 (attach.ts, docs/desktop.md §2.11). 쓰던 글을 먼저 저장한다 (저장하지 못하면 시작하지 않는다: 오류는 편집기가 보인다)
   const startAttachRecord = useCallback(
-    async (t: AttachTarget) => {
+    async (t: AttachTarget, recMode: RecMode = mode, event?: CalendarEvent) => {
       if (recording || transcribing || attachRef.current.phase !== "idle") return; // 노트에 녹음 추가는 전처럼 변환이 끝난 뒤에 (파일에서 추가와 같은 상태 기계)
       if (!recordGate.ok) return notifyBlocked(recordGate);
       if (!(await flushMemos())) return;
@@ -587,8 +592,13 @@ export function App() {
       dispatchAttach({ type: "record", target: t });
       resetRec();
       setUnconverted(false);
-      void startRec(mode, t.id);
       void go({ kind: "record" });
+      // 일정의 준비한 메모에 추가하지 못하면(요약·질문이 그 노트를 쓰는 중 등) 녹음을 놓치지 않게 전처럼 새 노트로 녹음한다
+      if (!(await startRec(recMode, t.id, event)) && event) {
+        dispatchAttach({ type: "abort" });
+        resetRec();
+        void startRec(recMode, null, event);
+      }
     },
     [recording, transcribing, recordGate, notifyBlocked, mode, resetRec, startRec, go],
   );
@@ -866,7 +876,7 @@ export function App() {
       </aside>
 
       <main className={cn("main relative h-screen overflow-hidden bg-background transition-[padding] duration-200", askOpen && view.kind === "record" && "min-[1180px]:pr-[440px]")}>
-        {view.kind === "home" && <Welcome notes={meetings} onOpen={openMeeting} onAction={onNewNote} onRecordEvent={onRecordButton} onSample={() => void openSample()} recordGate={recording || recordBlocked ? OK : recordGate} recording={recording} />}
+        {view.kind === "home" && <Welcome notes={meetings} onOpen={openMeeting} onAction={onNewNote} onRecordEvent={onRecordButton} onPrepareEvent={(ev) => void newMemo(ev)} onSample={() => void openSample()} recordGate={recording || recordBlocked ? OK : recordGate} recording={recording} />}
         {view.kind === "meeting" && (
           <MeetingView
             key={noteEpoch.id === view.id ? `${view.id}.${noteEpoch.n}` : view.id}
