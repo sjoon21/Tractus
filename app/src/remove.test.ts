@@ -43,7 +43,7 @@ describe("dialog text", () => {
   test("note: a separate caution says the memo and other information go with it (every entry point)", () => {
     // 사이드바(withMemo 모름)와 노트 머리 모두 같은 주의 문장: 메모가 있는지와 상관없이 말한다
     for (const n of [note, { ...note, withMemo: true }, { ...note, withMemo: false }]) {
-      expect(deleteDialogText(n).warning).toBe("이 노트에 적은 메모, 녹음 중 메모, 참석자 이름, 요약·회의록, 질문 기록도 모두 함께 삭제됩니다.");
+      expect(deleteDialogText(n).warning).toBe("이 노트에 적은 메모, 녹음 중 메모, 참석자 이름, 요약·회의록·완성된 노트, 질문 기록도 모두 함께 삭제됩니다.");
     }
     expect(deleteDialogText({ ...note, memo: true }).warning).toBe("메모 내용과 요약, 질문 기록도 모두 함께 삭제됩니다.");
     // 노트 밖에 있는 것(목소리 프로필·사전)은 지운다고 말하지 않는다

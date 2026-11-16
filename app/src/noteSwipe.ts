@@ -39,7 +39,10 @@ const onKey = (e: KeyboardEvent) => {
 };
 // 가로로 미는 동안 섞여 오는 작은 세로 움직임이 목록을 조금 굴려도 닫지 않는다
 let sideAt = -Infinity;
-const onScroll = () => {
+const onScroll = (e: Event) => {
+  // 단추를 품은 곳(노트 목록)의 스크롤만 본다: 실시간 자막·답변·재생 따라가기가 다른 창을 스스로 굴려도 닫지 않는다
+  const b = document.querySelector(`[${SWIPE_ATTR}]`);
+  if (b && !(e.target as Node | null)?.contains?.(b)) return;
   if (performance.now() - sideAt > SWIPE_GAP_MS) setSwiped(null);
 };
 

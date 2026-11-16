@@ -64,7 +64,7 @@ export function deleteDialogText(target: DeleteTarget): DeleteDialogText {
       // 노트 폴더에 같이 든 것 (transcript.json의 메모·참석자 이름, memos.json, summary.json·summaries/, chat.json). 목소리 프로필·사전은 노트 밖이라 남는다
       warning: target.memo
         ? t("메모 내용과 요약, 질문 기록도 모두 함께 삭제됩니다.")
-        : t("이 노트에 적은 메모, 녹음 중 메모, 참석자 이름, 요약·회의록, 질문 기록도 모두 함께 삭제됩니다."), // words-ok: 회의록은 문서 이름(§4.26)
+        : t("이 노트에 적은 메모, 녹음 중 메모, 참석자 이름, 요약·회의록·완성된 노트, 질문 기록도 모두 함께 삭제됩니다."), // words-ok: 회의록은 문서 이름(§4.26)
       body: target.memo
         ? t("메모 내용, 요약, 질문 기록이 휴지통으로 옮겨지고, 검색과 AI 질문에서도 빠집니다. {restore}", { restore })
         : target.withMemo

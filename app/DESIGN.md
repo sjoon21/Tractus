@@ -44,7 +44,7 @@ macOS 노트 앱(Granola·Apple Notes) 톤. 무채색 바탕에 색은 의미로
 
 ## 4. 부품
 
-- `Button` — `variant`: `default`(그 화면의 주 동작 하나), `outline`, `secondary`, `ghost`(툴바·부차 동작), `destructive`(확인 창의 삭제), `rec`, `link`. `size`: `sm`·`default`·`lg`·`icon`·`icon-sm`. 옛 `.text-button`(밑줄 글자 단추)은 `ghost` `sm` 또는 `link`로.
+- `Button` — `variant`: `default`(그 화면의 주 동작 하나), `outline`, `secondary`, `ghost`(툴바·부차 동작), `destructive`(확인 창의 삭제, 사이드바 줄을 밀어 나오는 `삭제` 단추), `rec`, `link`. `size`: `sm`·`default`·`lg`·`icon`·`icon-sm`. 옛 `.text-button`(밑줄 글자 단추)은 `ghost` `sm` 또는 `link`로.
 - `Input`, `Textarea`, `Select`(네이티브), `Switch`(켜고 끄는 설정), `checkClass`(체크박스·라디오), `Kbd`, `Badge`(`default`·`memo`·`rec`·`outline`), `Progress`(값 0..1 또는 null).
 - `Empty`(`components/ui/empty.tsx`) — 빈 상태. 제목 한 줄 + 짧은 설명 + 단추 하나까지, 상자·아이콘 칩 없이 가운데.
 - `Section` + `Row` — 설정처럼 이름/조작이 짝인 목록(macOS 시스템 설정의 묶음 카드). `PageHeader`(뒤로 + 제목 + 동작) + `PageBody`(가운데 읽기 폭).

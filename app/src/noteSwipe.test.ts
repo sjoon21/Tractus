@@ -34,7 +34,7 @@ describe("열린 줄", () => {
   let doc: EventTarget;
   let now = 0;
   beforeEach(() => {
-    doc = new EventTarget();
+    doc = Object.assign(new EventTarget(), { querySelector: () => null as unknown });
     vi.stubGlobal("document", doc);
     vi.stubGlobal("performance", { now: () => now });
   });
@@ -79,6 +79,22 @@ describe("열린 줄", () => {
     expect(swipedId()).toBe("a");
     now += SWIPE_GAP_MS + 1;
     doc.dispatchEvent(new Event("scroll"));
+    expect(swipedId()).toBeNull();
+  });
+
+  test("노트 목록이 아닌 곳(실시간 자막 등)이 스크롤되면 닫지 않는다", () => {
+    const btn = {};
+    Object.assign(doc, { querySelector: () => btn });
+    const scroll = (contains: boolean) => {
+      const e = new Event("scroll");
+      Object.defineProperty(e, "target", { value: { contains: (n: unknown) => contains && n === btn } });
+      doc.dispatchEvent(e);
+    };
+    now = 5000;
+    setSwiped("a");
+    scroll(false);
+    expect(swipedId()).toBe("a");
+    scroll(true);
     expect(swipedId()).toBeNull();
   });
 

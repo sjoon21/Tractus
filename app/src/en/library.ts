@@ -185,7 +185,7 @@ export default {
   "옮기는 중…": "Moving…",
   "‘{title}’ 노트를 삭제할까요?": "Delete “{title}”?",
   "메모 내용과 요약, 질문 기록도 모두 함께 삭제됩니다.": "The memo, its summaries, and its question history will all be deleted with it.",
-  "이 노트에 적은 메모, 녹음 중 메모, 참석자 이름, 요약·회의록, 질문 기록도 모두 함께 삭제됩니다.": "Your memo, memos during recording, participant names, summaries and minutes, and question history in this note will all be deleted with it.", // words-ok: 회의록은 문서 이름(§4.26)
+  "이 노트에 적은 메모, 녹음 중 메모, 참석자 이름, 요약·회의록·완성된 노트, 질문 기록도 모두 함께 삭제됩니다.": "Your memo, memos during recording, speaker names, summaries, minutes and enhanced notes, and question history in this note will all be deleted with it.", // words-ok: 회의록은 문서 이름(§4.26)
   "메모 내용, 요약, 질문 기록이 휴지통으로 옮겨지고, 검색과 AI 질문에서도 빠집니다. {restore}": "The memo, summaries, and question history move to the Trash and are removed from search and Ask AI. {restore}",
   "녹음 파일, 대화 내용, 메모, 요약, 질문 기록이 휴지통으로 옮겨지고, 검색과 AI 질문에서도 빠집니다. {restore}": "The recording, transcript, memo, summaries, and question history move to the Trash and are removed from search and Ask AI. {restore}",
   "녹음 파일, 대화 내용, 요약, 질문 기록이 휴지통으로 옮겨지고, 검색과 AI 질문에서도 빠집니다. {restore}": "The recording, transcript, summaries, and question history move to the Trash and are removed from search and Ask AI. {restore}",
