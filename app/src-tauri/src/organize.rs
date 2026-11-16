@@ -187,7 +187,7 @@ fn folder_name(raw: &str) -> Result<String, String> {
     Ok(name)
 }
 
-fn folder_id(id: &str) -> Result<&str, String> {
+pub(crate) fn folder_id(id: &str) -> Result<&str, String> {
     if is_meeting_id(id) {
         Ok(id)
     } else {

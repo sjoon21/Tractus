@@ -86,11 +86,12 @@ pub fn ask_start(
     meeting: Option<String>,
     from: Option<String>,
     to: Option<String>,
+    folder: Option<String>,
     question: String,
     history: Vec<ask::ChatMessage>,
     provider: Option<String>,
 ) -> Result<(), String> {
-    let args = ask::ask_args(meeting.as_deref(), from.as_deref(), to.as_deref())?;
+    let args = ask::ask_args(meeting.as_deref(), from.as_deref(), to.as_deref(), folder.as_deref())?;
     let input = ask::ask_input(&question, &history)?;
     let cmd = state.llm_cmd(&args, provider.as_deref())?;
     let tag = json!({ "job": job }).as_object().unwrap().clone();

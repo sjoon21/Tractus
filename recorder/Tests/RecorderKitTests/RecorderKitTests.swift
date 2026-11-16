@@ -269,6 +269,31 @@ final class MicFormatTests: XCTestCase {
     }
 }
 
+final class SampleRateTests: XCTestCase {
+    func testMicClientRateFollowsHardwareOnlyWithoutVoiceProcessing() {
+        XCTAssertEqual(micClientRateToSet(clientRate: 48000, hardwareRate: 44100, voiceProcessing: false), 44100, "44.1 kHz 인터페이스")
+        XCTAssertEqual(micClientRateToSet(clientRate: 48000, hardwareRate: 96000, voiceProcessing: false), 96000)
+        XCTAssertNil(micClientRateToSet(clientRate: 48000, hardwareRate: 48000, voiceProcessing: false), "이미 같다")
+        XCTAssertNil(micClientRateToSet(clientRate: 24000, hardwareRate: 48000, voiceProcessing: true), "음성 처리 중에는 다른 게 정상")
+        XCTAssertNil(micClientRateToSet(clientRate: 48000, hardwareRate: 0, voiceProcessing: false), "하드웨어 포맷이 아직 없다")
+    }
+
+    func testSystemTapTrustsTheDeviceRate() {
+        XCTAssertEqual(systemTapRate(tapRate: 48000, deviceRate: 16000), 16000, "헤드셋 핸즈프리: tap은 48 kHz라고 한다")
+        XCTAssertEqual(systemTapRate(tapRate: 48000, deviceRate: 48000), 48000)
+        XCTAssertEqual(systemTapRate(tapRate: 48000, deviceRate: nil), 48000, "장치 속도를 못 읽으면 tap 포맷")
+        XCTAssertEqual(systemTapRate(tapRate: 44100, deviceRate: 0), 44100)
+    }
+
+    func testTapBufferIsTheLastMatchingOne() {
+        XCTAssertEqual(tapBufferIndex(channels: [1], tapChannels: 1), 0)
+        XCTAssertEqual(tapBufferIndex(channels: [1, 1], tapChannels: 1), 1, "헤드셋 마이크 입력이 앞에 온다")
+        XCTAssertEqual(tapBufferIndex(channels: [2, 1], tapChannels: 1), 1)
+        XCTAssertNil(tapBufferIndex(channels: [2], tapChannels: 1))
+        XCTAssertNil(tapBufferIndex(channels: [], tapChannels: 1))
+    }
+}
+
 final class ObjCCatchTests: XCTestCase {
     func testObjectiveCExceptionBecomesASwiftError() {
         XCTAssertThrowsError(try TractusObjC.catching { NSException(name: .invalidArgumentException, reason: "required condition is false: format.sampleRate == hwFormat.sampleRate", userInfo: nil).raise() }) { error in

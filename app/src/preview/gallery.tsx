@@ -8,7 +8,7 @@ import { Check, Mic, Play, Sparkles, TextSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dock, DockGroup } from "@/components/ui/dock";
-import { DIALOG, DIALOG_BODY, DIALOG_FOOTER, DIALOG_TEXT, DIALOG_TITLE } from "@/components/ui/dialog";
+import { DIALOG, DIALOG_BODY, DIALOG_FOOTER, DIALOG_TEXT, DIALOG_TITLE, DIALOG_WARN } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import { Progress } from "@/components/ui/progress";
@@ -26,6 +26,12 @@ import type { MeetingInfo } from "../api";
 import { OK } from "../caps";
 import { EventRow } from "../components/home/WeekStrip";
 import type { DayEvent } from "../week";
+import { NoteRow } from "../NoteRow";
+import { setSwiped } from "../noteSwipe";
+import { deleteDialogText } from "../remove";
+
+const SWIPE_NOTE: MeetingInfo = { id: "gallery-swipe", dir: "/Users/me/Tractus/meetings/2026-11-16_주간_동기화_01ABC", title: "주간 제품 동기화", created_at: "2026-11-16T10:00:00+09:00", duration_sec: 1820, segments: 120, has_summary: true, tags: ["제품"] };
+const DELETE_TEXT = deleteDialogText({ kind: "note", id: SWIPE_NOTE.id, title: SWIPE_NOTE.title, dir: SWIPE_NOTE.dir });
 
 const applyTheme = (p: ThemePref) => void (document.documentElement.dataset.theme = resolveTheme(p, matchMedia("(prefers-color-scheme: dark)").matches));
 
@@ -238,6 +244,30 @@ function Gallery() {
         </ul>
       </Block>
 
+      <Block title="노트 줄 밀어서 삭제 (NoteRow · noteSwipe)" note="트랙패드로 줄을 왼쪽으로 밀면 줄 끝에 삭제 단추. 바깥을 누르면 닫힌다 (아래 단추로 다시 연다)">
+        <div className="flex items-start gap-4">
+          <ul className="w-[260px] rounded-md bg-sidebar p-2">
+            <NoteRow m={SWIPE_NOTE} active={false} onOpen={() => {}} onDelete={() => {}} />
+            <NoteRow m={{ ...SWIPE_NOTE, id: "gallery-swipe-2", title: "하늘상사 인터뷰 메모", kind: "memo", tags: [] }} active={false} onOpen={() => {}} onDelete={() => {}} />
+          </ul>
+          <Button variant="outline" size="sm" onClick={() => setTimeout(() => setSwiped(SWIPE_NOTE.id), 0)}>삭제 단추 보이기</Button>
+        </div>
+      </Block>
+
+      <Block title="삭제 확인 대화상자 (DIALOG_WARN)" note="노트 삭제 확인: 함께 사라지는 것을 위험 색으로 따로 알린다 (remove.deleteDialogText)">
+        <div className={cn(DIALOG, "!m-0 !block")}>
+          <div className={DIALOG_BODY}>
+            <h2 className={DIALOG_TITLE}>{DELETE_TEXT.title}</h2>
+            <p className={DIALOG_WARN}>{DELETE_TEXT.warning}</p>
+            <p className={DIALOG_TEXT}>{DELETE_TEXT.body}</p>
+          </div>
+          <div className={DIALOG_FOOTER}>
+            <Button variant="outline">{DELETE_TEXT.cancel}</Button>
+            <Button variant="destructive">{DELETE_TEXT.confirm}</Button>
+          </div>
+        </div>
+      </Block>
+
       <Block title="대화상자 (DIALOG)" note="네이티브 <dialog>의 공용 모양. 여기서는 열어 두지 않고 모양만 보인다">
         <div className={cn(DIALOG, "!m-0 !block")}>
           <div className={DIALOG_BODY}>
@@ -255,4 +285,5 @@ function Gallery() {
 }
 
 applyTheme("system");
+setSwiped(SWIPE_NOTE.id); // 처음부터 밀어 둔 모양을 보인다
 createRoot(document.getElementById("root")!).render(<Gallery />);

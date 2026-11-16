@@ -868,7 +868,7 @@ export function App() {
           )}
           {leftover.length > 0 && <LeftoverRecordings leftover={leftover} meetings={meetings} convertGate={convertGate} transcribing={transcribing} recording={recording} startTranscribe={startTranscribe} saveLeftover={saveLeftover} askDelete={askDelete} go={go} />}
           {!listError && meetings.length === 0 && leftover.length === 0 && <p className="m-2 text-xs text-muted-foreground">{t("아직 노트가 없습니다. 새 노트로 녹음을 시작하거나 글을 쓰거나, 설정에서 데이터 위치를 확인하세요.")}</p>}
-          <NoteLibrary notes={meetings} activeId={activeId} onOpen={openMeeting} convertSlots={convertSlots} onConvert={convertNote} />
+          <NoteLibrary notes={meetings} activeId={activeId} onOpen={openMeeting} convertSlots={convertSlots} onConvert={convertNote} onDelete={askDelete} />
         </nav>
 
         <SidebarFooter viewKind={view.kind} noteCount={meetings.length} go={go} />
@@ -921,13 +921,14 @@ export function App() {
             <X aria-hidden />
           </Button>
         </header>
-        <AskPanel scope={GLOBAL} inputRef={askInput} notes={knownNotes} memoIds={memoIds} onCite={(meetingId, segId, t) => openMeeting(meetingId, { segId, t })} />
+        <AskPanel scope={GLOBAL} inputRef={askInput} notes={knownNotes} memoIds={memoIds} folders={folders} onCite={(meetingId, segId, t) => openMeeting(meetingId, { segId, t })} />
       </aside>
 
       {del.target && dialogText && (
         <ConfirmDialog
           title={dialogText.title}
           body={dialogText.body}
+          warning={dialogText.warning}
           cancelLabel={dialogText.cancel}
           confirmLabel={del.busy ? dialogText.busy : dialogText.confirm}
           busy={del.busy}

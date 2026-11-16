@@ -5,18 +5,20 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { api, errFull, errText, type ChatEntry } from "./api";
 import { ErrorDetail } from "./ErrorDetail";
 import { t } from "./i18n";
-import { answerParts, askReduce, citeLabel, citeTarget, isAsking, isMemoCite, isNoteGone, isTaggedMemo, sendNotice, START_ASK, trimHistory, turnsHistory, type AskEvent, type AskSource, type AskState, type LlmConfig } from "./ask";
+import { answerParts, askReduce, citeLabel, citeTarget, isAsking, isMemoCite, isNoteGone, askFolder, isTaggedMemo, scopeLabel, sendNotice, START_ASK, trimHistory, turnsHistory, type AskEvent, type AskSource, type AskState, type LlmConfig } from "./ask";
 import { APP_ERROR, fmtTime, isImeKey } from "./lib";
 import { KEY_CHANGED, llmErrorView } from "./llmKey";
 import { LlmServicePicker, useLlmServices } from "./LlmServicePicker";
 import { OpenSettings } from "./OpenSettings";
 import { flushMemos } from "./memo";
 import { NOTE_GONE } from "./remove";
+import { buildFolderTree, folderPath, visibleRows, type Folder } from "./organize";
 import { ArrowUp, CalendarRange, ChevronRight, Square } from "lucide-react";
 import { CHIP } from "@/components/panel/chip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { cn } from "@/components/ui/utils";
 
 /**
@@ -38,8 +40,9 @@ const STATUS: Partial<Record<AskState["phase"], string>> = { starting: t("준비
 /**
  * notes: 지금 있는 노트의 ID들 (전체 범위 질문용). 목록에 없는 노트를 가리키는 인용 칩은 삭제된 노트로 보고 누를 수 없게 한다.
  * 목록이 바뀔 때마다 새로 판단하므로 답을 쓰는 사이에 지워진 노트도 따라간다. 아직 목록을 못 읽었으면 null
+ * folders: 전체 범위 질문의 폴더 고르기 (하위 폴더 포함). 고른 값은 저장하지 않는다
  */
-export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: AskScope; onCite: OnCite; inputRef?: React.RefObject<HTMLTextAreaElement | null>; notes?: ReadonlySet<string> | null; memoIds?: ReadonlySet<string> }) {
+export function AskPanel({ scope, onCite, inputRef, notes, memoIds, folders = [] }: { scope: AskScope; onCite: OnCite; inputRef?: React.RefObject<HTMLTextAreaElement | null>; notes?: ReadonlySet<string> | null; memoIds?: ReadonlySet<string>; folders?: readonly Folder[] }) {
   const meetingId = scope.kind === "meeting" ? scope.id : null;
   const [turns, setTurns] = useState<Turn[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -47,6 +50,8 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
   const [draft, setDraft] = useState("");
   const [range, setRange] = useState({ from: "", to: "" });
   const [rangeOpen, setRangeOpen] = useState(false); // 기간은 필요할 때만 편다 (값이 있으면 늘 보인다)
+  const [pickedFolder, setFolder] = useState(""); // "" 모든 노트, "none" 폴더 없는 노트, 폴더 ID
+  const folder = askFolder(pickedFolder, folders.map((f) => f.id));
   const services = useLlmServices("ask");
   const provider = services.provider;
   const composing = useRef(false);
@@ -111,7 +116,7 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
     setTurns((ts) => [...ts, { id: job, question, state: START_ASK }]);
     setDraft("");
     try {
-      await api.askStart({ job, meeting: meetingId, from: range.from || null, to: range.to || null, question, history, provider });
+      await api.askStart({ job, meeting: meetingId, from: range.from || null, to: range.to || null, folder: folder || null, question, history, provider });
     } catch (e) {
       setTurns((ts) => ts.map((x) => (x.id === job ? { ...x, state: { ...x.state, phase: "error", error: errFull(e), errorCode: APP_ERROR } } : x)));
     }
@@ -168,11 +173,26 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds }: { scope: A
           void send();
         }}
       >
-        {!meetingId && !rangeOpen && !range.from && !range.to && (
-          <Button type="button" variant="ghost" size="sm" className="h-7 self-start px-2 text-xs text-muted-foreground" onClick={() => setRangeOpen(true)}>
-            <CalendarRange aria-hidden />
-            {t("기간 지정")}
-          </Button>
+        {!meetingId && (folders.length > 0 || (!rangeOpen && !range.from && !range.to)) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {folders.length > 0 && (
+              <Select className="h-7 max-w-[16rem] text-xs" aria-label={t("질문할 폴더")} value={folder} onChange={(e) => setFolder(e.target.value)}>
+                <option value="">{t("모든 폴더")}</option>
+                <option value="none">{t("폴더 없음")}</option>
+                {visibleRows(buildFolderTree(folders, []), new Set(folders.map((f) => f.id))).map((n) => (
+                  <option key={n.folder.id} value={n.folder.id}>
+                    {folderPath(folders, n.folder.id)}
+                  </option>
+                ))}
+              </Select>
+            )}
+            {!rangeOpen && !range.from && !range.to && (
+              <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => setRangeOpen(true)}>
+                <CalendarRange aria-hidden />
+                {t("기간 지정")}
+              </Button>
+            )}
+          </div>
         )}
         {!meetingId && (rangeOpen || !!range.from || !!range.to) && (
           <fieldset className="m-0 flex min-w-0 items-center gap-1.5 border-0 p-0 text-xs text-muted-foreground">
@@ -260,6 +280,7 @@ function TurnItem({ turn: { question, state: s }, scope, onCite, notes, memoIds 
         {s.phase === "done" && s.citations.length === 0 && <Badge>{t("근거 대화 없음")}</Badge>}
         {s.phase === "cancelled" && t("멈췄습니다")}
       </p>
+      {s.phase === "done" && scopeLabel(s.scope) && <p className="m-0 text-xs text-subtle-foreground">{scopeLabel(s.scope)}</p>}
       {s.error && <AskError error={s.error} code={s.errorCode} />}
       {s.warning && <p className="m-0 text-xs text-memo">{s.warning}</p>}
       {s.sources.length > 0 && <Sources sources={s.sources} scope={scope} onCite={onCite} notes={notes} memoIds={memoIds} />}
