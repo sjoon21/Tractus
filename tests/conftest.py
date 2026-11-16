@@ -17,3 +17,10 @@ from tractus import paths
 def _app_models_in_tmp(tmp_path_factory, monkeypatch):
     """TRACTUS_MODELS_DIR이 없을 때의 기본 모델 폴더(앱 설정 폴더)가 이 Mac의 실제 `~/Library`를 가리키지 않게 한다."""
     monkeypatch.setattr(paths, "APP_MODELS", tmp_path_factory.mktemp("app-models") / "models")
+
+
+@pytest.fixture(autouse=True)
+def _home_in_tmp(tmp_path_factory, monkeypatch):
+    """`env` 픽스처를 빠뜨린 시험이 이 Mac의 실제 노트 폴더(~/Tractus, 저장소 .env의 TRACTUS_HOME)에 노트를 만들지 않게 한다.
+    셸 환경변수가 .env보다 이기므로 여기서 정하면 CLI도 이 폴더를 쓴다. `env` 픽스처는 이것을 다시 덮어쓴다."""
+    monkeypatch.setenv("TRACTUS_HOME", str(tmp_path_factory.mktemp("home")))
