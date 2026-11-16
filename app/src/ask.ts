@@ -33,11 +33,20 @@ export type AskEvent =
   | { job: string; event: "stage"; stage: string }
   | { job: string; event: "sources"; sources: AskSource[] }
   | { job: string; event: "delta"; text: string }
-  | { job: string; event: "done"; answer: string; citations: Citation[]; provider: string; model: string }
+  | { job: string; event: "done"; answer: string; citations: Citation[]; provider: string; model: string; scope?: AskScopeUsed }
   | { job: string; event: "error"; message: string; code?: string }
   /** chat_save_failed: --save 저장 실패 (done 앞에 온다). 답은 그대로 나온다 */
   | { job: string; event: "warning"; code: string; message: string }
   | { job: string; event: "exit"; code: number | null; stderr: string };
+
+/** done의 scope: 전체 범위 질문이 기간·폴더·태그로 좁힌 범위 (좁히지 않았으면 없다). folder는 폴더 ID 또는 "none"(폴더 없는 노트), folder_name은 그때의 폴더 이름 */
+export interface AskScopeUsed {
+  from?: string;
+  to?: string;
+  folder?: string;
+  folder_name?: string;
+  tag?: string[];
+}
 
 export type AskPhase = "starting" | "retrieve" | "answer" | "done" | "error" | "cancelled";
 
@@ -54,6 +63,8 @@ export interface AskState {
   errorCode: string | null;
   /** 끝나지 않는 경고의 화면 문장 (예: 기록 저장 실패) */
   warning: string | null;
+  /** 이 답이 쓴 검색 범위 (done의 scope). 옛 기록·노트 안 질문은 없다 */
+  scope?: AskScopeUsed;
 }
 
 export const START_ASK: AskState = { phase: "starting", sources: [], answer: "", citations: [], provider: null, model: null, error: null, errorCode: null, warning: null };
@@ -76,7 +87,7 @@ export function askReduce(s: AskState, ev: AskEvent): AskState {
     case "delta":
       return { ...s, phase: "answer", answer: s.answer + ev.text };
     case "done":
-      return { ...s, phase: "done", answer: ev.answer, citations: ev.citations, provider: ev.provider, model: ev.model };
+      return { ...s, phase: "done", answer: ev.answer, citations: ev.citations, provider: ev.provider, model: ev.model, scope: ev.scope };
     case "error":
       return { ...s, phase: "error", error: ev.message, errorCode: ev.code ?? null };
     case "exit":
@@ -140,6 +151,17 @@ export function citeLabel(sec: number, o: { date?: string; memo?: boolean; line?
   // tagged: 녹음 노트의 메모 줄. 같은 노트의 시각 칩과 섞여 보이므로 `메모`를 앞에 붙인다 (메모 노트는 모두 메모라 붙이지 않는다)
   const where = !o.line ? t("메모") : o.tagged ? t("메모 {n}번째 줄", { n: o.line }) : t("{n}번째 줄", { n: o.line });
   return `${day}${where}`;
+}
+
+/** 답 아래 한 줄: `검색 범위: ‘업무’ 폴더 · #출시 · 11/3–11/10`. 날짜는 인용 칩과 같은 M/D. 좁히지 않은 답이면 null */
+export function scopeLabel(s: AskScopeUsed | undefined): string | null {
+  const md = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : "");
+  const parts = [
+    s?.folder === "none" ? t("폴더 없음") : s?.folder ? t("‘{name}’ 폴더", { name: s.folder_name ?? "" }) : "",
+    (s?.tag ?? []).map((x) => `#${x}`).join(" "),
+    s?.from || s?.to ? `${md(s.from)}–${md(s.to)}` : "",
+  ].filter(Boolean);
+  return parts.length ? t("검색 범위: {scope}", { scope: parts.join(" · ") }) : null;
 }
 
 /** 녹음 노트에 사용자가 적은 메모의 줄인가 (`source: "memo"` 또는 `m0003`). 칩 글자에 `메모`를 붙이는 쪽 */

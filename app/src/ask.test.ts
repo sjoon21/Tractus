@@ -7,6 +7,7 @@ import {
   historyFromEntries,
   isAsking,
   isNoteGone,
+  scopeLabel,
   sendNotice,
   START_ASK,
   trimHistory,
@@ -196,5 +197,22 @@ describe("코어가 실제로 낸 메모 질문 이벤트", () => {
     const target = citeTarget({ meetingId: null, segId: "s0007" }, { meetingId: MID, citations: end.citations, sources: end.sources });
     expect(target).toEqual({ meetingId: MID, segId: "s0007", t: 0, line: 2 });
     expect(citeLabel(target!.t, { memo: true, line: target!.line })).toBe("2번째 줄");
+  });
+});
+
+describe("scopeLabel", () => {
+  test("답 아래 검색 범위: 폴더 · 태그 · 기간 (M/D), 좁히지 않았으면 null", () => {
+    expect(scopeLabel({ folder: "01K6X3ABCDEFGHJKMNPQRSTVWX", folder_name: "업무", from: "2026-11-03", to: "2026-11-10" })).toBe("검색 범위: ‘업무’ 폴더 · 11/3–11/10");
+    expect(scopeLabel({ folder: "none" })).toBe("검색 범위: 폴더 없음");
+    expect(scopeLabel({ tag: ["출시", "QA"], from: "2026-11-03" })).toBe("검색 범위: #출시 #QA · 11/3–");
+    expect(scopeLabel({ to: "2026-01-09" })).toBe("검색 범위: –1/9");
+    expect(scopeLabel({})).toBeNull();
+    expect(scopeLabel(undefined)).toBeNull(); // 옛 기록·노트 안 질문
+  });
+
+  test("done의 scope를 턴 상태에 남긴다", () => {
+    const d = run([{ event: "done", answer: "a", citations: [], provider: "upstage", model: "m", scope: { folder: "none" } }]);
+    expect(d.scope).toEqual({ folder: "none" });
+    expect(run([{ event: "done", answer: "a", citations: [], provider: "upstage", model: "m" }]).scope).toBeUndefined();
   });
 });

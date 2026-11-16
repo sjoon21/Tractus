@@ -142,11 +142,11 @@ def _with_neighbours(segs: list[dict], ids: set[str]) -> list[int]:
 
 
 def search_sources(idx, question: str, history: list[dict] | None = None, *, date_from: str | None = None, date_to: str | None = None,
-                   meeting_id: str | None = None) -> list[dict]:
+                   meeting_id: str | None = None, meeting_ids: set[str] | None = None) -> list[dict]:
     """하이브리드 검색 상위 8개 청크의 세그먼트 + 앞뒤 이웃 1개씩. 회의는 첫 등장 순, 회의 안은 시간 순.
-    history가 있으면 후속 질문 검색에 직전 질문을 보탠다(_hits)."""
+    history가 있으면 후속 질문 검색에 직전 질문을 보탠다(_hits). meeting_ids: 이 노트들 안에서만 (폴더·태그, organize.matching_ids)."""
     wanted: dict[str, set[str]] = {}
-    for h in _hits(idx, question, history or [], date_from=date_from, date_to=date_to, meeting_id=meeting_id):
+    for h in _hits(idx, question, history or [], date_from=date_from, date_to=date_to, meeting_id=meeting_id, meeting_ids=meeting_ids):
         wanted.setdefault(h.meeting_id, set()).update(h.segment_ids)
     out = []
     for mid, ids in wanted.items():
@@ -199,15 +199,17 @@ def summary_items(d: Path) -> list[dict]:
     return sorted(out, key=lambda i: i["label"] not in _LABEL.values())[:RECAP_LINES]
 
 
-def recap_sources(idx, question: str, history: list[dict] | None = None, *, date_from: str | None = None, date_to: str | None = None) -> list[dict]:
+def recap_sources(idx, question: str, history: list[dict] | None = None, *, date_from: str | None = None, date_to: str | None = None,
+                  meeting_ids: set[str] | None = None) -> list[dict]:
     """모아 묻는 질문의 근거: 노트마다 저장된 요약 줄(source "summary", segment_ids) + 그 줄이 가리키는 대화·메모 줄(인용 대조용).
     기간이 있으면 그 기간의 노트를 최근 것부터 12개, 없으면 검색에 걸린 노트 → 최근 노트 순으로 8개.
-    요약이 없거나 요약의 근거 ID가 지금 대화에 없는 노트는 검색 결과(search_sources)를 그대로 쓴다. 요약 있는 노트가 하나도 없으면 검색 결과만."""
-    hits = search_sources(idx, question, history, date_from=date_from, date_to=date_to)
+    요약이 없거나 요약의 근거 ID가 지금 대화에 없는 노트는 검색 결과(search_sources)를 그대로 쓴다. 요약 있는 노트가 하나도 없으면 검색 결과만.
+    meeting_ids: 이 노트들 중에서만 고른다 (폴더·태그)."""
+    hits = search_sources(idx, question, history, date_from=date_from, date_to=date_to, meeting_ids=meeting_ids)
     if date_from or date_to:
-        mids = idx.meeting_ids(date_from, date_to)[:RECAP_NOTES]
+        mids = [m for m in idx.meeting_ids(date_from, date_to) if meeting_ids is None or m in meeting_ids][:RECAP_NOTES]
     else:
-        mids = list(dict.fromkeys([s["meeting_id"] for s in hits] + idx.meeting_ids()))[:RECAP_UNDATED]
+        mids = [m for m in dict.fromkeys([s["meeting_id"] for s in hits] + idx.meeting_ids()) if meeting_ids is None or m in meeting_ids][:RECAP_UNDATED]
     out, covered = [], set()
     for mid in mids:
         d = idx.meeting_dir(mid)
@@ -226,11 +228,12 @@ def recap_sources(idx, question: str, history: list[dict] | None = None, *, date
     return out + [s for s in hits if s["meeting_id"] not in covered] if covered else hits
 
 
-def global_sources(idx, question: str, history: list[dict] | None = None, *, date_from: str | None = None, date_to: str | None = None) -> list[dict]:
-    """전체 범위 질문의 근거: 모아 묻는 질문(is_recap)은 요약으로, 나머지는 검색으로."""
+def global_sources(idx, question: str, history: list[dict] | None = None, *, date_from: str | None = None, date_to: str | None = None,
+                   meeting_ids: set[str] | None = None) -> list[dict]:
+    """전체 범위 질문의 근거: 모아 묻는 질문(is_recap)은 요약으로, 나머지는 검색으로. meeting_ids: 폴더·태그로 좁힌 노트들 (None이면 전부)."""
     if is_recap(question, bool(date_from or date_to)):
-        return recap_sources(idx, question, history, date_from=date_from, date_to=date_to)
-    return search_sources(idx, question, history, date_from=date_from, date_to=date_to)
+        return recap_sources(idx, question, history, date_from=date_from, date_to=date_to, meeting_ids=meeting_ids)
+    return search_sources(idx, question, history, date_from=date_from, date_to=date_to, meeting_ids=meeting_ids)
 
 
 def evidence(sources: list[dict]) -> list[dict]:

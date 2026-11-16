@@ -911,7 +911,7 @@ export function App() {
             <X aria-hidden />
           </Button>
         </header>
-        <AskPanel scope={GLOBAL} inputRef={askInput} notes={knownNotes} memoIds={memoIds} onCite={(meetingId, segId, t) => openMeeting(meetingId, { segId, t })} />
+        <AskPanel scope={GLOBAL} inputRef={askInput} notes={knownNotes} memoIds={memoIds} folders={folders} onCite={(meetingId, segId, t) => openMeeting(meetingId, { segId, t })} />
       </aside>
 
       {del.target && dialogText && (

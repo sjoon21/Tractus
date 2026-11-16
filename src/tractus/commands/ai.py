@@ -150,14 +150,17 @@ def ask(
     meeting: str = typer.Option(None, "--meeting", help="이 노트 전사 전체로 답한다 (meeting_id 일부 또는 폴더). 생략하면 모든 노트에서 검색"),
     date_from: str = typer.Option(None, "--from", help="YYYY-MM-DD (전체 범위 검색에만)", callback=lambda v: common.iso_date(v, "--from")),
     date_to: str = typer.Option(None, "--to", help="YYYY-MM-DD (전체 범위 검색에만)", callback=lambda v: common.iso_date(v, "--to")),
+    folder: str = typer.Option(None, "--folder", help="폴더 ID 또는 이름(하위 폴더 포함), none이면 폴더 없는 노트 (전체 범위 검색에만)"),
+    tag: list[str] = typer.Option(None, "--tag", help="이 태그가 붙은 노트에서만, 여러 번 주면 모두 붙은 노트 (전체 범위 검색에만)"),
     provider: str = typer.Option(None, "--provider", help="upstage | openai | claude | gemini | custom | gemma-local. 생략하면 TRACTUS_LLM_PROVIDER"),
     model: str = typer.Option(None, "--model", help="모델 ID. 생략하면 TRACTUS_LLM_MODEL 또는 공급자 기본값"),
     save: bool = typer.Option(False, "--save", help="질문·답을 노트 폴더 chat.json에 덧붙인다 (--meeting과 함께)"),
     progress_json: bool = typer.Option(False, "--progress-json", help="이벤트를 stdout에 JSON Lines로 출력 (데스크톱 앱용)"),
 ) -> None:
     """노트에 질문한다. stdin: {"question": "…", "history": [{"role", "content"}]} 또는 질문 평문.
-    공급자에는 질문, 최근 대화, 근거 세그먼트(모아 묻는 질문은 노트에 저장된 요약 줄도)만 보낸다. 답의 문장마다 [s0012] 인용이 붙는다."""
-    from tractus import ask as qa
+    공급자에는 질문, 최근 대화, 근거 세그먼트(모아 묻는 질문은 노트에 저장된 요약 줄도)만 보낸다. 답의 문장마다 [s0012] 인용이 붙는다.
+    전체 범위에서 기간·폴더·태그를 주면 done에 scope {from?, to?, folder?("none" 또는 ID), folder_name?, tag?}가 붙는다."""
+    from tractus import ask as qa, organize
 
     common.Events.enabled = progress_json
 
@@ -171,6 +174,15 @@ def ask(
         d = common.resolve_meeting(meeting) if meeting else None
     except typer.BadParameter as e:
         common.fail(e.message)
+    only, scope = None, {}
+    if d is None:  # 폴더·태그는 검색·notes list와 같은 규칙 (하위 폴더 포함). 맞는 노트가 없으면 근거 없는 답으로 끝난다
+        try:
+            only = organize.matching_ids(home_dir(), tags=tag or (), folder=folder)
+            fid = organize.resolve_folder(home_dir(), folder) if folder is not None else None
+        except ValueError as e:  # 없는 폴더·잘못된 태그
+            common.fail(str(e))
+        name = next((f["name"] for f in organize.load_folders(home_dir()) if f["id"] == fid), None)
+        scope = {k: v for k, v in {"from": date_from, "to": date_to, "folder": fid or ("none" if folder is not None else None), "folder_name": name, "tag": tag or None}.items() if v}
 
     def search(**kw) -> list[dict]:
         from tractus.embed import load_embedder
@@ -185,7 +197,7 @@ def ask(
 
     def get_sources() -> list[dict]:
         if d is None:
-            return search(date_from=date_from, date_to=date_to)
+            return search(date_from=date_from, date_to=date_to, meeting_ids=only)
         note = common.read_transcript(d)
         src = qa.transcript_sources(note)
         if is_recorded(note) and not src:
@@ -197,6 +209,7 @@ def ask(
         done = None
         for ev in qa.ask(llm.make_client(p), p.name, m, question, history, "global" if d is None else "meeting", get_sources, policy=p):
             if ev["event"] == "done":
+                ev = {**ev, **({"scope": scope} if scope else {})}  # 이 답이 쓴 검색 범위 (화면이 답 아래에 보인다)
                 done = ev
                 if save:  # done보다 먼저 저장한다: 앱이 done을 받은 직후 프로세스를 끝내도 기록이 남는다
                     _save_chat(d, question, ev)

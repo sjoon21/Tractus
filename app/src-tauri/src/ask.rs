@@ -17,12 +17,15 @@ fn is_date(d: &str) -> bool {
     b.len() == 10 && b.iter().enumerate().all(|(i, c)| if i == 4 || i == 7 { *c == b'-' } else { c.is_ascii_digit() })
 }
 
-/// `tractus ask [--meeting <id> --save] [--from D] [--to D] --progress-json` (docs/desktop.md §2.5).
-/// 회의 범위 질문은 늘 chat.json에 남기고(--save), 기간은 전체 범위에서만 쓴다
-pub fn ask_args(meeting: Option<&str>, from: Option<&str>, to: Option<&str>) -> Result<Vec<String>, String> {
-    let (from, to) = (from.filter(|d| !d.is_empty()), to.filter(|d| !d.is_empty()));
+/// `tractus ask [--meeting <id> --save] [--from D] [--to D] [--folder <ID|none>] --progress-json` (docs/desktop.md §2.5).
+/// 회의 범위 질문은 늘 chat.json에 남기고(--save), 기간·폴더는 전체 범위에서만 쓴다
+pub fn ask_args(meeting: Option<&str>, from: Option<&str>, to: Option<&str>, folder: Option<&str>) -> Result<Vec<String>, String> {
+    let (from, to, folder) = (from.filter(|d| !d.is_empty()), to.filter(|d| !d.is_empty()), folder.filter(|f| !f.is_empty()));
     if meeting.is_some() && (from.is_some() || to.is_some()) {
         return Err(t("기간은 전체 노트 질문에서만 고를 수 있습니다"));
+    }
+    if meeting.is_some() && folder.is_some() {
+        return Err(t("폴더는 전체 노트 질문에서만 고를 수 있습니다"));
     }
     let mut args = vec!["ask".to_string()];
     if let Some(id) = meeting {
@@ -37,6 +40,10 @@ pub fn ask_args(meeting: Option<&str>, from: Option<&str>, to: Option<&str>) -> 
             Some(d) => return Err(tv("날짜는 YYYY-MM-DD로 적습니다: {d}", &[("d", d.to_string())])),
             None => {}
         }
+    }
+    if let Some(f) = folder {
+        // 폴더 ID(ULID) 또는 `none`(폴더 없는 노트)만 넘긴다. 이름은 받지 않는다 (같은 이름의 폴더가 여럿일 수 있다)
+        args.extend(["--folder".into(), if f == "none" { f } else { crate::organize::folder_id(f)? }.into()]);
     }
     args.push("--progress-json".into());
     Ok(args)
@@ -108,15 +115,21 @@ mod tests {
 
     #[test]
     fn ask_command_args() {
-        assert_eq!(ask_args(Some("01ABC"), None, None).unwrap(), ["ask", "--meeting", "01ABC", "--save", "--progress-json"]);
-        assert_eq!(ask_args(None, Some("2026-10-01"), Some("")).unwrap(), ["ask", "--from", "2026-10-01", "--progress-json"]);
-        assert_eq!(ask_args(None, None, Some("2026-10-31")).unwrap(), ["ask", "--to", "2026-10-31", "--progress-json"]);
-        assert!(ask_args(Some("../x"), None, None).is_err());
-        assert!(ask_args(Some("--save"), None, None).is_err());
-        assert!(ask_args(None, Some("2026-1-1"), None).is_err());
-        assert!(ask_args(None, Some("--meeting x"), None).is_err());
-        assert!(ask_args(Some("01ABC"), Some("2026-10-01"), None).is_err()); // 코어: 기간은 전체 범위에서만
-        assert!(ask_args(Some("01ABC"), Some(""), Some("")).is_ok());
+        assert_eq!(ask_args(Some("01ABC"), None, None, None).unwrap(), ["ask", "--meeting", "01ABC", "--save", "--progress-json"]);
+        assert_eq!(ask_args(None, Some("2026-10-01"), Some(""), None).unwrap(), ["ask", "--from", "2026-10-01", "--progress-json"]);
+        assert_eq!(ask_args(None, None, Some("2026-10-31"), None).unwrap(), ["ask", "--to", "2026-10-31", "--progress-json"]);
+        assert!(ask_args(Some("../x"), None, None, None).is_err());
+        assert!(ask_args(Some("--save"), None, None, None).is_err());
+        assert!(ask_args(None, Some("2026-1-1"), None, None).is_err());
+        assert!(ask_args(None, Some("--meeting x"), None, None).is_err());
+        assert!(ask_args(Some("01ABC"), Some("2026-10-01"), None, None).is_err()); // 코어: 기간은 전체 범위에서만
+        assert!(ask_args(Some("01ABC"), Some(""), Some(""), Some("")).is_ok());
+        // 폴더: ID 또는 none만, 전체 범위에서만
+        assert_eq!(ask_args(None, None, None, Some("01ABC")).unwrap(), ["ask", "--folder", "01ABC", "--progress-json"]);
+        assert_eq!(ask_args(None, Some("2026-10-01"), None, Some("none")).unwrap(), ["ask", "--from", "2026-10-01", "--folder", "none", "--progress-json"]);
+        assert!(ask_args(None, None, None, Some("--meeting")).is_err());
+        assert!(ask_args(None, None, None, Some("업무")).is_err());
+        assert!(ask_args(Some("01ABC"), None, None, Some("01DEF")).is_err());
     }
 
     #[test]

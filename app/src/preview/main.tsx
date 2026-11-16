@@ -347,6 +347,11 @@ const handlers: Record<string, (a: T) => unknown> = {
   note_sample: () => (sampleId = notes.find((n) => n.t.title.includes(Q3))?.t.meeting_id ?? notes[0].t.meeting_id),
   list_recordings: () => [],
   list_folders: () => [{ id: "f1", name: EN ? "Customers" : "고객사", parent: null, order: 0, created_at: "2026-10-01T09:00:00+09:00" }],
+  // AI 질문: 근거 없는 답과, 고른 폴더·기간을 코어처럼 done의 scope로 돌려준다 (답 아래 검색 범위 줄)
+  ask_start: (a) => {
+    const scope = Object.fromEntries(Object.entries({ from: a.from, to: a.to, folder: a.folder, folder_name: a.folder === "f1" ? (EN ? "Customers" : "고객사") : null }).filter(([, v]) => v));
+    setTimeout(() => void emit("ask", { job: a.job, event: "done", answer: EN ? "I couldn’t find the answer in your notes." : "노트 내용에서 답을 찾지 못했습니다.", citations: [], provider: null, model: null, no_evidence: true, ...(Object.keys(scope).length ? { scope } : {}) }), 300);
+  },
   load_meeting: (a) => detail(a.id),
   polish_start: fakePolish,
   polish_resolve: resolvePolish,
