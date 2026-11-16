@@ -133,6 +133,7 @@ impl Recorder {
         let started_at = chrono::Local::now();
         self.t0 = Instant::now();
         let mut active = Vec::new();
+        let mut failed = Vec::new();
         for &track in requested {
             let path = self.dir.join(format!("{}.wav", track.name()));
             let writer = match WavWriter::create(&path) {
@@ -148,9 +149,26 @@ impl Recorder {
                     self.meters.insert(track, LevelMeter::default());
                     active.push(track);
                 }
-                Err(e) => {
+                Err(e) => failed.push((track, writer, e)),
+            }
+        }
+        for (track, writer, e) in failed {
+            match e {
+                // 화상회의 앱이 마이크를 잡는 중이면 시작에 실패할 수 있다. 다른 트랙이 돌면 마이크를 빼지 않고 감시가 2초마다 다시 연다
+                // (열리면 첫 버퍼 앞을 0으로 메운다). 시스템 오디오 실패·권한 거절은 다시 열어도 나아지지 않아 뺀다. Swift판과 같다
+                OpenError::Failed(m) if track == Track::Mic && !active.is_empty() => {
+                    self.writers.insert(track, writer);
+                    self.meters.insert(track, LevelMeter::default());
+                    self.sources.insert(track, Box::new(Closed));
+                    let now = self.elapsed();
+                    self.last_sample_at.insert(track, now);
+                    self.failing.insert(track); // restart가 같은 경고를 또 내지 않게
+                    active.insert(0, track); // 요청 순서(마이크가 먼저) 그대로
+                    warning("mic_failed", &format!("마이크 녹음을 시작하지 못했습니다. 계속 다시 연결을 시도합니다: {m}"));
+                }
+                e => {
                     drop(writer);
-                    let _ = std::fs::remove_file(&path);
+                    let _ = std::fs::remove_file(self.dir.join(format!("{}.wav", track.name())));
                     match e {
                         OpenError::Denied => warning("mic_denied", "마이크 권한이 없습니다"),
                         OpenError::Failed(m) => warning(&format!("{}_failed", track.name()), &format!("{} 녹음을 시작하지 못했습니다: {m}", track.label())),
@@ -440,4 +458,39 @@ struct Closed;
 
 impl Source for Closed {
     fn stop(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    struct Open;
+    impl Source for Open {
+        fn stop(&mut self) {}
+    }
+
+    /// 시스템 오디오가 돌면 시작 때 못 연 마이크를 트랙으로 남기고, 다시 열리면 이어 쓴다
+    #[test]
+    fn mic_that_fails_at_start_is_kept_and_retried() {
+        let dir = std::env::temp_dir().join(format!("tractus-rec-test-{}-micretry", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mic_ok = Rc::new(Cell::new(false));
+        let ok = mic_ok.clone();
+        let opener: Opener = Box::new(move |t, _| if t == Track::Mic && !ok.get() { Err(OpenError::Failed("busy".into())) } else { Ok(Box::new(Open)) });
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let mut r = Recorder::new(dir.clone(), tx, Some(opener));
+        r.start(&[Track::Mic, Track::System], false);
+        assert_eq!(r.info.as_ref().unwrap().tracks, vec!["mic", "system"]);
+        assert!(r.writers.contains_key(&Track::Mic) && r.sources.contains_key(&Track::Mic));
+        assert!(r.failing.contains(&Track::Mic));
+
+        r.restart(Track::Mic, "시험");
+        assert!(r.failing.contains(&Track::Mic), "아직 못 열면 실패 상태 그대로");
+        mic_ok.set(true);
+        r.restart(Track::Mic, "시험");
+        assert!(!r.failing.contains(&Track::Mic) && r.realign.contains(&Track::Mic), "열리면 다음 첫 버퍼에서 앞을 0으로 메운다");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

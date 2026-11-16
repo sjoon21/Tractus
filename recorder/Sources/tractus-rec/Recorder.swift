@@ -50,20 +50,31 @@ final class Recorder {
             let startedAt = Date()
             t0 = ProcessInfo.processInfo.systemUptime
             var active: [Track] = []
+            var failed: [(Track, Error)] = []
             for track in requested {
-                let url = dir.appendingPathComponent(track.file)
                 do {
-                    writers[track] = try WavWriter(url: url)
+                    writers[track] = try WavWriter(url: dir.appendingPathComponent(track.file))
                     meters[track] = LevelMeter()
                     try startSource(track)
                     active.append(track)
                 } catch {
-                    writers[track] = nil
-                    meters[track] = nil
-                    try? FileManager.default.removeItem(at: url)
-                    // ponytail: 계약(docs/desktop.md)에 없는 경고 코드. 앱이 모르는 코드는 message만 보여 주면 된다.
-                    warning("\(track.rawValue)_failed", "\(track == .mic ? "마이크" : "시스템 오디오") 녹음을 시작하지 못했습니다: \(error)")
+                    failed.append((track, error))
                 }
+            }
+            for (track, error) in failed {
+                // 화상회의 앱이 마이크를 잡는 중이면 시작에 실패할 수 있다. 다른 트랙이 돌면 마이크를 빼지 않고 watchdog이 2초마다 다시 연다.
+                // 열리면 첫 버퍼 앞을 0으로 메워(WavWriter.append) 두 트랙 시각이 맞는다. 시스템 오디오 실패는 대개 권한·OS 문제라 다시 열지 않는다.
+                if track == .mic, !active.isEmpty, sources[.mic] != nil {
+                    active.insert(.mic, at: 0)  // 요청 순서(마이크가 먼저) 그대로
+                    failing.insert(.mic)  // restart가 같은 경고를 또 내지 않게
+                    warning("mic_failed", "마이크 녹음을 시작하지 못했습니다. 계속 다시 연결을 시도합니다: \(error)")
+                    continue
+                }
+                sources.removeValue(forKey: track)?.stop()
+                writers[track] = nil
+                meters[track] = nil
+                try? FileManager.default.removeItem(at: dir.appendingPathComponent(track.file))
+                warning("\(track.rawValue)_failed", "\(track == .mic ? "마이크" : "시스템 오디오") 녹음을 시작하지 못했습니다: \(error)")
             }
             guard !active.isEmpty else { fatal("녹음할 수 있는 트랙이 없습니다") }
             if !active.contains(.mic) { echoCancel = false }
@@ -76,6 +87,10 @@ final class Recorder {
     }
 
     private func startSource(_ track: Track) throws {
+        if fake, track == .mic, let until = ProcessInfo.processInfo.environment["TRACTUS_REC_TEST_MIC_FAIL_UNTIL"].flatMap(Double.init) {
+            try register(.mic, FlakyFakeMic(until: until, queue: q) { [unowned self] in elapsed })
+            return
+        }
         if fake {
             let source = FakeSource(frequency: track == .mic ? 440 : 660, gaps: track == .system)
             every(0.02) { [unowned self] in write(track, source.generate(upTo: elapsed)) }
@@ -83,11 +98,15 @@ final class Recorder {
             return
         }
         let onChange = { [unowned self] in q.async { self.restart(track, "장치가 바뀌었습니다") } }
-        let source: AudioSource = track == .mic ? MicSource(echoCancel: echoCancel, onChange: onChange) : SystemTap(onChange: onChange)
-        try source.start(sink(track))
-        syncEchoCancel(source)
+        try register(track, track == .mic ? MicSource(echoCancel: echoCancel, onChange: onChange) : SystemTap(onChange: onChange))
+    }
+
+    /// 열기에 실패해도 `sources`에 남긴다: 다시 열지는 start가 정한다.
+    private func register(_ track: Track, _ source: AudioSource) throws {
         sources[track] = source
         lastSampleAt[track] = elapsed
+        try source.start(sink(track))
+        syncEchoCancel(source)
     }
 
     /// 에코 제거를 켜지 못했으면 MicSource가 echo_cancel_failed 경고를 내고 끈다. 녹음 중에 꺼졌으면 recording.json도 false로 고친다.
