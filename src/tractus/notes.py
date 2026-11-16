@@ -13,6 +13,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from tractus.calendar_event import save_event
 from tractus.i18n import t
 from tractus.store import _write_atomic, meeting_dir_name, memo_lines, new_ulid, one_line, save_transcript, SCHEMA_VERSION
 
@@ -109,14 +110,19 @@ def new_memo(title: str, body: str, now: datetime, meeting_id: str) -> dict:
     }
 
 
-def create_memo(meetings: Path, title: str | None, body: str = "", now: datetime | None = None) -> tuple[Path, dict]:
-    """meetings/<날짜>_<제목>_<ULID>/에 메모를 만든다. 제목이 없으면 '메모 HH:MM'. 잘못된 제목·본문은 ValueError."""
+def create_memo(meetings: Path, title: str | None, body: str = "", now: datetime | None = None, event: dict | None = None) -> tuple[Path, dict]:
+    """meetings/<날짜>_<제목>_<ULID>/에 메모를 만든다. 제목이 없으면 일정 제목, 그것도 없으면 '메모 HH:MM'. 잘못된 제목·본문은 ValueError.
+    event: 검사한 캘린더 일정(calendar_event.clean_event). 녹음처럼 노트 폴더에 event.json을 써서 일정과 잇는다 (일정 전에 준비하는 메모)."""
     now = now or datetime.now().astimezone()
+    if not (title and title.strip()) and event:
+        title = event["title"][:MAX_TITLE]  # 일정 제목은 200자까지라 노트 제목 한도로 자른다
     title = clean_title(title) if title and title.strip() else t("메모 {time}", time=f"{now:%H:%M}")  # 기본 제목은 만들 때의 화면 언어
     body = clean_body(body)
     note = new_memo(title, body, now, new_ulid())  # 줄 수 검사(ValueError)는 폴더를 만들기 전에 끝난다
     d = meetings / meeting_dir_name(now.date().isoformat(), title, note["meeting_id"])
     d.mkdir(parents=True)
+    if event:
+        save_event(d, event)
     save_transcript(d, note)  # transcript.json이 마지막: 이 파일이 생기면 노트가 생긴 것이다
     return d, note
 

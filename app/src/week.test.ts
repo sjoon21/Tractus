@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { MeetingInfo } from "./api";
-import { addDays, dayNotes, groupWeek, linked, recordable, weekDays, weekStart, ymd, type WeekEvent } from "./week";
+import { addDays, dayNotes, eventAction, groupWeek, linked, preparable, recordable, weekDays, weekStart, ymd, type WeekEvent } from "./week";
 
 const ev = (title: string, start: string, end: string, all_day = false): WeekEvent => ({ id: title, title, start, end, calendar: "회사", attendees: [], all_day });
 const note = (id: string, created_at: string) => ({ id, title: id, created_at }) as MeetingInfo;
@@ -60,4 +60,29 @@ test("녹음 단추는 오늘 시작해 아직 끝나지 않은 일정에만 (�
   expect(recordable(ev("끝남", "2026-11-05T09:00:00", "2026-11-05T10:00:00"), now)).toBe(false);
   expect(recordable(ev("내일", "2026-11-06T09:00:00", "2026-11-06T10:00:00"), now)).toBe(false);
   expect(recordable(ev("종일", "2026-11-05T00:00:00", "2026-11-06T00:00:00", true), now)).toBe(false);
+});
+
+describe("일정으로 할 일 (메모 준비 → 그 노트에 녹음)", () => {
+  const standup = { ...ev("스탠드업", "2026-11-03T09:30:00+09:00", "2026-11-03T10:00:00+09:00"), id: "E1" };
+  const link = { id: "E1", title: "스탠드업", start: "2026-11-03T09:30:00+09:00" };
+  const memo = (id: string, created_at: string) => ({ ...note(id, created_at), kind: "memo", event: link }) as MeetingInfo;
+  const recorded = (id: string, created_at: string) => ({ ...note(id, created_at), event: link }) as MeetingInfo;
+  const other = { ...note("x", "2026-11-03T08:00:00"), kind: "memo" } as MeetingInfo; // 일정과 잇지 않은 메모
+
+  test("이어진 노트가 없으면 메모 준비 (녹음은 새 노트)", () => {
+    expect(eventAction(standup, [other])).toEqual({ kind: "prepare" });
+  });
+  test("글만 있는 노트가 이어져 있으면 그 노트에 녹음: 여럿이면 가장 최근에 만든 것", () => {
+    expect(eventAction(standup, [memo("a", "2026-11-02T10:00:00"), memo("b", "2026-11-02T18:00:00"), recorded("r", "2026-11-03T09:31:00"), other])).toMatchObject({ kind: "record-into", note: { id: "b" } });
+  });
+  test("이어진 노트가 모두 녹음 노트면 전처럼 새 노트", () => {
+    expect(eventAction(standup, [recorded("r", "2026-11-03T09:31:00")])).toEqual({ kind: "record-new" });
+  });
+  test("메모 준비는 끝나지 않은 일정이면 오늘이 아니어도 (종일 제외)", () => {
+    const now = new Date(2026, 10, 5, 14, 30);
+    expect(preparable(ev("내일", "2026-11-06T09:00:00", "2026-11-06T10:00:00"), now)).toBe(true);
+    expect(preparable(ev("진행 중", "2026-11-05T14:00:00", "2026-11-05T15:00:00"), now)).toBe(true);
+    expect(preparable(ev("끝남", "2026-11-05T09:00:00", "2026-11-05T10:00:00"), now)).toBe(false);
+    expect(preparable(ev("종일", "2026-11-06T00:00:00", "2026-11-07T00:00:00", true), now)).toBe(false);
+  });
 });

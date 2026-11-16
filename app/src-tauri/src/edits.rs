@@ -148,13 +148,17 @@ pub(crate) fn clean_title(raw: &str) -> Result<String, String> {
     }
 }
 
-/// `tractus note new`. 제목이 없으면 코어가 `메모 HH:MM`으로 정한다. 있으면 stdin JSON으로 넘긴다
-fn note_new_args(title: Option<&str>) -> Result<(Vec<String>, Option<String>), String> {
-    let input = match title.map(str::trim).filter(|t| !t.is_empty()) {
-        Some(t) => Some(json!({ "title": clean_title(t)? }).to_string()),
-        None => None,
-    };
-    Ok((["note", "new"].map(String::from).to_vec(), input))
+/// `tractus note new`. 제목이 없으면 코어가 일정 제목이나 `메모 HH:MM`으로 정한다. 제목·일정이 있으면 stdin JSON으로 넘긴다.
+/// event: 일정 전에 준비하는 메모의 캘린더 일정 (녹음과 같은 검사, 코어가 노트 폴더에 event.json을 쓴다)
+fn note_new_args(title: Option<&str>, event: Option<&Value>) -> Result<(Vec<String>, Option<String>), String> {
+    let mut req = serde_json::Map::new();
+    if let Some(t) = title.map(str::trim).filter(|t| !t.is_empty()) {
+        req.insert("title".into(), json!(clean_title(t)?));
+    }
+    if let Some(ev) = event {
+        req.insert("event".into(), crate::calendar::clean_event(ev)?);
+    }
+    Ok((["note", "new"].map(String::from).to_vec(), (!req.is_empty()).then(|| Value::Object(req).to_string())))
 }
 
 /// `tractus note save <노트>` 인수와 stdin JSON. 본문은 인수가 아니라 stdin으로 넘긴다 (길이·특수 문자 걱정 없이)
@@ -184,9 +188,9 @@ pub struct NoteNew {
 }
 
 #[tauri::command]
-pub async fn note_new(state: State<'_, AppState>, title: Option<String>) -> Result<NoteNew, String> {
+pub async fn note_new(state: State<'_, AppState>, title: Option<String>, event: Option<Value>) -> Result<NoteNew, String> {
     let s = state.settings();
-    let (args, input) = note_new_args(title.as_deref())?;
+    let (args, input) = note_new_args(title.as_deref(), event.as_ref())?;
     blocking(move || {
         let v = stdout_json(&run_tractus(&s, &args, input.as_deref(), &t("메모를 만들지 못했습니다"))?)?;
         let meeting_id = v["meeting_id"].as_str().filter(|id| is_meeting_id(id)).ok_or_else(|| t("만든 메모를 찾지 못했습니다"))?.to_string();
@@ -348,11 +352,16 @@ mod tests {
     #[test]
     fn note_command_args() {
         // 새 메모: 제목이 없으면 stdin 없이 (코어가 `메모 HH:MM`), 있으면 한 줄로 줄여 JSON으로
-        assert_eq!(note_new_args(None).unwrap(), (vec!["note".to_string(), "new".into()], None));
-        assert_eq!(note_new_args(Some("  \n ")).unwrap().1, None);
-        let (_, input) = note_new_args(Some("  주간\n 아이디어 ")).unwrap();
+        assert_eq!(note_new_args(None, None).unwrap(), (vec!["note".to_string(), "new".into()], None));
+        assert_eq!(note_new_args(Some("  \n "), None).unwrap().1, None);
+        let (_, input) = note_new_args(Some("  주간\n 아이디어 "), None).unwrap();
         assert_eq!(serde_json::from_str::<Value>(&input.unwrap()).unwrap(), json!({"title": "주간 아이디어"}));
-        assert!(note_new_args(Some(&"가".repeat(121))).is_err());
+        assert!(note_new_args(Some(&"가".repeat(121)), None).is_err());
+        // 일정 메모: 녹음과 같은 검사를 거친 일정을 넘긴다 (이메일 참석자는 빠진다). 깨진 일정은 거부
+        let ev = json!({"id": "E1", "title": "주간 점검", "start": "2026-11-17T10:00:00+09:00", "end": "2026-11-17T11:00:00+09:00", "attendees": ["김민수", "a@b.c"]});
+        let sent = serde_json::from_str::<Value>(&note_new_args(None, Some(&ev)).unwrap().1.unwrap()).unwrap();
+        assert_eq!((sent.get("title"), &sent["event"]["id"], &sent["event"]["attendees"]), (None, &json!("E1"), &json!(["김민수"])));
+        assert!(note_new_args(None, Some(&json!({"title": ""}))).is_err());
 
         // 저장: 본문은 stdin JSON으로 그대로 (줄바꿈·따옴표·-- 포함)
         let body = "첫 줄\n\n-- $(rm) \"따옴표\" 😀";

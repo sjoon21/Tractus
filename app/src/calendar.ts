@@ -15,6 +15,8 @@ export const CAL_NO_PROMPT = t("macOS가 권한 창을 띄우지 않았습니다
 export const CAL_LIST_HINT = t("끈 캘린더의 일정은 홈에 보이지 않습니다.");
 export const CARD_LABEL = t("곧 시작하는 일정");
 export const CARD_RECORD = t("이 일정으로 녹음");
+/** 이번 주 띠: 일정과 이은 메모 노트를 미리 만든다 (그 일정의 녹음은 이 노트에 추가된다) */
+export const PREPARE_MEMO = t("메모 준비");
 
 const hm = (d: Date) => clock(d.getHours(), d.getMinutes());
 

@@ -474,11 +474,12 @@ Tauri 명령 (`src-tauri/src/removal.rs`, `lib.rs`):
 
 | 명령 | stdin | stdout | 오류 (종료 코드 2, 아무것도 쓰지 않음) |
 | --- | --- | --- | --- |
-| `tractus note new [--title T]` | 선택. `{"title"?: str, "body"?: str}`. 비었거나 터미널이면 빈 메모 | `{"meeting_id": "01K…", "meeting_dir": "<절대 경로>"}` | 입력 형식, 제목 120자 초과, 본문 200,000자·5,000줄 초과 |
+| `tractus note new [--title T]` | 선택. `{"title"?: str, "body"?: str, "event"?: 일정}`. 비었거나 터미널이면 빈 메모 | `{"meeting_id": "01K…", "meeting_dir": "<절대 경로>"}` | 입력 형식, 제목 120자 초과, 본문 200,000자·5,000줄 초과, 일정이 `clean_event`를 통과하지 못함(`일정 정보가 올바르지 않습니다`) |
 | `tractus note save <노트>` | `{"body": str}` (필수, 본문 통째로) | `{"saved": true, "segments": N, "changed": bool, "kind": "memo"\|"recording"}` (`N`: 메모의 줄 수. 메모 노트는 세그먼트 수와 같다) | 입력 형식, 한도 초과, 노트 없음. **메모 노트와 녹음 노트 모두 된다**(녹음 노트는 아래 "녹음 노트의 메모") |
 | `tractus note title <노트>` | `{"title": str}` (필수) | `{"title": "<정리된 제목>"}` | 비었음, 120자 초과, 입력 형식, 노트 없음 |
 
-- **제목 우선순위(`note new`):** `--title` > stdin의 `title` > `메모 HH:MM`(이 Mac의 현지 시각). 폴더는 `$TRACTUS_HOME/meetings/<YYYY-MM-DD>_<제목>_<ULID>/`(기존 `meeting_dir_name` 규칙).
+- **제목 우선순위(`note new`):** `--title` > stdin의 `title` > 일정 제목(`event`가 있을 때, 120자로 자름) > `메모 HH:MM`(이 Mac의 현지 시각).
+- **일정 메모(`note new`의 `event`, v3.132):** 녹음 폴더의 `event.json`과 같은 꼴(§2.19)이고 `calendar_event.clean_event`로 검사한다. 노트 폴더에 `event.json`을 transcript.json보다 먼저 쓴다: 녹음으로 만든 노트와 똑같이 이번 주 띠가 일정과 잇고(§3.6), 나중에 이 노트에 녹음을 추가하면(§2.11) 참석자 이름이 hotwords가 된다. 폴더는 `$TRACTUS_HOME/meetings/<YYYY-MM-DD>_<제목>_<ULID>/`(기존 `meeting_dir_name` 규칙).
 - **제목 정리(`store.one_line` + 길이):** 공백·줄바꿈은 한 칸, 제어 문자는 뺀다. 1–120자(코드 포인트 기준, 이모지 하나는 1자). `note title`은 녹음·메모 모두 된다. **폴더 이름은 바꾸지 않는다**(찾는 기준은 ULID, 앱도 meeting_id로 찾는다). `note_lock` 안에서 transcript.json(+ md·vtt 다시 쓰기), `summary.json`의 `title`, `summary.md`의 첫 `# ` 줄을 새 제목으로 바꾸고(요약이 없으면 건너뜀), 색인을 갱신한다. 같은 제목이면 아무것도 다시 쓰지 않는다.
 - **본문 정리(`note save`·`note new`):** `\r\n`·`\r` → `\n`, `\n`·`\t` 외의 제어 문자(C0·C1·DEL)는 뺀다. 줄 앞뒤 공백은 본문에 그대로 두되 세그먼트 텍스트에서는 `strip()`한다.
 
@@ -1056,6 +1057,7 @@ macOS 메뉴 막대에 Tractus 아이콘을 둔다. 창을 열지 않고 녹음�
 - 설정 `calendar_enabled`(기본 꺼짐: 연결하기 전에는 권한을 묻지 않는다)·`calendar_hidden`(끈 캘린더 ID, 처음에는 모두 읽는다)은 `calendar_set`·`calendar_connect`가 바로 저장하고 `save_settings`는 지금 값을 지킨다.
 - 명령(`calendar.rs`): `calendar_status`(`list` + 설정), `calendar_connect`(`request`, 허락되면 켠다), `calendar_set(enabled, hidden)`, `calendar_next`(꺼져 있으면 빈 목록, `next --ahead 15 --exclude …`), `calendar_privacy`(시스템 설정의 캘린더 화면).
 - 홈은 1분마다·창이 다시 보일 때 `calendar_next`를 읽어 첫 일정을 카드로 보인다(실패하면 카드가 없다). `이 일정으로 녹음`은 `rec_start(flags, target, event)`이고 Rust가 다시 검사해 녹음 폴더에 `event.json`을 쓴다(시작에 실패하면 지운다).
+- **일정 전에 메모 준비 → 그 노트에 녹음 (v3.132, `week.eventAction`).** 이번 주 띠의 일정 줄에 이어진 노트가 없으면 `메모 준비`(끝나지 않은 종일 아닌 일정이면 오늘이 아니어도)가 `note_new(title=null, event)`로 일정과 이은 메모 노트를 만들어 연다. 일정으로 녹음을 시작할 때(이번 주 띠·`곧 시작하는 일정` 카드·통화 감지의 `녹음`, 모두 `App.onRecordButton`) 그 일정에 이어진 노트 중 **글만 있는 노트**가 있으면 새 노트 대신 그 노트에 녹음을 추가한다(`녹음 추가`와 같은 흐름, §2.11, `rec_start(flags, target, event)`). 여럿이면 가장 최근에 만든 것(`created_at`). 이어진 노트가 모두 녹음 노트이거나, 다른 변환·녹음 추가가 돌고 있어 추가할 수 없으면 전처럼 새 노트로 녹음한다(녹음을 놓치지 않게). 녹음 단추는 전처럼 오늘 일정에만 있고, 준비한 메모가 있으면 `title`이 `녹음 추가` 안내다. 상태는 `/gallery.html`의 `이번 주 일정 줄`에서 본다.
 - 참석자 이름 고르기: 이름 바꾸기 폼에 `일정 참석자` 버튼(다른 참석자에게 이미 붙인 이름은 뺀다). 누르면 입력한 것과 같은 `rename`이다.
 
 ### 3.7 첫 사용자 온보딩 (v3.39)

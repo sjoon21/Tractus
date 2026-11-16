@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api, type CalendarEvent, type MeetingInfo } from "./api";
 import { POLL_MS } from "./calendar";
+import { isMemo } from "./memo";
 
 /** 이 Mac 시간대의 날짜 "YYYY-MM-DD" */
 export function ymd(d: Date): string {
@@ -64,6 +65,20 @@ export const dayNotes = (d: Day) => d.notes.length + d.events.reduce((k, e) => k
 
 /** 목록에서 `이 일정으로 녹음`을 보일 일정: 오늘 시작하고 아직 끝나지 않은, 종일이 아닌 일정 */
 export const recordable = (ev: WeekEvent, now: Date) => !ev.all_day && ymd(new Date(ev.start)) === ymd(now) && new Date(ev.end) > now;
+
+/** 일정으로 할 일 (docs/desktop.md §3.6). 이어진 노트가 없으면 `prepare`(`메모 준비`, 녹음 단추는 새 노트).
+ * 이어진 노트 중 글만 있는 노트(녹음 없음)가 있으면 녹음은 그 노트에 추가한다: 여럿이면 가장 최근에 만든 것.
+ * 이어진 노트가 모두 녹음 노트면 전처럼 새 노트 */
+export type EventAction = { kind: "prepare" } | { kind: "record-into"; note: MeetingInfo } | { kind: "record-new" };
+export function eventAction(ev: WeekEvent, notes: readonly MeetingInfo[]): EventAction {
+  const mine = notes.filter((n) => linked(ev, n));
+  if (!mine.length) return { kind: "prepare" };
+  const memo = mine.filter(isMemo).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+  return memo ? { kind: "record-into", note: memo } : { kind: "record-new" };
+}
+
+/** `메모 준비`를 보일 일정: 아직 끝나지 않은, 종일이 아닌 일정 (오늘이 아니어도) */
+export const preparable = (ev: WeekEvent, now: Date) => !ev.all_day && new Date(ev.end) > now;
 
 /** 그 주의 캘린더 일정. 연결하지 않았거나 실패하면 빈 목록 (띠는 노트만 보인다). 1분마다, 창이 다시 보일 때 다시 읽는다 */
 export function useWeekEvents(from: string): WeekEvent[] {

@@ -6,6 +6,7 @@ import sys
 import typer
 
 from tractus import notes
+from tractus.calendar_event import clean_event
 from tractus.commands import common
 from tractus.i18n import t
 from tractus.paths import home_dir
@@ -25,15 +26,19 @@ def note_main() -> None:
 
 @note_app.command("new")
 def note_new(title: str = typer.Option(None, "--title", help="제목. stdin의 title보다 우선한다. 생략하면 '메모 HH:MM'(이 Mac의 시각)")) -> None:
-    """빈 메모(또는 stdin의 {"title"?, "body"?}로 채운 메모)를 만든다. stdout: {"meeting_id": "…", "meeting_dir": "<절대 경로>"}
-    잘못된 제목·본문이면 종료 코드 2 (아무것도 만들지 않는다)."""
+    """빈 메모(또는 stdin의 {"title"?, "body"?, "event"?}로 채운 메모)를 만든다. stdout: {"meeting_id": "…", "meeting_dir": "<절대 경로>"}
+    event: 캘린더 일정(event.json과 같은 꼴). 노트 폴더에 event.json을 써서 일정과 잇고, 제목이 없으면 일정 제목이 기본 제목이다.
+    잘못된 제목·본문·일정이면 종료 코드 2 (아무것도 만들지 않는다)."""
     raw = "" if sys.stdin.isatty() else sys.stdin.read()
     try:
         req = common.read_json_object(raw, '{"title": "…", "body": "…"}') if raw.strip() else {}
         for key in ("title", "body"):
             if not isinstance(req.get(key, ""), str):
                 raise ValueError(t("입력은 {shape} 형식이어야 합니다", shape='{"title": "…", "body": "…"}'))  # words-ok: 앱 계약 오류
-        d, note = notes.create_memo(home_dir() / "meetings", title or req.get("title"), req.get("body", ""))
+        event = None
+        if req.get("event") is not None and not (event := clean_event(req["event"])):
+            raise ValueError(t("일정 정보가 올바르지 않습니다"))
+        d, note = notes.create_memo(home_dir() / "meetings", title or req.get("title"), req.get("body", ""), event=event)
     except ValueError as e:
         common.fail(str(e), exit_code=2)
     common.sync_index_quietly(embed=False)

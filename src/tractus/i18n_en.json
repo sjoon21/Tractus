@@ -419,5 +419,6 @@
  "회의록을 저장하지 못했습니다: 형식이 맞지 않습니다": "Couldn't save the minutes: the format is invalid",
  "변환 엔진 (한국어 파인튜닝)": "Transcription engine (Korean fine-tune)",
  "Qwen3-ASR 1.7B를 한국어로 더 학습한 엔진입니다. 간이 점검만 했습니다. 사전 단어를 쓸 수 있습니다.": "Qwen3-ASR 1.7B trained further on Korean. It has only had a quick check. Custom vocabulary works.",
- "Qwen3-ASR 1.7B 한국어 (8bit 양자화)": "Qwen3-ASR 1.7B Korean (8-bit quantized)"
+ "Qwen3-ASR 1.7B 한국어 (8bit 양자화)": "Qwen3-ASR 1.7B Korean (8-bit quantized)",
+ "일정 정보가 올바르지 않습니다": "The event details are invalid"
 }
