@@ -60,14 +60,8 @@ final class MicSource: AudioSource {
         self.echoCancel = echoCancel
         self.onChange = onChange
         // 음성 처리를 켜면 입력 구성이 바뀌므로 관찰자를 걸기 전에 켠다.
-        if echoCancel {
-            do {
-                try enableVoiceProcessing()
-            } catch {
-                self.echoCancel = false
-                warning("echo_cancel_failed", "에코 제거를 켜지 못해 에코 제거 없이 녹음합니다: \(error)")
-            }
-        }
+        // 실패해도 여기서 끄지 않는다: 장치를 잡는 중일 수 있어 start가 다시 켜 보고, 음성 처리 없이 열릴 때만 끈다.
+        if echoCancel { try? enableVoiceProcessing() }
         attach()
     }
 

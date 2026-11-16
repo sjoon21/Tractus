@@ -341,6 +341,18 @@ final class FakeModeTests: XCTestCase {
         XCTAssertEqual(try info(r)["tracks"] as? [String: String], ["mic": "mic.wav", "system": "system.wav"])
     }
 
+    /// 끝내 못 연 마이크: 재시도가 실패해도 경고는 한 번이고, 마이크 트랙은 빈 WAV로 남으며 녹음은 정상 종료한다.
+    func testMicThatNeverOpensStaysAnEmptyTrack() throws {
+        let r = try run([], env: ["TRACTUS_REC_TEST_MIC_FAIL_UNTIL": "60"]) { _, stdin in
+            Thread.sleep(forTimeInterval: 4.5)  // watchdog 재시도가 적어도 한 번 실패한다
+            stdin.write(Data("stop\n".utf8))
+        }
+        XCTAssertEqual(r.status, 0)
+        XCTAssertEqual(events(r, "warning").compactMap { $0["code"] as? String }, ["mic_failed"])
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: r.dir.appendingPathComponent("mic.wav").path)[.size] as? Int, 44)
+        XCTAssertEqual(try info(r)["tracks"] as? [String: String], ["mic": "mic.wav", "system": "system.wav"])
+    }
+
     /// 마이크만 녹음할 때(대면 녹음) 마이크를 못 열면 예전처럼 녹음하지 않는다.
     func testMicOnlyRecordingStillFailsWhenMicFailsAtStart() throws {
         let r = try run(["--no-system"], env: ["TRACTUS_REC_TEST_MIC_FAIL_UNTIL": "60"]) { _, _ in }
