@@ -212,10 +212,12 @@ final class SystemTap: AudioSource {
             }
             // 통화 중 헤드셋 마이크가 켜지고 꺼지면 속도가 바뀐다: 정말 바뀌었을 때만 새 속도로 다시 연다.
             watchRate(aggregateID, kAudioDevicePropertyNominalSampleRate, from: asbd.mSampleRate, read: deviceRate)
-            watchRate(tapID, kAudioTapPropertyFormat, from: tapRate) { [tapID] in
+            let tapFormatRate = { [tapID] () -> Double? in
                 var d = AudioStreamBasicDescription()
                 return (try? getProperty(tapID, kAudioTapPropertyFormat, &d)) != nil && d.mSampleRate > 0 ? d.mSampleRate : nil
             }
+            // 기준은 aggregate를 만든 뒤에 다시 읽는다: tap 포맷은 장치에 붙으며 바뀔 수 있어 앞의 값과 비교하면 헛되이 다시 연다.
+            watchRate(tapID, kAudioTapPropertyFormat, from: tapFormatRate() ?? tapRate, read: tapFormatRate)
 
             let channels = Int(format.channelCount)
             try check(AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, queue) { _, input, _, _, _ in

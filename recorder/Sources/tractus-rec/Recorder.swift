@@ -24,6 +24,7 @@ final class Recorder {
     private var failing: Set<Track> = []  // 재시작 실패 경고를 한 번만 내기 위해
     private var timers: [DispatchSourceTimer] = []
     private var stopping = false
+    private var pendingRestart: [Track: DispatchWorkItem] = [:]  // restartSoon이 미뤄 둔 재연결
     private var pausedSince: Double?  // 일시정지 시작 시 systemUptime. nil이면 녹음 중
     private var pausedTotal = 0.0  // 끝난 일시정지의 벽시계 합(초)
     private var pauseWallStart = Date()
@@ -97,7 +98,7 @@ final class Recorder {
             flushSources.append { [unowned self] in write(track, source.generate(upTo: elapsed)) }
             return
         }
-        let onChange = { [unowned self] in q.async { self.restart(track, "장치가 바뀌었습니다") } }
+        let onChange = { [unowned self] in q.async { self.restartSoon(track) } }
         try register(track, track == .mic ? MicSource(echoCancel: echoCancel, onChange: onChange) : SystemTap(onChange: onChange))
     }
 
@@ -121,6 +122,17 @@ final class Recorder {
 
     private func sink(_ track: Track) -> SampleSink {
         { [unowned self] samples in q.async { self.ingest(track, samples) } }
+    }
+
+    /// 장치·속도 알림은 한 번 바뀔 때 여러 개가 몰려 온다: 마지막 알림 0.3초 뒤에 한 번만 다시 연다(장치가 자리 잡은 뒤). q에서 부른다.
+    private func restartSoon(_ track: Track) {
+        pendingRestart[track]?.cancel()
+        let work = DispatchWorkItem { [unowned self] in
+            pendingRestart[track] = nil
+            restart(track, "장치가 바뀌었습니다")
+        }
+        pendingRestart[track] = work
+        q.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
     /// 장치 전환이나 끊김 뒤에 소스를 다시 연다. 끊긴 구간은 다음 첫 버퍼에서 0으로 메워 두 트랙 시각을 맞춘다.
