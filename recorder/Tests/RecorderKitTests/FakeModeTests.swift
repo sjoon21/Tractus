@@ -7,11 +7,12 @@ final class FakeModeTests: XCTestCase {
 
     struct Run { let events: [[String: Any]]; let status: Int32; let dir: URL }
 
-    func run(_ extra: [String], _ drive: (Process, FileHandle) throws -> Void) throws -> Run {
+    func run(_ extra: [String], env: [String: String] = [:], _ drive: (Process, FileHandle) throws -> Void) throws -> Run {
         let dir = try tempDir().appendingPathComponent("rec")
         let p = Process()
         p.executableURL = binary
         p.arguments = ["record", "--out", dir.path, "--fake"] + extra
+        p.environment = ProcessInfo.processInfo.environment.merging(env) { _, new in new }
         let stdin = Pipe(), stdout = Pipe()
         p.standardInput = stdin
         p.standardOutput = stdout
@@ -311,6 +312,42 @@ final class FakeModeTests: XCTestCase {
         XCTAssertEqual(duration, p + 0.7, accuracy: 0.25)
         XCTAssertEqual(try seconds("mic.wav", in: r), duration, accuracy: 0.05)
         XCTAssertLessThan(try longestZeroRun(r.dir.appendingPathComponent("mic.wav")), 100)
+    }
+
+    // MARK: - 시작 때 마이크 실패
+
+    /// 시스템 오디오가 돌면 시작 때 못 연 마이크를 빼지 않고 다시 연다. 열린 뒤의 마이크는 시스템 트랙과 시각이 맞는다(앞은 무음).
+    func testMicThatFailsAtStartIsRetriedAndAligned() throws {
+        let r = try run([], env: ["TRACTUS_REC_TEST_MIC_FAIL_UNTIL": "0.5"]) { _, stdin in
+            Thread.sleep(forTimeInterval: 3.5)
+            stdin.write(Data("stop\n".utf8))
+        }
+        XCTAssertEqual(r.status, 0)
+        XCTAssertEqual(events(r, "started").first?["tracks"] as? [String], ["mic", "system"], "마이크도 녹음 트랙이다")
+        let warnings = events(r, "warning").compactMap { $0["code"] as? String }
+        XCTAssertEqual(warnings, ["mic_failed", "mic_restarted"], "실패 경고는 한 번, 열리면 다시 연결 알림")
+        XCTAssertTrue((events(r, "warning").first?["message"] as? String ?? "").contains("다시 연결을 시도합니다"))
+
+        let duration = try XCTUnwrap(r.events.last?["duration"] as? Double)
+        let mic = try seconds("mic.wav", in: r), system = try seconds("system.wav", in: r)
+        XCTAssertEqual(system, duration, accuracy: 0.05)
+        XCTAssertEqual(mic, system, accuracy: 0.06, "트랙 정렬")
+        // 첫 재시도는 watchdog(2초 끊김) 뒤라 앞 2초 넘게 무음이고, 그 뒤로는 440 Hz가 이어진다
+        let samples = try Data(contentsOf: r.dir.appendingPathComponent("mic.wav")).dropFirst(44).withUnsafeBytes { Array($0.bindMemory(to: Int16.self)) }
+        let firstSound = try XCTUnwrap(samples.firstIndex { $0 != 0 })
+        XCTAssertGreaterThan(Double(firstSound) / 48_000, 1.9)
+        XCTAssertLessThan(Double(firstSound) / 48_000, duration - 0.5)
+        XCTAssertLessThan(try longestZeroRun(r.dir.appendingPathComponent("mic.wav")), firstSound + 100, "열린 뒤에는 끊김이 없다")
+        XCTAssertEqual(try info(r)["tracks"] as? [String: String], ["mic": "mic.wav", "system": "system.wav"])
+    }
+
+    /// 마이크만 녹음할 때(대면 녹음) 마이크를 못 열면 예전처럼 녹음하지 않는다.
+    func testMicOnlyRecordingStillFailsWhenMicFailsAtStart() throws {
+        let r = try run(["--no-system"], env: ["TRACTUS_REC_TEST_MIC_FAIL_UNTIL": "60"]) { _, _ in }
+        XCTAssertEqual(r.status, 1)
+        XCTAssertEqual(events(r, "warning").compactMap { $0["code"] as? String }, ["mic_failed"])
+        XCTAssertEqual(r.events.last?["event"] as? String, "error")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: r.dir.appendingPathComponent("mic.wav").path))
     }
 
     func testRecordingJsonHasEmptyPausesWhenNeverPaused() throws {
