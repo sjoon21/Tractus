@@ -60,14 +60,8 @@ final class MicSource: AudioSource {
         self.echoCancel = echoCancel
         self.onChange = onChange
         // 음성 처리를 켜면 입력 구성이 바뀌므로 관찰자를 걸기 전에 켠다.
-        if echoCancel {
-            do {
-                try enableVoiceProcessing()
-            } catch {
-                self.echoCancel = false
-                warning("echo_cancel_failed", "에코 제거를 켜지 못해 에코 제거 없이 녹음합니다: \(error)")
-            }
-        }
+        // 실패해도 여기서 끄지 않는다: 장치를 잡는 중일 수 있어 start가 다시 켜 보고, 음성 처리 없이 열릴 때만 끈다.
+        if echoCancel { try? enableVoiceProcessing() }
         attach()
     }
 
@@ -85,21 +79,23 @@ final class MicSource: AudioSource {
         input.voiceProcessingOtherAudioDuckingConfiguration = AVAudioVoiceProcessingOtherAudioDuckingConfiguration(enableAdvancedDucking: false, duckingLevel: .min)
     }
 
-    /// 음성 처리로 열지 못하면(켜기·포맷·엔진 시작 중 어디서든) 경고 후 끄고 음성 처리 없이 다시 연다.
+    /// 음성 처리로 열지 못하면(켜기·포맷·엔진 시작 중 어디서든) 음성 처리 없이 다시 연다. 그렇게 열리면 경고 후 음성 처리를 끈다.
     /// 한 번 꺼지면 이후 재연결도 음성 처리 없이 한다(마이크 트랙을 잃지 않는 게 먼저다).
+    /// 음성 처리 없이도 못 열면 장치 문제라 끄지 않고 던진다: 다음 재시도도 요청한 대로 음성 처리부터 연다.
     func start(_ sink: @escaping SampleSink) throws {
         if echoCancel {
             do {
                 // 장치가 바뀌어 다시 열 때 음성 처리가 풀렸으면 다시 켠다. 켜져 있으면 건드리지 않는다.
                 if !engine.inputNode.isVoiceProcessingEnabled { try enableVoiceProcessing() }
                 try open(sink)
-                return
             } catch {
                 stop()
                 try? engine.inputNode.setVoiceProcessingEnabled(false)
+                try open(sink)
                 echoCancel = false
                 warning("echo_cancel_failed", "에코 제거를 켜지 못해 에코 제거 없이 녹음합니다: \(error)")
             }
+            return
         }
         try open(sink)
     }
@@ -107,10 +103,14 @@ final class MicSource: AudioSource {
     private func open(_ sink: @escaping SampleSink) throws {
         let input = engine.inputNode
         // 음성 처리는 입력 포맷(채널 수 등)을 바꾸므로 켠 뒤에 포맷을 읽는다.
+        if let rate = micClientRateToSet(clientRate: input.outputFormat(forBus: 0).sampleRate, hardwareRate: input.inputFormat(forBus: 0).sampleRate, voiceProcessing: input.isVoiceProcessingEnabled),
+           let unit = input.audioUnit {
+            followHardwareRate(unit, rate)
+        }
         let format = input.outputFormat(forBus: 0)
         let hardware = input.inputFormat(forBus: 0)
         if let problem = micFormatProblem(tapRate: format.sampleRate, tapChannels: Int(format.channelCount), hardwareRate: hardware.sampleRate, hardwareChannels: Int(hardware.channelCount), voiceProcessing: input.isVoiceProcessingEnabled) {
-            throw WavError.io(problem)  // 던지면 Recorder.restart가 경고를 내고 watchdog이 2초 뒤 다시 연다
+            throw WavError.io(problem)  // 맞추고도 다르면 던진다. 던지면 Recorder가 경고를 내고 watchdog이 2초마다 다시 연다(녹음 시작 때는 다른 트랙이 돌 때만, Recorder.start)
         }
         guard let converter = MonoConverter(from: format, firstChannelOnly: input.isVoiceProcessingEnabled) else {
             throw WavError.io("입력 장치가 없거나 포맷을 변환할 수 없습니다 (\(format))")
@@ -129,6 +129,17 @@ final class MicSource: AudioSource {
         }
     }
 
+    /// 입력 유닛의 클라이언트 쪽(출력 범위, 입력 요소 1) 표본 속도를 장치 속도로 바꾼다(Yogurt 3806507). 실패하면 기록만 하고 아래 포맷 검사가 거른다.
+    private func followHardwareRate(_ unit: AudioUnit, _ rate: Double) {
+        var client = AudioStreamBasicDescription()
+        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        guard AudioUnitGetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &client, &size) == noErr else { return }
+        log("마이크가 \(Int(rate))Hz로 돌아 입력 표본 속도를 \(Int(client.mSampleRate))Hz에서 맞춥니다")
+        client.mSampleRate = rate
+        let status = AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &client, size)
+        if status != noErr { log("마이크 입력 표본 속도를 바꾸지 못했습니다 (OSStatus \(status))") }
+    }
+
     func stop() {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
@@ -145,8 +156,12 @@ final class SystemTap: AudioSource {
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
     private let queue = DispatchQueue(label: "tractus.rec.tap")
+    private let onChange: (() -> Void)?
+    /// 표본 속도 리스너. `stop()`이 뗀다.
+    private var listeners: [(AudioObjectID, AudioObjectPropertyAddress, AudioObjectPropertyListenerBlock)] = []
 
     init(onChange: (() -> Void)? = nil) {
+        self.onChange = onChange
         guard let onChange else { return }
         // ponytail: 리스너는 프로세스가 끝날 때까지 둔다.
         var address = propertyAddress(kAudioHardwarePropertyDefaultSystemOutputDevice)
@@ -165,9 +180,7 @@ final class SystemTap: AudioSource {
 
             var asbd = AudioStreamBasicDescription()
             try getProperty(tapID, kAudioTapPropertyFormat, &asbd)
-            guard let format = AVAudioFormat(streamDescription: &asbd), let converter = MonoConverter(from: format) else {
-                throw WavError.io("tap 포맷을 변환할 수 없습니다")
-            }
+            let tapRate = asbd.mSampleRate
 
             var outputDevice = AudioObjectID(kAudioObjectUnknown)
             try getProperty(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDefaultSystemOutputDevice, &outputDevice)
@@ -187,9 +200,35 @@ final class SystemTap: AudioSource {
             ]
             try check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &aggregateID), "AudioHardwareCreateAggregateDevice")
 
+            // 버퍼는 장치가 도는 속도로 온다: tap 포맷과 다르면 장치 속도를 붙인다. 48 kHz 파일로의 변환은 MonoConverter가 이 속도에서 한다.
+            let deviceRate = { [aggregateID] () -> Double? in
+                var rate = Float64(0)
+                return (try? getProperty(aggregateID, kAudioDevicePropertyNominalSampleRate, &rate)) != nil && rate > 0 ? rate : nil
+            }
+            asbd.mSampleRate = systemTapRate(tapRate: tapRate, deviceRate: deviceRate())
+            if asbd.mSampleRate != tapRate { log("tap은 \(Int(tapRate))Hz라고 하지만 장치는 \(Int(asbd.mSampleRate))Hz로 돕니다") }
+            guard let format = AVAudioFormat(streamDescription: &asbd), let converter = MonoConverter(from: format) else {
+                throw WavError.io("tap 포맷을 변환할 수 없습니다")
+            }
+            // 통화 중 헤드셋 마이크가 켜지고 꺼지면 속도가 바뀐다: 정말 바뀌었을 때만 새 속도로 다시 연다.
+            watchRate(aggregateID, kAudioDevicePropertyNominalSampleRate, from: asbd.mSampleRate, read: deviceRate)
+            let tapFormatRate = { [tapID] () -> Double? in
+                var d = AudioStreamBasicDescription()
+                return (try? getProperty(tapID, kAudioTapPropertyFormat, &d)) != nil && d.mSampleRate > 0 ? d.mSampleRate : nil
+            }
+            // 기준은 aggregate를 만든 뒤에 다시 읽는다: tap 포맷은 장치에 붙으며 바뀔 수 있어 앞의 값과 비교하면 헛되이 다시 연다.
+            watchRate(tapID, kAudioTapPropertyFormat, from: tapFormatRate() ?? tapRate, read: tapFormatRate)
+
+            let channels = Int(format.channelCount)
             try check(AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, queue) { _, input, _, _, _ in
-                guard let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: input, deallocator: nil) else { return }
-                sink(converter.convert(buffer))  // input은 콜백 안에서만 유효하므로 바로 변환한다
+                // 출력 장치의 입력 스트림(헤드셋 마이크)이 앞에 올 수 있어 tap 버퍼(맨 뒤)만 쓴다. tap은 mono라 버퍼 하나다.
+                let list = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
+                guard let i = tapBufferIndex(channels: list.map { Int($0.mNumberChannels) }, tapChannels: channels) else { return }
+                var one = AudioBufferList(mNumberBuffers: 1, mBuffers: list[i])
+                withUnsafeMutablePointer(to: &one) { one in
+                    guard let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: one, deallocator: nil) else { return }
+                    sink(converter.convert(buffer))  // input은 콜백 안에서만 유효하므로 바로 변환한다
+                }
             }, "AudioDeviceCreateIOProcIDWithBlock")
             try check(AudioDeviceStart(aggregateID, procID), "AudioDeviceStart")
         } catch {
@@ -198,8 +237,26 @@ final class SystemTap: AudioSource {
         }
     }
 
+    /// `read()`가 `rate`와 다른 속도를 내면 `onChange`로 다시 열게 한다. 리스너는 오디오 스레드가 아니라 `queue`에서 돈다.
+    private func watchRate(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector, from rate: Double, read: @escaping () -> Double?) {
+        guard let onChange else { return }
+        var address = propertyAddress(selector)
+        let block: AudioObjectPropertyListenerBlock = { _, _ in
+            guard let now = read(), now != rate else { return }
+            log("시스템 오디오 표본 속도가 \(Int(rate))Hz에서 \(Int(now))Hz로 바뀌었습니다")
+            onChange()
+        }
+        let status = AudioObjectAddPropertyListenerBlock(object, &address, queue, block)
+        if status == noErr { listeners.append((object, address, block)) } else { log("표본 속도 리스너 등록 실패 (OSStatus \(status))") }
+    }
+
     /// 만든 역순으로 정리한다. 여러 번 불러도 된다.
     func stop() {
+        for (object, address, block) in listeners {
+            var address = address
+            AudioObjectRemovePropertyListenerBlock(object, &address, queue, block)
+        }
+        listeners = []
         if aggregateID != kAudioObjectUnknown {
             if let procID {
                 AudioDeviceStop(aggregateID, procID)
@@ -229,7 +286,7 @@ final class FakeSource {
     static let amplitude = 0.3
     let frequency: Double
     let gaps: Bool
-    private var index = 0
+    var index = 0  // 다음에 낼 표본 위치(녹음 시작 기준)
 
     init(frequency: Double, gaps: Bool) { self.frequency = frequency; self.gaps = gaps }
 
@@ -245,6 +302,33 @@ final class FakeSource {
         }
         index = target
         return out
+    }
+}
+
+/// 시험 전용(`--fake` + `TRACTUS_REC_TEST_MIC_FAIL_UNTIL=<초>`): 녹음 시각 `until`초 전에는 열리지 않는 마이크.
+/// 녹음 시작 때 마이크를 못 연 경우(화상회의 앱이 마이크를 잡는 중 등)의 재시도·시각 맞추기를 권한 없이 시험한다.
+final class FlakyFakeMic: AudioSource {
+    private let until: Double
+    private let queue: DispatchQueue
+    private let clock: () -> Double  // 녹음 시각. `queue`에서만 읽는다
+    private var timer: DispatchSourceTimer?
+
+    init(until: Double, queue: DispatchQueue, clock: @escaping () -> Double) { self.until = until; self.queue = queue; self.clock = clock }
+
+    func start(_ sink: @escaping SampleSink) throws {
+        guard clock() >= until else { throw WavError.io("시험: 마이크가 아직 준비되지 않았습니다") }
+        let source = FakeSource(frequency: 440, gaps: false)
+        source.index = Int(clock() * Double(WavWriter.sampleRate))  // 열린 때부터 낸다: 앞부분은 Recorder가 0으로 메운다
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now(), repeating: 0.02)
+        t.setEventHandler { [clock] in sink(source.generate(upTo: clock())) }
+        t.resume()
+        timer = t
+    }
+
+    func stop() {
+        timer?.cancel()
+        timer = nil
     }
 }
 

@@ -40,6 +40,17 @@ describe("dialog text", () => {
     expect(deleteDialogText(note).body).toMatch(/^녹음 파일, 대화 내용, 요약/);
   });
 
+  test("note: a separate caution says the memo and other information go with it (every entry point)", () => {
+    // 사이드바(withMemo 모름)와 노트 머리 모두 같은 주의 문장: 메모가 있는지와 상관없이 말한다
+    for (const n of [note, { ...note, withMemo: true }, { ...note, withMemo: false }]) {
+      expect(deleteDialogText(n).warning).toBe("이 노트에 적은 메모, 녹음 중 메모, 참석자 이름, 요약·회의록·완성된 노트, 질문 기록도 모두 함께 삭제됩니다.");
+    }
+    expect(deleteDialogText({ ...note, memo: true }).warning).toBe("메모 내용과 요약, 질문 기록도 모두 함께 삭제됩니다.");
+    // 노트 밖에 있는 것(목소리 프로필·사전)은 지운다고 말하지 않는다
+    expect(deleteDialogText(note).warning).not.toMatch(/목소리|사전/);
+    expect(deleteDialogText(rec).warning).toBeNull();
+  });
+
   test("a note without a title is still named", () => {
     expect(noteTitle("  ")).toBe("제목 없음");
     expect(deleteDialogText({ ...note, title: "" }).title).toBe("‘제목 없음’ 노트를 삭제할까요?");
@@ -60,7 +71,8 @@ describe("dialog text", () => {
     // 경로는 파일 이름이라 검사에서 뺀다 (폴더 이름에 meetings가 있다)
     const plain = [{ ...note, dir: "/a/b" }, { ...rec, dir: "/a/b" }, { ...note, dir: "/a/b", title: "" }];
     const all = plain.flatMap((t) => Object.values(deleteDialogText(t)).concat(deletedText(t), deleteFailure(t, "x").text));
-    expect(all.join("\n")).not.toMatch(/회의|전사|세그먼트|화자|색인|\bID\b|meeting/);
+    // 회의록은 문서 이름이라 뺀다 (WORDS.md §4.26)
+    expect(all.join("\n").replaceAll("회의록", "")).not.toMatch(/회의|전사|세그먼트|화자|색인|\bID\b|meeting/);
   });
 });
 

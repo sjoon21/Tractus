@@ -10,8 +10,8 @@ const BASE = process.env.PREVIEW_URL ?? "http://localhost:1420/preview.html";
 mkdirSync(OUT, { recursive: true });
 
 const L = {
-  ko: { note: "3분기 예산 계획 회의", memo: "하늘상사 인터뷰 메모", tabs: ["요약", "회의록", "AI 질문", "메모"], record: "녹음", stop: "녹음 종료", settings: "설정", checkup: "시작 점검", find: "노트 검색" },
-  en: { note: "Q3 budget planning", memo: "Skyline Trading interview notes", tabs: ["Summary", "Minutes", "Ask AI", "Memo"], record: "Record", stop: "Stop recording", settings: "Settings", checkup: "Setup check", find: "Search notes" },
+  ko: { note: "3분기 예산 계획 회의", memo: "하늘상사 인터뷰 메모", tabs: ["요약", "회의록", "AI 질문", "메모"], record: "녹음", stop: "녹음 종료", settings: "설정", checkup: "시작 점검", find: "노트 검색", noteMenu: "3분기 예산 계획 회의 노트 메뉴", del: "삭제…", warn: "함께 삭제됩니다", cancel: "취소" },
+  en: { note: "Q3 budget planning", memo: "Skyline Trading interview notes", tabs: ["Summary", "Minutes", "Ask AI", "Memo"], record: "Record", stop: "Stop recording", settings: "Settings", checkup: "Setup check", find: "Search notes", noteMenu: "Q3 budget planning note menu", del: "Delete…", warn: "deleted with it", cancel: "Cancel" },
 };
 
 const browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -34,6 +34,17 @@ for (const lang of ["ko", "en"]) {
     ["홈", async () => void (await page.goto(`${BASE}${lang === "en" ? "?lang=en" : ""}`), await page.waitForTimeout(1200))],
     ["녹음 노트 열기", async () => { await page.getByText(t.note).first().click(); await page.getByText("0:34").first().waitFor({ timeout: 5000 }); }],
     ...t.tabs.map((tab) => [`오른쪽 탭 ${tab}`, async () => { await page.getByRole("tab", { name: tab, exact: true }).first().click(); await page.waitForTimeout(400); }]),
+    // 사이드바 줄 메뉴 → 삭제… → 주의 문장이 있는 확인 창 → 취소 (미리보기라 실제로 지우지 않고, 취소하면 노트가 남는다)
+    ["줄 메뉴 삭제 확인 창", async () => {
+      await page.getByRole("button", { name: t.noteMenu }).first().click({ force: true });
+      await page.getByRole("menuitem", { name: t.del }).click();
+      const dialog = page.getByRole("alertdialog");
+      await dialog.getByText(t.warn).waitFor({ timeout: 5000 });
+      await page.screenshot({ path: `${OUT}/${lang}-delete-dialog.png` });
+      await dialog.getByRole("button", { name: t.cancel }).click();
+      await dialog.waitFor({ state: "detached", timeout: 5000 });
+      await page.getByText(t.note).first().waitFor({ timeout: 2000 });
+    }],
     ["메모 노트 열기", async () => { await page.getByText(t.memo).first().click(); await page.waitForTimeout(600); }],
     ["녹음 시작·종료", async () => {
       await page.getByRole("button", { name: t.record, exact: true }).first().click();
