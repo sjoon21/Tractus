@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { DIALOG, DIALOG_BODY, DIALOG_FOOTER, DIALOG_TEXT, DIALOG_TITLE } from "@/components/ui/dialog";
+import { DIALOG, DIALOG_BODY, DIALOG_FOOTER, DIALOG_TEXT, DIALOG_TITLE, DIALOG_WARN } from "@/components/ui/dialog";
 
 /**
  * 확인 대화상자. 브라우저 `<dialog>`의 모달(showModal)을 쓴다: 뒤 화면이 비활성이 되어 Tab이 안에서만 돌고, Esc는 취소다.
@@ -10,6 +10,7 @@ import { DIALOG, DIALOG_BODY, DIALOG_FOOTER, DIALOG_TEXT, DIALOG_TITLE } from "@
 export function ConfirmDialog({
   title,
   body,
+  warning = null,
   cancelLabel,
   confirmLabel,
   busy,
@@ -18,6 +19,8 @@ export function ConfirmDialog({
 }: {
   title: string;
   body: string;
+  /** 본문 위에 강조해 보이는 주의 문장 (함께 사라지는 것 등) */
+  warning?: string | null;
   cancelLabel: string;
   confirmLabel: string;
   busy: boolean;
@@ -39,7 +42,7 @@ export function ConfirmDialog({
       className={DIALOG}
       role="alertdialog"
       aria-labelledby="confirm-title"
-      aria-describedby="confirm-body"
+      aria-describedby={warning ? "confirm-warning confirm-body" : "confirm-body"}
       aria-busy={busy}
       onCancel={(e) => {
         e.preventDefault(); // Esc: 닫는 일은 상태가 한다
@@ -48,6 +51,11 @@ export function ConfirmDialog({
     >
       <div className={DIALOG_BODY}>
         <h2 id="confirm-title" className={DIALOG_TITLE}>{title}</h2>
+        {warning && (
+          <p id="confirm-warning" className={DIALOG_WARN}>
+            {warning}
+          </p>
+        )}
         <p id="confirm-body" className={DIALOG_TEXT}>{body}</p>
       </div>
       <div className={DIALOG_FOOTER}>

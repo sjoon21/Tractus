@@ -125,6 +125,12 @@ describe("NoteRow (사이드바 줄)", () => {
     expect(html(note({ state: "recorded" }), "running")).toContain("변환 중…");
   });
 
+  test("밀기 삭제 단추는 밀기 전에는 없다 (메뉴 단추 title이 삭제도 말한다)", () => {
+    const h = renderToStaticMarkup(createElement(NoteRow, { m: note(), active: false, onOpen: () => {}, onDelete: () => {} }));
+    expect(h).not.toContain("data-swipe-delete");
+    expect(h).toContain("즐겨찾기·폴더·태그·삭제");
+  });
+
   test("변환한 노트와 메모 노트에는 `변환 전` 배지가 없다", () => {
     expect(html(note())).toContain("요약 없음");
     expect(html(note())).not.toContain("변환 전");

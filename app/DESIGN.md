@@ -49,6 +49,7 @@ macOS 노트 앱(Granola·Apple Notes) 톤. 무채색 바탕에 색은 의미로
 - `Empty`(`components/ui/empty.tsx`) — 빈 상태. 제목 한 줄 + 짧은 설명 + 단추 하나까지, 상자·아이콘 칩 없이 가운데.
 - `Section` + `Row` — 설정처럼 이름/조작이 짝인 목록(macOS 시스템 설정의 묶음 카드). `PageHeader`(뒤로 + 제목 + 동작) + `PageBody`(가운데 읽기 폭).
 - `Dock` + `DockGroup`(`components/ui/dock.tsx`) — 가운데 화면 아래에 뜨는 알약 모양 도구 막대. 자주 쓰는 것(패널 탭·도구)만 모으고 묶음 사이는 구분선. 좁으면 가로 스크롤(줄을 바꾸지 않는다). 같은 동작을 도크와 다른 자리에 두 번 두지 않는다.
+- 확인 대화상자: `ConfirmDialog`(`src/ConfirmDialog.tsx`, 클래스 `DIALOG*`는 `components/ui/dialog.ts`). 되돌리기 어려운 결과를 알리는 주의 문장은 `warning`(`DIALOG_WARN`: 위험 색 글자 + 얇은 선 + 옅은 바탕, 본문 위)으로 한 문장만.
 - 메뉴·팝오버: `Popover`/`ItemMenu`(`src/Popover.tsx`), 클래스 `MENU`·`MENU_ITEM`(`src/components/menu.ts`).
 - 아이콘: `lucide-react` 16px(`[&_svg]:size-4`). 아이콘만 있는 단추에는 `aria-label`과 `title`.
 - 모델·도구가 없어 못 쓰는 단추는 반드시 `GatedButton`(이유 팝오버). `className`에 `buttonVariants(...)`를 넘긴다.

@@ -150,7 +150,8 @@ export default {
   "조건에 맞는 노트가 없습니다.": "No notes match.",
   "요약 없음": "No summary",
   "{title} 노트 메뉴": "{title} note menu",
-  "즐겨찾기·폴더·태그": "Favorites, folders, tags",
+  "즐겨찾기·폴더·태그·삭제": "Favorites, folders, tags, delete",
+  "{title} 노트 삭제": "Delete {title}",
   "노트 메뉴": "Note menu",
   "즐겨찾기에서 빼기": "Remove from favorites",
   "즐겨찾기에 추가": "Add to favorites",
@@ -183,6 +184,8 @@ export default {
   "되돌리려면 휴지통에서 ‘{folder}’ 폴더를 꺼내 {parent} 폴더에 다시 넣으세요.": "To restore it, move the “{folder}” folder from the Trash back into {parent}.",
   "옮기는 중…": "Moving…",
   "‘{title}’ 노트를 삭제할까요?": "Delete “{title}”?",
+  "메모 내용과 요약, 질문 기록도 모두 함께 삭제됩니다.": "The memo, its summaries, and its question history will all be deleted with it.",
+  "이 노트에 적은 메모, 녹음 중 메모, 참석자 이름, 요약·회의록, 질문 기록도 모두 함께 삭제됩니다.": "Your memo, memos during recording, participant names, summaries and minutes, and question history in this note will all be deleted with it.", // words-ok: 회의록은 문서 이름(§4.26)
   "메모 내용, 요약, 질문 기록이 휴지통으로 옮겨지고, 검색과 AI 질문에서도 빠집니다. {restore}": "The memo, summaries, and question history move to the Trash and are removed from search and Ask AI. {restore}",
   "녹음 파일, 대화 내용, 메모, 요약, 질문 기록이 휴지통으로 옮겨지고, 검색과 AI 질문에서도 빠집니다. {restore}": "The recording, transcript, memo, summaries, and question history move to the Trash and are removed from search and Ask AI. {restore}",
   "녹음 파일, 대화 내용, 요약, 질문 기록이 휴지통으로 옮겨지고, 검색과 AI 질문에서도 빠집니다. {restore}": "The recording, transcript, summaries, and question history move to the Trash and are removed from search and Ask AI. {restore}",

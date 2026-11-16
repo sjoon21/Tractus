@@ -7,6 +7,7 @@ import { FolderTree } from "./FolderTree";
 import { t } from "./i18n";
 import { dayParts } from "./lib";
 import { NoteRow } from "./NoteRow";
+import type { DeleteTarget } from "./remove";
 import { DEFAULT_FOLD, filterNotes, folderPath, groupByMonth, groupForList, isFiltered, monthIsOpen, parseFold, SORTS, sortNotes, type ListGroup, type MonthGroup, type SidebarFold, type SortKey } from "./organize";
 import { useOrganize } from "./useOrganize";
 import { ArrowDown, ArrowUp, ChevronRight, X } from "lucide-react";
@@ -45,6 +46,7 @@ export function NoteLibrary({
   onOpen,
   convertSlots,
   onConvert,
+  onDelete,
 }: {
   notes: MeetingInfo[];
   activeId: string | null;
@@ -53,6 +55,8 @@ export function NoteLibrary({
   convertSlots?: ReadonlyMap<string, "running" | "queued">;
   /** 변환 전 노트의 `텍스트로 변환` */
   onConvert?: (id: string) => void;
+  /** 노트 줄의 `삭제…`·밀어서 나온 `삭제`: 확인 창을 띄운다 (App.askDelete) */
+  onDelete?: (target: DeleteTarget) => void;
 }) {
   const org = useOrganize();
   const [fold, setFold] = useState(readFold);
@@ -75,7 +79,7 @@ export function NoteLibrary({
   const filtered = isFiltered(org.filter);
   const folderLabel = org.filter.folder === "none" ? t("폴더 없음") : org.filter.folder ? folderPath(org.folders, org.filter.folder) : "";
 
-  const rows = (items: readonly MeetingInfo[]) => items.map((m) => <NoteRow key={m.id} m={m} active={m.id === activeId} onOpen={onOpen} slot={convertSlots?.get(m.id) ?? null} onConvert={onConvert} />);
+  const rows = (items: readonly MeetingInfo[]) => items.map((m) => <NoteRow key={m.id} m={m} active={m.id === activeId} onOpen={onOpen} slot={convertSlots?.get(m.id) ?? null} onConvert={onConvert} onDelete={onDelete} />);
   const months = useMemo(() => groupByMonth(groups), [groups]);
   const toggleMonth = (key: string, open: boolean) => setFold((f) => ({ ...f, months: { ...f.months, [key]: !open } }));
   const renderDay = (g: ListGroup<MeetingInfo>) => {

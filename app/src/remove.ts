@@ -46,6 +46,8 @@ const parentPath = (path: string): string => path.replace(/\/+$/, "").replace(/\
 export interface DeleteDialogText {
   title: string;
   body: string;
+  /** 노트와 함께 사라지는 것을 강조해 알리는 문장 (노트만. 녹음은 null) */
+  warning: string | null;
   cancel: string;
   confirm: string;
   /** 옮기는 중 확인 버튼 */
@@ -59,6 +61,10 @@ export function deleteDialogText(target: DeleteTarget): DeleteDialogText {
     return {
       ...common,
       title: t("‘{title}’ 노트를 삭제할까요?", { title: noteTitle(target.title) }),
+      // 노트 폴더에 같이 든 것 (transcript.json의 메모·참석자 이름, memos.json, summary.json·summaries/, chat.json). 목소리 프로필·사전은 노트 밖이라 남는다
+      warning: target.memo
+        ? t("메모 내용과 요약, 질문 기록도 모두 함께 삭제됩니다.")
+        : t("이 노트에 적은 메모, 녹음 중 메모, 참석자 이름, 요약·회의록, 질문 기록도 모두 함께 삭제됩니다."), // words-ok: 회의록은 문서 이름(§4.26)
       body: target.memo
         ? t("메모 내용, 요약, 질문 기록이 휴지통으로 옮겨지고, 검색과 AI 질문에서도 빠집니다. {restore}", { restore })
         : target.withMemo
@@ -68,6 +74,7 @@ export function deleteDialogText(target: DeleteTarget): DeleteDialogText {
   }
   return {
     ...common,
+    warning: null,
     title: t("변환 대기 중인 녹음을 삭제할까요?"),
     body: t("{label}에 시작한 녹음입니다. 아직 텍스트로 변환하지 않았습니다. 녹음 파일이 휴지통으로 옮겨집니다. {restore}", { label: recordingLabel(target.startedAt), restore }),
   };
