@@ -13,3 +13,10 @@ public func micFormatProblem(tapRate: Double, tapChannels: Int, hardwareRate: Do
     }
     return nil
 }
+
+/// 마이크 입력 유닛의 클라이언트 쪽 표본 속도를 하드웨어 속도로 맞춰야 하면 그 속도, 아니면 nil.
+/// 입력 유닛은 표본 속도를 바꾸지 않는데 클라이언트 쪽은 이전 장치의 속도(48 kHz)를 기억해, 44.1·96 kHz 장치나
+/// 화상회의 앱이 막 바꾼 장치는 그대로는 열리지 않는다. 음성 처리(에코 제거) 중에는 다른 게 정상이라 건드리지 않는다.
+public func micClientRateToSet(clientRate: Double, hardwareRate: Double, voiceProcessing: Bool) -> Double? {
+    !voiceProcessing && hardwareRate > 0 && clientRate != hardwareRate ? hardwareRate : nil
+}
