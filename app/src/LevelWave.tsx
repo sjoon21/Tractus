@@ -4,7 +4,6 @@
 import { useEffect, useRef } from "react";
 import { cn } from "@/components/ui/utils";
 import { t } from "./i18n";
-import { levelFraction } from "./lib";
 
 /** 초당 막대 수, 막대 굵기·간격 (CSS px) */
 const BARS_PER_SEC = 14;
@@ -19,8 +18,19 @@ const KEEP_SEC = 30;
 
 export type Sample = { at: number; v: number };
 
-/** dB → 막대 높이 비율. 말소리(-30~-14 dB)와 쉼(-50 dB)의 차이가 잘 보이게 곡선을 준다 */
-export const levelHeight = (db: number | null): number => Math.max(FLOOR, levelFraction(db) ** 1.6);
+/** 높이를 펴는 dB 구간. -60~0 전체를 쓰면 실제 말소리(-40~-20 dB)가 중간에 몰려 잔잔해 보인다 (v3.136) */
+const QUIET_DB = -55;
+const LOUD_DB = -15;
+
+/** dB → 막대 높이 비율. QUIET_DB 이하는 바닥, LOUD_DB 이상은 꽉 찬다 */
+export const levelHeight = (db: number | null): number =>
+  db === null ? FLOOR : Math.max(FLOOR, Math.min(1, (db - QUIET_DB) / (LOUD_DB - QUIET_DB)));
+
+/** 막대마다 고정된 높이 배율(0.5~1). level은 0.25초 평균이라 이웃 막대가 같은 높이가 된다: 칸 번호로 정해 흘러도 깜빡이지 않는다 */
+export function barJitter(k: number): number {
+  const x = Math.sin(k * 12.9898) * 43758.5453;
+  return 0.5 + 0.5 * (x - Math.floor(x));
+}
 
 /** 시각 at의 높이: 앞뒤 값 사이를 부드럽게(smoothstep) 잇는다. 첫 값 전은 FLOOR, 마지막 값 뒤는 마지막 값 */
 export function waveValue(samples: readonly Sample[], at: number): number {
@@ -85,7 +95,7 @@ export function LevelWave({ label, db, tick, present, live, tone = "mic" }: { la
         const at = k / BARS_PER_SEC;
         const x = w - (shown - at) * speed - BAR;
         if (x < -BAR) break;
-        const bh = Math.max(BAR, waveValue(samples.current, at) * h);
+        const bh = Math.max(BAR, waveValue(samples.current, at) * barJitter(k) * h);
         ctx.beginPath();
         ctx.roundRect(x, (h - bh) / 2, BAR, bh, BAR / 2);
         ctx.fill();
