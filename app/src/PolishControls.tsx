@@ -1,6 +1,6 @@
 // AI 다듬기 화면 부품 (docs/design/transcript-polish.md): 실행(구간별 제안을 그때그때 모은다)·제안 막대(모두 받기·버리기)·줄 안의 diff.
 import { useCallback, useEffect, useState } from "react";
-import { Check, ChevronDown, Sparkles, X } from "lucide-react";
+import { Check, ChevronDown, Play, Sparkles, X } from "lucide-react";
 import { useJob } from "./api";
 import type { Notify } from "./App";
 import { t } from "./i18n";
@@ -17,6 +17,8 @@ import {
   GO_SUGGESTION,
   GROUP_ACCEPT,
   groupAcceptTitle,
+  LISTEN,
+  LISTEN_KEY_TITLE,
   NEXT_SUGGESTION,
   NEXT_SUGGESTION_TITLE,
   POLISH_AGAIN_TITLE,
@@ -127,17 +129,24 @@ export function PolishBar({ live, marks, running, busy, onDecide, onJump }: { li
 }
 
 /** 줄 안의 제안: 지운 말(줄 긋기) → 새 말, 표시, 받기·버리기.
- * 키보드로 넘기기(v3.116): 정하면 다음 제안의 수락 단추로 초점이 가므로(usePolishReview) Enter = 수락, ⌫ = 거절만 이어 누르면 된다. 키 안내는 초점이 있는 제안에만 */
-export function PolishDiff({ s, busy, onDecide }: { s: PolishSuggestion; busy: boolean; onDecide: (ids: string[], accept: boolean) => void }) {
+ * 키보드로 넘기기(v3.116): 정하면 다음 제안의 수락 단추로 초점이 가므로(usePolishReview) Enter = 수락, ⌫ = 거절만 이어 누르면 된다. 키 안내는 초점이 있는 제안에만.
+ * 확인 표시가 있는 제안은 R·`듣기`로 그 문장만 듣는다(v3.135). 넘어올 때 저절로 재생하지 않는다 */
+export function PolishDiff({ s, busy, onDecide, onListen }: { s: PolishSuggestion; busy: boolean; onDecide: (ids: string[], accept: boolean) => void; onListen?: () => void }) {
   return (
     <div
       className="seg-polish group/polish"
       role="group"
       aria-label={t("교정 제안")}
       onKeyDown={(e) => {
-        if (busy || isImeKey(e.nativeEvent) || e.metaKey || e.ctrlKey || e.altKey || (e.key !== "Backspace" && e.key !== "Delete")) return;
-        e.preventDefault();
-        onDecide([s.id], false);
+        if (isImeKey(e.nativeEvent) || e.metaKey || e.ctrlKey || e.altKey) return;
+        // R: 노트 화면의 '직전 문장 다시 듣기' 대신 이 제안의 문장 (preventDefault라 MeetingView 단축키는 건너뛴다)
+        if (onListen && e.code === "KeyR" && !e.shiftKey) {
+          e.preventDefault();
+          onListen();
+        } else if (!busy && (e.key === "Backspace" || e.key === "Delete")) {
+          e.preventDefault();
+          onDecide([s.id], false);
+        }
       }}
     >
       <p className="seg-polish-text m-0">
@@ -158,7 +167,14 @@ export function PolishDiff({ s, busy, onDecide }: { s: PolishSuggestion; busy: b
           </Badge>
         ))}
         <span className="ml-auto flex items-center gap-1">
-          <Button variant="outline" size="sm" className="h-7" disabled={busy} title={ACCEPT_KEY_TITLE} aria-keyshortcuts="Enter" onClick={() => onDecide([s.id], true)}>
+          {onListen && (
+            <Button variant="ghost" size="sm" className="h-7 text-muted-foreground" title={LISTEN_KEY_TITLE} aria-keyshortcuts="R" onClick={onListen}>
+              <Play aria-hidden className="fill-current" />
+              {LISTEN}
+              <Kbd className="hidden group-focus-within/polish:inline-flex">R</Kbd>
+            </Button>
+          )}
+          <Button data-accept variant="outline" size="sm" className="h-7" disabled={busy} title={ACCEPT_KEY_TITLE} aria-keyshortcuts="Enter" onClick={() => onDecide([s.id], true)}>
             <Check aria-hidden />
             {ACCEPT}
             <Kbd className="hidden group-focus-within/polish:inline-flex">↵</Kbd>

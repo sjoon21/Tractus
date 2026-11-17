@@ -57,6 +57,8 @@ export const GROUP_ACCEPT = t("한꺼번에 수락");
 export const groupAcceptTitle = (label: string, n: number) => t("{label} 제안 {n}개를 모두 수락합니다. 확인 표시가 있는 제안은 빠집니다", { label, n });
 export const ACCEPT_KEY_TITLE = t("수락 (Enter)");
 export const REJECT_KEY_TITLE = t("거절 (⌫)");
+export const LISTEN = t("듣기");
+export const LISTEN_KEY_TITLE = t("이 문장만 듣기 (R)");
 
 /** 종류별 한꺼번에 수락: 표시 없는 제안만, 비어 있는 묶음은 뺀다 */
 export function bulkGroups(live: Map<string, PolishSuggestion>): { label: string; ids: string[] }[] {
