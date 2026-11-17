@@ -60,7 +60,7 @@ export function TrayPopoverView({ state, nowMs, onAction }: { state: PopoverStat
   const bookmark = t("북마크 남기기");
   const start = t("녹음 시작");
   // 둥근 미디어 단추. 녹음 시작은 사이드바 녹음 단추와 같은 모양(어두운 원 + 빨간 점), 녹음 종료는 빨간 원 + 흰 네모
-  const round = "grid size-9 shrink-0 place-items-center rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40 off:pointer-events-none off:opacity-40 [&_svg]:size-4";
+  const round = "grid size-9 shrink-0 place-items-center rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring off:pointer-events-none off:opacity-40 [&_svg]:size-4";
   const quiet = cn(round, "border border-border bg-background text-foreground hover:bg-accent");
   return (
     <div className={cn(MENU, "w-full")}>
@@ -90,7 +90,7 @@ export function TrayPopoverView({ state, nowMs, onAction }: { state: PopoverStat
             <button type="button" className={quiet} onClick={() => onAction(paused ? ID.resume : ID.pause)} disabled={paused ? !state.can.resume : !state.can.pause} aria-label={paused ? RESUME_LABEL : PAUSE_LABEL} title={paused ? RESUME_TITLE : PAUSE_TITLE}>
               {paused ? <Play aria-hidden className="fill-current" /> : <Pause aria-hidden className="fill-current" />}
             </button>
-            <button type="button" className={cn(round, "bg-rec text-white shadow-xs hover:bg-rec/90")} onClick={() => onAction(ID.stop)} disabled={!state.can.stop} aria-label={stop} title={stop}>
+            <button type="button" className={cn(round, "bg-rec-strong text-white shadow-xs hover:bg-rec-strong/90")} onClick={() => onAction(ID.stop)} disabled={!state.can.stop} aria-label={stop} title={stop}>
               <Square aria-hidden className="size-3.5! fill-current" />
             </button>
           </span>

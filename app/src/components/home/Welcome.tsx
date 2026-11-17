@@ -54,7 +54,7 @@ export function Welcome({ notes, onOpen, onAction, onRecordEvent, onPrepareEvent
         <CoachMark id="ask" side="right" ready={!checklist && notes.some((n) => !n.sample)} />
         {next && <CoachMark id="calendar" ready={!checklist} />}
 
-        <WeekStrip notes={notes} onOpen={onOpen} onRecordEvent={onRecordEvent} onPrepareEvent={onPrepareEvent} recordGate={recordGate} recording={recording} />
+        <WeekStrip notes={notes} onOpen={onOpen} onRecordEvent={onRecordEvent} onPrepareEvent={onPrepareEvent} recordGate={recordGate} recording={recording} hero={next} />
 
         {recent.length > 0 && (
           <section aria-labelledby="recent-title" className="flex flex-col gap-2">
@@ -64,11 +64,11 @@ export function Welcome({ notes, onOpen, onAction, onRecordEvent, onPrepareEvent
             <ul className="m-0 flex list-none flex-col p-0">
               {recent.map((m) => (
                 <li key={m.id}>
-                  <button type="button" className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left outline-none hover:bg-accent/60 focus-visible:bg-accent" onClick={() => onOpen(m.id)}>
+                  <button type="button" className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left outline-none hover:bg-accent/60 focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onOpen(m.id)}>
                     {isMemo(m) ? <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden /> : <AudioLines className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
                     <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{m.title || t("제목 없음")}</span>
                     <span className="shrink-0 text-xs text-subtle-foreground tabular-nums">
-                      {new Date(m.updated_at ?? m.created_at).toLocaleDateString(locale(), { month: "short", day: "numeric" })} · {noteTime(m)}
+                      {[new Date(m.updated_at ?? m.created_at).toLocaleDateString(locale(), { month: "short", day: "numeric" }), noteTime(m)].filter(Boolean).join(" · ")}
                     </span>
                   </button>
                 </li>
@@ -122,7 +122,7 @@ function NextEventCard({ ev, gate, recording, onRecord }: { ev: CalendarEvent; g
   return (
     <section aria-label={CARD_LABEL} data-tip="calendar" className="flex items-center gap-4 border-l-2 border-rec py-1 pl-4">
       <div className="min-w-0 flex-1">
-        <p className="m-0 text-xs font-medium text-rec tabular-nums">{eventWhen(ev, now)}</p>
+        <p className="m-0 text-xs font-medium text-rec-ink tabular-nums">{eventWhen(ev, now)}</p>
         <p className="m-0 truncate text-[15px] font-semibold leading-6" title={ev.title}>
           {ev.title}
         </p>

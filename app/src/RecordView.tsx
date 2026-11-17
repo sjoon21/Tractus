@@ -63,7 +63,7 @@ export function RecordView({
       <div data-tauri-drag-region className="h-[52px] shrink-0" />
       <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-6 pt-6 pb-6">
         <header className="flex flex-col items-center gap-3 text-center">
-          <p id="record-title" className={cn("m-0 inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-medium", rec.phase === "recording" ? "bg-rec-wash text-rec" : rec.phase === "error" ? "bg-destructive/10 text-destructive" : "bg-secondary text-muted-foreground")}>
+          <p id="record-title" className={cn("m-0 inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-medium", rec.phase === "recording" ? "bg-rec-wash text-rec-ink" : rec.phase === "error" ? "bg-destructive/10 text-destructive" : "bg-secondary text-muted-foreground")}>
             {rec.phase === "recording" && <span className="size-1.5 animate-rec-pulse rounded-full bg-rec" aria-hidden />}
             {status}
           </p>
@@ -246,7 +246,7 @@ function LivePane({ live, recording }: { live: LiveState; recording: boolean }) 
         </p>
       ))}
       <div
-        className="max-h-[320px] min-h-[120px] overflow-y-auto rounded-lg border border-border bg-card px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="max-h-[320px] min-h-[120px] overflow-y-auto rounded-lg border border-border bg-card px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
         ref={box}
         tabIndex={0}
         aria-label={t("실시간 텍스트 변환 내용")}

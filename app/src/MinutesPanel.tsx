@@ -395,7 +395,7 @@ function Editable(p: { value: string; onSave: (v: string) => void; className?: s
     <span
       role="button"
       tabIndex={0}
-      className={cn("cursor-text rounded-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/40", p.className)}
+      className={cn("cursor-text rounded-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring", p.className)}
       title={p.keepEmpty ? t("두 번 눌러 고칩니다") : EDIT_HINT}
       aria-label={p.label ? `${p.label}: ${shownText}` : undefined}
       onDoubleClick={() => setDraft(p.value)}

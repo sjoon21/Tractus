@@ -37,7 +37,7 @@ const applyTheme = (p: ThemePref) => void (document.documentElement.dataset.them
 
 const VARIANTS = ["default", "outline", "secondary", "ghost", "destructive", "rec", "link"] as const;
 const SIZES = ["sm", "default", "lg"] as const;
-const COLORS = ["background", "foreground", "card", "popover", "primary", "secondary", "muted", "accent", "border", "border-strong", "input", "ring", "destructive", "rec", "rec-wash", "memo", "memo-wash", "sidebar", "sidebar-accent"];
+const COLORS = ["background", "foreground", "card", "popover", "primary", "secondary", "muted", "accent", "border", "border-strong", "input", "ring", "destructive", "rec", "rec-wash", "rec-ink", "rec-strong", "memo", "memo-wash", "sidebar", "sidebar-accent"];
 const TEXTS: [string, string][] = [
   ["노트 제목", "text-[22px] font-semibold tracking-tight"],
   ["화면 머리 (PageHeader)", "text-[15px] font-semibold"],

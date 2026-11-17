@@ -29,11 +29,10 @@ describe("note kind and list rows", () => {
     expect(kindOf({ kind: "voice" })).toBe("recording");
     expect(isMemo({ kind: undefined })).toBe(false);
   });
-  test("a recording shows its length, a memo its created time", () => {
-    expect(noteTime({ kind: "recording", duration_sec: 125, created_at: "2026-10-13T09:05:00+09:00" })).toBe("2:05");
-    expect(noteTime({ duration_sec: 125, created_at: "2026-10-13T09:05:00+09:00" })).toBe("2:05");
-    expect(noteTime({ kind: "memo", duration_sec: 0, created_at: "2026-10-13T14:07:31+09:00" })).toBe("14:07");
-    expect(noteTime({ kind: "memo", duration_sec: 0, created_at: "" })).toBe("");
+  test("a recording shows its length, a memo nothing (no clock time in the length slot)", () => {
+    expect(noteTime({ kind: "recording", duration_sec: 125 })).toBe("2:05");
+    expect(noteTime({ duration_sec: 125 })).toBe("2:05");
+    expect(noteTime({ kind: "memo", duration_sec: 0 })).toBe("");
   });
   test("a memo cannot be exported as SRT or WebVTT", () => {
     const f = exportFormatsFor(true).map((x) => x.format);

@@ -141,7 +141,7 @@ export function DictionaryView({ onBack, notify }: { onBack: () => void; notify:
       <li key={term} className="flex h-7 max-w-full list-none items-center rounded-full border border-border bg-card text-[13px] text-foreground">
         <button
           type="button"
-          className="min-w-0 truncate rounded-full py-1 pl-3 pr-1 text-left outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/40"
+          className="min-w-0 truncate rounded-full py-1 pl-3 pr-1 text-left outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={t("‘{term}’ 고치기", { term })}
           title={t("‘{term}’ 고치기", { term })}
           disabled={busy}
@@ -151,7 +151,7 @@ export function DictionaryView({ onBack, notify }: { onBack: () => void; notify:
         </button>
         <button
           type="button"
-          className="mr-1 grid size-5 shrink-0 place-items-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+          className="mr-1 grid size-5 shrink-0 place-items-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={t("‘{term}’ 지우기", { term })}
           title={t("‘{term}’ 지우기", { term })}
           disabled={busy}
@@ -213,12 +213,12 @@ export function DictionaryView({ onBack, notify }: { onBack: () => void; notify:
             <ul className="m-0 flex list-none flex-wrap gap-1.5 px-4 py-3">
               {suggestions.map(({ term, count }) => (
                 <li key={term} className="flex h-7 items-center rounded-full border border-dashed border-border-strong bg-card text-[13px]">
-                  <button type="button" className="flex items-center gap-1 rounded-full py-1 pr-1 pl-2.5 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={t("‘{term}’ 사전에 추가", { term })} title={t("‘{term}’ 사전에 추가", { term })} disabled={busy} onClick={() => void add([term])}>
+                  <button type="button" className="flex items-center gap-1 rounded-full py-1 pr-1 pl-2.5 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring" aria-label={t("‘{term}’ 사전에 추가", { term })} title={t("‘{term}’ 사전에 추가", { term })} disabled={busy} onClick={() => void add([term])}>
                     <Plus className="size-3.5" aria-hidden />
                     {term}
                     <span className="text-xs text-subtle-foreground tabular-nums">{t("{n}번", { n: count })}</span>
                   </button>
-                  <button type="button" className="mr-1 grid size-5 place-items-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={t("‘{term}’ 제안 무시", { term })} title={t("‘{term}’ 제안 무시", { term })} onClick={() => dismiss(term)}>
+                  <button type="button" className="mr-1 grid size-5 place-items-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" aria-label={t("‘{term}’ 제안 무시", { term })} title={t("‘{term}’ 제안 무시", { term })} onClick={() => dismiss(term)}>
                     <X className="size-3.5" aria-hidden />
                   </button>
                 </li>

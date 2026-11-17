@@ -60,7 +60,7 @@ export function NoteDock({
               aria-controls={k === "summary" || (k === "ask" ? askSeen : k === "minutes" ? minutesSeen : memoSeen) ? `panel-${k}` : undefined}
               tabIndex={tabNow === k ? 0 : -1}
               onClick={() => pickTab(k)}
-              className={cn("h-7 shrink-0 whitespace-nowrap rounded-full px-3 text-[13px] font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 aria-selected:bg-accent aria-selected:text-foreground", railCollapsed && "aria-selected:bg-transparent aria-selected:text-muted-foreground aria-selected:hover:bg-accent")}
+              className={cn("h-7 shrink-0 whitespace-nowrap rounded-full px-3 text-[13px] font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-selected:bg-accent aria-selected:text-foreground", railCollapsed && "aria-selected:bg-transparent aria-selected:text-muted-foreground aria-selected:hover:bg-accent")}
             >
               {RAIL_LABEL[k]}
             </button>

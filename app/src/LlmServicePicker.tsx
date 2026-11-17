@@ -60,7 +60,7 @@ export function LlmServicePicker({ services, disabled, className }: { services: 
       <button
         type="button"
         className={cn(
-          "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-45 aria-expanded:bg-accent aria-expanded:text-foreground",
+          "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-45 aria-expanded:bg-accent aria-expanded:text-foreground",
           className,
         )}
         aria-label={t("AI 서비스: {name}", { name: label(now) })}
