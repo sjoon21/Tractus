@@ -30,7 +30,7 @@ function readFold(): SidebarFold {
 function SectionHead({ id, title, count, open, onToggle, children }: { id: string; title: string; count?: number; open: boolean; onToggle: () => void; children?: ReactNode }) {
   return (
     <h2 className={cn(SIDE_HEAD, "group/head m-0")}>
-      <button type="button" className="flex h-full flex-1 items-center gap-1 rounded-md outline-none hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/40" aria-expanded={open} aria-controls={id} onClick={onToggle}>
+      <button type="button" className="flex h-full flex-1 items-center gap-1 rounded-md outline-none hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring" aria-expanded={open} aria-controls={id} onClick={onToggle}>
         <span>{title}</span>
         <ChevronRight className={cn("size-3 opacity-0 transition group-hover/head:opacity-100", open && "rotate-90")} aria-hidden />
         {count !== undefined && <span className={COUNT}>{count}</span>}
@@ -88,7 +88,7 @@ export function NoteLibrary({
       <div key={g.day} className="grid grid-cols-[30px_minmax(0,1fr)]">
         <div className="flex flex-col items-center pt-2 leading-none" aria-label={t("{day}일 {weekday}요일", { day: p.day, weekday: p.weekday })}>
           <span className="text-[13px] font-semibold tabular-nums">{p.day}</span>
-          <small className="mt-1 text-[10px] text-subtle-foreground">{p.weekday}</small>
+          <small className="mt-1 text-[11px] text-subtle-foreground">{p.weekday}</small>
         </div>
         <ul>{rows(g.items)}</ul>
       </div>
@@ -102,7 +102,7 @@ export function NoteLibrary({
     return (
       <section key={m.key} className="mt-1">
         <h3 className="sticky top-0 z-10 m-0 bg-sidebar">
-          <button type="button" className={cn(SIDE_HEAD, "group/head w-full rounded-md outline-none hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/40")} aria-expanded={open} aria-controls={id} aria-label={t("{month}, 노트 {n}개", { month: label, n: m.count })} onClick={() => !filtered && toggleMonth(m.key, open)}>
+          <button type="button" className={cn(SIDE_HEAD, "group/head w-full rounded-md outline-none hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring")} aria-expanded={open} aria-controls={id} aria-label={t("{month}, 노트 {n}개", { month: label, n: m.count })} onClick={() => !filtered && toggleMonth(m.key, open)}>
             <span>{label}</span>
             <ChevronRight className={cn("size-3 opacity-0 transition group-hover/head:opacity-100", !open && "opacity-60", open && "rotate-90")} aria-hidden />
             <span className={COUNT}>{m.count}</span>
@@ -165,7 +165,7 @@ export function NoteLibrary({
             <span className="font-normal tabular-nums">{filtered ? `${shown.length} / ${notes.length}` : notes.length}</span>
           </h2>
           <div className="ml-auto flex items-center">
-            <select className="h-6 max-w-[7.5rem] appearance-none rounded-md bg-transparent px-1.5 text-right text-[11px] font-medium text-subtle-foreground outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={t("노트 순서")} value={org.sort} onChange={(e) => org.setSort(e.target.value as SortKey)}>
+            <select className="h-6 max-w-[7.5rem] appearance-none rounded-md bg-transparent px-1.5 text-right text-[11px] font-medium text-subtle-foreground outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" aria-label={t("노트 순서")} value={org.sort} onChange={(e) => org.setSort(e.target.value as SortKey)}>
               {SORTS.map((s) => (
                 <option key={s.key} value={s.key}>
                   {s.label}
@@ -174,7 +174,7 @@ export function NoteLibrary({
             </select>
             <button
               type="button"
-              className="grid size-6 place-items-center rounded-md text-subtle-foreground outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 [&_svg]:size-3"
+              className="grid size-6 place-items-center rounded-md text-subtle-foreground outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-3"
               aria-label={org.order === "asc" ? t("오름차순 (누르면 내림차순)") : t("내림차순 (누르면 오름차순)")}
               title={org.order === "asc" ? t("오름차순 — 누르면 내림차순") : t("내림차순 — 누르면 오름차순")}
               onClick={org.toggleOrder}

@@ -8,13 +8,14 @@ macOS 노트 앱(Granola·Apple Notes) 톤. 무채색 바탕에 색은 의미로
 | 토큰 (Tailwind) | 뜻 |
 | --- | --- |
 | `background` / `foreground` | 본문 바탕·글자 |
-| `muted-foreground` / `subtle-foreground` | 보조 글자 / 더 옅은 글자(개수·시각) |
+| `muted-foreground` / `subtle-foreground` | 보조 글자 / 더 옅은 글자(개수·시각). 둘 다 글자라 바탕 위 4.5:1 이상이다(라이트에서는 둘이 거의 같고 차이는 크기로 둔다) |
 | `sidebar`, `sidebar-accent` | 왼쪽 목록 바탕, 그 안의 가리킴·선택 |
 | `accent` | 본문 쪽 가리킴·선택 바탕 |
 | `border`, `border-strong`, `input` | 선, 강한 선, 입력 테두리 |
-| `rec`, `rec-wash` | 지금·녹음·재생 위치 (시스템 빨강) |
+| `rec`, `rec-wash` | 지금·녹음·재생 위치 (시스템 빨강). 점·선·재생 위치·아이콘에만 쓴다(글자로는 3.5:1) |
+| `rec-ink` / `rec-strong` | 빨강 **글자** / 흰 글자를 얹는 빨강 **바탕**(`Button` `rec`). 4.5:1 이상 |
 | `memo`, `memo-wash` | 사람이 남긴 것: 메모·북마크·고친 문장·즐겨찾기 |
-| `ring` | 키보드 초점 (시스템 파랑) |
+| `ring` | 키보드 초점 (시스템 파랑). 투명도 없이 2px(`focus-visible:ring-2 ring-ring`): 옅게 그리면 3:1이 안 된다 |
 | `destructive` | 되돌리기 어려운 동작 하나 (삭제) |
 | `--spk-0…7` | 참석자 색 (`Speakers.spkStyle`) |
 
@@ -39,7 +40,7 @@ macOS 노트 앱(Granola·Apple Notes) 톤. 무채색 바탕에 색은 의미로
 ## 3. 크기·간격
 
 - 조작 높이: 기본 `h-8`, 작은 것 `h-7`(목록·툴바), 아이콘 단추 `size-7`/`size-8`. 단추는 내용만큼 넓다(폭을 늘이지 않는다). 입력창은 한 줄 값이면 `max-w-sm`~`max-w-md`, 경로처럼 긴 값만 넓게.
-- 화면 여백: 본문 `px-6`~`px-8`, 구역 사이 `gap-8`, 구역 안 `gap-2`~`gap-3`. 모서리 `rounded-md`(6px)·`rounded-lg`(8px)만.
+- 화면 여백: 본문 `px-6`~`px-8`, 구역 사이 `gap-8`, 구역 안 `gap-2`~`gap-3`. 모서리는 `theme.css` 토큰대로 `rounded-sm`(6px)·`rounded-md`(8px, 단추·입력·카드)·`rounded-lg`(12px, 대화상자·메뉴)와 배지·키 표시의 4px만.
 - 창 맨 위 52px은 신호등 단추·창 끌기 자리다(`data-tauri-drag-region`). 화면 머리는 `PageHeader`를 쓰면 맞는다.
 
 ## 4. 부품
@@ -60,6 +61,8 @@ macOS 노트 앱(Granola·Apple Notes) 톤. 무채색 바탕에 색은 의미로
 - **설명보다 상태 (v3.104)**: 상태는 글이 아니라 화면이 보인다(시계가 멈추고 흐려짐, 단추 이름이 바뀜, 배지). 본문 안내는 한 줄까지이고, 사용법·이유 설명은 `title`이나 사용 안내(`docs/usage.md`)로 보낸다. 지금 하는 일에 쓸모없는 설명(녹음 중에 녹음 방식 설명)은 두지 않는다. 남기는 글은 모르면 실수하는 것(데이터 손실·개인정보·되돌릴 수 없는 선택)뿐이다. 끝나면 WORDS.md §5 금지어 검사(출력 없음).
 - **상자보다 여백 (v3.106)**: 구역은 제목과 여백으로 나눈다. 테두리 상자·그림자·흐림, 색 동그라미 안의 아이콘(아이콘 칩)은 묶음이 꼭 필요한 것(달력 칸, 닫을 수 있는 시작하기 목록)에만 쓴다. 사이드바·메뉴에 이미 있는 만들기 동작을 화면에 큰 타일로 다시 두지 않는다.
 - **동작**: 키보드·초점·`role`·`aria-*`·`id`(다른 곳이 찾는 것)·테스트가 찾는 클래스는 그대로 둔다. 로직은 바꾸지 않는다(이 작업은 겉모습이다).
+- **초점·대비 (v3.134, 디자인 점검)**: 누를 수 있는 것은 모두 키보드 초점에서 `ring`이 보인다(바탕만 바뀌는 초점은 1.2:1이라 안 보인다: 메뉴 항목은 `ring-inset`). 초점 링은 바로 나타난다(`transition`에 `box-shadow`를 넣지 않는다). 글자 색은 바탕 위 4.5:1 이상이다: 새 글자 색을 정하면 라이트·다크와 사이드바·선택 줄 바탕에서 잰다.
+- **움직임**: 크기·위치가 바뀌는 애니메이션은 `transform`(`scaleX`·`scaleY`·`translate`)으로 한다. `width`·`height`를 transition하지 않는다. 움직임 줄이기는 `base.css`가 모두 끈다.
 - **CSS**: 화면 모양은 Tailwind 클래스로 쓴다. 클래스 이름에 `aria-disabled`·`disabled` 글자를 쓰지 않는다(테스트가 HTML에서 그 속성을 찾는다): `gated:`·`off:` 변형을 쓴다.
 - **부품 갤러리**: `pnpm dev` 중 `/gallery.html`이 `components/ui`의 부품(색·글자 크기·Button·Badge·Empty·입력·Section·Dock·메뉴·대화상자)을 한 페이지에 모아 라이트·다크로 보여 준다(`src/preview/gallery.tsx`, 빌드에는 안 들어간다). 새 부품을 만들면 거기에 한 줄 더한다.
 - **확인**: `pnpm dev`(또는 `pnpm tauri dev`) 중에 `/preview.html`이 가짜 데이터로 앱을 띄운다(`src/preview/main.tsx`). 라이트·다크, 창 폭 900·1280·1600에서 본다. 넘치는 글자·잘린 단추·가로 스크롤이 없어야 한다.

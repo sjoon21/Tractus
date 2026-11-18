@@ -249,7 +249,7 @@ function EngineChoice({ id, checked, busy, title, note, meta, badge, label, acti
   );
 }
 
-const STATE_TONE: Record<ModelRow["state"], string> = { installed: OK_BADGE, missing: "", partial: "bg-memo-wash text-memo", corrupt: "bg-rec-wash text-rec" };
+const STATE_TONE: Record<ModelRow["state"], string> = { installed: OK_BADGE, missing: "", partial: "bg-memo-wash text-memo", corrupt: "bg-rec-wash text-rec-ink" };
 
 /** 스마트 검색에 쓰는 이 Mac의 모델 ID (코어 models_registry) */
 const EMBEDDING_ID = "embedding";

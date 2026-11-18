@@ -742,7 +742,7 @@ export function App() {
         {panels.state.left && (
           <GatedButton
             gate={recording || recordBlocked ? OK : recordGate}
-            className={cn("mt-10 grid size-9 place-items-center self-center rounded-full shadow-xs transition-colors", recording ? "bg-rec" : "bg-primary hover:bg-primary/85")}
+            className={cn("mt-10 grid size-9 place-items-center self-center rounded-full shadow-xs transition-colors", recording ? "bg-rec-strong" : "bg-primary hover:bg-primary/85")}
             onClick={() => onRecordButton()}
             aria-current={view.kind === "record"}
             aria-label={RAIL_REC_LABEL[railRec]}
@@ -762,7 +762,7 @@ export function App() {
           </nav>
         )}
         {panels.state.left && leftover.length > 0 && (
-          <span className="mt-2 min-w-5 self-center rounded-full bg-rec px-1.5 text-center text-[11px] font-semibold leading-[18px] text-white" role="img" aria-label={railPendingLabel(leftover.length)} title={railPendingLabel(leftover.length)}>
+          <span className="mt-2 min-w-5 self-center rounded-full bg-rec-strong px-1.5 text-center text-[11px] font-semibold leading-[18px] text-white" role="img" aria-label={railPendingLabel(leftover.length)} title={railPendingLabel(leftover.length)}>
             {leftover.length}
           </span>
         )}
@@ -778,7 +778,7 @@ export function App() {
             <div className="flex min-w-0 flex-1">
               <GatedButton
                 gate={recording || recordBlocked ? OK : recordGate}
-                className={cn(buttonVariants({ variant: recButtonView.live ? "rec" : "outline" }), "min-w-0 flex-1 justify-start gap-2 bg-background", !recording && "rounded-r-none", recButtonView.live && "bg-rec", rec.phase === "paused" && "opacity-80")}
+                className={cn(buttonVariants({ variant: recButtonView.live ? "rec" : "outline" }), "min-w-0 flex-1 justify-start gap-2 bg-background", !recording && "rounded-r-none", recButtonView.live && "bg-rec-strong", rec.phase === "paused" && "opacity-80")}
                 onClick={() => onRecordButton()}
                 aria-current={view.kind === "record"}
               >

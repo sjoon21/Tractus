@@ -1,5 +1,5 @@
 // 메모 노트(녹음 없이 직접 쓴 글)와 노트 제목 수정의 순수 로직. 화면은 MemoView.tsx·MeetingView.tsx. 전부 memo.test.ts에서 검사한다.
-import { clock, t } from "./i18n";
+import { t } from "./i18n";
 import { EXPORT_FORMATS, fmtTime, isMemoLineId, oneLine, parseHms, segText, type NoteMemo, type Segment } from "./lib";
 
 // ── 제목 ──
@@ -26,11 +26,9 @@ export type NoteKind = "recording" | "memo";
 export const kindOf = (m: { kind?: string | null }): NoteKind => (m.kind === "memo" ? "memo" : "recording");
 export const isMemo = (m: { kind?: string | null }): boolean => kindOf(m) === "memo";
 
-/** 사이드바 줄 아래 칸: 녹음은 길이, 메모는 만든 시각(길이가 없다) */
-export function noteTime(m: { kind?: string | null; duration_sec: number; created_at: string }): string {
-  if (!isMemo(m)) return fmtTime(m.duration_sec);
-  const hm = /T(\d{2}):(\d{2})/.exec(m.created_at);
-  return hm ? clock(Number(hm[1]), Number(hm[2])) : "";
+/** 목록 줄의 길이 칸: 녹음은 길이, 메모는 비운다. 같은 칸에 시각을 넣으면 길이(1:20)와 시각(15:00)이 섞여 읽힌다 */
+export function noteTime(m: { kind?: string | null; duration_sec: number }): string {
+  return isMemo(m) ? "" : fmtTime(m.duration_sec);
 }
 
 /** 내보내기 메뉴 형식. 메모는 시각이 없어 SRT·WebVTT 자막은 없다 (코어도 거절한다). 변환 전 녹음 노트(recorded)도 대화가 없어 자막이 될 수 없다 */

@@ -125,7 +125,7 @@ export function PanelToggle({ side }: { side: Side }) {
   const t = PANEL_TEXT[side];
   const { label, title } = toggleLabel(side, collapsed);
   return (
-    <button type="button" id={t.toggleId} className={`panel-toggle is-${side} absolute z-30 grid size-7 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 [&_svg]:size-4 ${side === "left" ? (collapsed ? "top-[48px] left-1/2 -translate-x-1/2" : "top-[14px] right-2") : collapsed ? "top-[12px] left-1/2 -translate-x-1/2" : "top-[12px] right-3"}`} aria-label={label} title={title} aria-expanded={!collapsed} aria-controls={t.controls} aria-keyshortcuts={t.shortcut} onClick={() => void toggle(side)}>
+    <button type="button" id={t.toggleId} className={`panel-toggle is-${side} absolute z-30 grid size-7 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-4 ${side === "left" ? (collapsed ? "top-[48px] left-1/2 -translate-x-1/2" : "top-[14px] right-2") : collapsed ? "top-[12px] left-1/2 -translate-x-1/2" : "top-[12px] right-3"}`} aria-label={label} title={title} aria-expanded={!collapsed} aria-controls={t.controls} aria-keyshortcuts={t.shortcut} onClick={() => void toggle(side)}>
       {side === "left" ? <PanelLeft aria-hidden /> : <PanelRight aria-hidden />}
     </button>
   );
