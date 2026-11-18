@@ -32,7 +32,7 @@
   --secondary-foreground: #1d1d1f;
   --muted: #f5f5f5;
   --muted-foreground: #6e6e73;
-  --subtle-foreground: #a1a1a6;
+  --subtle-foreground: #707075; /* 글자라 4.5:1 이상 (사이드바 #f5f5f4 위 4.5:1): muted와 거의 같고 차이는 크기로 둔다 */
   --accent: #efefef;
   --accent-foreground: #1d1d1f;
   --destructive: #d70015;
@@ -50,7 +50,9 @@
 
   --rec: #ff3b30;
   --rec-wash: rgba(255, 59, 48, 0.08);
-  --memo: #a0711a;
+  --rec-ink: #d70015; /* 빨강 글자 (시스템 빨강은 글자로 3.5:1이라 점·선·재생 위치에만) */
+  --rec-strong: #d70015; /* 흰 글자를 얹는 빨강 바탕 (흰 글자 5.4:1) */
+  --memo: #8a6114;
   --memo-wash: rgba(255, 204, 0, 0.16);
 
   --spk-0: #1f7a74;
@@ -81,7 +83,7 @@
   --secondary-foreground: #f5f5f7;
   --muted: #262626;
   --muted-foreground: #a1a1a6;
-  --subtle-foreground: #6e6e73;
+  --subtle-foreground: #8e8e93; /* 사이드바 #252525 위 4.7:1 */
   --accent: #2f2f2f;
   --accent-foreground: #f5f5f7;
   --destructive: #ff6961;
@@ -99,6 +101,8 @@
 
   --rec: #ff453a;
   --rec-wash: rgba(255, 69, 58, 0.12);
+  --rec-ink: #ff6961;
+  --rec-strong: #d70015;
   --memo: #f2c14e;
   --memo-wash: rgba(255, 214, 10, 0.12);
 
@@ -159,6 +163,8 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-rec: var(--rec);
   --color-rec-wash: var(--rec-wash);
+  --color-rec-ink: var(--rec-ink);
+  --color-rec-strong: var(--rec-strong);
   --color-memo: var(--memo);
   --color-memo-wash: var(--memo-wash);
   --radius-sm: calc(var(--radius) - 2px);

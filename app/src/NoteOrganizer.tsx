@@ -8,7 +8,7 @@ import { useOrganize } from "./useOrganize";
 import { Folder, Hash, Star, X } from "lucide-react";
 import { cn } from "@/components/ui/utils";
 
-const PILL = "inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 [&_svg]:size-3.5";
+const PILL = "inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-3.5";
 
 const FRESH_MS = 3000; // 사이드바 줄 메뉴의 `태그 편집`이 노트를 여는 사이에 지나간 요청은 버린다
 let handledFocus = 0; // 이미 처리한 초점 요청 (노트를 다시 열어도 같은 요청으로 또 초점을 달라고 하지 않게)
@@ -106,7 +106,7 @@ function TagEditor({ id }: { id: string }) {
         {tags.map((tag) => (
           <li key={tag} className="inline-flex h-6 items-center gap-0.5 rounded-md bg-secondary pr-0.5 pl-2 text-xs text-secondary-foreground">
             <span className="before:text-subtle-foreground before:content-['#']">{tag}</span>
-            <button type="button" className="grid size-5 place-items-center rounded-[4px] text-subtle-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={t("태그 {tag} 빼기", { tag })} title={t("태그 빼기")} onClick={() => void org.setTags(id, removeTag(tags, tag))}>
+            <button type="button" className="grid size-5 place-items-center rounded-[4px] text-subtle-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" aria-label={t("태그 {tag} 빼기", { tag })} title={t("태그 빼기")} onClick={() => void org.setTags(id, removeTag(tags, tag))}>
               <X className="size-3" aria-hidden />
             </button>
           </li>
@@ -116,7 +116,7 @@ function TagEditor({ id }: { id: string }) {
         <Hash className="pointer-events-none absolute left-1.5 size-3.5 text-subtle-foreground" aria-hidden />
         <input
           ref={input}
-          className={cn("h-6 rounded-md bg-transparent pr-1.5 pl-6 text-xs outline-none transition-[width,background-color] placeholder:text-subtle-foreground hover:bg-accent focus:w-52 focus:bg-accent", tags.length ? "w-24" : "w-52")}
+          className={cn("h-6 rounded-md bg-transparent pr-1.5 pl-6 text-xs outline-none transition-colors placeholder:text-subtle-foreground hover:bg-accent focus:w-52 focus:bg-accent focus-visible:ring-2 focus-visible:ring-ring", tags.length ? "w-24" : "w-52")}
           value={draft}
           placeholder={tags.length ? t("태그 추가") : t("태그 추가 (Enter 또는 쉼표)")}
           aria-label={t("태그 추가 (Enter 또는 쉼표로 더하고, 비어 있을 때 Backspace로 마지막 태그를 뺍니다)")}

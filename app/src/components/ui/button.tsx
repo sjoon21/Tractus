@@ -4,12 +4,12 @@ import { cn } from "./utils";
 
 // shadcn/ui Button (new-york). asChild(Radix Slot)는 쓰지 않는다
 export const buttonVariants = cva(
-  "inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-[13px] font-medium transition-[background-color,color,box-shadow,opacity] duration-150 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-45 gated:opacity-45 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-[13px] font-medium transition-[background-color,color,opacity] duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-45 gated:opacity-45 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground shadow-xs hover:bg-primary/88",
-        rec: "bg-rec text-white shadow-xs hover:bg-rec/90",
+        rec: "bg-rec-strong text-white shadow-xs hover:bg-rec-strong/90",
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         outline: "border border-border-strong bg-background shadow-xs hover:bg-accent",
         secondary: "bg-secondary text-secondary-foreground hover:bg-accent",

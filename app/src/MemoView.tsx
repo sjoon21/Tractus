@@ -171,9 +171,12 @@ export function MemoEditor({
           apply(el, r);
         }}
       />
-      <p className={cn("sticky bottom-0 m-0 bg-background pt-2 text-xs", state.status === "failed" ? "text-destructive" : "text-subtle-foreground")} role="status">
-        {locked ?? SAVE_STATUS[state.status]}
-      </p>
+      {/* 메모 노트(page)는 보통 상태(저장됨·저장 중…)를 머리 줄(MeetingView)이 보인다: 본문 아래 멀리 떠 있지 않게. 실패·잠김만 여기서 */}
+      {(variant === "rail" || locked || state.status === "failed") && (
+        <p className={cn("sticky bottom-0 m-0 bg-background pt-2 text-xs", state.status === "failed" ? "text-destructive" : "text-subtle-foreground")} role="status">
+          {locked ?? SAVE_STATUS[state.status]}
+        </p>
+      )}
     </div>
   );
 }
@@ -216,7 +219,7 @@ export function TitleEditor({ title, onSave, onReject }: { title: string; onSave
   if (draft === null)
     return (
       <h1 className={TITLE}>
-        <button className="group inline-flex max-w-full cursor-text items-center gap-1.5 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40" onClick={start} title={t("제목 수정")} aria-label={t("제목 수정: {title}", { title: title || t("제목 없음") })}>
+        <button className="group inline-flex max-w-full cursor-text items-center gap-1.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={start} title={t("제목 수정")} aria-label={t("제목 수정: {title}", { title: title || t("제목 없음") })}>
           <span className="[overflow-wrap:anywhere]">{title || t("제목 없음")}</span>
           <span className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:bg-accent group-hover:opacity-100 group-focus-visible:opacity-100" aria-hidden>
             <Pencil className="size-3.5" />
@@ -229,7 +232,7 @@ export function TitleEditor({ title, onSave, onReject }: { title: string; onSave
       <h1 className={TITLE}>
         <input
           ref={input}
-          className="-mx-1.5 -my-0.5 w-[calc(100%+0.75rem)] rounded-md border-0 bg-foreground/[0.05] px-1.5 py-0.5 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30 aria-invalid:ring-[3px] aria-invalid:ring-destructive/30"
+          className="-mx-1.5 -my-0.5 w-[calc(100%+0.75rem)] rounded-md border-0 bg-foreground/[0.05] px-1.5 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring aria-invalid:ring-[3px] aria-invalid:ring-destructive/30"
           value={draft}
           maxLength={TITLE_MAX + 40} // 붙여 넣은 긴 글을 잘라 버리지 않고 문장으로 알린다
           autoFocus

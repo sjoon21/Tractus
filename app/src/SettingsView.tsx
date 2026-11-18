@@ -373,7 +373,7 @@ function HelpSection() {
 }
 
 const SEGMENT =
-  "h-6 whitespace-nowrap rounded-[5px] px-3 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-xs";
+  "h-6 whitespace-nowrap rounded-[5px] px-3 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-xs";
 
 /** 셋 중 하나를 고르는 칸 (테마·언어) */
 function Segmented<V extends string>({ label, value, options, onPick }: { label: string; value: V; options: readonly { value: V; label: string }[]; onPick: (v: V) => void }) {

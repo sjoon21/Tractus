@@ -63,7 +63,7 @@ export function SearchView({ query, onOpen, memoIds }: { query: string; onOpen: 
                         const v = hitView(s, memo);
                         return (
                           <li key={s.id}>
-                            <button className="grid w-full grid-cols-[5.5rem_minmax(0,1fr)] gap-2 rounded-md px-3 py-2 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/40" onClick={() => onOpen(h.meeting_id, v.seek)}>
+                            <button className="grid w-full grid-cols-[5.5rem_minmax(0,1fr)] gap-2 rounded-md px-3 py-2 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onOpen(h.meeting_id, v.seek)}>
                               <time className="pt-0.5 text-xs text-subtle-foreground tabular-nums">{v.label}</time>
                               <span className="text-[14px] leading-relaxed">
                                 {v.tagged && <Badge variant="memo" className="mr-1.5">{t("메모")}</Badge>}

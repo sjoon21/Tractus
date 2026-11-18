@@ -9,7 +9,7 @@ export function PageHeader({ title, onBack, backLabel = t("뒤로"), actions, ch
     <header className="sticky top-0 z-10 border-b border-border bg-background/85 backdrop-blur-md">
       <div data-tauri-drag-region className="flex h-[52px] items-center gap-2 px-4">
         {onBack && (
-          <button type="button" onClick={onBack} aria-label={backLabel} title={backLabel} className="grid size-7 place-items-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40">
+          <button type="button" onClick={onBack} aria-label={backLabel} title={backLabel} className="grid size-7 place-items-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
             <ChevronLeft className="size-4" aria-hidden />
           </button>
         )}
