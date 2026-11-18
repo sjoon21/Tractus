@@ -178,11 +178,6 @@ export function MeetingView({
     note,
     setFollow,
     list,
-    // 확인 표시(숫자·다시 쓴 문장)가 있는 제안에 오면 그 문장만 들려준다: 녹음을 들어 보고 정하라는 표시라서
-    onArrive: (s) => {
-      const seg = s.flags.length ? segments.find((x) => x.id === s.id) : undefined;
-      if (seg) pb.playClip(seg.start, seg.end);
-    },
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const startEdit = useCallback((seg: Segment) => setEditingId(seg.id), []);
@@ -482,6 +477,7 @@ export function MeetingView({
                 glowing={!!glowing?.has(r.seg.id)}
                 deciding={deciding.size > 0}
                 onDecide={decidePolish}
+                onListen={pb.playClip}
               />
             ) : (
               <MemoRow

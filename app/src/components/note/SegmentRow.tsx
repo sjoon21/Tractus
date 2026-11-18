@@ -26,6 +26,7 @@ export const SegmentRow = memo(function SegmentRow({
   glowing,
   deciding,
   onDecide,
+  onListen,
 }: {
   seg: Segment;
   index: number;
@@ -50,6 +51,8 @@ export const SegmentRow = memo(function SegmentRow({
   glowing: boolean;
   deciding: boolean;
   onDecide: (ids: string[], accept: boolean) => void;
+  /** 확인 표시가 있는 제안의 `듣기`: 이 줄만 재생하고 멈춘다 (usePlayback.playClip) */
+  onListen: (start: number, end: number) => void;
 }) {
   const diarized = speaker !== undefined;
   const button = useRef<HTMLButtonElement>(null);
@@ -112,7 +115,7 @@ export const SegmentRow = memo(function SegmentRow({
           </span>
         </button>
       )}
-      {suggestion && !isEditing && <PolishDiff s={suggestion} busy={deciding} onDecide={onDecide} />}
+      {suggestion && !isEditing && <PolishDiff s={suggestion} busy={deciding} onDecide={onDecide} onListen={suggestion.flags.length ? () => onListen(seg.start, seg.end) : undefined} />}
     </li>
   );
 });
