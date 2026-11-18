@@ -19,7 +19,7 @@ const hm = (iso: string) => {
   return clock(d.getHours(), d.getMinutes());
 };
 
-export function WeekStrip({ notes, onOpen, onRecordEvent, onPrepareEvent, recordGate, recording }: { notes: readonly MeetingInfo[]; onOpen: (id: string) => void; onRecordEvent: (ev: CalendarEvent) => void; onPrepareEvent: (ev: CalendarEvent) => void; recordGate: Decision; recording: boolean }) {
+export function WeekStrip({ notes, onOpen, onRecordEvent, onPrepareEvent, recordGate, recording, hero }: { notes: readonly MeetingInfo[]; /** 홈 위쪽 곧 시작하는 일정 칸에 이미 녹음 단추가 있는 일정: 그 줄에서는 단추를 빼 같은 동작을 두 번 두지 않는다 */ hero?: CalendarEvent | null; onOpen: (id: string) => void; onRecordEvent: (ev: CalendarEvent) => void; onPrepareEvent: (ev: CalendarEvent) => void; recordGate: Decision; recording: boolean }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
@@ -72,11 +72,11 @@ export function WeekStrip({ notes, onOpen, onRecordEvent, onPrepareEvent, record
                 type="button"
                 aria-pressed={d === day}
                 aria-label={t("{day}일 {weekday}요일 · 일정 {e} · 노트 {n}", { day: dp.day, weekday: dp.weekday, e: g.events.length, n: dayNotes(g) })}
-                className={cn("flex flex-col items-center gap-1 py-2.5 outline-none transition-colors hover:bg-accent/60 focus-visible:bg-accent", d === day && "bg-accent")}
+                className={cn("flex flex-col items-center gap-1 py-2.5 outline-none transition-colors hover:bg-accent/60 focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", d === day && "bg-accent")}
                 onClick={() => setPicked(d)}
               >
-                <span className={cn("text-[11px] text-subtle-foreground", isToday && "font-semibold text-rec")}>{dp.weekday}</span>
-                <span className={cn("grid size-7 place-items-center rounded-full text-[13px] font-semibold tabular-nums", isToday && "bg-rec text-white")}>{dp.day}</span>
+                <span className={cn("text-[11px] text-subtle-foreground", isToday && "font-semibold text-rec-ink")}>{dp.weekday}</span>
+                <span className={cn("grid size-7 place-items-center rounded-full text-[13px] font-semibold tabular-nums", isToday && "bg-rec-strong text-white")}>{dp.day}</span>
                 <span className="flex h-2 items-center gap-0.5" aria-hidden>
                   <Dots n={g.events.length} className="bg-primary" />
                   <Dots n={dayNotes(g)} className="bg-muted-foreground/50" />
@@ -91,7 +91,7 @@ export function WeekStrip({ notes, onOpen, onRecordEvent, onPrepareEvent, record
           <ul className="m-0 list-none p-0 pb-1.5">
             {cur.events.map((ev) => (
               <Fragment key={`${ev.id}-${ev.start}`}>
-                <EventRow ev={ev} now={now} gate={recordGate} recording={recording} onRecord={() => onRecordEvent(ev)} onPrepare={() => onPrepareEvent(ev)} />
+                <EventRow ev={ev} now={now} gate={recordGate} recording={recording} noRecord={!!hero && hero.id === ev.id && hero.start === ev.start} onRecord={() => onRecordEvent(ev)} onPrepare={() => onPrepareEvent(ev)} />
                 {ev.notes.map((m) => (
                   <NoteLine key={m.id} m={m} onOpen={onOpen} inEvent />
                 ))}
@@ -111,7 +111,7 @@ export function WeekStrip({ notes, onOpen, onRecordEvent, onPrepareEvent, record
 function NoteLine({ m, onOpen, inEvent = false }: { m: MeetingInfo; onOpen: (id: string) => void; inEvent?: boolean }) {
   return (
     <li>
-      <button type="button" className={cn("flex w-full items-center gap-3 py-2 pr-4 text-left outline-none hover:bg-accent/60 focus-visible:bg-accent", inEvent ? "pl-11" : "pl-4")} onClick={() => onOpen(m.id)}>
+      <button type="button" className={cn("flex w-full items-center gap-3 py-2 pr-4 text-left outline-none hover:bg-accent/60 focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", inEvent ? "pl-11" : "pl-4")} onClick={() => onOpen(m.id)}>
         {isMemo(m) ? <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden /> : <AudioLines className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
         <span className="min-w-0 flex-1 truncate text-[13px]">{m.title || t("제목 없음")}</span>
         <span className="shrink-0 text-xs text-subtle-foreground tabular-nums">{noteTime(m)}</span>
@@ -128,13 +128,13 @@ function Dots({ n, className }: { n: number; className: string }) {
       {Array.from({ length: Math.min(n, DOTS) }, (_, i) => (
         <span key={i} className={cn("size-1.5 rounded-full", className)} />
       ))}
-      {n > DOTS && <span className="text-[9px] leading-none text-subtle-foreground">+{n - DOTS}</span>}
+      {n > DOTS && <span className="text-[11px] leading-none text-subtle-foreground">+{n - DOTS}</span>}
     </>
   );
 }
 
 /** 일정 줄. 이어진 노트가 없으면 `메모 준비`(끝나지 않은 일정), 녹음 단추는 오늘 일정만. 준비한 메모가 있으면 녹음은 그 노트에 추가된다 (week.eventAction) */
-export function EventRow({ ev, now, gate, recording, onRecord, onPrepare }: { ev: DayEvent; now: Date; gate: Decision; recording: boolean; onRecord: () => void; onPrepare: () => void }) {
+export function EventRow({ ev, now, gate, recording, noRecord, onRecord, onPrepare }: { ev: DayEvent; now: Date; gate: Decision; recording: boolean; noRecord?: boolean; onRecord: () => void; onPrepare: () => void }) {
   const people = attendeeLine(ev.attendees);
   const act = eventAction(ev, ev.notes);
   return (
@@ -153,7 +153,7 @@ export function EventRow({ ev, now, gate, recording, onRecord, onPrepare }: { ev
           {PREPARE_MEMO}
         </Button>
       )}
-      {recordable(ev, now) && (
+      {!noRecord && recordable(ev, now) && (
         <GatedButton gate={gate} className={buttonVariants({ variant: "outline", size: "sm" })} disabled={recording} title={act.kind === "record-into" ? ADD_TITLE : undefined} onClick={onRecord}>
           <Mic aria-hidden />
           {CARD_RECORD}

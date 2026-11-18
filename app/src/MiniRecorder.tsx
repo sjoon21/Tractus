@@ -25,7 +25,7 @@ export const callQuestion = (c: NonNullable<PopoverState["call"]>): string => (c
 /** 통화 감지 카드: 통화가 시작되면 `녹음`·닫기, 통화로 시작한 녹음의 통화가 끝나면 `녹음 종료`·`계속` (calls.rs `call_action`) */
 export function CallCardView({ call, onCall }: { call: NonNullable<PopoverState["call"]>; onCall: (action: string) => void }) {
   const start = call.kind === "start";
-  const pill = "h-7 shrink-0 rounded-full px-3 text-[13px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40";
+  const pill = "h-7 shrink-0 rounded-full px-3 text-[13px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring";
   return (
     <div data-tauri-drag-region role="alertdialog" aria-label={callHeadline(call)} className="flex h-11 items-center gap-2 rounded-full border border-border bg-popover pr-1.5 pl-3.5 text-popover-foreground shadow-pop">
       <Phone aria-hidden className="size-4 shrink-0 text-muted-foreground" />
@@ -43,7 +43,7 @@ export function CallCardView({ call, onCall }: { call: NonNullable<PopoverState[
             <span className="size-2 rounded-full bg-rec" aria-hidden />
             {CALL_RECORD}
           </button>
-          <button type="button" className="grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/40 [&_svg]:size-3.5" onClick={() => onCall("dismiss")} aria-label={CALL_DISMISS} title={CALL_DISMISS}>
+          <button type="button" className="grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-3.5" onClick={() => onCall("dismiss")} aria-label={CALL_DISMISS} title={CALL_DISMISS}>
             <X aria-hidden />
           </button>
         </>
@@ -52,7 +52,7 @@ export function CallCardView({ call, onCall }: { call: NonNullable<PopoverState[
           <button type="button" className={cn(pill, "border border-border hover:bg-accent")} onClick={() => onCall("keep")}>
             {CALL_KEEP}
           </button>
-          <button type="button" className={cn(pill, "bg-rec text-white hover:bg-rec/90")} onClick={() => onCall("stop")}>
+          <button type="button" className={cn(pill, "bg-rec-strong text-white hover:bg-rec-strong/90")} onClick={() => onCall("stop")}>
             {t("녹음 종료")}
           </button>
         </>
@@ -73,13 +73,13 @@ export function MiniRecorderView({ state, nowMs, level, onAction }: { state: Pop
   const paused = state.phase === "paused";
   const stop = t("녹음 종료");
   const bookmark = t("북마크 남기기");
-  const round = "grid size-7 shrink-0 place-items-center rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40 off:pointer-events-none off:opacity-40 [&_svg]:size-3.5";
+  const round = "grid size-7 shrink-0 place-items-center rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring off:pointer-events-none off:opacity-40 [&_svg]:size-3.5";
   const quiet = cn(round, "text-foreground hover:bg-accent");
   return (
     <div data-tauri-drag-region className="flex h-11 items-center gap-1 rounded-full border border-border bg-popover pr-1.5 pl-3 text-popover-foreground shadow-pop">
       <button
         type="button"
-        className="flex shrink-0 items-center gap-2 rounded-md text-[15px] whitespace-nowrap font-semibold tracking-tight tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="flex shrink-0 items-center gap-2 rounded-md text-[15px] whitespace-nowrap font-semibold tracking-tight tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => onAction("tray:open")}
         title={MINI_OPEN_TITLE}
         aria-label={MINI_OPEN_TITLE}
@@ -90,7 +90,7 @@ export function MiniRecorderView({ state, nowMs, level, onAction }: { state: Pop
       {/* 소리 크기: 마이크가 듣고 있다는 신호. 끌기 영역에 속한다 */}
       <span data-tauri-drag-region className="mx-1.5 flex h-5 flex-1 items-center justify-center gap-[3px]" aria-hidden>
         {Array.from({ length: BARS }, (_, i) => (
-          <span key={i} className="w-[3px] rounded-full bg-muted-foreground/70 transition-[height] duration-200" style={{ height: `${Math.max(3, Math.round(20 * (paused ? 0 : level) * SHAPE[i]))}px` }} />
+          <span key={i} className="h-5 w-[3px] rounded-full bg-muted-foreground/70 transition-transform duration-200" style={{ transform: `scaleY(${Math.max(3, Math.round(20 * (paused ? 0 : level) * SHAPE[i])) / 20})` }} />
         ))}
       </span>
       <button type="button" className={quiet} onClick={() => onAction("tray:bookmark")} disabled={!state.can.bookmark} aria-label={bookmark} title={bookmark}>
@@ -99,7 +99,7 @@ export function MiniRecorderView({ state, nowMs, level, onAction }: { state: Pop
       <button type="button" className={quiet} onClick={() => onAction(paused ? "tray:record_resume" : "tray:record_pause")} disabled={paused ? !state.can.resume : !state.can.pause} aria-label={paused ? RESUME_LABEL : PAUSE_LABEL} title={paused ? RESUME_TITLE : PAUSE_TITLE}>
         {paused ? <Play aria-hidden className="fill-current" /> : <Pause aria-hidden className="fill-current" />}
       </button>
-      <button type="button" className={cn(round, "bg-rec text-white hover:bg-rec/90")} onClick={() => onAction("tray:record_stop")} disabled={!state.can.stop} aria-label={stop} title={stop}>
+      <button type="button" className={cn(round, "bg-rec-strong text-white hover:bg-rec-strong/90")} onClick={() => onAction("tray:record_stop")} disabled={!state.can.stop} aria-label={stop} title={stop}>
         <Square aria-hidden className="size-3! fill-current" />
       </button>
     </div>

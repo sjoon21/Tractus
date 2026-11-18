@@ -38,7 +38,7 @@ import { LOCK_NOTICE, type AttachControls } from "./attach";
 import { ConvertPanel } from "./ConvertPanel";
 import { useConvertJob } from "./convertJobs";
 import { CONVERT_FIRST, deleteBlockedWhileConverting, isRecorded, keptNotice, recordedStats, type ConvertControls } from "./recorded";
-import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments, segmentSpans, type SaveState } from "./memo";
+import { exportFormatsFor, flushMemos, isMemo, memoLineNumbers, memoLineSegments, SAVE_STATUS, segmentSpans, type SaveState } from "./memo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import { PolishBar } from "./PolishControls";
@@ -178,11 +178,6 @@ export function MeetingView({
     note,
     setFollow,
     list,
-    // 확인 표시(숫자·다시 쓴 문장)가 있는 제안에 오면 그 문장만 들려준다: 녹음을 들어 보고 정하라는 표시라서
-    onArrive: (s) => {
-      const seg = s.flags.length ? segments.find((x) => x.id === s.id) : undefined;
-      if (seg) pb.playClip(seg.start, seg.end);
-    },
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const startEdit = useCallback((seg: Segment) => setEditingId(seg.id), []);
@@ -386,6 +381,7 @@ export function MeetingView({
             {memoNote ? (
               <p className="meeting-stats m-0 text-xs text-muted-foreground tabular-nums">
                 {t("메모")} · {t("줄 {n}개", { n: info.segments })} · {t("{n}자", { n: bodyChars === 1 ? 1 : bodyChars.toLocaleString(locale()) })}
+                {memoSave.status !== "failed" && SAVE_STATUS[memoSave.status] && <span role="status"> · {SAVE_STATUS[memoSave.status]}</span>}
               </p>
             ) : recorded ? (
               <p className="meeting-stats m-0 text-xs text-muted-foreground tabular-nums">{recordedStats(info.duration_sec, detail.memos.length)}</p>
@@ -481,6 +477,7 @@ export function MeetingView({
                 glowing={!!glowing?.has(r.seg.id)}
                 deciding={deciding.size > 0}
                 onDecide={decidePolish}
+                onListen={pb.playClip}
               />
             ) : (
               <MemoRow
@@ -498,6 +495,8 @@ export function MeetingView({
         <div className="sticky bottom-0 z-10 mt-auto bg-background/90 backdrop-blur-md">
         <NoteDock rail={railState} memoNote={memoNote} recorded={recorded} hasSegments={segments.length > 0} polish={polish} polishOff={polishOff} polishAgain={(detail.polish?.length ?? 0) > 0} onFind={() => (findInput.current ? findInput.current.select() : setFind({ q: "", r: "", glossary: false }))} />
         {!memoNote && <NotePlayer pb={pb} audioPath={detail.audio_path} marks={detail.memos} visible={visible} filter={filter} editing={editing} editError={editError} />}
+        {/* 도크와 같은 아래 묶음 안: 따로 sticky이면 좁은 창에서 도크를 덮는다 */}
+        <RecordPill memoNote={memoNote} attach={attach} target={{ id, title: info.title }} />
         </div>
         {!memoNote && menu && (
           <SpeakerMenu
@@ -512,7 +511,6 @@ export function MeetingView({
             onAskMerge={setMerge}
           />
         )}
-        <RecordPill memoNote={memoNote} attach={attach} target={{ id, title: info.title }} />
       </article>
       {polish.running && <div aria-hidden className="polish-frame pointer-events-none col-start-1 row-start-1 max-[1180px]:hidden" />}
 

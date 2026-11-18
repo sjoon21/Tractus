@@ -145,7 +145,7 @@ export function AskPanel({ scope, onCite, inputRef, notes, memoIds, folders = []
             <li key={q}>
               <button
                 type="button"
-                className="rounded-full border border-border bg-background px-3 py-1 text-left text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+                className="rounded-full border border-border bg-background px-3 py-1 text-left text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => {
                   setDraft(q);
                   inputRef?.current?.focus();

@@ -109,7 +109,7 @@ export function EnhancedNote(p: {
                 role="radio"
                 aria-checked={showing === v}
                 onClick={() => setView(v)}
-                className="h-6 whitespace-nowrap rounded-[5px] px-2.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-xs"
+                className="h-6 whitespace-nowrap rounded-[5px] px-2.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-xs"
               >
                 {v === "mine" ? VIEW_MINE : VIEW_DONE}
               </button>

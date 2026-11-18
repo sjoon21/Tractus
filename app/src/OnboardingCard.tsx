@@ -18,7 +18,7 @@ export function OnboardingCard({ steps, onStep }: { steps: Step[]; onStep: (id: 
           {done}/{steps.length}
         </span>
         <div className="ml-2 h-1 flex-1 overflow-hidden rounded-full bg-secondary" aria-hidden>
-          <div className="h-full rounded-full bg-memo transition-[width] duration-500 motion-reduce:transition-none" style={{ width: `${(done / steps.length) * 100}%` }} />
+          <div className="h-full origin-left rounded-full bg-memo transition-transform duration-500 motion-reduce:transition-none" style={{ transform: `scaleX(${done / steps.length})` }} />
         </div>
         <Button variant="ghost" size="icon-sm" aria-label={ONBOARD_CLOSE} title={ONBOARD_CLOSE} onClick={() => markOnboard("dismissed")}>
           <X aria-hidden />

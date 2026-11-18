@@ -279,7 +279,7 @@ export function SummariesPanel(p: SummariesPanelProps) {
                 aria-selected={d.key === selected?.key}
                 aria-controls="summary-doc"
                 tabIndex={d.key === selected?.key ? 0 : -1}
-                className="h-6 max-w-[12rem] truncate rounded-md px-2.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/40 aria-selected:bg-background aria-selected:text-foreground aria-selected:shadow-xs dark:aria-selected:bg-foreground/15"
+                className="h-6 max-w-[12rem] truncate rounded-md px-2.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-selected:bg-background aria-selected:text-foreground aria-selected:shadow-xs dark:aria-selected:bg-foreground/15"
                 onClick={() => setSelectedKey(d.key)}
               >
                 {labels[i]}

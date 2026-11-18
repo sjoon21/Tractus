@@ -282,6 +282,8 @@ export default {
   "{label} 제안 {n}개를 모두 수락합니다. 확인 표시가 있는 제안은 빠집니다": "Accept all {n} {label} suggestions. Suggestions marked for checking are left out",
   "수락 (Enter)": "Accept (Enter)",
   "거절 (⌫)": "Dismiss (⌫)",
+  "듣기": "Listen",
+  "이 문장만 듣기 (R)": "Play this sentence only (R)",
   "숫자 확인·다시 쓴 문장 표시가 있는 제안은 하나씩 정하세요": "Decide suggestions marked Check number or Rewritten one at a time",
   "스마트 교정됨": "Smart fixed",
   "고칠 곳을 찾지 못했습니다": "No fixes found",

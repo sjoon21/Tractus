@@ -62,7 +62,7 @@ export function NotePlayer({
         />
       ) : null}
       <button
-        className="play-button grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground shadow-xs outline-none transition-transform hover:scale-105 focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:opacity-40 disabled:hover:scale-100 [&_svg]:size-3.5 [&_svg]:fill-current"
+        className="play-button grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground shadow-xs outline-none transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 disabled:hover:scale-100 [&_svg]:size-3.5 [&_svg]:fill-current"
         onClick={() => (audio.current?.paused ? void audio.current.play().catch(() => {}) : audio.current?.pause())}
         disabled={!audioPath || !!audioError}
         aria-label={playing ? t("일시정지") : t("재생")}

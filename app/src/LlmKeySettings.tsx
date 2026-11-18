@@ -44,7 +44,7 @@ type Msg = { text: string; detail: string | null; ok?: boolean };
 const formOf = (s: LlmSettings, provider: string): LlmForm => toForm(provider, s.profiles[provider]?.base_url ?? "", s.profiles[provider]?.model ?? "");
 
 const SERVICE =
-  "inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-[13px] font-medium outline-none transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:opacity-50 aria-pressed:border-ring aria-pressed:bg-ring/8 aria-pressed:ring-1 aria-pressed:ring-ring/40";
+  "inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-[13px] font-medium outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 aria-pressed:border-ring aria-pressed:bg-ring/8 aria-pressed:ring-1 aria-pressed:ring-ring/40";
 const FIELD = "w-72";
 
 /** searchActions·searchStatus: 설정 화면이 스마트 검색 묶음에 붙이는 `스마트 검색 상태` 단추와 결과 줄 */

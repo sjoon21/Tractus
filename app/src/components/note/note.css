@@ -31,7 +31,7 @@
 }
 
 .seg-button:focus-visible {
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ring) 55%, transparent);
+  box-shadow: inset 0 0 0 2px var(--ring);
 }
 
 .seg-time {
@@ -85,7 +85,7 @@
 }
 
 .seg.is-active .seg-time {
-  color: var(--rec);
+  color: var(--rec-ink);
   font-weight: 600;
 }
 
@@ -224,7 +224,7 @@
 }
 
 .spk-chip:focus-visible {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 55%, transparent);
+  box-shadow: 0 0 0 2px var(--ring);
 }
 
 .spk-chip.is-turn {
@@ -330,7 +330,7 @@
   display: flex;
   align-items: center;
   border-radius: 999px;
-  transition: background-color var(--fast), box-shadow var(--fast), opacity var(--fast);
+  transition: background-color var(--fast), opacity var(--fast);
 }
 
 .speakers-list li.is-dim {
@@ -354,7 +354,7 @@
   font-size: 13px;
   font-weight: 500;
   outline: none;
-  transition: background-color var(--fast), box-shadow var(--fast);
+  transition: background-color var(--fast);
 }
 
 .speaker-filter:hover {
@@ -362,7 +362,7 @@
 }
 
 .speaker-filter:focus-visible {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 55%, transparent);
+  box-shadow: 0 0 0 2px var(--ring);
 }
 
 .speaker-filter[aria-pressed="true"] {
@@ -398,6 +398,10 @@
 .speaker-more:focus-visible {
   color: var(--foreground);
   background: var(--accent);
+}
+
+.speaker-more:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
 }
 
 .speakers-confirm {
@@ -620,6 +624,10 @@
 .spk-menu button:hover:not(:disabled),
 .spk-menu button:focus-visible {
   background: var(--accent);
+}
+
+.spk-menu button:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--ring);
 }
 
 .spk-menu button:disabled {

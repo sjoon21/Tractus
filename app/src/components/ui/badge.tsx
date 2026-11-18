@@ -7,7 +7,7 @@ export const badgeVariants = cva("inline-flex shrink-0 items-center gap-1 whites
     variant: {
       default: "bg-secondary text-muted-foreground",
       memo: "bg-memo-wash text-memo",
-      rec: "bg-rec-wash text-rec",
+      rec: "bg-rec-wash text-rec-ink",
       outline: "border border-border text-muted-foreground",
     },
   },
