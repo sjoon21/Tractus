@@ -230,6 +230,7 @@
  "변환 엔진: 권장 {recommended}, 지금 쓰는 것 {effective}": "Transcription engine: recommended {recommended}, in use {effective}",
  "변환 엔진을 불러오지 못했습니다 ({model}): {error}": "Couldn't load the transcription engine ({model}): {error}",
  "변환 엔진이 아닙니다: {id} ({choices})": "Not a transcription engine: {id} ({choices})",
+ "변환에 필요한 onnxruntime을 불러오지 못했습니다: {error}": "Couldn't load onnxruntime, which transcription needs: {error}",
  "변환을 중단했습니다. 같은 명령으로 다시 실행하면 이어서 진행합니다.": "Transcription stopped. Run the same command again to continue.",
  "변환이 끝나지 않은 구간이 있습니다 ({chunks}). 같은 명령으로 다시 실행하세요": "Some parts aren’t transcribed yet ({chunks}). Run the same command again",
  "볼트 폴더를 찾지 못했습니다. 설정에서 다시 고르세요.": "Couldn’t find the vault folder. Choose it again in Settings.",

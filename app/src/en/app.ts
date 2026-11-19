@@ -69,6 +69,7 @@ export default {
   "음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요.": "ffmpeg is needed to read audio and isn’t installed. Install it in Terminal with brew install ffmpeg.",
   "녹음된 소리가 없습니다. 마이크 권한과 입력 장치를 확인하세요.": "No sound was recorded. Check microphone permission and the input device.",
   "이 노트의 녹음 파일을 찾을 수 없습니다.": "Can’t find this note’s recording.",
+  "텍스트로 변환하는 데 필요한 구성 요소를 불러오지 못했습니다. 앱을 다시 설치하세요.": "Couldn’t load a component needed for transcription. Reinstall the app.",
   "변환을 중단했습니다. 다시 변환하면 멈춘 곳부터 이어서 진행합니다.": "Transcription stopped. Transcribe again to continue where it left off.",
   "변환이 끝나지 않은 구간이 있습니다. 다시 변환하면 멈춘 곳부터 이어서 진행합니다.": "Some parts weren’t transcribed. Transcribe again to continue where it left off.",
   "이미 텍스트로 변환한 노트입니다.": "This note is already transcribed.",

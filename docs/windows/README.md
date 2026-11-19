@@ -161,6 +161,7 @@ pnpm tauri dev
 2. **B. Qwen3-ASR ggml 이식본** (Vulkan). A와 같은 세트로 비교한다. 라이선스·성숙도부터 확인한다.
 3. **C. Whisper (whisper.cpp)**는 마지막 수단이다. Phase 0 한국어 CER이 14.92로 Qwen 9.49보다 나쁘고, 사전(프롬프트)을 넣으면 더 나빠진다.
 
+- [x] A의 어댑터(설계 [docs/design/asr-onnx.md](../design/asr-onnx.md) 9절 1번 PR, v3.141): `asr_onnx`·`vad_onnx`, 모델 폴더 표지 파일로 가르기, Qwen에 numpy 넘기기(`test_asr`의 Qwen 시험이 Windows에서 돈다), `runtime_missing`. 등록·의존성은 아직이라 사용자에게 보이지 않는다.
 - [ ] 측정은 `bench/`로 하고 AI Hub 전사는 로컬에만 둔다(지표만 커밋).
 - [ ] 고르면 `models_registry`에 플랫폼별 모델 항목을 더하고, 기능 잠금(`CAPABILITIES`)은 그대로 쓴다.
 - [ ] onnxruntime을 다시 들이면(번들 약 75MB) 그 결정을 ARCHITECTURE.md에 남긴다(v3.99에서 뺐다).

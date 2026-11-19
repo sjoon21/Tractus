@@ -1,6 +1,6 @@
 """청크 전사와 반복 루프 방지. 기본 엔진은 Qwen3-ASR이고, 같은 흐름으로 다른 계열(Whisper·SenseVoice)도 돈다 (docs/design/asr-engines.md).
 
-mlx-audio를 프로세스 안에서 호출한다. `mlx_audio.server`의 HTTP 엔드포인트는 `hotwords`를 모델까지
+mlx-audio를 프로세스 안에서 호출한다(Windows는 같은 Qwen3-ASR의 ONNX 판을 onnxruntime으로, `asr_onnx`). `mlx_audio.server`의 HTTP 엔드포인트는 `hotwords`를 모델까지
 전달하지 않아 용어집(Phase 0: 용어 재현율 72% → 84%)을 쓸 수 없기 때문이다.
 계열마다 다른 것은 `Engine`(호출 인자·자주 쓰는 단어·언어 오감지 재시도)뿐이고, 반복 루프 재시도·접기는 공통이다.
 """
@@ -41,6 +41,11 @@ LOOP_RETRY_TEMPERATURE = 0.3
 # ponytail: 짧은 청크·중국어/일본어 감지만 한국어로 다시 한다. 정말 중국어·일본어 회의면 짧은 맞장구가 한국어가 된다 (노트 전체 언어로 판단하게 바꿀 때까지)
 MISDETECT_MAX_S = 5.0
 MISDETECT_LANGS = {"zh", "ja"}  # 반복 루프가 난 청크만 한 번 더 (탐욕 디코딩이 같은 루프에 다시 빠지지 않게)
+
+
+class RuntimeMissing(ImportError):
+    """onnxruntime을 불러오지 못했다(설치되지 않음, DLL·VC++ 런타임 문제, `asr_onnx.ort`). 파이프라인이 `runtime_missing`으로 알린다.
+    여기 두는 것은 파이프라인이 numpy를 부르는 `asr_onnx`를 CLI 시작 때 불러오지 않게 하려는 것이다."""
 
 
 @dataclass(frozen=True)
@@ -145,17 +150,27 @@ class Transcriber:
 
     @classmethod
     def load(cls, model_dir: Path) -> "Transcriber":
-        from mlx_audio.stt.utils import load
+        """모델 폴더에 ONNX 표지 파일이 있으면 onnxruntime(Windows, `asr_onnx`), 없으면 mlx-audio. model_type이 같아 config로는 못 가른다."""
+        from tractus import asr_onnx
 
         engine = engine_of(model_dir)
+        if (model_dir / asr_onnx.MARKER).exists():
+            if engine.family != "qwen3":
+                raise ValueError(f"ONNX 변환 엔진은 Qwen3-ASR만 지원합니다: {model_dir} ({engine.family})")  # i18n-ok: 개발자 오류 (등록 목록에는 Qwen3-ASR ONNX만 있다)
+            return cls(asr_onnx.OnnxQwen3ASR.load(model_dir), engine)
+        from mlx_audio.stt.utils import load
+
         return cls(load(str(model_dir)), engine)
 
     def _generate(self, audio, language: str | None, hotwords: list[str] | None, max_tokens: int, temperature: float = 0.0):
         """language: 계열의 표기 (_lang_arg). 계열마다 generate 인자가 다르다."""
         import numpy as np
-        import mlx.core as mx
 
-        x = mx.array(np.asarray(audio, dtype=np.float32))
+        x = np.asarray(audio, dtype=np.float32)  # Qwen3-ASR은 mlx-audio·ONNX 모두 numpy를 받는다 (mlx-audio도 처음에 numpy로 되돌린다)
+        if self.engine.family in ("whisper", "sensevoice"):
+            import mlx.core as mx
+
+            x = mx.array(x)
         if self.engine.family == "whisper":  # 청크마다 따로 (앞 청크 글을 이어 붙이지 않는다: 오류 전파). 온도 재시도는 Whisper가 스스로 한다
             extra = {"temperature": temperature} if temperature else {}
             return self.model.generate(x, language=language, condition_on_previous_text=False, verbose=False, **extra)
