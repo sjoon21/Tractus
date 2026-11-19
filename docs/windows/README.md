@@ -60,7 +60,7 @@ PR 번호는 이 문서를 쓸 때의 것이다. 합쳐졌는지는 `git log --o
   | `tool_bin`의 `.app` 번들·`swift build` 기대 (`test_diarize`) | 2 | 건너뜀: fluid 도우미는 macOS 전용이다. **`tool_bin` 자체는 Windows에서도 `tractus-rec.exe`를 찾아야 하는데 그 배치 시험은 없다**(W3·W5 할 일) |
   | SIGTERM 종료 코드 130 (`test_models`) | 1 | 건너뜀. Windows 앱은 받기를 `taskkill /F /T`로 멈춘다(2.3, 받은 부분은 남는다). stdin `stop`은 만들지 않았다 |
 
-- **W2 결과 (2026-11-19, 브랜치 `windows/w2-core-tests`):** run 44468214894 55 실패 / 784 통과 / 5 건너뜀 / 123 오류 → run 44475918704 **0 실패 / 920 통과 / 47 건너뜀**(늘어난 42개는 위 표의 `mac_only`). macOS는 그대로 964 통과 / 3 건너뜀. 건너뛸 시험은 `tests/conftest.py`의 `mac_only(이유)`로 함수마다 표시한다(`update.sh`만 파일 전체).
+- **W2 결과 (2026-11-19, 브랜치 `windows/w2-core-tests`):** run 44468214894 55 실패 / 784 통과 / 5 건너뜀 / 123 오류 → run 44479877128 **0 실패 / 921 통과 / 47 건너뜀**(늘어난 42개는 위 표의 `mac_only`). macOS는 965 통과 / 3 건너뜀(새 시험 1개, 새 건너뜀 없음). 건너뛸 시험은 `tests/conftest.py`의 `mac_only(이유)`로 함수마다 표시한다(`update.sh`만 파일 전체).
 - **아직 안 본 것:** 실제 Windows 기기(이 결과는 `windows-latest` 러너뿐), `slow`·`llm`·`network` 시험, 실제 파이프에서 코어 stdout 인코딩(`CliRunner`는 utf-8로 받는다. 앱이 띄우면 Windows 기본 코드 페이지로 한국어 JSON을 쓰게 된다: W3에서 확인), `tractus doctor --json`. 전체 시험 단계는 아직 `continue-on-error`다.
 
 
