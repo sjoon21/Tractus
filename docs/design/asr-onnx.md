@@ -1,6 +1,6 @@
 # 설계: Windows 텍스트 변환 런타임 (Qwen3-ASR ONNX + onnxruntime CPU)
 
-> 상태: 설계 (2026-11-19). 구현 전이다. 근거: docs/windows/plan.md 6.1·7.4절, docs/windows/README.md W4·W5, docs/design/asr-engines.md.
+> 상태: 설계 (2026-11-19). 9절 1번 PR(어댑터, `windows/asr-onnx-adapter`, ARCHITECTURE v3.140)을 구현했다. 구현하며 실제 모델로 확인한 것은 3.3절 끝("구현에서 실제로 확인한 것")에 적었다. 나머지 PR은 구현 전이다. 근거: docs/windows/plan.md 6.1·7.4절, docs/windows/README.md W4·W5, docs/design/asr-engines.md.
 > 이 문서는 설계만 정한다. **`bench/` 측정 전에는 어떤 ONNX 모델도 등록 목록(`models_registry.MODELS`)에 올리지 않는다**(CLAUDE.md).
 
 ## 결론
@@ -257,6 +257,27 @@ return Output(text, lang, len(out))
 
 - `onnxruntime.InferenceSession(path, providers=["CPUExecutionProvider"])` 셋을 만든다.
 - 스레드 수는 기본값(물리 코어)으로 두고, 측정에서 바꿔 본다(4/8/기본). 고정값은 측정 뒤 정한다.
+- VAD 세션은 `intra_op`·`inter_op` 스레드를 1로 둔다. 512표본 창마다 부르는 작은 그래프라 스레드를 늘리면 오히려 느리다(Silero 공식 래퍼와 같다).
+
+**구현에서 실제로 확인한 것 (1번 PR, 2026-11-19)**
+
+받은 판: `andrewleech/qwen3-asr-0.6b-onnx` @ `4fc24a14…`(2.1절의 7개 파일), `istupakov/silero-vad-onnx` @ `b3e3ee3c…`. onnxruntime 1.32.0(Mac arm64 CPU)으로 그래프를 열어 이름·모양을 읽었다. 3.3절·5절의 계약과 **모두 같았다.**
+
+| 그래프 | 입력 | 출력 |
+| --- | --- | --- |
+| `encoder.int4.onnx` | `mel` f32 `[1,128,time]` | `audio_features` `[1,u1,1024]` |
+| `decoder_init.int4.onnx` | `input_ids`·`position_ids` i64 `[batch,seq_len]`, `audio_features` f32 `[batch,audio_len,1024]`, `audio_offset` i64 `[1]` | `logits` `[batch,seq_len,151936]`, `present_keys`·`present_values` `[28,batch,8,seq_len,128]` |
+| `decoder_step.int4.onnx` | `input_embeds` f32 `[batch,1,1024]`, `position_ids` i64 `[batch,1]`, `past_keys`·`past_values` `[28,batch,8,past_seq_len,128]` | `logits` `[batch,1,151936]`, present KV (`past_seq_len + 1`) |
+| `silero_vad_16k_op15.onnx` | `input` f32 `[batch,sequence]`, `state` f32 `[2,batch,128]`, `sr` i64 스칼라 | `output` `[batch,1]`, `stateN` |
+
+- **토크나이저:** `<asr_text>`(151704)는 추가 토큰이지만 `special: false`다. 그래서 `decode(skip_special_tokens=True)`가 지우지 않고, 자동 감지 출력을 `parse_language`로 나눌 수 있다. 오디오 패드(151676)·`<|im_end|>`(151645)·`<|endoftext|>`(151643)는 special이다.
+- **프롬프트 토큰 ID:** mlx-audio는 `AutoTokenizer.encode(prompt)`(기본 `add_special_tokens=True`)로 부르지만 Qwen 토크나이저는 아무것도 덧붙이지 않아, `tokenizers`로 `add_special_tokens=False`한 결과와 ID가 같다. 0.4초(1초로 채움)·5.3초(한국어 고정 + 단어 3개)·30초(자동 감지 + 단어 1개)에서 같았고, 인코더 출력 길이 A도 mlx-audio가 셈한 오디오 토큰 수와 같았다. 첫 세 ID는 `151644, 8948, 198`(`<|im_start|>`·`system`·`\n`)이다(`test_real_prompt_token_ids_and_audio_length_match_mlx_audio`).
+- **특징 추출:** `log_mel`(numpy 약 15줄)과 `WhisperFeatureExtractor`(transformers 5.18)의 최대 차이가 5·31·1·0.37초 임의 음성에서 6.7e-8이었다.
+- **VAD:** 가상 음성 12.4초(문장 사이 1초 무음)에서 ONNX와 MLX 확률의 최대 차이 2.6e-6, 발화 구간 5개가 표본 단위로 같았다. 388창에 0.03초.
+- **mlx-audio 쪽 이름:** `_build_prompt`·`extract_language`·`_preprocess_audio`는 `mlx_audio.stt.models.qwen3_asr.qwen3_asr.Qwen3ASRModel`에 있다(`Model`은 이것을 감싼 껍데기라 클래스 속성으로는 찾을 수 없다). CI 시험이 이 함수들을 직접 불러 고정 문자열과 대조한다(Mac).
+- **온도 표본:** `pick`은 `argmax(logits/T + Gumbel)`이다. mlx `categorical_sampling`과 같은 분포(softmax(logits/T))다.
+- **받기 주의:** `hf download … --include …`가 한 번 `encoder.int4.onnx`를 빠뜨렸다(다른 작업이 같은 폴더에 동시에 받던 중이었고, 이 파일은 `encoder.onnx`와 내용이 같다). 받은 뒤 7개 파일이 모두 있는지 본다. 등록(5번 PR) 뒤에는 `models download`가 파일 목록·크기로 확인한다.
+- **가상 음성:** `say -v Yuna` 6.6초("안녕하세요. 오늘 회의는 다음 분기 예산 검토입니다. 먼저 인건비부터 보겠습니다.")를 `Transcriber`로 받아 적으면 자동 감지·한국어 고정 + 단어 모두 문장부호만 다르게 맞았다(`repaired` 없음).
 
 ### 3.4 안전장치가 그대로 먹는지 대조
 
@@ -272,13 +293,14 @@ return Output(text, lang, len(out))
 | 목록을 받아 적으면 단어 없이 다시 | `echoes_hotwords` | 그대로 |
 | ITN(`itn.korean_numbers`) | `Transcriber.transcribe` | 그대로. 순수 `re`라 Windows에서 돈다 |
 | `words: null` | `store` | Windows 목록에는 단어 정렬기가 없다 → 정렬 단계를 건너뛰고(4.3절) `words`는 null. 단어를 지어내지 않는다 |
-| 모델 내리기 | `pipeline._free_mlx` | `import mlx.core`를 `try … except ImportError`로 감싼다. MLX가 없으면 `gc.collect()`만 한다. Mac 동작은 같다 |
+| 모델 내리기 | `pipeline._free_mlx` | `import mlx.core`를 `try … except ImportError`로 감싼다(W2, PR #128에서 이미 들어갔다). MLX가 없으면 그냥 돌아간다. Mac 동작은 같다 |
 
 ### 3.5 그 밖의 코어 변경
 
 - **`pipeline._free_mlx`** (`:152-159`): 위 가드. 호출 네 곳(`:202` `_diarize` 안, `:294`, `:410`, `:420`)은 고치지 않는다.
 - **`store.build_transcript`** (`:289`, `"runtime": "mlx-audio"`가 박힌 곳은 `:316`): 이 함수는 세 곳이 부른다(`write_transcript`, `deferred.finish_convert` deferred.py:172, `attach.finish_append` attach.py:135). 그래서 인자를 더하지 않고 **함수 안에서 `job.model`(=저장소)로 정한다**: `"onnxruntime" if job.model in registry.ONNX_REPOS else "mlx-audio"`. `ONNX_REPOS`는 레지스트리가 `_windows_models()`의 변환 엔진 저장소로 만든다(ASR 저장소의 원본은 레지스트리). store는 레지스트리를 함수 안에서 늦게 불러온다(레지스트리가 align·diarize 등을 import하므로 모듈 머리에서 부르지 않는다). `Job`·`write_transcript` 시그니처는 그대로다. 시험은 새 노트·`--into`·`--append-to` 세 경로를 본다.
-- **onnxruntime을 불러오지 못할 때**(DLL·VC++ 런타임 문제, 휠 누락): `vad.find_chunks`는 `_new_job`에서 try 없이 ASR보다 먼저 돈다(pipeline.py:292). `_new_job`의 이 호출과 `_run`의 모델 올리기에서 `ImportError`를 잡아 `common.fail(..., code="runtime_missing")`로 끝낸다. 문구는 WORDS.md·`i18n_en.json`·앱 `lib.ts` `ERROR_TEXT`에 한 줄씩. `tractus doctor`의 Windows 갈래에 onnxruntime import 점검을 더한다.
+- **onnxruntime을 불러오지 못할 때**(DLL·VC++ 런타임 문제, 휠 누락): `vad.find_chunks`는 `_new_job`에서 try 없이 ASR보다 먼저 돈다(pipeline.py:292). `_new_job`의 이 호출과 `_run`의 모델 올리기에서 잡아 `common.fail(..., code="runtime_missing")`로 끝낸다. 문구는 WORDS.md·`i18n_en.json`·앱 `lib.ts` `ERROR_TEXT`에 한 줄씩. `tractus doctor`의 Windows 갈래에 onnxruntime import 점검을 더한다(의존성이 들어오는 4번 PR).
+  - **구현(1번 PR):** 모든 `ImportError`가 아니라 `asr.RuntimeMissing`(`ImportError`의 하위 클래스)만 잡는다. `asr_onnx.ort()`가 onnxruntime import 실패를 이것으로 바꾼다. 그래야 Mac에서 직접 추가한 엔진이 mlx-audio 안에서 내는 `ImportError`는 지금처럼 `model_load_failed`로 남는다. 클래스는 `asr.py`에 둔다: 파이프라인이 numpy를 부르는 `asr_onnx`를 CLI 시작 때 불러오지 않게(`test_cli_starts_without_heavy_libraries`).
 - **`commands/engines.py`**: 고치지 않는다. Windows 항목이 같은 ID(`asr-std`·`asr-lite`·`vad`)를 쓰므로 `MODELS`·`TRACK_MODEL`·`VAD_MODEL`·`auto_track`이 그대로 맞는다(4절).
 - **`live.py`**: 고치지 않는다. Windows에서는 `live` 기능 잠금으로 막는다.
 
