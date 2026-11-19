@@ -45,18 +45,18 @@ PR 번호는 이 문서를 쓸 때의 것이다. 합쳐졌는지는 `git log --o
 - **바꾼 호출 지점:** `store.note_lock`·`edit_glossary`, `organize.folders_lock`, `sample_note.create`, `voices.profiles_lock`·`save_profiles`, `models_install.download_lock`·`lock_held`, `models_registry.physical_memory`, `paths.tool_bin`(Windows면 `.exe`).
 - **주의:** Windows 잠금은 강제 잠금이다. 다른 프로세스가 잠긴 바이트를 읽으면 `PermissionError`가 난다. 잠금 파일에 내용을 쓰지 않는 지금 방식에서는 문제가 없지만, 잠근 파일을 다른 프로세스가 읽는 코드를 새로 만들면 확인한다.
 - **`uv sync --locked`는 Windows에서도 된다** (mlx 0.32.3에 win_amd64 휠이 있다). 다만 `import mlx.core`는 DLL 로드에 실패한다.
-- **Windows CI 첫 결과 (run 43354607376):** 777 통과 / 55 실패 / 123 오류. 전체 시험은 `continue-on-error`이고 실패 목록만 요약에 남긴다.
+- **Windows CI 첫 결과 (run 43354607376):** 777 통과 / 55 실패 / 123 오류. 그때 전체 시험은 `continue-on-error`였다. W2(v3.139)부터는 실패하면 빨간색이다(필수 검사가 아니라 macOS 합치기·릴리스는 막지 않는다).
 
   | 원인 (W2에서 로그로 확인) | 건수 | W2에서 한 것 |
   | --- | --- | --- |
-  | 러너에 ffmpeg가 없다: 가짜 음성을 만드는 픽스처의 `subprocess.run(["ffmpeg", …])`가 `FileNotFoundError` (`test_cli`·`test_deferred`·`test_attach`·`test_align`·`test_calendar_event`·`test_trio`) | 오류 119 + 실패 1 | `windows-core.yml`에 `choco install ffmpeg` |
+  | 러너에 ffmpeg가 없다: 가짜 음성을 만드는 픽스처의 `subprocess.run(["ffmpeg", …])`가 `FileNotFoundError` (`test_cli`·`test_deferred`·`test_attach`·`test_align`·`test_calendar_event`·`test_trio`) | 오류 119 + 실패 1 | `windows-core.yml`에 `choco install ffmpeg --version 9.0.2` (고정) |
   | ffmpeg 뒤에 드러남: `commands.pipeline._free_mlx`가 `mlx.core`를 무조건 불러와, 모델이 없어 화자 분리·정렬을 건너뛴 변환도 `ImportError`로 끝났다 | 80 | **코어 수정:** 불러오지 못하면 비울 MLX 버퍼도 없으므로 돌아간다 |
   | `mlx.core` DLL 로드 실패: 가짜 모델이어도 `mx.array`를 부른다 (`test_asr`·`test_onnx_mlx`·`test_live`) | 19 | `mac_only(NO_MLX)`로 건너뜀. MLX 대체는 W4 |
   | 줄바꿈: `store._write_atomic`이 텍스트 모드라 Windows에서 `\r\n`으로 써서 Obsidian sha256이 어긋났다(`edited`) | 5 | **코어 수정:** `newline="\n"`. `_write_atomic`으로 쓰는 파일(transcript·md·vtt·요약·Obsidian)은 Mac과 같은 바이트다. `memos.json`(`pipeline` `write_text`)·`.chunks.jsonl`(덧붙이기)·`models_install`·`voices`는 아직 텍스트 모드라 Windows에서 `\r\n`이다(JSON은 그대로 읽힌다) |
   | cp1252 기본 인코딩: 시험 코드의 `read_text()`·`write_text()` (`test_env`·`test_paths`·`test_bundle_slim`·`test_plugin`·`test_obsidian`) | 6 | 시험에 `encoding="utf-8"`. 코어의 파일 읽기·쓰기는 이미 utf-8이다(`PYTHONWARNDEFAULTENCODING=1`로 확인, 남은 곳은 ASCII뿐) |
   | bash·`#!` 스크립트 `WinError 193` (`test_update_sh` 7, `test_plugin` 실행기 6, `test_diarize` 가짜 fluid 도우미 6, `test_models` 1) | 20 | `mac_only`로 건너뜀: `update.sh`·`bin/tractus-mcp`는 bash, fluid 도우미 `tractus-diar`는 Swift·CoreML |
   | 0600·실행 비트 (`test_voices`·`test_integrity`·`test_cli`·`test_plugin`) | 4 | Windows에서는 권한 비트 검사만 뺀다. 나머지 검사는 돈다 |
-  | `paths.APP_MODELS`가 `~/Library/Application Support/...` | 1 | `platform_compat.APP_MODELS`: Windows는 `%LOCALAPPDATA%\dev.tractus.app\models` (plan.md 7.2 관례, **소유자 확인 필요**) |
+  | `paths.APP_MODELS`가 `~/Library/Application Support/...` | 1 | `platform_compat.APP_MODELS`: Windows는 `%LOCALAPPDATA%\dev.tractus.app\models` (plan.md 7.2 관례, 설정은 `%APPDATA%`. `LOCALAPPDATA`가 비면 `~/AppData/Local`. 2026-11-19 권하는 안으로 진행) |
   | `tool_bin`의 `.app` 번들·`swift build` 기대 (`test_diarize`) | 2 | 건너뜀: fluid 도우미는 macOS 전용이다. **`tool_bin` 자체는 Windows에서도 `tractus-rec.exe`를 찾아야 하는데 그 배치 시험은 없다**(W3·W5 할 일) |
   | SIGTERM 종료 코드 130 (`test_models`) | 1 | 건너뜀. Windows 앱은 받기를 `taskkill /F /T`로 멈춘다(2.3, 받은 부분은 남는다). stdin `stop`은 만들지 않았다 |
 

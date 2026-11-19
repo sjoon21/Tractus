@@ -1,5 +1,5 @@
-# Windows 이식 0단계 (docs/internal/windows-port.md §2): 코어(src/tractus)가 Windows에서 불러와지고 모델 없는 단위 테스트가 도는지 본다.
-# 앱·녹음 프로그램·모델(slow)은 보지 않는다. 고른 테스트만 반드시 통과해야 하고, 전체 테스트는 실패 목록만 요약에 남긴다(실제 Windows PC에서 이어 간다).
+# Windows 코어 (docs/windows/README.md W2): 코어(src/tractus)가 Windows에서 불러와지고 모델 없는 단위 테스트가 모두 통과하는지 본다.
+# 앱·녹음 프로그램·모델(slow)은 보지 않는다. W2(v3.139)부터 전체 테스트가 실패하면 빨간색이다(필수 검사가 아니라 macOS 합치기·릴리스는 막지 않는다).
 name: Windows core
 
 on:
@@ -42,15 +42,14 @@ jobs:
           python-version: "3.12"
       - name: ffmpeg (시험이 가짜 음성을 만들고 코어가 디코딩한다)
         run: |
-          choco install ffmpeg -y --no-progress
+          choco install ffmpeg --version 9.0.2 -y --no-progress  # 고정: 커뮤니티 패키지의 새 빌드가 말없이 바뀌지 않게
           ffmpeg -version | head -n 1
       - run: uv sync --locked
       - name: 불러오기 (CLI·MCP)
         run: uv run python -c "import tractus.cli, tractus.mcp_server"
       - name: 고른 테스트 (반드시 통과)
         run: uv run pytest -q tests/test_platform_compat.py
-      - name: 전체 테스트 (실패 목록만 요약)
-        continue-on-error: true
+      - name: 전체 테스트 (실패하면 빨간색, 실패 목록은 요약에)
         run: |
           set -o pipefail
           uv run pytest -q -rfE --tb=line -p no:cacheprovider 2>&1 | tee pytest.txt
