@@ -222,10 +222,10 @@ function Gallery() {
       <Block title="녹음 미니 창 (MiniRecorderView)" note="녹음 중 Tractus 창을 보고 있지 않을 때 화면 구석에 뜬다 (mini.rs, 창 320×56)">
         <div className="flex flex-wrap gap-4">
           <div className="w-[320px] p-1.5">
-            <MiniRecorderView state={MINI_REC} nowMs={MINI_REC.started_at_ms! + 754_000} level={0.7} onAction={() => {}} />
+            <MiniRecorderView state={MINI_REC} nowMs={MINI_REC.started_at_ms! + 754_000} level={0.7} onAction={() => {}} onHide={() => {}} />
           </div>
           <div className="w-[320px] p-1.5">
-            <MiniRecorderView state={{ ...MINI_REC, phase: "paused", elapsed_ms: 3_725_000, can: { ...MINI_REC.can, pause: false, resume: true } }} nowMs={0} level={0} onAction={() => {}} />
+            <MiniRecorderView state={{ ...MINI_REC, phase: "paused", elapsed_ms: 3_725_000, can: { ...MINI_REC.can, pause: false, resume: true } }} nowMs={0} level={0} onAction={() => {}} onHide={() => {}} />
           </div>
           <div className="w-[320px] p-1.5">
             <CallCardView call={{ kind: "start", app: "Zoom", title: "주간 제품 동기화" }} onCall={() => {}} />
