@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from conftest import NO_MLX, mac_only
 from tractus import vad, vad_onnx
 from tractus.vad_onnx import CHUNK, CONTEXT, probabilities, timestamps
 
@@ -43,6 +44,20 @@ def test_speech_until_the_end_is_cut_at_the_audio_length():
     n, audio_len = 30, 30 * CHUNK - 100  # 마지막 창은 0으로 채운 창
     assert timestamps(probs_for([(5, 30, 0.9)], n), audio_len) == [(5 * CHUNK - 480, audio_len)]
     assert timestamps(probs_for([(0, 30, 0.9)], n), audio_len) == [(0, audio_len)]  # 앞 덧붙임도 0에서 자른다
+
+
+@mac_only(NO_MLX)
+def test_timestamps_still_match_the_installed_mlx_audio():
+    """mlx-audio를 올려 구간 규칙이 바뀌면 여기서 먼저 깨진다 (모델 없이, 같은 확률열·길이를 두 함수에 넣는다)."""
+    from mlx_audio.vad.models.silero_vad.silero_vad import Model
+
+    rng = np.random.default_rng(0)
+    blocky = np.repeat(rng.choice([0.0, 0.2, 0.4, 0.6, 0.95], size=120), rng.integers(1, 12, size=120))
+    for probs in (rng.random(700), blocky, probs_for([(0, 40, 0.9)], 40), np.zeros(5)):
+        probs = np.asarray(probs, np.float32)
+        for audio_len in (len(probs) * CHUNK, len(probs) * CHUNK - 300):
+            want = Model._probs_to_timestamps(probs, audio_len, 16000, 0.5, 250, 100, 30, False)
+            assert timestamps(probs, audio_len) == [(t["start"], t["end"]) for t in want]
 
 
 class FakeSession:

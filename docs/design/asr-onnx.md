@@ -1,6 +1,6 @@
 # 설계: Windows 텍스트 변환 런타임 (Qwen3-ASR ONNX + onnxruntime CPU)
 
-> 상태: 설계 (2026-11-19). 9절 1번 PR(어댑터, `windows/asr-onnx-adapter`, ARCHITECTURE v3.140)을 구현했다. 구현하며 실제 모델로 확인한 것은 3.3절 끝("구현에서 실제로 확인한 것")에 적었다. 나머지 PR은 구현 전이다. 근거: docs/windows/plan.md 6.1·7.4절, docs/windows/README.md W4·W5, docs/design/asr-engines.md.
+> 상태: 설계 (2026-11-19). 9절 1번 PR(어댑터, `windows/asr-onnx-adapter`, ARCHITECTURE v3.141)을 구현했다. 구현하며 실제 모델로 확인한 것은 3.3절 끝("구현에서 실제로 확인한 것")에 적었다. 나머지 PR은 구현 전이다. 근거: docs/windows/plan.md 6.1·7.4절, docs/windows/README.md W4·W5, docs/design/asr-engines.md.
 > 이 문서는 설계만 정한다. **`bench/` 측정 전에는 어떤 ONNX 모델도 등록 목록(`models_registry.MODELS`)에 올리지 않는다**(CLAUDE.md).
 
 ## 결론

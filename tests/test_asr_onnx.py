@@ -104,6 +104,8 @@ MLX_PROMPT_AUTO = "<|im_start|>system\n<|im_end|>\n<|im_start|>user\n<|audio_sta
 def test_build_prompt_matches_the_mlx_audio_literal():
     assert build_prompt(3, "Korean", ["WTO", " 쿠버네티스 ", "", None]) == MLX_PROMPT_FIXED_HOTWORDS  # 빈 값을 빼고 ", "로 잇는다
     assert build_prompt(1, None, None) == build_prompt(1, None, []) == build_prompt(1, None, ["  "]) == MLX_PROMPT_AUTO  # 단어가 없으면 시스템 칸이 빈다
+    assert build_prompt(3, "korean", ["WTO", "쿠버네티스"]) == build_prompt(3, "KOREAN", ["WTO", "쿠버네티스"]) == MLX_PROMPT_FIXED_HOTWORDS  # 대소문자 없이 표기를 맞춘다
+    assert build_prompt(1, "Klingon", None).endswith("language Klingon<asr_text>")  # 모르는 이름은 그대로 (mlx-audio와 같음)
 
 
 @mac_only(NO_MLX)
@@ -116,10 +118,12 @@ def test_literals_still_match_the_installed_mlx_audio():
 
     seen = []
     tok = SimpleNamespace(encode=lambda prompt, return_tensors=None: seen.append(prompt) or np.zeros((1, 1), np.int64))
-    me = SimpleNamespace(config=SimpleNamespace(support_languages=["Korean", "English"]), _tokenizer=tok)
-    Model._build_prompt(me, 3, "Korean", merge_hotwords(None, ["WTO", " 쿠버네티스 ", "", None]))
-    Model._build_prompt(me, 1, None, merge_hotwords(None, []))
-    assert seen == [MLX_PROMPT_FIXED_HOTWORDS, MLX_PROMPT_AUTO]
+    me = SimpleNamespace(config=SimpleNamespace(support_languages=list(asr_onnx.LANGUAGES)), _tokenizer=tok)
+    cases = [(3, "Korean", ["WTO", " 쿠버네티스 ", "", None]), (1, None, []), (2, "korean", ["WTO"]), (2, "ENGLISH", None), (2, "Klingon", None)]
+    for n, lang, hotwords in cases:
+        Model._build_prompt(me, n, lang, merge_hotwords(None, hotwords))
+    assert seen[:2] == [MLX_PROMPT_FIXED_HOTWORDS, MLX_PROMPT_AUTO]
+    assert seen == [build_prompt(n, lang, hotwords) for n, lang, hotwords in cases]
     for text in ("language Korean<asr_text>안녕", "language Korean<asr_text>", "", "그냥 글", "language Chinese <asr_text> 你好"):
         assert tuple(Model.extract_language(None, text)) == parse_language(text)
 
@@ -178,13 +182,25 @@ def test_generate_fixed_language_keeps_the_name_and_text():
     assert tok.prompts[0].endswith("assistant\nlanguage Korean<asr_text>")
 
 
-def test_generate_through_transcriber_uses_the_shared_safety_nets():
+def test_generate_through_transcriber_uses_the_shared_safety_nets(monkeypatch):
     """토큰 상한에 닿은 ONNX 출력도 Transcriber가 루프로 보고 다시 한다 (안전장치는 asr.py 하나)."""
     from tractus.asr import Transcriber, max_tokens_for
 
-    model, _, _, _ = fake_model("language Korean<asr_text>네", [4] * 200)
+    model, _, _, _ = fake_model("language Korean<asr_text>안녕하세요 안녕하세요 안녕하세요 안녕하세요", [4] * 200)
+    monkeypatch.setattr(asr_onnx, "pick", lambda logits, temperature, rng: int(np.argmax(logits)))  # 온도 0.3에서도 늘 같은 토큰
+    calls, generate = [], model.generate
+
+    def recording(audio, **kw):
+        out = generate(audio, **kw)
+        calls.append((kw, out))
+        return out
+
+    model.generate = recording
     seg = Transcriber(model).transcribe(np.zeros(16000, np.float32))
-    assert seg.repaired and max_tokens_for(1.0) == 48
+    cap = max_tokens_for(1.0)
+    assert cap == 48 and calls[0][0]["max_tokens"] == cap and calls[0][1].generation_tokens == cap  # 상한에 닿았다
+    assert len(calls) == 2 and calls[1][0]["temperature"] == 0.3  # 루프: 온도 0.3으로 한 번 더 (그것도 상한)
+    assert seg.repaired and seg.text == "안녕하세요"  # 그래도 루프면 반복을 접는다
 
 
 def test_log_mel_matches_whisper_feature_extractor():
@@ -214,6 +230,17 @@ def test_loading_without_onnxruntime_is_a_runtime_missing_error(monkeypatch, tmp
     monkeypatch.setattr(builtins, "__import__", no_ort)
     with pytest.raises(asr_onnx.RuntimeMissing, match="DLL load failed"):
         OnnxQwen3ASR.load(tmp_path)
+
+
+def test_loading_names_missing_files_before_making_sessions(monkeypatch, tmp_path):
+    made = []
+    monkeypatch.setattr(asr_onnx, "ort", lambda: type("Rt", (), {"InferenceSession": lambda *a, **k: made.append(a)}))
+    for name in asr_onnx.FILES:
+        if name not in ("encoder.int4.onnx", "embed_tokens.bin"):
+            (tmp_path / name).write_bytes(b"")
+    with pytest.raises(FileNotFoundError, match=r"encoder\.int4\.onnx, embed_tokens\.bin"):
+        OnnxQwen3ASR.load(tmp_path)
+    assert made == []
 
 
 # ── 실제 모델 (Mac: uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py) ──
