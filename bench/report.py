@@ -16,6 +16,7 @@ def pick(model: str, dataset: str, lang: str = "fixed", chunk: float | None = 30
         r for r in ROWS
         if r["model"] == model and r["dataset"] == dataset and r["lang"] == lang and r["glossary"] == glossary
         and (dataset != "aihub" or r["chunk_s"] == chunk) and r.get("segments", "vad") == segments
+        and not r.get("app")  # 앱 경로(--app) 행은 기준선 표에 섞지 않는다
     ]
     return hits[-1] if hits else None
 

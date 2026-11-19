@@ -1,12 +1,21 @@
-"""ASR 어댑터 (Phase 0 + 0.4.2 한국어 후보). 모델들을 같은 호출 형태(transcribe)로 감싼다."""
+"""ASR 어댑터 (Phase 0 + 0.4.2 한국어 후보 + Windows ONNX). 모델들을 같은 호출 형태(transcribe)로 감싼다.
 
+mlx는 MLX 계열을 쓸 때만 불러온다(Windows에는 mlx가 없다). qwen-onnx는 제품 코드 tractus.asr_onnx를 그대로 부른다.
+Qwen 두 갈래는 제품과 같은 토큰 상한(tractus.asr.max_tokens_for)으로 막는다(docs/design/asr-onnx.md 8.1절).
+"""
+
+import sys
+from collections import Counter
 from pathlib import Path
 
-import mlx.core as mx
 import numpy as np
-from mlx_audio.stt.utils import load
 
-MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+from tractus.asr import SR, max_tokens_for  # noqa: E402
+
+MODELS_DIR = ROOT / "models"
 
 # 벤치마크 이름 -> (models/ 아래 디렉터리, 모델 계열)
 MODELS = {
@@ -18,7 +27,10 @@ MODELS = {
     "buzz-ko": ("buzzasr-ko-8bit", "whisper"),  # BuzzASR/korean (large-v3, MIT)
     "ghost613-turbo-ko": ("ghost613-turbo-ko-8bit", "whisper"),  # ghost613/whisper-large-v3-turbo-korean (라이선스 표기 없음)
     "seastar-medium-ko": ("seastar-medium-ko-8bit", "whisper"),  # seastar105/whisper-medium-komixv2 (AI Hub 회의 데이터로 학습: aihub 지표 오염)
-    "sorimac-1.7b": ("sorimac-ko-1.7b-8bit", "qwen"),  # Sorimac/Sorimac-V2.1-Korean-1.7B-MLX-8bit (Qwen3-ASR 한국어 파인튜닝, 라이선스 표기 없음)
+    "sorimac-1.7b": ("sorimac-ko-1.7b-8bit", "qwen"),
+    # Windows 런타임 후보 (2026-11-19, docs/design/asr-onnx.md): andrewleech/qwen3-asr-*-onnx int4, onnxruntime CPU
+    "qwen3-1.7b-onnx": ("qwen3-asr-1.7b-onnx-int4", "qwen-onnx"),
+    "qwen3-0.6b-onnx": ("qwen3-asr-0.6b-onnx-int4", "qwen-onnx"),  # Sorimac/Sorimac-V2.1-Korean-1.7B-MLX-8bit (Qwen3-ASR 한국어 파인튜닝, 라이선스 표기 없음)
     "sensevoice": ("sensevoice-small", "sensevoice"),  # mlx-community/SenseVoiceSmall (FunASR Model License)
     # 2026-10-29 측정 전용: LiquidAI/LFM3-Audio-2B-MLX-8bit (mlx-vlm, LFM Open License v1.0: 연 매출 1천만 달러 이상 상업 사용 불가)
     "lfm3-audio-2b": ("lfm3-audio-2b-mlx-8bit", "lfm3"),
@@ -27,6 +39,7 @@ MODELS = {
 # 언어 코드(ko/en)를 모델별 표기로 바꾼다. None이면 자동 감지.
 LANG = {
     "qwen": {"ko": "Korean", "en": "English"},
+    "qwen-onnx": {"ko": "Korean", "en": "English"},
     "whisper": {"ko": "ko", "en": "en"},
     "nemotron": {"ko": "ko-KR", "en": "en-US"},
     "sensevoice": {"ko": "ko", "en": "en"},
@@ -37,23 +50,69 @@ LANG = {
 LFM3_TOKENS_PER_SEC, LFM3_TOKENS_BASE = 16, 32
 
 
+CAPPED = {"qwen", "qwen-onnx"}  # 제품 상한을 거는 계열 (요약의 cap 칸)
+
+
+def runtime_of(name: str) -> str:
+    return "onnxruntime" if MODELS[name][1] == "qwen-onnx" else "mlx"
+
+
+def retry_kinds(calls: list[tuple[str | None, list[str] | None, float]]) -> Counter:
+    """청크 하나에서 Transcriber._generate가 받은 (language, hotwords, temperature) 순서로 재시도 종류를 센다. 첫 호출은 기본 변환이다.
+    temp: 반복 루프 → 온도 재시도, ko: 자동 감지 뒤 한국어로 다시(빈 출력·zh/ja 오감지), auto: 언어 고정 루프 → 자동 감지, echo: 받아 적기 → 단어 없이."""
+    kinds: Counter = Counter()
+    lang0, hw0, _ = calls[0]
+    for language, hotwords, temperature in calls[1:]:
+        if temperature > 0:
+            kinds["temp"] += 1
+        elif lang0 is None and language is not None:
+            kinds["ko"] += 1
+        elif lang0 is not None and language is None:
+            kinds["auto"] += 1
+        elif hotwords is None and hw0:
+            kinds["echo"] += 1
+        else:
+            kinds["other"] += 1
+    return kinds
+
+
 class ASR:
     def __init__(self, name: str):
         subdir, self.family = MODELS[name]
         self.name = name
+        self.capped = False  # 마지막 transcribe가 토큰 상한에 닿았는가
         if self.family == "lfm3":  # mlx-vlm은 LFM3를 쓸 때만 불러온다
             import mlx_vlm
 
             self.model, self.processor = mlx_vlm.load(str(MODELS_DIR / subdir))
+        elif self.family == "qwen-onnx":
+            from tractus.asr_onnx import OnnxQwen3ASR
+
+            self.model = OnnxQwen3ASR.load(MODELS_DIR / subdir)
         else:
+            from mlx_audio.stt.utils import load
+
             self.model = load(str(MODELS_DIR / subdir))
 
     def transcribe(self, audio: np.ndarray, lang: str | None = None, glossary: list[str] | None = None) -> str:
         language = LANG[self.family][lang] if lang else None
-        x = mx.array(audio.astype(np.float32))
-        if self.family == "qwen":
-            out = self.model.generate(x, language=language, hotwords=glossary or None)
-        elif self.family == "whisper":
+        audio = audio.astype(np.float32)
+        self.capped = False
+        if self.family in CAPPED:
+            cap = max_tokens_for(len(audio) / SR)
+            x = audio
+            if self.family == "qwen":  # 옛 측정과 같은 입력 (mlx-audio Qwen은 numpy도 받는다)
+                import mlx.core as mx
+
+                x = mx.array(audio)
+            out = self.model.generate(x, language=language, hotwords=glossary or None, max_tokens=cap)
+            self.capped = out.generation_tokens >= cap
+            return out.text.strip()
+        if self.family != "lfm3":
+            import mlx.core as mx
+
+            x = mx.array(audio)
+        if self.family == "whisper":
             prompt = ", ".join(glossary) if glossary else None
             out = self.model.generate(x, language=language, initial_prompt=prompt, verbose=False)
         elif self.family == "lfm3":
@@ -75,3 +134,11 @@ class ASR:
             # 청크(≤60초)를 한 번에 디코딩. 기본 attention context [56,13] = 1.12초 청크 설정.
             out = self.model.generate(x, language=language or "auto", chunk_duration=None)
         return out.text.strip()
+
+
+if __name__ == "__main__":
+    assert retry_kinds([(None, ["A"], 0.0)]) == Counter()
+    assert retry_kinds([(None, ["A"], 0.0), (None, None, 0.0), ("Korean", [], 0.0)]) == Counter(echo=1, ko=1)
+    assert retry_kinds([("Korean", [], 0.0), (None, ["A"], 0.0)]) == Counter(auto=1)
+    assert retry_kinds([(None, [], 0.0), (None, [], 0.3)]) == Counter(temp=1)
+    print("ok")

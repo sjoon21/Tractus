@@ -77,7 +77,8 @@ def hike_scores(rows: list[dict]) -> dict:
         pred = normalize_text(replace_loanword(r["hyp"], m["loanwords"]))
         ref_pier = replace_loanword(m["text_pier_labeled"], m["loanwords"])
         ref_mer = replace_loanword(m["text_normalized"], m["loanwords"])
-        score = (mer(ref_mer, pred)[0], pier_fixed(ref_pier, add_space(pred)), repetitions(r["hyp"]) > 0)
+        # 반복 = 글의 루프 또는 토큰 상한 도달(cap_hit, 상한을 건 측정만: run.py)
+        score = (mer(ref_mer, pred)[0], pier_fixed(ref_pier, add_space(pred)), repetitions(r["hyp"]) > 0 or r.get("cap_hit", 0) > 0)
         per_level.setdefault(m["cs_level"], []).append(score)
         per_level.setdefault("all", []).append(score)
     # 평균(공식 지표)은 반복 루프 몇 건에 끌려간다. 중앙값과 반복 발화 수를 함께 남긴다.
