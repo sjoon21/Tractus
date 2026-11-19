@@ -27,10 +27,10 @@ MODELS = {
     "buzz-ko": ("buzzasr-ko-8bit", "whisper"),  # BuzzASR/korean (large-v3, MIT)
     "ghost613-turbo-ko": ("ghost613-turbo-ko-8bit", "whisper"),  # ghost613/whisper-large-v3-turbo-korean (라이선스 표기 없음)
     "seastar-medium-ko": ("seastar-medium-ko-8bit", "whisper"),  # seastar105/whisper-medium-komixv2 (AI Hub 회의 데이터로 학습: aihub 지표 오염)
-    "sorimac-1.7b": ("sorimac-ko-1.7b-8bit", "qwen"),
+    "sorimac-1.7b": ("sorimac-ko-1.7b-8bit", "qwen"),  # Sorimac/Sorimac-V2.1-Korean-1.7B-MLX-8bit (Qwen3-ASR 한국어 파인튜닝, 라이선스 표기 없음)
     # Windows 런타임 후보 (2026-11-19, docs/design/asr-onnx.md): andrewleech/qwen3-asr-*-onnx int4, onnxruntime CPU
     "qwen3-1.7b-onnx": ("qwen3-asr-1.7b-onnx-int4", "qwen-onnx"),
-    "qwen3-0.6b-onnx": ("qwen3-asr-0.6b-onnx-int4", "qwen-onnx"),  # Sorimac/Sorimac-V2.1-Korean-1.7B-MLX-8bit (Qwen3-ASR 한국어 파인튜닝, 라이선스 표기 없음)
+    "qwen3-0.6b-onnx": ("qwen3-asr-0.6b-onnx-int4", "qwen-onnx"),
     "sensevoice": ("sensevoice-small", "sensevoice"),  # mlx-community/SenseVoiceSmall (FunASR Model License)
     # 2026-10-29 측정 전용: LiquidAI/LFM3-Audio-2B-MLX-8bit (mlx-vlm, LFM Open License v1.0: 연 매출 1천만 달러 이상 상업 사용 불가)
     "lfm3-audio-2b": ("lfm3-audio-2b-mlx-8bit", "lfm3"),
