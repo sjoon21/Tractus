@@ -48,7 +48,7 @@ jobs:
       - name: 불러오기 (CLI·MCP)
         run: uv run python -c "import tractus.cli, tractus.mcp_server"
       - name: 고른 테스트 (반드시 통과)
-        run: uv run pytest -q tests/test_platform_compat.py
+        run: uv run pytest -q tests/test_platform_compat.py tests/test_asr.py tests/test_asr_onnx.py tests/test_vad_onnx.py  # 변환 어댑터(docs/design/asr-onnx.md 7절): mlx 없이 가짜 세션으로 돈다
       - name: 전체 테스트 (실패하면 빨간색, 실패 목록은 요약에)
         run: |
           set -o pipefail
