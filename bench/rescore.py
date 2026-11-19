@@ -15,7 +15,11 @@ def main():
     out = []
     for line in path.open(encoding="utf-8"):
         s = json.loads(line)
-        raw = raw_path_for(s["model"], s["dataset"], s["lang"], s["chunk_s"], s["glossary"], s.get("segments", "vad"))
+        raw = raw_path_for(s["model"], s["dataset"], s["lang"], s["chunk_s"], s["glossary"], s.get("segments", "vad"),
+                           s.get("cap", False), s.get("vad") if s.get("app") else None, s.get("subset"))
+        if not raw.exists():  # 원문은 git 밖이라 다른 작업 폴더에는 없을 수 있다: 그 행은 그대로 둔다
+            out.append(s)
+            continue
         rows = [json.loads(x) for x in raw.open(encoding="utf-8")]
         if s["dataset"] == "fleurs":
             rows = [{**r, "ref": fleurs_ref(r["ref"])} for r in rows]

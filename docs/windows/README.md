@@ -163,6 +163,7 @@ pnpm tauri dev
 
 - [x] A의 어댑터(설계 [docs/design/asr-onnx.md](../design/asr-onnx.md) 9절 1번 PR, v3.141): `asr_onnx`·`vad_onnx`, 모델 폴더 표지 파일로 가르기, Qwen에 numpy 넘기기(`test_asr`의 Qwen 시험이 Windows에서 돈다), `runtime_missing`. 등록·의존성은 아직이라 사용자에게 보이지 않는다.
 - [ ] 측정은 `bench/`로 하고 AI Hub 전사는 로컬에만 둔다(지표만 커밋).
+- [x] Mac 품질 측정(설계 9절 2번 PR, v3.142, 결과는 설계 8.5절): 1.7B int4는 AI Hub CER을 통과하지만 용어 재현율·HiKE 언어 고정에서 떨어지고, 0.6B int4는 모든 세트에서 떨어진다. M3 CPU RTF는 1.7B 0.19–0.29. 남은 것: 판 고르기(설계 11절 10·11번)와 Windows 기준 기기의 속도·메모리.
 - [ ] 고르면 `models_registry`에 플랫폼별 모델 항목을 더하고, 기능 잠금(`CAPABILITIES`)은 그대로 쓴다.
 - [ ] onnxruntime을 다시 들이면(번들 약 75MB) 그 결정을 ARCHITECTURE.md에 남긴다(v3.99에서 뺐다).
 

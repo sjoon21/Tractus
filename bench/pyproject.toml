@@ -10,7 +10,7 @@ dependencies = [
     "pandas>=3.0.6",
     "pyarrow>=25.0.1",
     "regex>=2026.9.29",
-    "silero-vad>=6.2.3",
+    "silero-vad>=6.2.3; sys_platform == 'darwin'",  # torch를 끌어온다: vad.py(Mac)만 쓴다. Windows 벤치는 Mac에서 만든 cache를 복사한다
     "soundfile>=0.14.0",
 ]
 
