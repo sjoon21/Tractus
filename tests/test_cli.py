@@ -19,6 +19,7 @@ from tractus.commands import common, engines
 from tractus import voices
 from tractus import cli, summarize
 from tractus.asr import Segment
+from conftest import WINDOWS
 
 SR = 16000
 CHUNKS = [(0, 2 * SR), (3 * SR, 5 * SR), (6 * SR, 8 * SR)]
@@ -646,7 +647,7 @@ def test_enroll_renames_and_stores_0600_profile_without_leaking_vectors(env, fak
     home, _ = env
     d, out = _enrolled(env, monkeypatch)
     assert out["name"] == "홍길동" and out["samples"] == 1 and len(out["person_id"]) == 26
-    assert (home / "voices.json").stat().st_mode & 0o777 == 0o600
+    assert WINDOWS or (home / "voices.json").stat().st_mode & 0o777 == 0o600  # Windows는 모드 비트가 없다
     t = json.loads((d / "transcript.json").read_text(encoding="utf-8"))
     assert t["speakers"]["S1"] == {"name": "홍길동"}
     assert fake_voice.calls == 2  # S1 구간 2개 (0–2초, 6–8초)
