@@ -17,7 +17,7 @@ final class Recorder {
     private var writers: [Track: WavWriter] = [:]
     private var meters: [Track: LevelMeter] = [:]
     private var zero = ZeroDetector()
-    private var flushSources: [() -> Void] = []  // fake 모드용
+    private var flushSources: [(Double) -> Void] = []  // fake 모드용: 주어진 오디오 시각까지 쓴다
     private var sources: [Track: AudioSource] = [:]
     private var lastSampleAt: [Track: Double] = [:]
     private var realign: Set<Track> = []  // 재시작 뒤 첫 버퍼에서 끊긴 만큼 0으로 메울 트랙
@@ -94,9 +94,9 @@ final class Recorder {
         }
         if fake {
             let source = FakeSource(frequency: track == .mic ? 440 : 660, gaps: track == .system)
-            // 만든 시각과 쓰는 시각을 한 번 읽은 값으로 맞춘다: 둘 사이에 스레드가 밀리면 첫 버퍼 앞이 그만큼 0으로 메워져 트랙이 길어진다
-            let tick = { [unowned self] in let now = elapsed; write(track, source.generate(upTo: now), at: now) }
-            every(0.02, tick)
+            // 만든 시각과 쓰는 시각을 한 값으로 맞춘다: 둘 사이에 스레드가 밀리면 첫 버퍼 앞이 그만큼 0으로 메워져 트랙이 길어진다
+            let tick = { [unowned self] (now: Double) in write(track, source.generate(upTo: now), at: now) }
+            every(0.02) { [unowned self] in tick(elapsed) }
             flushSources.append(tick)
             return
         }
@@ -223,13 +223,13 @@ final class Recorder {
     /// 이미 일시정지 중이면 무시한다(이벤트도 없다).
     private func pause() {
         guard !stopping, info != nil, pausedSince == nil else { return }
-        flushSources.forEach { $0() }  // fake 모드: 일시정지 시각까지 쓴다
+        let at = elapsed
+        flushSources.forEach { $0(at) }  // fake 모드: 일시정지 시각까지 쓴다
         for writer in writers.values {
             do { try writer.updateHeader() } catch { log("\(error)") }  // 일시정지 중 강제 종료돼도 여기까지는 재생된다
         }
         for track in meters.keys { _ = meters[track]?.take() }
-        let at = elapsed
-        pausedSince = ProcessInfo.processInfo.systemUptime
+        pausedSince = t0 + pausedTotal + at  // 시계를 at에서 정확히 멈춘다: 헤더를 쓰는 동안 시계가 가면 계속한 뒤 트랙이 시계보다 그만큼 뒤처진다
         pauseWallStart = Date()
         pauseAt = at
         emit(["event": "paused", "elapsed": round2(at)])
@@ -269,18 +269,19 @@ final class Recorder {
     func stop(error: String? = nil) {
         guard !stopping else { return }
         stopping = true
-        flushSources.forEach { $0() }  // fake 모드는 여기서 마지막 표본까지 쓴다
-        if let since = pausedSince { endPause(since: since) }  // 일시정지 중 종료: 오디오 시계는 그대로(duration에 일시정지가 안 들어간다)
+        // 종료 시각은 맨 먼저 한 번 읽는다: 소스를 닫는 시간이 duration에 들어가지 않게. 일시정지 중이면 멈춘 시각 그대로다(duration에 일시정지가 안 들어간다).
+        let end = elapsed
+        flushSources.forEach { $0(end) }  // fake 모드는 여기서 종료 시각까지 쓴다
+        if let since = pausedSince { endPause(since: since) }
         sources.values.forEach { $0.stop() }
         timers.forEach { $0.cancel() }
-        let end = elapsed
         for writer in writers.values {
-            do {
-                // 아직 오는 중이던 마지막 버퍼(기기가 느리면 0.1초 넘게 늦는다)는 버려지므로 끝을 0으로 메워 WAV 길이 = duration을 지킨다.
-                // 한 번도 열리지 않은 트랙(빈 WAV)은 그대로 둔다.
-                if writer.frames > 0 { try writer.append([], endingAt: Int(end * Double(WavWriter.sampleRate)), realign: true) }
-                try writer.close()
-            } catch { log("\(error)") }
+            // 아직 오는 중이던 마지막 버퍼(기기가 느리면 0.1초 넘게 늦는다)는 버려지므로 끝을 0으로 메워 WAV 길이 = duration을 지킨다.
+            // 한 번도 열리지 않은 트랙(빈 WAV)은 그대로 둔다. 메우기가 실패해도 헤더 크기를 고치도록 close는 늘 한다.
+            if writer.frames > 0 {
+                do { try writer.append([], endingAt: Int(end * Double(WavWriter.sampleRate)), realign: true) } catch { log("\(error)") }
+            }
+            do { try writer.close() } catch { log("\(error)") }
         }
         info?.duration = round2(end)
         saveInfo()

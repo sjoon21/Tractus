@@ -331,6 +331,8 @@ final class FakeModeTests: XCTestCase {
         let duration = try XCTUnwrap(r.events.last?["duration"] as? Double)
         let mic = try seconds("mic.wav", in: r), system = try seconds("system.wav", in: r)
         // 종료 때 늦게 오던 마지막 버퍼는 버리고 끝을 0으로 메우므로 두 트랙 모두 정확히 duration이다(기기가 느려도)
+        // 남는 오차: FlakyFakeMic은 실제 장치처럼 sink로 보내므로 표본을 만든 시각(clock)과 쓰는 시각(ingest의 elapsed)이 q 한 번 건너는 만큼 다르다.
+        // 다시 연 첫 버퍼 앞을 그만큼 더 메워 마이크가 그만큼 길어질 수 있다(보통 1 ms 미만).
         XCTAssertEqual(system, duration, accuracy: 0.01)
         XCTAssertEqual(mic, duration, accuracy: 0.01, "트랙 정렬")
         // 첫 재시도는 watchdog(2초 끊김) 뒤라 앞 2초 넘게 무음이고, 그 뒤로는 440 Hz가 이어진다

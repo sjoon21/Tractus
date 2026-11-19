@@ -218,7 +218,8 @@ impl Recorder {
             match msg {
                 Msg::Samples(track, s) => {
                     if !self.stopping {
-                        self.write(track, &s);
+                        let now = self.elapsed();
+                        self.write(track, &s, now);
                     }
                 }
                 Msg::Cmd(line) => self.handle(&line),
@@ -231,34 +232,35 @@ impl Recorder {
     }
 
     fn tick(&mut self) {
-        self.flush_fakes();
+        let now = self.elapsed();
+        self.flush_fakes(now);
         if self.last_level.elapsed() >= Duration::from_millis(250) {
             self.last_level = Instant::now();
             self.emit_level();
         }
     }
 
-    fn flush_fakes(&mut self) {
-        let now = self.elapsed();
+    /// 가짜 신호를 오디오 시각 `now`까지 만들고 같은 시각으로 쓴다
+    fn flush_fakes(&mut self, now: f64) {
         let tracks: Vec<Track> = self.fakes.keys().copied().collect();
         for t in tracks {
             let s = self.fakes.get_mut(&t).unwrap().generate(now);
-            self.write(t, &s);
+            self.write(t, &s, now);
         }
     }
 
-    fn write(&mut self, track: Track, samples: &[i16]) {
+    /// `now`: 이 버퍼의 마지막 표본의 오디오 시각
+    fn write(&mut self, track: Track, samples: &[i16], now: f64) {
         // 일시정지 중에는 두 트랙 모두 표본을 버린다. 타임라인에 무음도 남기지 않는다
         if self.paused_since.is_some() || samples.is_empty() {
             return;
         }
-        let end = (self.elapsed() * SAMPLE_RATE as f64) as usize;
+        let end = (now * SAMPLE_RATE as f64) as usize;
         let realign = self.realign.remove(&track);
         let Some(w) = self.writers.get_mut(&track) else { return };
         if let Err(e) = w.append_at(samples, end, realign) {
             self.stop(Some(e));
         }
-        let now = self.elapsed();
         self.last_sample_at.insert(track, now);
         if let Some(m) = self.meters.get_mut(&track) {
             m.add(samples);
@@ -354,7 +356,8 @@ impl Recorder {
         if self.stopping || self.info.is_none() || self.paused_since.is_some() {
             return;
         }
-        self.flush_fakes(); // 가짜 신호: 일시정지 시각까지 쓴다
+        let at = self.elapsed();
+        self.flush_fakes(at); // 가짜 신호: 일시정지 시각까지 쓴다
         for w in self.writers.values_mut() {
             if let Err(e) = w.update_header() {
                 log(&e.to_string());
@@ -363,8 +366,7 @@ impl Recorder {
         for m in self.meters.values_mut() {
             m.take();
         }
-        let at = self.elapsed();
-        self.paused_since = Some(Instant::now());
+        self.paused_since = Some(self.t0 + self.paused_total + Duration::from_secs_f64(at)); // 시계를 at에서 정확히 멈춘다. Swift판과 같다
         self.pause_wall_start = chrono::Local::now();
         self.pause_at = at;
         emit(json!({ "event": "paused", "elapsed": round2(at) }));
@@ -420,16 +422,22 @@ impl Recorder {
     pub fn stop(&mut self, error: Option<String>) -> ! {
         if !self.stopping {
             self.stopping = true;
-            self.flush_fakes();
+            // 종료 시각은 맨 먼저 한 번 읽는다: 소스를 닫는 시간이 duration에 들어가지 않게. 일시정지 중이면 멈춘 시각 그대로다
+            let end = self.elapsed();
+            self.flush_fakes(end);
             self.end_pause();
             for s in self.sources.values_mut() {
                 s.stop();
             }
-            let end = self.elapsed();
             for w in self.writers.values_mut() {
-                // 아직 오는 중이던 마지막 버퍼는 버려지므로 끝을 0으로 메워 WAV 길이 = duration을 지킨다. 한 번도 열리지 않은 트랙(빈 WAV)은 그대로. Swift판과 같다
-                let padded = if w.frames > 0 { w.append_at(&[], (end * SAMPLE_RATE as f64) as usize, true) } else { Ok(()) };
-                if let Err(e) = padded.and_then(|_| w.close()) {
+                // 아직 오는 중이던 마지막 버퍼는 버려지므로 끝을 0으로 메워 WAV 길이 = duration을 지킨다. 한 번도 열리지 않은 트랙(빈 WAV)은 그대로.
+                // 메우기가 실패해도 헤더 크기를 고치도록 close는 늘 한다. Swift판과 같다
+                if w.frames > 0 {
+                    if let Err(e) = w.append_at(&[], (end * SAMPLE_RATE as f64) as usize, true) {
+                        log(&e);
+                    }
+                }
+                if let Err(e) = w.close() {
                     log(&e.to_string());
                 }
             }
