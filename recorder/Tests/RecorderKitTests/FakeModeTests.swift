@@ -330,8 +330,9 @@ final class FakeModeTests: XCTestCase {
 
         let duration = try XCTUnwrap(r.events.last?["duration"] as? Double)
         let mic = try seconds("mic.wav", in: r), system = try seconds("system.wav", in: r)
-        XCTAssertEqual(system, duration, accuracy: 0.05)
-        XCTAssertEqual(mic, system, accuracy: 0.06, "트랙 정렬")
+        // 종료 때 늦게 오던 마지막 버퍼는 버리고 끝을 0으로 메우므로 두 트랙 모두 정확히 duration이다(기기가 느려도)
+        XCTAssertEqual(system, duration, accuracy: 0.01)
+        XCTAssertEqual(mic, duration, accuracy: 0.01, "트랙 정렬")
         // 첫 재시도는 watchdog(2초 끊김) 뒤라 앞 2초 넘게 무음이고, 그 뒤로는 440 Hz가 이어진다
         let samples = try Data(contentsOf: r.dir.appendingPathComponent("mic.wav")).dropFirst(44).withUnsafeBytes { Array($0.bindMemory(to: Int16.self)) }
         let firstSound = try XCTUnwrap(samples.firstIndex { $0 != 0 })

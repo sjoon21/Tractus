@@ -94,8 +94,10 @@ final class Recorder {
         }
         if fake {
             let source = FakeSource(frequency: track == .mic ? 440 : 660, gaps: track == .system)
-            every(0.02) { [unowned self] in write(track, source.generate(upTo: elapsed)) }
-            flushSources.append { [unowned self] in write(track, source.generate(upTo: elapsed)) }
+            // 만든 시각과 쓰는 시각을 한 번 읽은 값으로 맞춘다: 둘 사이에 스레드가 밀리면 첫 버퍼 앞이 그만큼 0으로 메워져 트랙이 길어진다
+            let tick = { [unowned self] in let now = elapsed; write(track, source.generate(upTo: now), at: now) }
+            every(0.02, tick)
+            flushSources.append(tick)
             return
         }
         let onChange = { [unowned self] in q.async { self.restartSoon(track) } }
@@ -166,21 +168,22 @@ final class Recorder {
 
     private func ingest(_ track: Track, _ samples: [Int16]) {
         guard !stopping else { return }
-        write(track, samples)
+        write(track, samples, at: elapsed)
     }
 
-    private func write(_ track: Track, _ samples: [Int16]) {
+    /// `now`: 이 버퍼의 마지막 표본의 오디오 시각.
+    private func write(_ track: Track, _ samples: [Int16], at now: Double) {
         // 일시정지 중에는 두 트랙 모두 표본을 버린다(캡처 엔진은 계속 돈다). 타임라인에는 무음도 남기지 않는다.
         guard pausedSince == nil, let writer = writers[track], !samples.isEmpty else { return }
         do {
             // 첫 버퍼가 늦게 오거나 중간에 끊긴 만큼 0으로 채워 두 트랙의 시각을 맞춘다.
             // ponytail: 끊김만 맞춘다. 장치 간 클록 드리프트는 보정하지 않는다(1시간에 수십 ms 수준).
-            try writer.append(samples, endingAt: Int(elapsed * Double(WavWriter.sampleRate)), realign: realign.remove(track) != nil)
+            try writer.append(samples, endingAt: Int(now * Double(WavWriter.sampleRate)), realign: realign.remove(track) != nil)
         } catch {
             stop(error: "\(error)")
             return
         }
-        lastSampleAt[track] = elapsed
+        lastSampleAt[track] = now
         meters[track]?.add(samples)
         if track == .system, zero.feed(samples) {
             warning("system_zero", "시스템 오디오가 5초 동안 정확히 0입니다. 시스템 설정 > 개인정보 보호 > 화면 및 시스템 오디오 녹음 권한을 확인하세요")
@@ -270,10 +273,16 @@ final class Recorder {
         if let since = pausedSince { endPause(since: since) }  // 일시정지 중 종료: 오디오 시계는 그대로(duration에 일시정지가 안 들어간다)
         sources.values.forEach { $0.stop() }
         timers.forEach { $0.cancel() }
+        let end = elapsed
         for writer in writers.values {
-            do { try writer.close() } catch { log("\(error)") }
+            do {
+                // 아직 오는 중이던 마지막 버퍼(기기가 느리면 0.1초 넘게 늦는다)는 버려지므로 끝을 0으로 메워 WAV 길이 = duration을 지킨다.
+                // 한 번도 열리지 않은 트랙(빈 WAV)은 그대로 둔다.
+                if writer.frames > 0 { try writer.append([], endingAt: Int(end * Double(WavWriter.sampleRate)), realign: true) }
+                try writer.close()
+            } catch { log("\(error)") }
         }
-        info?.duration = round2(elapsed)
+        info?.duration = round2(end)
         saveInfo()
         if let error { fatal(error) }
         emit(["event": "stopped", "dir": dir.path, "duration": info?.duration ?? 0])

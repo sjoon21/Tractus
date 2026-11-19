@@ -425,12 +425,15 @@ impl Recorder {
             for s in self.sources.values_mut() {
                 s.stop();
             }
+            let end = self.elapsed();
             for w in self.writers.values_mut() {
-                if let Err(e) = w.close() {
+                // 아직 오는 중이던 마지막 버퍼는 버려지므로 끝을 0으로 메워 WAV 길이 = duration을 지킨다. 한 번도 열리지 않은 트랙(빈 WAV)은 그대로. Swift판과 같다
+                let padded = if w.frames > 0 { w.append_at(&[], (end * SAMPLE_RATE as f64) as usize, true) } else { Ok(()) };
+                if let Err(e) = padded.and_then(|_| w.close()) {
                     log(&e.to_string());
                 }
             }
-            let d = round2(self.elapsed());
+            let d = round2(end);
             if let Some(info) = self.info.as_mut() {
                 info.duration = Some(d);
             }
