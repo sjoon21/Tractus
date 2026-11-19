@@ -116,10 +116,10 @@ def onnx_table():
     seen = {}
     for r in rows:  # 같은 조건을 다시 돌렸으면 마지막 행
         seen[(r["model"], r["dataset"], r["subset"], r["lang"], r["glossary"], r.get("app"), r.get("vad"))] = r
-    for r in sorted(seen.values(), key=lambda r: (r["dataset"], r["model"].replace("-onnx", ""), r.get("app", False), r["lang"], r["glossary"], r["runtime"])):
+    for r in sorted(seen.values(), key=lambda r: (r["dataset"], r["model"].replace("-onnx", ""), r.get("app", False), r["subset"], r["lang"], r["glossary"], r["runtime"])):
         if r["dataset"] == "hike":
             a = r["hike"]["all"]
-            score_, rep = f"{a['mer']:.2f} ({a['pier']:.1f})", f"{a['loops']} / —"
+            score_, rep = f"{a['mer']:.2f} ({a['pier']:.1f})", f"{a['loops']} / {r.get('empty', '—')}"
         else:
             score_, rep = f"{r['cer']:.2f}", f"{r.get('repetitions', '—')} / {r.get('empty', '—')}"
         path = f"앱 ({r['vad']})" if r.get("app") else "기준선"

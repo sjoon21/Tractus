@@ -287,19 +287,20 @@ def chunks_for(sample, segments: str, max_s: float) -> list[tuple[int, int]]:
 
 def metrics(dataset: str, rows: list[dict]) -> dict:
     refs, hyps = [r["ref"] for r in rows], [r["hyp"] for r in rows]
+    empty = {"empty": sum(r["empty"] for r in rows)} if all("empty" in r for r in rows) else {}  # 빈 출력 청크 (옛 원문에는 없다)
     if dataset == "fleurs":
-        return {"cer": round(score.cer(refs, hyps), 2)}
+        return {"cer": round(score.cer(refs, hyps), 2), **empty}
     if dataset == "ami":
         return {"wer": round(score.wer_en(refs, hyps), 2)}
     if dataset == "hike":
-        return {"hike": {k: {m: round(x, 2) for m, x in v.items()} for k, v in score.hike_scores(rows).items()}}
+        return {"hike": {k: {m: round(x, 2) for m, x in v.items()} for k, v in score.hike_scores(rows).items()}, **empty}
     # aihub: 철자전사 기준 CER이 주 지표, 발음전사 기준은 숫자·영문 표기 차이 참고용
     return {
         "cer": round(score.cer(refs, hyps), 2),
         "cer_pron": round(score.cer([r["meta"]["ref_pron"] for r in rows], hyps), 2),
         "repetitions": sum(score.repetitions(r["hyp"]) + r.get("cap_hit", 0) for r in rows),  # 글의 루프 + 상한 도달 청크
         "term_recall": round(score.term_recall(rows), 1),
-        **({"empty": sum(r["empty"] for r in rows)} if all("empty" in r for r in rows) else {}),  # 옛 원문에는 없다
+        **empty,
         **({"cer_utt": {  # 발화 단위 채점: spelling(철자 그대로) 대비 best(짝마다 가까운 표기), num·latin(그 종류만 고름)
             k: round(score.cer_best(rows, frozenset(v)), 2)
             for k, v in {"spelling": (), "best": ("num", "latin", "other"), "num": ("num",), "latin": ("latin",)}.items()
