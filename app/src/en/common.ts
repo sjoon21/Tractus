@@ -30,6 +30,7 @@ export default {
   "일시정지됨": "Paused",
   "북마크 남기기": "Add bookmark",
   "Tractus 열기": "Open Tractus",
+  "이번 녹음 동안 숨기기": "Hide for this recording",
   종료: "Quit Tractus",
   "텍스트로 변환": "Transcribe",
   "변환 중…": "Transcribing…",

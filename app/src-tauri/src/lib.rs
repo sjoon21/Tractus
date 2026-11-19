@@ -389,6 +389,7 @@ pub fn run() {
             tray::tray_show_if_hidden,
             tray::set_tray_prefs,
             tray::set_mini_recorder,
+            mini::mini_hide,
             calls::call_action,
             calls::set_call_prefs,
             deferred::set_after_record,

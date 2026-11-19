@@ -1,6 +1,6 @@
 // 녹음 미니 창 (mini.rs, 창 `mini`): 녹음 중 다른 앱을 쓰는 동안 화면 구석에 떠 있는 작은 녹음 막대.
 // 통화 감지(calls.rs)의 카드도 같은 창에 뜬다 (`CallCardView`).
-// 녹음 점·녹음 시각·소리 크기 | 북마크·일시정지·종료. 빈 곳을 끌면 창이 움직이고, 시각을 누르면 Tractus 창이 열린다.
+// 녹음 점·녹음 시각·소리 크기 | 북마크·일시정지·종료, 왼쪽 위 모서리 ⓧ(이번 녹음 동안 숨기기, mini.rs `mini_hide`). 빈 곳을 끌면 창이 움직이고, 시각을 누르면 Tractus 창이 열린다.
 // 상태와 단추는 메뉴 막대 팝오버와 같은 길이다 (`tray_popover_state`·`tray-popover` 이벤트·`tray_popover_action`).
 // 시각은 화면 타이머로 센다: 이 창은 보일 때만 돌고, 보이는 창의 타이머는 늦지 않는다 (숨은 메인 창과 다르다)
 import { useEffect, useState } from "react";
@@ -15,6 +15,7 @@ import { applyTheme, readTheme } from "./themePref";
 import { clock, EMPTY_POPOVER, popoverSeconds, type PopoverState } from "./TrayPopover";
 
 export const MINI_OPEN_TITLE = t("Tractus 열기");
+export const MINI_HIDE_TITLE = t("이번 녹음 동안 숨기기");
 export const CALL_RECORD = t("녹음");
 export const CALL_DISMISS = t("닫기");
 export const CALL_KEEP = t("계속");
@@ -68,7 +69,7 @@ const BARS = 5;
 /** 가운데가 높은 막대 다섯 개: 소리 크기에 막대마다 다른 비율을 곱한다 */
 const SHAPE = [0.55, 0.8, 1, 0.8, 0.55];
 
-export function MiniRecorderView({ state, nowMs, level, onAction }: { state: PopoverState; nowMs: number; level: number; onAction: (id: string) => void }) {
+export function MiniRecorderView({ state, nowMs, level, onAction, onHide }: { state: PopoverState; nowMs: number; level: number; onAction: (id: string) => void; onHide: () => void }) {
   const sec = popoverSeconds(state, nowMs);
   const paused = state.phase === "paused";
   const stop = t("녹음 종료");
@@ -76,7 +77,17 @@ export function MiniRecorderView({ state, nowMs, level, onAction }: { state: Pop
   const round = "grid size-7 shrink-0 place-items-center rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring off:pointer-events-none off:opacity-40 [&_svg]:size-3.5";
   const quiet = cn(round, "text-foreground hover:bg-accent");
   return (
-    <div data-tauri-drag-region className="flex h-11 items-center gap-1 rounded-full border border-border bg-popover pr-1.5 pl-3 text-popover-foreground shadow-pop">
+    <div data-tauri-drag-region className="relative flex h-11 items-center gap-1 rounded-full border border-border bg-popover pr-1.5 pl-3 text-popover-foreground shadow-pop">
+      {/* 늘 보인다: 초점 없는 창(mini.rs `focused(false)`)에서는 마우스를 올려도 hover가 안 먹을 수 있다 */}
+      <button
+        type="button"
+        className="absolute -top-1 -left-1 grid size-[18px] place-items-center rounded-full border border-border bg-popover text-muted-foreground shadow-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-2.5"
+        onClick={onHide}
+        aria-label={MINI_HIDE_TITLE}
+        title={MINI_HIDE_TITLE}
+      >
+        <X aria-hidden strokeWidth={3} />
+      </button>
       <button
         type="button"
         className="flex shrink-0 items-center gap-2 rounded-md text-[15px] whitespace-nowrap font-semibold tracking-tight tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -136,7 +147,7 @@ export function MiniRecorder() {
       {state.call ? (
         <CallCardView call={state.call} onCall={(action) => void invoke("call_action", { action })} />
       ) : (
-        <MiniRecorderView state={state} nowMs={now} level={level} onAction={(id) => void invoke("tray_popover_action", { id })} />
+        <MiniRecorderView state={state} nowMs={now} level={level} onAction={(id) => void invoke("tray_popover_action", { id })} onHide={() => void invoke("mini_hide")} />
       )}
     </div>
   );
