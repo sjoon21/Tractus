@@ -1,4 +1,4 @@
-"""Silero VAD(MLX 포팅)로 무음 지점에서 청크 경계를 정한다.
+"""Silero VAD(MLX 포팅, Windows는 ONNX 판 `vad_onnx`)로 무음 지점에서 청크 경계를 정한다.
 
 MLX 포팅은 Phase 0에서 쓴 torch 버전과 발화 구간이 100% 일치했다(10분 구간 비교). torch 의존성을 피하려고 이쪽을 쓴다.
 """
@@ -34,6 +34,11 @@ def merge(speech: list[tuple[int, int]], max_s: float = MAX_CHUNK_S) -> list[tup
 
 
 def find_chunks(audio: np.ndarray, vad_model_dir: Path, max_s: float = MAX_CHUNK_S) -> list[tuple[int, int]]:
+    """폴더에 Silero ONNX 판이 있으면 onnxruntime(Windows, `vad_onnx`), 없으면 MLX. 30초 묶기는 같다."""
+    from tractus import vad_onnx
+
+    if (vad_model_dir / vad_onnx.MARKER).exists():
+        return merge(vad_onnx.speech_timestamps(audio, vad_onnx.load(vad_model_dir)), max_s)
     from mlx_audio.vad.utils import load
 
     model = load(str(vad_model_dir))

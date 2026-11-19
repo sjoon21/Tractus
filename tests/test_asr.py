@@ -49,7 +49,6 @@ LOOP = "조사를 하며 " * 20
 AUDIO = [0.0] * 16000 * 10  # 10초
 
 
-@mac_only(NO_MLX)
 def test_transcribe_passes_hotwords_and_token_cap():
     model = FakeModel({None: FakeOut("WTO 가입 문제입니다", language=["Korean"])})
     seg = Transcriber(model).transcribe(AUDIO, language=None, hotwords=["WTO"])
@@ -57,7 +56,6 @@ def test_transcribe_passes_hotwords_and_token_cap():
     assert model.calls == [{"language": None, "hotwords": ["WTO"], "max_tokens": max_tokens_for(10.0)}]
 
 
-@mac_only(NO_MLX)
 def test_fixed_language_loop_retries_with_auto_detect():
     model = FakeModel({"Korean": FakeOut(LOOP), None: FakeOut("Thank you all", language="English")})
     seg = Transcriber(model).transcribe(AUDIO, language="ko")
@@ -65,7 +63,6 @@ def test_fixed_language_loop_retries_with_auto_detect():
     assert seg.text == "Thank you all" and seg.lang == "en" and seg.repaired
 
 
-@mac_only(NO_MLX)
 def test_loop_is_retried_once_with_temperature_then_collapsed():
     model = FakeModel({None: FakeOut("준비해 " + LOOP)})
     seg = Transcriber(model).transcribe(AUDIO, language=None)
@@ -73,14 +70,12 @@ def test_loop_is_retried_once_with_temperature_then_collapsed():
     assert seg.text == "준비해 조사를 하며" and seg.repaired
 
 
-@mac_only(NO_MLX)
 def test_loop_retry_with_temperature_can_recover_the_sentence():
     model = FakeModel({None: FakeOut("준비해 " + LOOP), ("t", None): FakeOut("준비해서 조사를 하며 정리했습니다")})
     seg = Transcriber(model).transcribe(AUDIO, language=None)
     assert seg.text == "준비해서 조사를 하며 정리했습니다" and seg.repaired
 
 
-@mac_only(NO_MLX)
 def test_hotwords_are_capped_and_skipped_on_short_chunks():
     model = FakeModel({None: FakeOut("짧은 말")})
     words = [f"단어{i}" for i in range(HOTWORDS_MAX + 10)]
@@ -90,7 +85,6 @@ def test_hotwords_are_capped_and_skipped_on_short_chunks():
     assert model.calls[1]["hotwords"] is None
 
 
-@mac_only(NO_MLX)
 def test_output_that_echoes_the_hotword_list_is_redone_without_hotwords():
     hw = ["Kubernetes", "Project Atlas", "김민수", "p95"]
     model = FakeModel({None: FakeOut("Kubernetes, Project Atlas, 김민수, p95"), ("nohw", None): FakeOut("네 감사합니다")})
@@ -106,14 +100,12 @@ def test_echo_detection_needs_several_terms_covering_most_of_the_text():
     assert not echoes_hotwords("Kubernetes Kubernetes", hw)
 
 
-@mac_only(NO_MLX)
 def test_hitting_token_cap_counts_as_loop():
     model = FakeModel({None: FakeOut("abcdefgh", generation_tokens=max_tokens_for(10.0))})
     seg = Transcriber(model).transcribe(AUDIO, language=None)
     assert seg.repaired
 
 
-@mac_only(NO_MLX)
 def test_short_chunk_detected_as_chinese_is_redone_in_korean():
     short = [0.0] * 16000 * 2
     model = FakeModel({None: FakeOut("对，嗯，对。", language=["Chinese"]), "Korean": FakeOut("네 음 네")})
@@ -122,7 +114,6 @@ def test_short_chunk_detected_as_chinese_is_redone_in_korean():
     assert seg.text == "네 음 네" and seg.lang == "ko" and seg.repaired
 
 
-@mac_only(NO_MLX)
 def test_long_chunks_and_other_languages_are_left_alone():
     model = FakeModel({None: FakeOut("我们开始开会吧", language=["Chinese"])})
     assert Transcriber(model).transcribe(AUDIO).text == "我们开始开会吧"  # 10초: 정말 중국어일 수 있다
@@ -182,7 +173,6 @@ def test_non_qwen_engines_do_not_treat_zero_tokens_as_the_cap():
     assert not Transcriber(model, "whisper").transcribe(AUDIO).repaired  # 토큰 수를 상한 판단에 쓰지 않는다
 
 
-@mac_only(NO_MLX)
 def test_transcribe_writes_sino_korean_numbers_as_digits():
     model = FakeModel({None: FakeOut("점유율이 삼십 프로이고 이번 주에 칠 명이 옵니다")})
     seg = Transcriber(model).transcribe(AUDIO, language=None)
@@ -196,3 +186,48 @@ def test_empty_auto_detect_output_is_retried_in_korean_for_qwen_only():
     assert seg.text == "리뷰를 지금 하기에는 일정이 빡빡합니다" and seg.lang == "ko" and seg.repaired
     whisper = FakeModel({None: FakeOut("", language="en", generation_tokens=0)})
     assert Transcriber(whisper, "whisper").transcribe(AUDIO).text == "" and len(whisper.calls) == 1
+
+
+def _model_dir(d, model_type: str, onnx: bool):
+    import json
+
+    from tractus.asr_onnx import MARKER
+
+    d.mkdir(exist_ok=True)
+    (d / "config.json").write_text(json.dumps({"model_type": model_type}))
+    if onnx:
+        (d / MARKER).write_bytes(b"")
+    return d
+
+
+def test_load_picks_onnx_by_the_marker_file_and_mlx_otherwise(tmp_path, monkeypatch):
+    """model_type이 같은 qwen3_asr라 표지 파일로만 가른다: 빠뜨리면 ONNX 폴더가 mlx-audio로 넘어간다 (docs/design/asr-onnx.md 3.1)."""
+    import sys
+    import types
+
+    from tractus import asr_onnx
+
+    loaded = []
+    monkeypatch.setattr(asr_onnx.OnnxQwen3ASR, "load", classmethod(lambda cls, d: loaded.append(("onnx", d)) or "onnx-model"))
+    monkeypatch.setitem(sys.modules, "mlx_audio.stt.utils", types.SimpleNamespace(load=lambda d: loaded.append(("mlx", d)) or "mlx-model"))
+    onnx_dir, mlx_dir = _model_dir(tmp_path / "onnx", "qwen3_asr", onnx=True), _model_dir(tmp_path / "mlx", "qwen3_asr", onnx=False)
+    a, b = Transcriber.load(onnx_dir), Transcriber.load(mlx_dir)
+    assert (a.model, a.engine.family, b.model, b.engine.family) == ("onnx-model", "qwen3", "mlx-model", "qwen3")
+    assert loaded == [("onnx", onnx_dir), ("mlx", str(mlx_dir))]
+
+
+def test_onnx_folder_of_another_family_is_refused(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="Qwen3-ASR"):
+        Transcriber.load(_model_dir(tmp_path, "whisper", onnx=True))
+
+
+def test_qwen_gets_float32_numpy_audio_so_the_onnx_path_never_imports_mlx():
+    import numpy as np
+
+    got = []
+    model = FakeModel({})
+    model.generate = lambda audio, **kw: got.append(audio) or FakeOut("네")
+    Transcriber(model).transcribe(AUDIO)
+    assert isinstance(got[0], np.ndarray) and got[0].dtype == np.float32
