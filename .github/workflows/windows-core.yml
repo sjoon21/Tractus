@@ -40,6 +40,10 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.12"
+      - name: ffmpeg (시험이 가짜 음성을 만들고 코어가 디코딩한다)
+        run: |
+          choco install ffmpeg -y --no-progress
+          ffmpeg -version | head -n 1
       - run: uv sync --locked
       - name: 불러오기 (CLI·MCP)
         run: uv run python -c "import tractus.cli, tractus.mcp_server"

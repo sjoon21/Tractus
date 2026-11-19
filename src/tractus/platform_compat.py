@@ -8,6 +8,9 @@ import time
 
 WINDOWS = sys.platform == "win32"  # 시험에서 바꿔 끼운다
 
+# 모델 폴더 기본값(paths.APP_MODELS): 앱 설정 폴더 아래 models. Windows는 큰 파일을 로밍하지 않는 %LOCALAPPDATA% 관례 (docs/windows/plan.md §7.2)
+APP_MODELS = "%LOCALAPPDATA%/dev.tractus.app/models" if WINDOWS else "~/Library/Application Support/dev.tractus.app/models"
+
 
 def _fileno(f) -> int:
     return f if isinstance(f, int) else f.fileno()

@@ -8,6 +8,7 @@ import pytest
 
 from tractus import diarize
 from tractus.diarize import FLUID_DIR, MAX_CHUNK_S, MIN_PIECE_S, SR, FluidDiarizer, load_diarizer, load_fluid, smooth, split_chunks
+from conftest import FLUID_MAC, mac_only
 
 STRIDE = 0.01  # Nemotron 3 Diarization 프레임 간격 (hop 160 / 16 kHz)
 
@@ -146,6 +147,7 @@ def fluid_models(tmp_path):
     return d
 
 
+@mac_only(FLUID_MAC)
 def test_fluid_parses_result_tidies_turns_and_relabels(tmp_path):
     binary, models = fake_bin(tmp_path, FLUID_OK), fluid_models(tmp_path)
     pcm = np.zeros(13 * SR, np.float32)
@@ -159,6 +161,7 @@ def test_fluid_parses_result_tidies_turns_and_relabels(tmp_path):
     assert not Path(a[a.index("--audio") + 1]).exists()  # 임시 WAV는 지운다
 
 
+@mac_only(FLUID_MAC)
 def test_fluid_info_names_engine_model_and_revision(tmp_path):
     d = FluidDiarizer(fake_bin(tmp_path, FLUID_OK), fluid_models(tmp_path))
     d.diarize(np.zeros(SR, np.float32))
@@ -168,12 +171,14 @@ def test_fluid_info_names_engine_model_and_revision(tmp_path):
     assert "--max-speakers" not in json.loads((tmp_path / "seen.json").read_text())["argv"]
 
 
+@mac_only(FLUID_MAC)
 def test_fluid_error_event_raises_with_message(tmp_path):
     binary = fake_bin(tmp_path, [{"event": "error", "message": "모델이 없습니다"}], code=2)
     with pytest.raises(RuntimeError, match="모델이 없습니다"):
         FluidDiarizer(binary, fluid_models(tmp_path)).diarize(np.zeros(SR, np.float32))
 
 
+@mac_only(FLUID_MAC)
 def test_fluid_crash_without_json_reports_stderr(tmp_path):
     binary = fake_bin(tmp_path, code=1, stderr="Fatal error: boom", raw="not json\n")
     with pytest.raises(RuntimeError, match="boom"):
@@ -183,12 +188,14 @@ def test_fluid_crash_without_json_reports_stderr(tmp_path):
         FluidDiarizer(fake_bin(tmp_path, FLUID_OK[:1]), tmp_path / "models" / FLUID_DIR).diarize(np.zeros(SR, np.float32))
 
 
+@mac_only(FLUID_MAC)
 def test_fluid_malformed_turns_raise(tmp_path):
     bad = [{"event": "result", "turns": [[0.0, "x", "S1"]], "speakers": 1}]
     with pytest.raises(RuntimeError, match="형식"):
         FluidDiarizer(fake_bin(tmp_path, bad), fluid_models(tmp_path)).diarize(np.zeros(SR, np.float32))
 
 
+@mac_only(FLUID_MAC)
 def test_fluid_timeout_scales_with_duration(tmp_path, monkeypatch):
     monkeypatch.setattr(diarize, "FLUID_TIMEOUT_BASE_S", 0.3)
     monkeypatch.setattr(diarize, "FLUID_TIMEOUT_RTF", 0.0)
@@ -211,6 +218,7 @@ def test_load_fluid_needs_binary_and_models(tmp_path, monkeypatch):
     assert "download" in diarize.fluid_hint(tmp_path / "other-models")
 
 
+@mac_only(FLUID_MAC)
 def test_fluid_bin_defaults_to_recorder_release_build(monkeypatch):
     monkeypatch.setenv("TRACTUS_DIAR_BIN", "")
     assert diarize.fluid_bin() == diarize.REPO_ROOT / "recorder/diar/.build/release/tractus-diar"
@@ -229,6 +237,7 @@ def test_real_helper_contract_on_broken_models(tmp_path):
     assert sorted(p.relative_to(models) for p in models.rglob("*")) == before  # 아무것도 받지 않았다
 
 
+@mac_only(FLUID_MAC)
 def test_tool_bin_order_env_then_bundle_then_repo_and_hints_follow_layout(tmp_path, monkeypatch):
     """P3: 환경변수 → 앱 번들(<앱>/Contents/Resources/runtime/bin의 파이썬 기준 ../../bin) → 저장소. 저장소 배치가 아니면 빌드 명령을 말하지 않는다."""
     from tractus import paths

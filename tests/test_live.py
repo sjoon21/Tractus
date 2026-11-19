@@ -15,6 +15,7 @@ from tractus.paths import models_dir
 from tractus.commands import engines
 from tractus import models_registry as registry
 from tractus import cli, live
+from conftest import NO_MLX, mac_only
 
 REC = live.REC_SR
 SR = live.SR
@@ -600,6 +601,7 @@ def run_live_main(tmp_path, stop):
     return events, time.perf_counter() - t
 
 
+@mac_only(NO_MLX)
 def test_stop_during_vad_load_skips_the_asr_load_and_ends_with_done(tmp_path, slow_loads):
     loads, hooks = slow_loads
     stop = threading.Event()
@@ -610,6 +612,7 @@ def test_stop_during_vad_load_skips_the_asr_load_and_ends_with_done(tmp_path, sl
     assert took < 1.0
 
 
+@mac_only(NO_MLX)
 def test_stop_before_any_load_loads_nothing(tmp_path, slow_loads):
     loads, _ = slow_loads
     stop = threading.Event()
@@ -618,6 +621,7 @@ def test_stop_before_any_load_loads_nothing(tmp_path, slow_loads):
     assert loads == [] and events[-1]["event"] == "done" and took < 1.0
 
 
+@mac_only(NO_MLX)
 def test_load_models_checks_stop_between_asr_and_speakers(tmp_path, slow_loads):
     loads, hooks = slow_loads
     stop = threading.Event()

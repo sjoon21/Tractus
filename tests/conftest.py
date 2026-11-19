@@ -1,6 +1,7 @@
 """모든 시험 공통."""
 
 import os
+import sys
 import time
 
 import pytest
@@ -11,6 +12,18 @@ if hasattr(time, "tzset"):  # Windows에는 없고 C 런타임이 TZ=Asia/Seoul�
     time.tzset()
 
 from tractus import paths
+
+WINDOWS = sys.platform == "win32"
+
+
+def mac_only(reason: str):
+    """macOS에서만 뜻이 있는 시험(MLX, Swift 도우미, .sh 스크립트, 유닉스 신호 등)을 다른 OS에서 건너뛴다. `from conftest import mac_only`."""
+    return pytest.mark.skipif(sys.platform != "darwin", reason=reason)
+
+
+# 자주 쓰는 이유 (docs/windows/README.md §2.2)
+NO_MLX = "MLX(mlx.core)는 Windows에서 불러와지지 않는다. 변환 런타임은 W4에서 정한다"
+FLUID_MAC = "fluid 화자 분리 도우미 tractus-diar는 Swift·CoreML이라 macOS 전용이다 (가짜 도우미도 #! 스크립트)"
 
 
 @pytest.fixture(autouse=True)

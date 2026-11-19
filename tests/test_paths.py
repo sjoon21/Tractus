@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
+from conftest import WINDOWS
 
 from tractus import cli, paths
 from tractus import models_install as inst
@@ -37,9 +38,13 @@ def test_models_dir_order_env_then_legacy_with_a_registered_model_then_app_folde
     monkeypatch.setenv("HOME", str(env / "h"))
     monkeypatch.setenv("TRACTUS_HOME", str(env / "home"))
     monkeypatch.delenv("TRACTUS_MODELS_DIR", raising=False)
-    assert paths.models_dir() == env / "h" / APP  # 새 설치: 앱 설정 폴더
+    app = env / "h" / APP
+    if WINDOWS:  # Windows는 HOME이 아니라 %LOCALAPPDATA% 아래 (platform_compat.APP_MODELS)
+        monkeypatch.setenv("LOCALAPPDATA", str(env / "h"))
+        app = env / "h" / "dev.tractus.app" / "models"
+    assert paths.models_dir() == app  # 새 설치: 앱 설정 폴더
     (legacy / "not-a-model").mkdir(parents=True)  # 등록되지 않은 폴더만 있으면 옛 위치로 보지 않는다
-    assert paths.models_dir() == env / "h" / APP
+    assert paths.models_dir() == app
     fake_install(legacy, "vad")  # 이미 모델이 있는 사용자는 그대로
     assert paths.models_dir() == legacy
     monkeypatch.setenv("TRACTUS_MODELS_DIR", str(env / "custom"))  # 환경변수가 먼저
@@ -51,11 +56,11 @@ def test_move_moves_only_registered_models_and_reports_json(env):
     fake_install(src, "vad")
     fake_install(src, "aligner")
     (src / "stray").mkdir()
-    (src / "stray" / "keep.txt").write_text("남겨 둔다")
+    (src / "stray" / "keep.txt").write_text("남겨 둔다", encoding="utf-8")
     out = inst.move(src, dest)
     assert sorted(out["moved"]) == ["aligner", "vad"] and out["freed_bytes"] == 0  # 같은 볼륨: 이름만 바꾼다
     assert reg.inspect("vad", dest).state != "missing" and not (src / reg.get("vad").local_dir).exists()
-    assert (src / "stray" / "keep.txt").read_text() == "남겨 둔다" and not (dest / "stray").exists()
+    assert (src / "stray" / "keep.txt").read_text(encoding="utf-8") == "남겨 둔다" and not (dest / "stray").exists()
 
 
 def test_move_refuses_when_busy_exists_or_nested(env):
