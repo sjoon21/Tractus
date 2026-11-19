@@ -12,6 +12,7 @@ import pytest
 
 from tractus import store, voices
 from tractus.store import Job, apply_speaker_edit, apply_suggestions, render_markdown, render_vtt, write_transcript
+from conftest import WINDOWS
 
 SR = 16000
 DIM = 8
@@ -81,10 +82,10 @@ def test_profiles_are_written_0600_atomically_and_stay_0600(tmp_path):
     data, _ = voices.enroll(voices.load_profiles(tmp_path), "홍길동", unit(a0=1), "m1")
     voices.save_profiles(tmp_path, data)
     path = tmp_path / voices.VOICES_FILE
-    assert mode(path) == 0o600 and voices.load_profiles(tmp_path) == data
+    assert (WINDOWS or mode(path) == 0o600) and voices.load_profiles(tmp_path) == data  # Windows는 모드 비트가 없다 (platform_compat.restrict_to_owner)
     os.chmod(path, 0o644)
     voices.save_profiles(tmp_path, data)
-    assert mode(path) == 0o600 and not list(tmp_path.glob("*.tmp"))
+    assert (WINDOWS or mode(path) == 0o600) and not list(tmp_path.glob("*.tmp"))
 
 
 def test_failed_save_keeps_previous_file(tmp_path, monkeypatch):

@@ -54,7 +54,7 @@ def saved(tmp_path, marks=None, *extra):
 def test_recording_that_crashed_with_null_duration_still_finishes(tmp_path):
     """녹음 프로그램이 비정상 종료하면 recording.json의 duration이 null로 남는다(이슈 #57). 트랙(WAV)이 살아 있으면 그대로 변환 전 노트로 저장된다."""
     rec = make_recording(tmp_path)
-    info = json.loads((rec / "recording.json").read_text())
+    info = json.loads((rec / "recording.json").read_text(encoding="utf-8"))
     info["duration"] = None
     (rec / "recording.json").write_text(json.dumps(info))
     d, t = saved_from(rec)

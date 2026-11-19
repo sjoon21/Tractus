@@ -109,3 +109,13 @@ def test_pid_alive():
 
 def test_physical_memory():
     assert pc.physical_memory() > 1024**3
+
+
+def test_expand_app_dir_falls_back_when_localappdata_is_unset(monkeypatch):
+    """환경을 비운 하위 프로세스에서도 모델 폴더가 작업 폴더 아래 `%LOCALAPPDATA%`라는 상대 경로가 되지 않는다"""
+    monkeypatch.setenv("LOCALAPPDATA", "/x/Local")
+    assert pc.expand_app_dir("%LOCALAPPDATA%/dev.tractus.app/models") == "/x/Local/dev.tractus.app/models"
+    monkeypatch.delenv("LOCALAPPDATA")
+    out = pc.expand_app_dir("%LOCALAPPDATA%/m")
+    assert os.path.isabs(out) and out.endswith(os.path.join("AppData", "Local") + "/m")
+    assert pc.expand_app_dir("~/Library/x") == "~/Library/x"  # macOS 값은 그대로

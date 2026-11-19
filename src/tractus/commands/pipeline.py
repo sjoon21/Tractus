@@ -153,7 +153,10 @@ def _free_mlx() -> None:
     """내린 모델의 MLX 버퍼를 돌려준다. 다음 모델과 통합 메모리에 함께 올라가지 않게 한다."""
     import gc
 
-    import mlx.core as mx
+    try:
+        import mlx.core as mx
+    except ImportError:  # MLX를 불러올 수 없는 곳(Windows): 돌려줄 MLX 버퍼도 없다. 모델이 없는 단계를 건너뛴 변환이 여기서 멈추지 않게
+        return
 
     gc.collect()
     mx.clear_cache()
