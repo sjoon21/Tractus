@@ -8,8 +8,14 @@ import time
 
 WINDOWS = sys.platform == "win32"  # 시험에서 바꿔 끼운다
 
-# 모델 폴더 기본값(paths.APP_MODELS): 앱 설정 폴더 아래 models. Windows는 큰 파일을 로밍하지 않는 %LOCALAPPDATA% 관례 (docs/windows/plan.md §7.2)
+# 모델 폴더 기본값(paths.APP_MODELS). macOS는 앱 설정 폴더 아래 models, Windows는 큰 파일을 로밍하지 않는 %LOCALAPPDATA% 관례(설정은 %APPDATA%, docs/windows/plan.md §7.2)
 APP_MODELS = "%LOCALAPPDATA%/dev.tractus.app/models" if WINDOWS else "~/Library/Application Support/dev.tractus.app/models"
+
+
+def expand_app_dir(p: str) -> str:
+    """`%LOCALAPPDATA%`를 실제 폴더로. 환경변수가 비면(환경을 비운 하위 프로세스) 상대 경로가 되지 않게 ~/AppData/Local로 둔다"""
+    local = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
+    return p.replace("%LOCALAPPDATA%", local)
 
 
 def _fileno(f) -> int:

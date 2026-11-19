@@ -237,7 +237,7 @@ def test_real_helper_contract_on_broken_models(tmp_path):
     assert sorted(p.relative_to(models) for p in models.rglob("*")) == before  # 아무것도 받지 않았다
 
 
-@mac_only(FLUID_MAC)
+@mac_only("paths.tool_bin의 .app 번들·swift build 배치 시험. Windows(tractus-rec.exe, recorder/win/target/release)는 W3·W5에서 정한다")
 def test_tool_bin_order_env_then_bundle_then_repo_and_hints_follow_layout(tmp_path, monkeypatch):
     """P3: 환경변수 → 앱 번들(<앱>/Contents/Resources/runtime/bin의 파이썬 기준 ../../bin) → 저장소. 저장소 배치가 아니면 빌드 명령을 말하지 않는다."""
     from tractus import paths
