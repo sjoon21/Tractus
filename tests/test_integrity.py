@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from tractus.paths import models_dir
 from tractus.commands import common, pipeline, voiceprint
 from tractus import cli, store, voices
+from conftest import WINDOWS
 from tractus.store import Job, apply_speaker_edit, apply_text_edits, edit_transcript, find_job, find_meeting_dir, find_transcribed, note_lock, write_transcript
 
 SR = 16000
@@ -274,7 +275,7 @@ def test_enroll_failure_restores_previous_profile_bytes_semantically(home, monke
     monkeypatch.setattr(voiceprint, "save_transcript", lambda *a: (_ for _ in ()).throw(OSError("disk full")))
     assert run_voices("enroll", str(d), "S1", "--name", "홍길동", "--consent").exit_code != 0
     assert json.loads((home / "voices.json").read_text(encoding="utf-8")) == before
-    assert (home / "voices.json").stat().st_mode & 0o777 == 0o600
+    assert WINDOWS or (home / "voices.json").stat().st_mode & 0o777 == 0o600  # Windows는 모드 비트가 없다
 
 
 def test_enroll_succeeds_and_keeps_edits_made_while_embedding(home, monkeypatch):

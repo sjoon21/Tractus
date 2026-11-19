@@ -4,9 +4,10 @@ import os
 import sys
 from pathlib import Path
 
+from tractus import platform_compat
 from tractus.i18n import t
 
-APP_MODELS = Path("~/Library/Application Support/dev.tractus.app/models")  # 앱 설정 폴더 아래: iCloud 동기화·노트 폴더 밖
+APP_MODELS = Path(platform_compat.APP_MODELS)  # iCloud 동기화·노트 폴더 밖 (macOS 앱 설정 폴더, Windows %LOCALAPPDATA%)
 
 
 def home_dir() -> Path:
@@ -20,7 +21,7 @@ def models_dir() -> Path:
     from tractus.models_registry import MODELS  # 늦게 불러온다: 이 모듈은 모델 모듈이 쓰는 가장 아래층이다
 
     legacy = home_dir() / "models"  # 예전 기본값. 모델이 이미 있는 사용자는 그대로 쓴다
-    return legacy if any((legacy / m.local_dir).is_dir() for m in MODELS) else APP_MODELS.expanduser()
+    return legacy if any((legacy / m.local_dir).is_dir() for m in MODELS) else Path(platform_compat.expand_app_dir(str(APP_MODELS))).expanduser()
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

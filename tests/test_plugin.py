@@ -5,10 +5,12 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import WINDOWS, mac_only
 
 ROOT = Path(__file__).resolve().parent.parent
 PLUGIN = ROOT / "plugins" / "tractus"
 LAUNCHER = PLUGIN / "bin" / "tractus-mcp"
+LAUNCHER_SH = "MCP 실행기 bin/tractus-mcp는 bash 스크립트다. Windows 실행기(.cmd 등)는 아직 없다"
 # 실행기는 /Applications의 앱을 ~/Applications보다 먼저 본다: 이 Mac에 앱이 깔려 있으면 그것을 찾으므로 그 경우를 시험할 수 없다 (CI 러너에는 없다)
 no_system_app = pytest.mark.skipif(Path("/Applications/Tractus.app").exists(), reason="/Applications/Tractus.app이 있는 Mac")
 
@@ -26,6 +28,7 @@ def launch(home: Path, **env: str) -> subprocess.CompletedProcess:
     return subprocess.run([str(LAUNCHER)], env={**base, **env}, capture_output=True, text=True, timeout=10)
 
 
+@mac_only(LAUNCHER_SH)
 def test_launcher_uses_tractus_bin_and_default_home(tmp_path):
     bin_ = fake_tractus(tmp_path / "x" / "tractus")
     r = launch(tmp_path, TRACTUS_BIN=str(bin_))
@@ -33,6 +36,7 @@ def test_launcher_uses_tractus_bin_and_default_home(tmp_path):
     assert json.loads(r.stdout) == {"args": "mcp", "home": f"{tmp_path}/Tractus", "models": ""}
 
 
+@mac_only(LAUNCHER_SH)
 def test_launcher_reads_the_app_settings(tmp_path):
     bin_ = fake_tractus(tmp_path / "repo" / ".venv" / "bin" / "tractus")
     conf = tmp_path / "Library" / "Application Support" / "dev.tractus.app" / "settings.json"
@@ -45,12 +49,14 @@ def test_launcher_reads_the_app_settings(tmp_path):
     assert out["home"] == str(tmp_path / "Other")
 
 
+@mac_only(LAUNCHER_SH)
 @no_system_app
 def test_launcher_finds_the_prebuilt_app_in_home_applications(tmp_path):
     fake_tractus(tmp_path / "Applications" / "Tractus.app" / "Contents" / "Resources" / "runtime" / "bin" / "tractus")
     assert json.loads(launch(tmp_path).stdout)["args"] == "mcp"
 
 
+@mac_only(LAUNCHER_SH)
 @no_system_app
 def test_launcher_without_tractus_says_how_to_install_and_keeps_stdout_clean(tmp_path):
     r = launch(tmp_path)
@@ -58,6 +64,7 @@ def test_launcher_without_tractus_says_how_to_install_and_keeps_stdout_clean(tmp
     assert "releases" in r.stderr and "TRACTUS_BIN" in r.stderr
 
 
+@mac_only(LAUNCHER_SH)
 def test_empty_or_unexpanded_plugin_settings_count_as_unset(tmp_path):
     bin_ = fake_tractus(tmp_path / "x" / "tractus")
     conf = tmp_path / "Library" / "Application Support" / "dev.tractus.app" / "settings.json"
@@ -68,12 +75,12 @@ def test_empty_or_unexpanded_plugin_settings_count_as_unset(tmp_path):
 
 
 def test_manifests_point_at_the_launcher_and_name_matches():
-    manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())
-    market = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
-    mcp = json.loads((PLUGIN / ".mcp.json").read_text())["mcpServers"]["tractus"]
+    manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    market = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+    mcp = json.loads((PLUGIN / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["tractus"]
     entry = next(p for p in market["plugins"] if p["name"] == manifest["name"])
     assert (ROOT / entry["source"]).resolve() == PLUGIN.resolve()
-    assert mcp["command"] == "${CLAUDE_PLUGIN_ROOT}/bin/tractus-mcp" and LAUNCHER.stat().st_mode & 0o111
+    assert mcp["command"] == "${CLAUDE_PLUGIN_ROOT}/bin/tractus-mcp" and (WINDOWS or LAUNCHER.stat().st_mode & 0o111)  # Windows에는 실행 비트가 없다
     assert set(manifest["userConfig"]) == {"tractus_bin", "tractus_home"}
 
 
@@ -84,6 +91,7 @@ def test_both_skills_are_in_the_repo():
         assert text.startswith("---\n") and f"name: {name}" in text and "description:" in text
 
 
+@mac_only(LAUNCHER_SH)
 def test_launcher_starts_the_server_in_the_data_folder_not_the_project(tmp_path):
     # 남의 저장소 폴더에서 띄워도 그 .env를 읽지 않게 데이터 폴더에서 실행한다
     bin_ = tmp_path / "x" / "tractus"
@@ -104,10 +112,10 @@ def test_every_manifest_has_the_same_version():
     import tomllib
 
     versions = {
-        "tauri.conf.json": json.loads((ROOT / "app" / "src-tauri" / "tauri.conf.json").read_text())["version"],
-        "package.json": json.loads((ROOT / "app" / "package.json").read_text())["version"],
-        "Cargo.toml": tomllib.loads((ROOT / "app" / "src-tauri" / "Cargo.toml").read_text())["package"]["version"],
-        "pyproject.toml": tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"],
-        "plugin.json": json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())["version"],
+        "tauri.conf.json": json.loads((ROOT / "app" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))["version"],
+        "package.json": json.loads((ROOT / "app" / "package.json").read_text(encoding="utf-8"))["version"],
+        "Cargo.toml": tomllib.loads((ROOT / "app" / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"],
+        "pyproject.toml": tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"],
+        "plugin.json": json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"],
     }
     assert len(set(versions.values())) == 1 and re.fullmatch(r"\d+\.\d+\.\d+", versions["pyproject.toml"]), versions

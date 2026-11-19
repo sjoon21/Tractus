@@ -45,7 +45,7 @@ def test_patch_stt_init_keeps_only_our_families(tmp_path):
     init.parent.mkdir(parents=True)
     init.write_text("from . import (\n    cohere_asr,\n    qwen3_asr,\n    sensevoice,\n    voxtral,\n    whisper,\n)\n")
     assert slim.patch_stt_init(tmp_path, slim.stt_families()) == ["qwen3_asr", "sensevoice", "whisper"]
-    assert init.read_text().splitlines()[-1] == "from . import qwen3_asr, sensevoice, whisper"
+    assert init.read_text(encoding="utf-8").splitlines()[-1] == "from . import qwen3_asr, sensevoice, whisper"
 
 
 def test_patch_stt_init_stops_when_the_file_changed(tmp_path):
@@ -69,5 +69,5 @@ def test_every_first_party_module_the_cli_imports_is_in_the_bundle_list():
     code = "import sys, json; import tractus.cli, tractus.mcp_server; print(json.dumps(sorted(m for m in sys.modules if m == 'tractus' or m.startswith('tractus.'))))"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True, env={**os.environ, "PYTHONPATH": str(REPO / "src")}).stdout
     imported = set(json.loads(out))
-    listed = {line.strip() for line in (REPO / "scripts" / "bundle_modules.txt").read_text().splitlines() if line.strip()}
+    listed = {line.strip() for line in (REPO / "scripts" / "bundle_modules.txt").read_text(encoding="utf-8").splitlines() if line.strip()}
     assert sorted(imported - listed) == []
