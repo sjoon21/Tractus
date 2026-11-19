@@ -370,6 +370,17 @@ def test_summarize_and_ask_surface_mapped_codes_and_never_the_key(fake, monkeypa
 # ── 리뷰 지적: 3xx는 따라가지 않는다, 연결 테스트는 총 시간 제한이 있다 ──────────────
 
 
+def _read_request(conn):
+    """요청을 본문까지 다 읽는다. 덜 읽고 닫으면 Windows는 연결을 RST로 끊어 클라이언트가 응답 대신 연결 오류(llm_conn)를 본다"""
+    data = b""
+    while b"\r\n\r\n" not in data and (chunk := conn.recv(65536)):
+        data += chunk
+    head, _, body = data.partition(b"\r\n\r\n")
+    length = next((int(v) for k, _, v in (ln.partition(b":") for ln in head.split(b"\r\n")[1:]) if k.strip().lower() == b"content-length"), 0)
+    while len(body) < length and (chunk := conn.recv(65536)):
+        body += chunk
+
+
 def _raw_server(handler):
     """요청 한 줄을 읽고 handler(conn)에 넘기는 최소 TCP 서버 (stdlib). (주소, 닫기)"""
     srv = socket.socket()
@@ -393,7 +404,7 @@ def test_redirects_are_not_followed(fake, monkeypatch):
     monkeypatch.setenv("TRACTUS_LLM_API_KEY", KEY)
 
     def redirect(conn):
-        conn.recv(65536)
+        _read_request(conn)
         conn.sendall(f"HTTP/1.1 307 Temporary Redirect\r\nlocation: {fake.url}/chat/completions\r\ncontent-length: 0\r\n\r\n".encode())
         conn.close()
 
@@ -411,7 +422,7 @@ def test_connection_test_has_a_total_deadline_even_when_the_server_drips(monkeyp
     monkeypatch.setenv("TRACTUS_LLM_API_KEY", KEY)
 
     def drip(conn):  # 머리말만 보내고 1바이트씩 흘린다: 읽기마다 재는 시간 제한은 끊지 못한다
-        conn.recv(65536)
+        _read_request(conn)
         conn.sendall(b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 100000\r\n\r\n")
         try:
             for _ in range(50):
