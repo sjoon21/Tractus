@@ -21,6 +21,13 @@ FILES = ("encoder.int4.onnx", "decoder_init.int4.onnx", MARKER, "decoder_weights
 SR = 16000
 N_FFT, HOP, N_MELS = 400, 160, 128
 MIN_S = 1.0  # mlx-audio split_audio_into_chunks(min_chunk_duration=1.0): 짧은 오디오는 0으로 채워 1초로
+# MLX판 config.json의 support_languages (ONNX판 config에는 없다). 언어 이름을 대소문자 없이 이 표기로 맞춘다 (mlx-audio _build_prompt)
+LANGUAGES = (
+    "Chinese", "English", "Cantonese", "Arabic", "German", "French", "Spanish", "Portuguese", "Indonesian", "Italian",
+    "Korean", "Russian", "Thai", "Vietnamese", "Japanese", "Turkish", "Hindi", "Malay", "Dutch", "Swedish",
+    "Danish", "Finnish", "Polish", "Czech", "Filipino", "Persian", "Greek", "Romanian", "Hungarian", "Macedonian",
+)
+_CANON = {name.lower(): name for name in LANGUAGES}
 
 
 def ort():
@@ -77,7 +84,7 @@ def build_prompt(n_audio: int, language: str | None, hotwords: list[str] | None)
     """mlx-audio `merge_hotwords` + `_build_prompt`와 같은 문자열. 토큰 ID를 박아 두지 않고 통째로 토큰화한다(상류의 9125·882 버그)."""
     terms = [str(h).strip() for h in hotwords or [] if h is not None and str(h).strip()]
     system = ", ".join(terms) + "\n" if terms else ""
-    prefix = f"language {language}<asr_text>" if language else ""
+    prefix = f"language {_CANON.get(language.lower(), language)}<asr_text>" if language else ""
     return (
         f"<|im_start|>system\n{system}<|im_end|>\n"
         f"<|im_start|>user\n<|audio_start|>{'<|audio_pad|>' * n_audio}<|audio_end|><|im_end|>\n"
@@ -130,6 +137,9 @@ class OnnxQwen3ASR:
     def load(cls, model_dir: Path) -> "OnnxQwen3ASR":
         """세션 셋 + 토크나이저 + 임베딩(memmap). onnxruntime·tokenizers는 여기서만 부른다."""
         rt = ort()
+        missing = [name for name in FILES if not (model_dir / name).is_file()]
+        if missing:  # 세션을 만들기 전에: onnxruntime의 긴 오류 대신 빠진 파일 이름 (파이프라인이 model_load_failed로 알린다)
+            raise FileNotFoundError(f"ONNX model files missing in {model_dir}: {', '.join(missing)}")
         from tokenizers import Tokenizer
 
         cfg = json.loads((model_dir / "config.json").read_text(encoding="utf-8"))
