@@ -17,6 +17,7 @@ def pick(model: str, dataset: str, lang: str = "fixed", chunk: float | None = 30
         if r["model"] == model and r["dataset"] == dataset and r["lang"] == lang and r["glossary"] == glossary
         and (dataset != "aihub" or r["chunk_s"] == chunk) and r.get("segments", "vad") == segments
         and not r.get("app")  # 앱 경로(--app) 행은 기준선 표에 섞지 않는다
+        and not r.get("subset")  # 부분 표본 행(ONNX 대조)은 아래 표에만
     ]
     return hits[-1] if hits else None
 
@@ -98,6 +99,34 @@ def main():
             a = pick(m, "aihub", segments=seg)
             if a:
                 print(f"| {m} | {seg} | {a['cer']:.2f} | {a['cer_pron']:.2f} | {a['repetitions']} | {a['rtf']:.3f} | {a['peak_mlx_gb']:.2f} GB |")
+
+    onnx_table()
+
+
+def onnx_table():
+    """Windows 런타임 대조(docs/design/asr-onnx.md 8절): 같은 토큰 상한, 같은 부분 표본에서 MLX 8bit와 ONNX int4."""
+    rows = [r for r in ROWS if r.get("cap") and r.get("subset")]
+    if not rows:
+        return
+    print("\n## Windows 런타임 대조 (같은 토큰 상한, 부분 표본)\n")
+    print("ONNX는 onnxruntime CPU(arm64), MLX는 GPU라 RTF는 이 Mac에서의 참고값이다. 품질 칸만 런타임 비교에 쓴다. "
+          "점수: FLEURS·AI Hub는 CER, HiKE는 MER (PIER). 반복은 글의 루프 + 상한 도달 청크(HiKE는 loops).\n")
+    print("| 모델 | 런타임 | 세트 | 표본 | 언어 | 사전 | 경로 | 점수 | 반복 / 빈 출력 | 용어 재현율 | 재시도 (repaired) | RTF | 최대 RSS |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    seen = {}
+    for r in rows:  # 같은 조건을 다시 돌렸으면 마지막 행
+        seen[(r["model"], r["dataset"], r["subset"], r["lang"], r["glossary"], r.get("app"), r.get("vad"))] = r
+    for r in sorted(seen.values(), key=lambda r: (r["dataset"], r["model"].replace("-onnx", ""), r.get("app", False), r["lang"], r["glossary"], r["runtime"])):
+        if r["dataset"] == "hike":
+            a = r["hike"]["all"]
+            score_, rep = f"{a['mer']:.2f} ({a['pier']:.1f})", f"{a['loops']} / —"
+        else:
+            score_, rep = f"{r['cer']:.2f}", f"{r.get('repetitions', '—')} / {r.get('empty', '—')}"
+        path = f"앱 ({r['vad']})" if r.get("app") else "기준선"
+        recall = f"{r['term_recall']:.1f}%" if r["dataset"] == "aihub" else "—"
+        retry = f"{sum(r['retries'].values())} ({r['repaired']})" if r.get("app") else "—"
+        print(f"| {r['model']} | {r['runtime']} | {r['dataset']} | {r['subset']} (n={r['n']}, {r['audio_min']}분) | {r['lang']} "
+              f"| {'있음' if r['glossary'] else '없음'} | {path} | {score_} | {rep} | {recall} | {retry} | {r['rtf']:.3f} | {r['max_rss_gb']:.2f} GB |")
 
 
 if __name__ == "__main__":

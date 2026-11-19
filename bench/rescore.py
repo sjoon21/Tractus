@@ -16,7 +16,7 @@ def main():
     for line in path.open(encoding="utf-8"):
         s = json.loads(line)
         raw = raw_path_for(s["model"], s["dataset"], s["lang"], s["chunk_s"], s["glossary"], s.get("segments", "vad"),
-                           s.get("cap", False), s.get("vad") if s.get("app") else None)
+                           s.get("cap", False), s.get("vad") if s.get("app") else None, s.get("subset"))
         rows = [json.loads(x) for x in raw.open(encoding="utf-8")]
         if s["dataset"] == "fleurs":
             rows = [{**r, "ref": fleurs_ref(r["ref"])} for r in rows]
