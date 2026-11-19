@@ -11,7 +11,7 @@ Mac에서 할 수 있는 준비(Stage 0)는 끝났고, 남은 일은 Windows 기
 | 구성 요소 | Mac에서 끝낸 것 (Stage 0) | Windows 기기에서 할 일 | 상태 |
 | --- | --- | --- | --- |
 | 녹음 프로그램 | `recorder/win/` Rust `tractus-rec.exe`. Swift판과 같은 계약, `--fake` 계약 시험, Windows 대상 컴파일 검사, CI 빌드·시험 (#110) | 실제 마이크·시스템 소리 녹음 확인 (W1) | 코드 있음, 실기기 미확인 |
-| 코어 (Python) | 플랫폼 갈래 모듈로 `fcntl`·`fchmod`·`os.kill`·`sysconf` 정리, CI `windows-core.yml` (#109) | 남은 실패 시험 고치기 (W2) | 진행 중 |
+| 코어 (Python) | 플랫폼 갈래 모듈로 `fcntl`·`fchmod`·`os.kill`·`sysconf` 정리, CI `windows-core.yml` (#109). W2: Windows CI 0 실패 (2.2) | 실제 기기에서 `uv run pytest`·`tractus doctor` 확인 (W2 남은 항목) | CI 통과, 실기기 미확인 |
 | 앱 (Tauri, Rust) | `cfg` 갈래로 경로·하위 프로세스·클립보드·권한·언어 감지 정리, CI `windows-app.yml` (#111) | `pnpm tauri dev`로 창 띄우기, 녹음 연결 (W3) | 진행 중 |
 | 텍스트 변환 (ASR) | Mac CPU에서 ONNX int4 Qwen3-ASR 측정 (CER 9.51, RTF 0.26, plan.md 6.1) | 후보 런타임을 Windows CPU에서 측정하고 고르기 (W4) | 결정 필요 |
 | VAD·화자 분리·단어 정렬·검색 임베딩·목소리·실시간 자막 | — | 미리보기에서는 기능 잠금, Stage 2에서 하나씩 (W6) | 미착수 |
@@ -47,15 +47,21 @@ PR 번호는 이 문서를 쓸 때의 것이다. 합쳐졌는지는 `git log --o
 - **`uv sync --locked`는 Windows에서도 된다** (mlx 0.32.3에 win_amd64 휠이 있다). 다만 `import mlx.core`는 DLL 로드에 실패한다.
 - **Windows CI 첫 결과 (run 43354607376):** 777 통과 / 55 실패 / 123 오류. 전체 시험은 `continue-on-error`이고 실패 목록만 요약에 남긴다.
 
-  | 원인 | 건수 | W2에서 할 일 |
+  | 원인 (W2에서 로그로 확인) | 건수 | W2에서 한 것 |
   | --- | --- | --- |
-  | 하위 프로세스 `FileNotFoundError` (`test_cli`·`test_deferred`·`test_attach`·`test_align`) | 121 | 러너에 ffmpeg가 없어서로 보인다. ffmpeg를 깔고 다시 돌려 원인을 확정한다 |
-  | `mlx.core` DLL 로드 실패 (`test_asr`·`test_onnx_mlx`) | 19 | MLX 시험에 Windows skip 표시. MLX 대체는 W4 |
-  | cp1252 인코딩 (`test_env`·`test_obsidian` 등) | 6 | `open()`에 `encoding="utf-8"`이 빠진 곳 찾기, 또는 `PYTHONUTF8=1` |
-  | `.sh` 실행 `WinError 193` (`test_update_sh`·`test_plugin`) | — | macOS 전용 skip 표시 |
-  | 0600 권한 검사 (`test_voices`·`test_integrity`) | — | Windows에서는 권한 검사를 건너뛰거나 ACL로 바꿀지 결정 |
-  | macOS 경로 기대 (`~/Library/...`, `.app` 번들) | — | Windows 앱 데이터 폴더(`%APPDATA%`·`%LOCALAPPDATA%`)를 정하고 `paths.py`에 갈래 |
-  | SIGTERM 종료 코드 130 (`test_models`) | — | Windows는 신호 대신 stdin `stop` |
+  | 러너에 ffmpeg가 없다: 가짜 음성을 만드는 픽스처의 `subprocess.run(["ffmpeg", …])`가 `FileNotFoundError` (`test_cli`·`test_deferred`·`test_attach`·`test_align`·`test_calendar_event`·`test_trio`) | 121 | `windows-core.yml`에 `choco install ffmpeg` |
+  | ffmpeg 뒤에 드러남: `commands.pipeline._free_mlx`가 `mlx.core`를 무조건 불러와, 모델이 없어 화자 분리·정렬을 건너뛴 변환도 `ImportError`로 끝났다 | 80 | **코어 수정:** 불러오지 못하면 비울 MLX 버퍼도 없으므로 돌아간다 |
+  | `mlx.core` DLL 로드 실패: 가짜 모델이어도 `mx.array`를 부른다 (`test_asr`·`test_onnx_mlx`·`test_live`) | 19 | `mac_only(NO_MLX)`로 건너뜀. MLX 대체는 W4 |
+  | 줄바꿈: `store._write_atomic`이 텍스트 모드라 Windows에서 `\r\n`으로 써서 Obsidian sha256이 어긋났다(`edited`) | 5 | **코어 수정:** `newline="\n"`. 노트 폴더 파일이 Mac과 같은 바이트다 |
+  | cp1252 기본 인코딩: 시험 코드의 `read_text()`·`write_text()` (`test_env`·`test_paths`·`test_bundle_slim`·`test_plugin`·`test_obsidian`) | 6 | 시험에 `encoding="utf-8"`. 코어의 파일 읽기·쓰기는 이미 utf-8이다(`PYTHONWARNDEFAULTENCODING=1`로 확인, 남은 곳은 ASCII뿐) |
+  | bash·`#!` 스크립트 `WinError 193` (`test_update_sh` 7, `test_plugin` 실행기 6, `test_diarize` 가짜 fluid 도우미 6, `test_models` 1) | 20 | `mac_only`로 건너뜀: `update.sh`·`bin/tractus-mcp`는 bash, fluid 도우미 `tractus-diar`는 Swift·CoreML |
+  | 0600·실행 비트 (`test_voices`·`test_integrity`·`test_cli`·`test_plugin`) | 4 | Windows에서는 권한 비트 검사만 뺀다. 나머지 검사는 돈다 |
+  | `paths.APP_MODELS`가 `~/Library/Application Support/...` | 1 | `platform_compat.APP_MODELS`: Windows는 `%LOCALAPPDATA%\dev.tractus.app\models` (plan.md 7.2 관례, **소유자 확인 필요**) |
+  | `tool_bin`의 `.app` 번들·`swift build` 기대 (`test_diarize`) | 2 | 건너뜀: fluid 도우미는 macOS 전용이고 Windows 번들 배치는 W5에서 정한다 |
+  | SIGTERM 종료 코드 130 (`test_models`) | 1 | 건너뜀. Windows 앱은 받기를 `taskkill /F /T`로 멈춘다(2.3, 받은 부분은 남는다). stdin `stop`은 만들지 않았다 |
+
+- **W2 결과 (2026-11-19, 브랜치 `windows/w2-core-tests`):** run 44468214894 55 실패 / 784 통과 / 5 건너뜀 / 123 오류 → run 44475918704 **0 실패 / 920 통과 / 47 건너뜀**(늘어난 42개는 위 표의 `mac_only`). macOS는 그대로 964 통과 / 3 건너뜀. 건너뛸 시험은 `tests/conftest.py`의 `mac_only(이유)`로 함수마다 표시한다(`update.sh`만 파일 전체).
+- **아직 안 본 것:** 실제 Windows 기기(이 결과는 `windows-latest` 러너뿐), `slow`·`llm`·`network` 시험, 실제 파이프에서 코어 stdout 인코딩(`CliRunner`는 utf-8로 받는다. 앱이 띄우면 Windows 기본 코드 페이지로 한국어 JSON을 쓰게 된다: W3에서 확인), `tractus doctor --json`. 전체 시험 단계는 아직 `continue-on-error`다.
 
 
 ### 2.3 앱 이식성 정리 (#111)
@@ -129,8 +135,8 @@ uv sync
 uv run pytest -q
 ```
 
-- [ ] `windows-core.yml`이 알려 준 실패 목록부터 고친다 (2.2 참고).
-- [ ] 경로 길이 260자, 예약 파일 이름(`CON` 등), 줄바꿈(CRLF)에 걸리는 시험이 없는가.
+- [x] `windows-core.yml`이 알려 준 실패 목록부터 고친다 (2.2 참고, 2026-11-19 CI 0 실패).
+- [ ] 경로 길이 260자, 예약 파일 이름(`CON` 등), 줄바꿈(CRLF)에 걸리는 시험이 없는가. (CRLF: `_write_atomic`을 고쳤다. 260자·예약 이름은 아직 안 봤다)
 - [ ] `tractus doctor --json`이 Windows에서 무엇을 "부족"으로 내는지 보고, 미리보기 범위에 맞게 고친다.
 
 ### W3. 앱을 Windows에서 띄우기
