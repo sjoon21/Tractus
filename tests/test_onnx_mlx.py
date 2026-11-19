@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from tractus import onnx_mlx
+from conftest import NO_MLX, mac_only
 
 # ── 최소 protobuf 쓰기 (테스트 전용) ──
 
@@ -62,6 +63,7 @@ def model(nodes: list[bytes], weights: dict[str, np.ndarray], meta: dict[str, st
 # ── 테스트 ──
 
 
+@mac_only(NO_MLX)
 def test_small_graph_matches_numpy(tmp_path: Path):
     rng = np.random.default_rng(0)
     w = rng.standard_normal((3, 4, 3)).astype(np.float32)
@@ -98,6 +100,7 @@ def test_unknown_op_is_refused_before_running(tmp_path: Path):
         onnx_mlx.load(p)
 
 
+@mac_only(NO_MLX)
 def test_negative_ints_and_shape_ops(tmp_path: Path):
     nodes = [
         node("Shape", ["x"], ["s"]),

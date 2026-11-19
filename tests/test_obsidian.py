@@ -24,7 +24,7 @@ def test_first_send_writes_one_markdown_with_frontmatter_and_folded_transcript(h
     r = send(mid, v)
     assert r["status"] == "created" and r["audio"] is None
     p = Path(r["path"])
-    assert p.parent == v.resolve() / "Tractus" and p.name.endswith(".md") and p.name.startswith(json.loads((d / "transcript.json").read_text())["created_at"][:10])
+    assert p.parent == v.resolve() / "Tractus" and p.name.endswith(".md") and p.name.startswith(json.loads((d / "transcript.json").read_text(encoding="utf-8"))["created_at"][:10])
     md = p.read_text(encoding="utf-8")
     assert md.startswith(f"---\ntractus_id: {mid}\n") and "duration: 00:07:00" in md
     assert "## 내 메모\n\n예산 다시 확인\n담당자 정하기" in md

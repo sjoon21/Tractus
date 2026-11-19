@@ -5,6 +5,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import mac_only
+
+pytestmark = mac_only("scripts/update.sh는 macOS 설치용 bash 스크립트다")
 
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "update.sh"
 STUB_INSTALL = '#!/usr/bin/env bash\necho "$@" >> "$(dirname "$0")/../install.calls"\n'
@@ -66,7 +69,7 @@ def test_update_pulls_shows_log_passes_args_to_install_and_is_idempotent(repos):
     push_two(dev)
     r = update(user, "--models", "lite", "--with-fluid")
     assert r.returncode == 0 and "change a.txt" in r.stdout and (user / "a.txt").exists()
-    assert (user / "install.calls").read_text().strip() == "--models lite --with-fluid"
+    assert (user / "install.calls").read_text(encoding="utf-8").strip() == "--models lite --with-fluid"
     assert git(user, "rev-parse", "HEAD") == git(dev, "rev-parse", "HEAD")
     again = update(user)
     assert again.returncode == 0 and "이미 최신" in again.stdout and (user / "install.calls").read_text().count("\n") == 1

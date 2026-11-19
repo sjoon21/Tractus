@@ -18,6 +18,7 @@ from tractus.commands import common, engines
 from tractus import align, cli, diarize, doctor, embed, voices
 from tractus import models_install as inst
 from tractus import models_registry as reg
+from conftest import FLUID_MAC, mac_only
 
 GB = 1024**3
 
@@ -470,6 +471,7 @@ def test_helper_download_needs_the_binary(root):
     assert e.value.code == "helper_missing" and "swift build" in e.value.message
 
 
+@mac_only(FLUID_MAC)
 def test_helper_download_runs_binary_and_maps_failure(root, tmp_path, monkeypatch):
     script = tmp_path / "tractus-diar"
     script.write_text('#!/bin/sh\nmkdir -p "$3/Segmentation.mlmodelc" "$3/Embedding.mlmodelc"\necho \'{"event":"downloaded"}\'\n')
@@ -766,6 +768,7 @@ def test_hub_progress_bar_reports_bytes_and_honours_cancel(root, monkeypatch):
     assert [s["bytes_done"] for s in seen] == [100]
 
 
+@mac_only("Windows에는 SIGTERM이 없다: 앱은 받기를 taskkill로 멈춘다 (docs/windows/README.md §2.3)")
 def test_sigterm_stops_cleanly_with_cancelled_event(tmp_path):
     import signal
     import subprocess

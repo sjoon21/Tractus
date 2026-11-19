@@ -15,7 +15,8 @@ def test_shell_beats_local_beats_env(tmp_path, monkeypatch):
 
 def test_parses_comments_quotes_and_export(tmp_path, monkeypatch):
     (tmp_path / ".env.local").write_text(
-        "# 주석\n\nexport KEY1=plain\nKEY2=\"quoted value\"\nKEY3='single'\nKEY4=a=b # 뒤 주석\nKEY5=\nKEY6=      # 값 없이 주석만\n잘못된 줄\n"
+        "# 주석\n\nexport KEY1=plain\nKEY2=\"quoted value\"\nKEY3='single'\nKEY4=a=b # 뒤 주석\nKEY5=\nKEY6=      # 값 없이 주석만\n잘못된 줄\n",
+        encoding="utf-8",
     )
     for k in ("KEY1", "KEY2", "KEY3", "KEY4", "KEY5", "KEY6"):
         monkeypatch.delenv(k, raising=False)
