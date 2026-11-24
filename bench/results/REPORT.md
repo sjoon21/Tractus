@@ -76,3 +76,45 @@ vad: 제품과 같은 Silero 청크, label: 정답 발화 경계로 묶음, utt:
 | lfm3-audio-2b | vad | 17.47 | 18.15 | 2 | 0.132 | 2.69 GB |
 | lfm3-audio-2b | label | 17.48 | 18.14 | 2 | 0.119 | 2.71 GB |
 | lfm3-audio-2b | utt | 18.58 | 19.16 | 2 | 0.147 | 2.56 GB |
+
+## Windows 런타임 대조 (같은 토큰 상한, 부분 표본)
+
+ONNX는 onnxruntime CPU(arm64), MLX는 GPU라 RTF는 이 Mac에서의 참고값이다. 품질 칸만 런타임 비교에 쓴다. 점수: FLEURS·AI Hub는 CER, HiKE는 MER (PIER). 반복은 글의 루프 + 상한 도달 청크(HiKE는 loops).
+
+| 모델 | 런타임 | 세트 | 표본 | 언어 | 사전 | 경로 | 점수 | 반복 / 빈 출력 | 용어 재현율 | 재시도 (repaired) | RTF | 최대 RSS |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| qwen3-0.6b | mlx | aihub | head8m (n=4, 32.4분) | fixed | 없음 | 기준선 | 10.30 | 0 / 0 | 81.8% | — | 0.049 | 2.23 GB |
+| qwen3-0.6b-onnx | onnxruntime | aihub | head8m (n=4, 32.4분) | fixed | 없음 | 기준선 | 14.47 | 1 / 0 | 63.6% | — | 0.153 | 4.36 GB |
+| qwen3-0.6b | mlx | aihub | head8m (n=4, 32.4분) | fixed | 있음 | 기준선 | 10.45 | 0 / 0 | 81.8% | — | 0.049 | 2.24 GB |
+| qwen3-0.6b-onnx | onnxruntime | aihub | head8m (n=4, 32.4분) | fixed | 있음 | 기준선 | 13.28 | 1 / 0 | 81.8% | — | 0.151 | 4.22 GB |
+| qwen3-0.6b | mlx | aihub | head20m (n=1, 20.1분) | auto | 있음 | 앱 (silero-vad-v6) | 12.80 | 0 / 0 | 50.0% | 0 (0) | 0.057 | 2.50 GB |
+| qwen3-0.6b-onnx | onnxruntime | aihub | head20m (n=1, 20.1분) | auto | 있음 | 앱 (silero-vad-v6-onnx) | 15.97 | 0 / 0 | 50.0% | 1 (1) | 0.165 | 4.30 GB |
+| qwen3-1.7b | mlx | aihub | head30m (n=4, 120.3분) | fixed | 있음 | 기준선 | 8.89 | 0 / 0 | 90.3% | — | 0.129 | 3.25 GB |
+| qwen3-1.7b-onnx | onnxruntime | aihub | head30m (n=4, 120.3분) | fixed | 있음 | 기준선 | 9.31 | 0 / 0 | 80.6% | — | 0.253 | 5.84 GB |
+| qwen3-1.7b | mlx | aihub | head8m (n=4, 32.4분) | fixed | 없음 | 기준선 | 8.77 | 0 / 0 | 90.9% | — | 0.130 | 1.43 GB |
+| qwen3-1.7b-onnx | onnxruntime | aihub | head8m (n=4, 32.4분) | fixed | 없음 | 기준선 | 9.13 | 0 / 0 | 90.9% | — | 0.274 | 5.60 GB |
+| qwen3-1.7b | mlx | aihub | head8m (n=4, 32.4분) | fixed | 있음 | 기준선 | 8.96 | 0 / 0 | 100.0% | — | 0.131 | 2.45 GB |
+| qwen3-1.7b-onnx | onnxruntime | aihub | head8m (n=4, 32.4분) | fixed | 있음 | 기준선 | 9.01 | 0 / 0 | 90.9% | — | 0.251 | 5.73 GB |
+| qwen3-1.7b | mlx | aihub | head20m (n=1, 20.1분) | auto | 있음 | 앱 (silero-vad-v6) | 11.89 | 0 / 0 | 100.0% | 0 (0) | 0.147 | 2.75 GB |
+| qwen3-1.7b | mlx | aihub | head20m (n=1, 20.1분) | auto | 있음 | 앱 (silero-vad-v6-onnx) | 11.89 | 0 / 0 | 100.0% | 0 (0) | 0.146 | 2.85 GB |
+| qwen3-1.7b-onnx | onnxruntime | aihub | head20m (n=1, 20.1분) | auto | 있음 | 앱 (silero-vad-v6-onnx) | 11.71 | 0 / 0 | 100.0% | 0 (0) | 0.285 | 5.77 GB |
+| qwen3-0.6b | mlx | fleurs | every8 (n=48, 10.2분) | auto | 없음 | 기준선 | 4.01 | — / 0 | — | — | 0.046 | 3.45 GB |
+| qwen3-0.6b-onnx | onnxruntime | fleurs | every8 (n=48, 10.2분) | auto | 없음 | 기준선 | 8.96 | — / 1 | — | — | 0.103 | 3.95 GB |
+| qwen3-0.6b | mlx | fleurs | every8 (n=48, 10.2분) | fixed | 없음 | 기준선 | 4.06 | — / 0 | — | — | 0.044 | 3.27 GB |
+| qwen3-0.6b-onnx | onnxruntime | fleurs | every8 (n=48, 10.2분) | fixed | 없음 | 기준선 | 5.24 | — / 0 | — | — | 0.105 | 3.95 GB |
+| qwen3-1.7b | mlx | fleurs | every1 (n=382, 80.1분) | auto | 없음 | 기준선 | 2.63 | — / 0 | — | — | 0.111 | 3.64 GB |
+| qwen3-1.7b-onnx | onnxruntime | fleurs | every1 (n=382, 80.1분) | auto | 없음 | 기준선 | 3.34 | — / 0 | — | — | 0.196 | 5.73 GB |
+| qwen3-1.7b | mlx | fleurs | every1 (n=382, 80.1분) | fixed | 없음 | 기준선 | 2.62 | — / 0 | — | — | 0.103 | 2.93 GB |
+| qwen3-1.7b-onnx | onnxruntime | fleurs | every1 (n=382, 80.1분) | fixed | 없음 | 기준선 | 3.31 | — / 0 | — | — | 0.192 | 5.94 GB |
+| qwen3-1.7b | mlx | fleurs | every8 (n=48, 10.2분) | auto | 없음 | 기준선 | 2.74 | — / 0 | — | — | 0.112 | 2.93 GB |
+| qwen3-1.7b-onnx | onnxruntime | fleurs | every8 (n=48, 10.2분) | auto | 없음 | 기준선 | 3.73 | — / 0 | — | — | 0.204 | 5.07 GB |
+| qwen3-1.7b | mlx | fleurs | every8 (n=48, 10.2분) | fixed | 없음 | 기준선 | 2.74 | — / 0 | — | — | 0.108 | 3.63 GB |
+| qwen3-1.7b-onnx | onnxruntime | fleurs | every8 (n=48, 10.2분) | fixed | 없음 | 기준선 | 3.68 | — / 0 | — | — | 0.219 | 4.80 GB |
+| qwen3-1.7b | mlx | hike | every1 (n=1121, 133.3분) | fixed | 없음 | 기준선 | 26.19 (32.7) | 2 / 0 | — | — | 0.121 | 4.05 GB |
+| qwen3-1.7b-onnx | onnxruntime | hike | every1 (n=1121, 133.3분) | fixed | 없음 | 기준선 | 29.02 (42.9) | 6 / 0 | — | — | 0.199 | 5.31 GB |
+| qwen3-1.7b | mlx | hike | every16 (n=71, 8.5분) | auto | 없음 | 기준선 | 24.98 (32.8) | 0 / 0 | — | — | 0.124 | 2.93 GB |
+| qwen3-1.7b-onnx | onnxruntime | hike | every16 (n=71, 8.5분) | auto | 없음 | 기준선 | 25.85 (35.6) | 0 / 0 | — | — | 0.205 | 5.23 GB |
+| qwen3-1.7b | mlx | hike | every16 (n=71, 8.5분) | fixed | 없음 | 기준선 | 25.00 (27.3) | 0 / 0 | — | — | 0.118 | 4.22 GB |
+| qwen3-1.7b-onnx | onnxruntime | hike | every16 (n=71, 8.5분) | fixed | 없음 | 기준선 | 49.76 (45.2) | 2 / 0 | — | — | 0.225 | 5.68 GB |
+| qwen3-1.7b | mlx | hike | every16 (n=71, 8.5분) | fixed | 없음 | 앱 (silero-vad-v6) | 27.49 (32.5) | 0 / 0 | — | 0 (0) | 0.129 | 2.65 GB |
+| qwen3-1.7b-onnx | onnxruntime | hike | every16 (n=71, 8.5분) | fixed | 없음 | 앱 (silero-vad-v6-onnx) | 31.66 (37.2) | 0 / 0 | — | 0 (0) | 0.198 | 5.39 GB |

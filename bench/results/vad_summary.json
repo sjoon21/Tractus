@@ -1,0 +1,57 @@
+{
+ "dataset": "aihub",
+ "onnx": "silero-vad-v6-onnx",
+ "n": 4,
+ "agree": 100.0,
+ "chunks": [
+  688,
+  688
+ ],
+ "chunk_diff_pct": 0.0,
+ "per_session": {
+  "DGBAH21000190": {
+   "agree": 100.0,
+   "spans": [
+    1502,
+    1502
+   ],
+   "chunks": [
+    188,
+    188
+   ]
+  },
+  "DGBAH21000195": {
+   "agree": 100.0,
+   "spans": [
+    1473,
+    1473
+   ],
+   "chunks": [
+    182,
+    182
+   ]
+  },
+  "DGBAH21000196": {
+   "agree": 100.0,
+   "spans": [
+    1059,
+    1059
+   ],
+   "chunks": [
+    145,
+    145
+   ]
+  },
+  "DGBAH21000201": {
+   "agree": 100.0,
+   "spans": [
+    446,
+    446
+   ],
+   "chunks": [
+    173,
+    173
+   ]
+  }
+ }
+}
