@@ -17,7 +17,7 @@ final class Recorder {
     private var writers: [Track: WavWriter] = [:]
     private var meters: [Track: LevelMeter] = [:]
     private var zero = ZeroDetector()
-    private var flushSources: [() -> Void] = []  // fake 모드용
+    private var flushSources: [(Double) -> Void] = []  // fake 모드용: 주어진 오디오 시각까지 쓴다
     private var sources: [Track: AudioSource] = [:]
     private var lastSampleAt: [Track: Double] = [:]
     private var realign: Set<Track> = []  // 재시작 뒤 첫 버퍼에서 끊긴 만큼 0으로 메울 트랙
@@ -94,8 +94,10 @@ final class Recorder {
         }
         if fake {
             let source = FakeSource(frequency: track == .mic ? 440 : 660, gaps: track == .system)
-            every(0.02) { [unowned self] in write(track, source.generate(upTo: elapsed)) }
-            flushSources.append { [unowned self] in write(track, source.generate(upTo: elapsed)) }
+            // 만든 시각과 쓰는 시각을 한 값으로 맞춘다: 둘 사이에 스레드가 밀리면 첫 버퍼 앞이 그만큼 0으로 메워져 트랙이 길어진다
+            let tick = { [unowned self] (now: Double) in write(track, source.generate(upTo: now), at: now) }
+            every(0.02) { [unowned self] in tick(elapsed) }
+            flushSources.append(tick)
             return
         }
         let onChange = { [unowned self] in q.async { self.restartSoon(track) } }
@@ -166,21 +168,22 @@ final class Recorder {
 
     private func ingest(_ track: Track, _ samples: [Int16]) {
         guard !stopping else { return }
-        write(track, samples)
+        write(track, samples, at: elapsed)
     }
 
-    private func write(_ track: Track, _ samples: [Int16]) {
+    /// `now`: 이 버퍼의 마지막 표본의 오디오 시각.
+    private func write(_ track: Track, _ samples: [Int16], at now: Double) {
         // 일시정지 중에는 두 트랙 모두 표본을 버린다(캡처 엔진은 계속 돈다). 타임라인에는 무음도 남기지 않는다.
         guard pausedSince == nil, let writer = writers[track], !samples.isEmpty else { return }
         do {
             // 첫 버퍼가 늦게 오거나 중간에 끊긴 만큼 0으로 채워 두 트랙의 시각을 맞춘다.
             // ponytail: 끊김만 맞춘다. 장치 간 클록 드리프트는 보정하지 않는다(1시간에 수십 ms 수준).
-            try writer.append(samples, endingAt: Int(elapsed * Double(WavWriter.sampleRate)), realign: realign.remove(track) != nil)
+            try writer.append(samples, endingAt: Int(now * Double(WavWriter.sampleRate)), realign: realign.remove(track) != nil)
         } catch {
             stop(error: "\(error)")
             return
         }
-        lastSampleAt[track] = elapsed
+        lastSampleAt[track] = now
         meters[track]?.add(samples)
         if track == .system, zero.feed(samples) {
             warning("system_zero", "시스템 오디오가 5초 동안 정확히 0입니다. 시스템 설정 > 개인정보 보호 > 화면 및 시스템 오디오 녹음 권한을 확인하세요")
@@ -220,13 +223,13 @@ final class Recorder {
     /// 이미 일시정지 중이면 무시한다(이벤트도 없다).
     private func pause() {
         guard !stopping, info != nil, pausedSince == nil else { return }
-        flushSources.forEach { $0() }  // fake 모드: 일시정지 시각까지 쓴다
+        let at = elapsed
+        flushSources.forEach { $0(at) }  // fake 모드: 일시정지 시각까지 쓴다
         for writer in writers.values {
             do { try writer.updateHeader() } catch { log("\(error)") }  // 일시정지 중 강제 종료돼도 여기까지는 재생된다
         }
         for track in meters.keys { _ = meters[track]?.take() }
-        let at = elapsed
-        pausedSince = ProcessInfo.processInfo.systemUptime
+        pausedSince = t0 + pausedTotal + at  // 시계를 at에서 정확히 멈춘다: 헤더를 쓰는 동안 시계가 가면 계속한 뒤 트랙이 시계보다 그만큼 뒤처진다
         pauseWallStart = Date()
         pauseAt = at
         emit(["event": "paused", "elapsed": round2(at)])
@@ -266,14 +269,21 @@ final class Recorder {
     func stop(error: String? = nil) {
         guard !stopping else { return }
         stopping = true
-        flushSources.forEach { $0() }  // fake 모드는 여기서 마지막 표본까지 쓴다
-        if let since = pausedSince { endPause(since: since) }  // 일시정지 중 종료: 오디오 시계는 그대로(duration에 일시정지가 안 들어간다)
+        // 종료 시각은 맨 먼저 한 번 읽는다: 소스를 닫는 시간이 duration에 들어가지 않게. 일시정지 중이면 멈춘 시각 그대로다(duration에 일시정지가 안 들어간다).
+        let end = elapsed
+        flushSources.forEach { $0(end) }  // fake 모드는 여기서 종료 시각까지 쓴다
+        if let since = pausedSince { endPause(since: since) }
         sources.values.forEach { $0.stop() }
         timers.forEach { $0.cancel() }
         for writer in writers.values {
+            // 아직 오는 중이던 마지막 버퍼(기기가 느리면 0.1초 넘게 늦는다)는 버려지므로 끝을 0으로 메워 WAV 길이 = duration을 지킨다.
+            // 한 번도 열리지 않은 트랙(빈 WAV)은 그대로 둔다. 메우기가 실패해도 헤더 크기를 고치도록 close는 늘 한다.
+            if writer.frames > 0 {
+                do { try writer.append([], endingAt: Int(end * Double(WavWriter.sampleRate)), realign: true) } catch { log("\(error)") }
+            }
             do { try writer.close() } catch { log("\(error)") }
         }
-        info?.duration = round2(elapsed)
+        info?.duration = round2(end)
         saveInfo()
         if let error { fatal(error) }
         emit(["event": "stopped", "dir": dir.path, "duration": info?.duration ?? 0])
