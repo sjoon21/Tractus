@@ -176,6 +176,7 @@ macOS 캘린더(EventKit) 읽기. 설계: [docs/design/calendar.md](design/calen
   | 코드 | 명령 | 언제 |
   | --- | --- | --- |
   | `model_missing` | transcribe, live, align | ASR·VAD·단어 정렬 모델이 없음 (`message`에 `tractus models download <id>`와 `hf download …`, §2.15) |
+  | `runtime_missing` | transcribe | ONNX 모델 폴더(Windows, docs/design/asr-onnx.md)인데 onnxruntime을 불러오지 못함(설치 누락, DLL·VC++ 런타임 문제) |
   | `audio_failed` | transcribe, align, recording finish | ffmpeg가 오디오를 읽지 못함, 소리 없는 파일 |
   | `ffmpeg_missing` | transcribe, align, recording finish | ffmpeg가 설치되지 않음 (`brew install ffmpeg`) |
   | `recording_missing` | transcribe `--recording`·`--into`, recording finish | `recording.json`을 읽지 못함, 녹음된 트랙이 없음. finish는 녹음 폴더가 없어도(종료 코드 2). `--into`는 아니다(아래 `note_audio_missing`) |

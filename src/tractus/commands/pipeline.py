@@ -6,13 +6,14 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import NoReturn
 
 import typer
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
 from tractus import align as align_core, asr, attach, audio, deferred, diarize, models_registry as registry, vad, voices
 from tractus.align import align_segments, is_approximate, MODEL_DIR as ALIGNER_DIR
-from tractus.asr import note_terms, SR
+from tractus.asr import note_terms, RuntimeMissing, SR
 from tractus.calendar_event import load_event, save_event
 from tractus.commands import common, engines
 from tractus.diarize import FLUID, fluid_hint, MAX_SPEAKERS, MODEL_DIR as DIARIZER_DIR, NEMOTRON, split_chunks
@@ -162,6 +163,11 @@ def _free_mlx() -> None:
     mx.clear_cache()
 
 
+def runtime_missing(e: Exception) -> NoReturn:
+    """onnxruntime을 불러오지 못했다(Windows, DLL·VC++ 런타임 문제·설치 누락): 트레이스백 대신 코드로 끝낸다."""
+    common.fail(t("변환에 필요한 onnxruntime을 불러오지 못했습니다: {error}", error=e), code="runtime_missing")
+
+
 def _run_diarizer(engine: str, diarizer, pcm, max_speakers: int | None, fallback: str, code: str = "diarizer_failed") -> tuple[list, dict] | None:
     """→ (turn 목록, diarization). 실패하면 경고(code)하고 None. fallback: 실패 뒤 어떻게 하는지 (경고 문구)."""
     try:
@@ -292,7 +298,10 @@ def _new_job(
     with common.console.status(t("오디오 디코딩·VAD·화자 분리 중…")):
         pcm = audio.decode(source.paths)
         common.Events.emit("stage", stage="vad")
-        chunks = vad.find_chunks(pcm, vad_dir)
+        try:
+            chunks = vad.find_chunks(pcm, vad_dir)
+        except RuntimeMissing as e:
+            runtime_missing(e)
         turns, diarization = _diarize(pcm, max_speakers, engine) if diarize else ([], None)
         _free_mlx()  # 화자 분리 모델을 내린 뒤 ASR 모델을 올린다
         chunks = split_chunks(chunks, turns)
@@ -379,6 +388,8 @@ def _run(job: Job, pcm, source: Source, keep_tracks: bool, align: bool = True) -
         transcriber = asr.Transcriber.load(engines.local_model(job.model))
     except typer.BadParameter:
         raise
+    except RuntimeMissing as e:
+        runtime_missing(e)
     except Exception as e:  # noqa: BLE001 — 직접 추가한 엔진의 파일이 모자라거나 계열이 맞지 않으면 mlx-audio가 여러 예외를 낸다
         common.fail(t("변환 엔진을 불러오지 못했습니다 ({model}): {error}", model=job.model, error=e), code="model_load_failed")
     lang = None if job.language == "auto" else job.language

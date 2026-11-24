@@ -593,6 +593,22 @@ def test_missing_ffmpeg_has_its_own_code(env, fake_asr, tmp_path, monkeypatch):
     assert err["code"] == "ffmpeg_missing" and err["message"].startswith("음성 파일을 읽는 데 필요한 ffmpeg가 없습니다")
 
 
+@pytest.mark.parametrize("where", ["vad", "asr"])
+def test_onnxruntime_that_cannot_load_has_its_own_code(env, fake_asr, monkeypatch, where):
+    """Windows ONNX 경로에서 onnxruntime DLL을 불러오지 못하면 트레이스백 대신 runtime_missing (docs/design/asr-onnx.md 3.5)."""
+    from tractus.asr import RuntimeMissing
+
+    def boom(*a, **k):
+        raise RuntimeMissing("DLL load failed while importing onnxruntime_pybind11_state")
+
+    monkeypatch.setattr(vad, "find_chunks", boom) if where == "vad" else monkeypatch.setattr(fake_asr, "load", classmethod(boom))
+    _, wav = env
+    result = CliRunner().invoke(cli.app, ["transcribe", str(wav), "--no-diarize", "--progress-json"])
+    assert result.exit_code == 1
+    err = events(result.stdout)[-1]
+    assert err["code"] == "runtime_missing" and "DLL load failed" in err["message"]
+
+
 # ── 목소리 프로필 (Phase 7.1) ─────────────────────────────────────────
 
 

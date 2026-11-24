@@ -29,6 +29,7 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 - Whisper·Nemotron은 Phase 0에서 탈락했다(`ARCHITECTURE.md` §8 "Phase 0 결과"). 새 벤치마크(`bench/`) 없이 ASR 모델을 바꾸거나 **등록 목록에** 추가하지 않는다. 사용자가 앱에서 직접 추가하는 엔진(`tractus models add`)은 사용자의 선택이라 측정을 요구하지 않는다.
 - **등록 목록 면제 기록 (2026-10-30, 소유자 결정).** `asr-ko-univa`(`TeamUNIVA/qwen3_asr_1.7b_ko`를 mlx-audio로 8bit 변환해 소유자 계정에 올린 `voyagar/Qwen3-ASR-1.7B-ko-mlx-8bit`, 2.5GB)를 **벤치마크(`bench/`) 없이** 등록 목록에 올렸다. 확인한 것은 스프린트 회의 5분 구간의 간이 비교(반복 루프 없음, 자동 감지에서 빈 청크가 나와 `asr.py`가 한국어로 다시 변환)뿐이다. 즉 FLEURS·HiKE·AI Hub 품질은 검증되지 않았다. 다음에 이 엔진을 기본으로 권하거나 설명을 바꿀 때 `bench/run.py`로 셋 다 잰다.
 - **변환 엔진은 계열 어댑터로 돈다(v3.59, docs/design/asr-engines.md)**: `asr.ENGINES`(qwen3·whisper·sensevoice), 계열은 모델 폴더 `config.json`의 `model_type`. 새 계열을 더하면 `ENGINES`·`models_install.NEEDED_FILES`·`bench/asr.py`를 함께 고친다. 자주 쓰는 단어는 Qwen만 넣는다(Whisper는 Phase 0에서 프롬프트가 CER을 크게 나쁘게 했다: 다시 넣으려면 측정한다). 고르기는 `transcribe --engine <ID>`(앱 설정 `asr_engine`)이고 실시간 텍스트 변환은 0.6B 그대로다.
+- **Windows 실행 경로(v3.141, docs/design/asr-onnx.md)**: 같은 Qwen3-ASR·Silero의 ONNX 판을 onnxruntime(CPU)으로 돌린다(`asr_onnx`·`vad_onnx`). 계열은 `qwen3` 그대로이고, 모델 폴더에 표지 파일(`decoder_step.int4.onnx`·`silero_vad_16k_op15.onnx`)이 있으면 `Transcriber.load`·`vad.find_chunks`가 그쪽으로 간다(`model_type`이 MLX판과 같아 config로는 못 가른다). 두 모듈은 mlx-audio 0.5.7의 프롬프트·언어 나누기·특징 추출·Silero 확률 계산을 옮긴 것이다. **mlx-audio를 올리면 `uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py tests/test_vad_onnx.py`를 돌린다**(models/qwen3-asr-0.6b-onnx-int4·silero-vad-v6-onnx 필요, 받는 명령은 설계 문서 7절. 등록 전이라 `models prune`이 지운다). 등록 목록 갈래(`_windows_models`)·`onnxruntime` 의존성은 측정 뒤 따로 들어온다(설계 9절).
 
 ## 화자 분리 모델 (2026-10-04 확정)
 
@@ -105,8 +106,10 @@ Local-first 노트·녹음 도구(메모·노트가 본체이고, 녹음은 텍�
 | --- | --- |
 | `audio.py` | FFmpeg 외부 호출(디코딩, Opus 보관), SHA-256 |
 | `vad.py` | VAD 발화 구간 → 30초 이하 청크 |
+| `vad_onnx.py` | Windows VAD: Silero ONNX 판을 onnxruntime으로(`probabilities`, mlx-audio를 옮긴 구간 규칙 `timestamps`). 모델 폴더에 `silero_vad_16k_op15.onnx`가 있으면 `vad.find_chunks`가 고른다 |
 | `diarize.py` | 화자 분리(Nemotron 3 `Diarizer`, fluid `FluidDiarizer` = `tractus-diar` 헬퍼), 단일 화자 평활(`smooth`), turn 정리(`_tidy`), 화자 경계로 청크 나누기(`split_chunks`) |
 | `asr.py` | `Transcriber`: 청크 전사, 토큰 상한, 반복 루프 재시도·보정 |
+| `asr_onnx.py` | Windows 텍스트 변환: Qwen3-ASR ONNX 판을 onnxruntime(CPU)으로(`OnnxQwen3ASR`: 특징 추출·프롬프트·디코딩·언어 나누기는 mlx-audio를 옮긴 것). 모델 폴더에 `decoder_step.int4.onnx`가 있으면 `Transcriber.load`가 고르고, 안전장치는 `asr.Transcriber` 그대로 |
 | `itn.py` | 숫자 표기 바꾸기: 한자어 수 → 숫자(`korean_numbers`, 단위·조사 규칙, `이` 한 글자·고유어 수는 그대로). `asr.Transcriber.transcribe`와 회의록 숫자 대조가 쓴다 |
 | `polish.py` | AI 다듬기(docs/design/transcript-polish.md): 문장 단위 교정 제안 `suggest`(5천 자 창 + 문맥, 동시 4개, 거르기·표시), `polish.json`(`pending`·`resolve`). 받기는 `apply_text_edits`의 `by: "ai"` → `corrected_by` |
 | `align.py` | 단어 정렬(Qwen3-ForcedAligner): `tokenize`(soynlp 대체), `Aligner.align`, `align_segments`, 편집 뒤 시각 옮기기 `remap_words` |

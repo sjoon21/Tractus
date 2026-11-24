@@ -2091,6 +2091,7 @@ tractus
 tractus.align
 tractus.ask
 tractus.asr
+tractus.asr_onnx
 tractus.attach
 tractus.audio
 tractus.calendar_event
@@ -2142,6 +2143,7 @@ tractus.summaries
 tractus.summarize
 tractus.summary_templates
 tractus.vad
+tractus.vad_onnx
 tractus.voices
 transformers
 transformers._typing
