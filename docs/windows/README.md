@@ -137,7 +137,7 @@ uv run pytest -q
 
 - [x] `windows-core.yml`이 알려 준 실패 목록부터 고친다 (2.2 참고, 2026-11-19 CI 0 실패).
 - [ ] 경로 길이 260자, 예약 파일 이름(`CON` 등), 줄바꿈(CRLF)에 걸리는 시험이 없는가. (CRLF: `_write_atomic`을 고쳤다. 260자·예약 이름은 아직 안 봤다)
-- [ ] `tractus doctor --json`이 Windows에서 무엇을 "부족"으로 내는지 보고, 미리보기 범위에 맞게 고친다.
+- [ ] `tractus doctor --json`이 Windows에서 무엇을 "부족"으로 내는지 보고, 미리보기 범위에 맞게 고친다. (`doctor.system()`의 Windows x64·빌드 19041+ 점검과 `winget install Gyan.FFmpeg` 안내까지는 반영됨. 실제 기기 실행 확인 남음)
 
 ### W3. 앱을 Windows에서 띄우기
 
@@ -148,7 +148,7 @@ pnpm tauri dev
 ```
 
 - [ ] 창이 뜨고 노트 목록·메모 노트가 된다.
-- [ ] 코어 `paths.tool_bin`도 `tractus-rec.exe`를 찾는다(`.exe`, `recorder/win/target/release`). Mac 배치 시험(`test_diarize`)은 Windows에서 건너뛰므로 Windows 배치 시험을 더한다.
+- [x] 코어 `paths.tool_bin`도 `tractus-rec.exe`를 찾는다(`.exe`, `recorder/win/target/release`). (`doctor.recorder_bin()`이 Windows에서 `recorder/win/target/release/tractus-rec`를 넘기고 `test_paths.py`에 Windows 배치 시험을 더함, 2026-11-25)
 - [ ] 녹음 버튼이 `recorder\win\target\release\tractus-rec.exe`를 찾는다 (`paths.rs`의 Windows 갈래, 2.3 참고). 못 찾으면 설정 › 경로에서 직접 지정해 본다.
 - [ ] 하위 프로세스가 콘솔 창을 띄우지 않는다 (`CREATE_NO_WINDOW`).
 - [x] 코어 표준 입출력은 Windows에서도 UTF-8이다(2026-11-25, v3.145): 앱은 `PYTHONIOENCODING=utf-8`을 주고, 코어가 시작할 때 `platform_compat.utf8_stdio()`로 다시 맞춘다(번들 파이썬 `-I`는 환경변수를 보지 않는다). 기기에서 볼 것: 한국어 제목 노트를 만들고 목록·검색에 제목이 깨지지 않는가.
