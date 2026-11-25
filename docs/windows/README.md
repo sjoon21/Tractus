@@ -61,7 +61,7 @@ PR 번호는 이 문서를 쓸 때의 것이다. 합쳐졌는지는 `git log --o
   | SIGTERM 종료 코드 130 (`test_models`) | 1 | 건너뜀. Windows 앱은 받기를 `taskkill /F /T`로 멈춘다(2.3, 받은 부분은 남는다). stdin `stop`은 만들지 않았다 |
 
 - **W2 결과 (2026-11-19, 브랜치 `windows/w2-core-tests`):** run 44468214894 55 실패 / 784 통과 / 5 건너뜀 / 123 오류 → run 44479877128 **0 실패 / 921 통과 / 47 건너뜀**(늘어난 42개는 위 표의 `mac_only`). macOS는 965 통과 / 3 건너뜀(새 시험 1개, 새 건너뜀 없음). 건너뛸 시험은 `tests/conftest.py`의 `mac_only(이유)`로 함수마다 표시한다(`update.sh`만 파일 전체).
-- **아직 안 본 것:** 실제 Windows 기기(이 결과는 `windows-latest` 러너뿐), `slow`·`llm`·`network` 시험, 실제 파이프에서 코어 stdout 인코딩(`CliRunner`는 utf-8로 받는다. 앱이 띄우면 Windows 기본 코드 페이지로 한국어 JSON을 쓰게 된다: W3에서 확인), `tractus doctor --json`. 전체 시험 단계는 아직 `continue-on-error`다.
+- **아직 안 본 것:** 실제 Windows 기기(이 결과는 `windows-latest` 러너뿐), `slow`·`llm`·`network` 시험, `tractus doctor --json`. 전체 시험 단계는 아직 `continue-on-error`다.
 
 
 ### 2.3 앱 이식성 정리 (#111)
@@ -151,6 +151,7 @@ pnpm tauri dev
 - [ ] 코어 `paths.tool_bin`도 `tractus-rec.exe`를 찾는다(`.exe`, `recorder/win/target/release`). Mac 배치 시험(`test_diarize`)은 Windows에서 건너뛰므로 Windows 배치 시험을 더한다.
 - [ ] 녹음 버튼이 `recorder\win\target\release\tractus-rec.exe`를 찾는다 (`paths.rs`의 Windows 갈래, 2.3 참고). 못 찾으면 설정 › 경로에서 직접 지정해 본다.
 - [ ] 하위 프로세스가 콘솔 창을 띄우지 않는다 (`CREATE_NO_WINDOW`).
+- [x] 코어 표준 입출력은 Windows에서도 UTF-8이다(2026-11-25, v3.145): 앱은 `PYTHONIOENCODING=utf-8`을 주고, 코어가 시작할 때 `platform_compat.utf8_stdio()`로 다시 맞춘다(번들 파이썬 `-I`는 환경변수를 보지 않는다). 기기에서 볼 것: 한국어 제목 노트를 만들고 목록·검색에 제목이 깨지지 않는가.
 - [ ] 트레이 아이콘·녹음 미니 창·⌘ 단축키(Windows는 Ctrl)가 어떻게 보이는지 기록한다. 고칠 목록은 WORDS.md 규칙("이 Mac" 같은 플랫폼 문구)부터 정한다.
 
 ### W4. 텍스트 변환 런타임 고르기 (결정 필요)
