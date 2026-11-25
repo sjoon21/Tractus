@@ -8,7 +8,7 @@ warnings.filterwarnings("ignore")
 
 import typer  # noqa: E402
 
-from tractus import models_cli, organize_cli  # noqa: E402
+from tractus import models_cli, organize_cli, platform_compat  # noqa: E402
 from tractus.commands import ai, exports, glossary, mcp, note, search, speakers, summary, transcribe, transcript, voiceprint  # noqa: E402
 from tractus.env import load_env_all  # noqa: E402
 
@@ -18,6 +18,7 @@ app = typer.Typer(add_completion=False, help="Local-first 노트·녹음 도구"
 @app.callback()
 def main() -> None:
     """현재 폴더와 $TRACTUS_HOME의 .env / .env.local을 읽는다 (셸 환경변수가 우선)."""
+    platform_compat.utf8_stdio()
     load_env_all()
 
 

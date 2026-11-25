@@ -18,6 +18,16 @@ def expand_app_dir(p: str) -> str:
     return p.replace("%LOCALAPPDATA%", local)
 
 
+def utf8_stdio() -> None:
+    """Windows: 표준 입출력을 UTF-8로. 기본 코드 페이지(cp949·cp1252)로는 한국어 JSON 계약이 깨지고 cp949에 없는 글자는 오류다.
+    앱은 PYTHONIOENCODING을 주지만 번들 파이썬(-I)은 환경변수를 보지 않으므로 코어가 직접 맞춘다. macOS·Linux는 그대로 둔다."""
+    if not WINDOWS:
+        return
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
+
 def _fileno(f) -> int:
     return f if isinstance(f, int) else f.fileno()
 

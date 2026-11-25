@@ -119,3 +119,34 @@ def test_expand_app_dir_falls_back_when_localappdata_is_unset(monkeypatch):
     out = pc.expand_app_dir("%LOCALAPPDATA%/m")
     assert os.path.isabs(out) and out.endswith(os.path.join("AppData", "Local") + "/m")
     assert pc.expand_app_dir("~/Library/x") == "~/Library/x"  # macOS 값은 그대로
+
+
+def test_utf8_stdio_switches_windows_code_page_streams_to_utf8(monkeypatch):
+    import io
+
+    streams = {name: io.TextIOWrapper(io.BytesIO(), encoding="cp949") for name in ("stdin", "stdout", "stderr")}
+    for name, s in streams.items():
+        monkeypatch.setattr(sys, name, s)
+    monkeypatch.setattr(pc, "WINDOWS", False)
+    pc.utf8_stdio()
+    assert sys.stdout.encoding == "cp949"  # macOS·Linux는 그대로
+
+    monkeypatch.setattr(pc, "WINDOWS", True)
+    pc.utf8_stdio()
+    assert [s.encoding for s in streams.values()] == ["utf-8"] * 3
+    sys.stdout.write('{"title": "녹음 ✓"}')  # ✓는 cp949에 없다
+    sys.stdout.flush()
+    assert sys.stdout.buffer.getvalue().decode("utf-8") == '{"title": "녹음 ✓"}'
+
+
+def test_cli_writes_utf8_json_without_pythonioencoding(tmp_path):
+    """앱 밖(번들 -I, 터미널 리디렉션)에서도 JSON이 UTF-8이다. Windows CI에서 기본 코드 페이지로 돌 때 의미가 있다"""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")} | {"TRACTUS_HOME": str(tmp_path)}
+    p = subprocess.run([sys.executable, "-m", "tractus.cli", "note", "new"], input='{"title": "회의 ✓"}'.encode(), capture_output=True, env=env, cwd=tmp_path, timeout=120)
+    assert p.returncode == 0, p.stderr.decode(errors="replace")
+    import json
+    from pathlib import Path
+
+    out = json.loads(p.stdout.decode("utf-8").strip().splitlines()[-1])
+    t = json.loads((Path(out["meeting_dir"]) / "transcript.json").read_text(encoding="utf-8"))
+    assert t["title"] == "회의 ✓"
