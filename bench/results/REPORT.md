@@ -98,6 +98,10 @@ ONNX는 onnxruntime CPU(arm64), MLX는 GPU라 RTF는 이 Mac에서의 참고값�
 | qwen3-1.7b | mlx | aihub | head20m (n=1, 20.1분) | auto | 있음 | 앱 (silero-vad-v6) | 11.89 | 0 / 0 | 100.0% | 0 (0) | 0.147 | 2.75 GB |
 | qwen3-1.7b | mlx | aihub | head20m (n=1, 20.1분) | auto | 있음 | 앱 (silero-vad-v6-onnx) | 11.89 | 0 / 0 | 100.0% | 0 (0) | 0.146 | 2.85 GB |
 | qwen3-1.7b-onnx | onnxruntime | aihub | head20m (n=1, 20.1분) | auto | 있음 | 앱 (silero-vad-v6-onnx) | 11.71 | 0 / 0 | 100.0% | 0 (0) | 0.285 | 5.77 GB |
+| qwen3-1.7b-onnx-al0 | onnxruntime | aihub | head8m (n=4, 32.4분) | fixed | 있음 | 기준선 | 8.94 | 0 / 0 | 90.9% | — | 1.457 | 4.96 GB |
+| qwen3-1.7b-onnx-int8 | onnxruntime | aihub | head8m (n=4, 32.4분) | fixed | 있음 | 기준선 | 8.79 | 0 / 0 | 100.0% | — | 0.368 | 6.85 GB |
+| qwen3-1.7b-onnx-int8-al4 | onnxruntime | aihub | head30m (n=4, 120.3분) | fixed | 있음 | 기준선 | 8.86 | 0 / 0 | 90.3% | — | 0.361 | 7.16 GB |
+| qwen3-1.7b-onnx-int8-al4 | onnxruntime | aihub | head8m (n=4, 32.4분) | fixed | 있음 | 기준선 | 8.79 | 0 / 0 | 100.0% | — | 0.435 | 6.85 GB |
 | qwen3-0.6b | mlx | fleurs | every8 (n=48, 10.2분) | auto | 없음 | 기준선 | 4.01 | — / 0 | — | — | 0.046 | 3.45 GB |
 | qwen3-0.6b-onnx | onnxruntime | fleurs | every8 (n=48, 10.2분) | auto | 없음 | 기준선 | 8.96 | — / 1 | — | — | 0.103 | 3.95 GB |
 | qwen3-0.6b | mlx | fleurs | every8 (n=48, 10.2분) | fixed | 없음 | 기준선 | 4.06 | — / 0 | — | — | 0.044 | 3.27 GB |
@@ -110,6 +114,7 @@ ONNX는 onnxruntime CPU(arm64), MLX는 GPU라 RTF는 이 Mac에서의 참고값�
 | qwen3-1.7b-onnx | onnxruntime | fleurs | every8 (n=48, 10.2분) | auto | 없음 | 기준선 | 3.73 | — / 0 | — | — | 0.204 | 5.07 GB |
 | qwen3-1.7b | mlx | fleurs | every8 (n=48, 10.2분) | fixed | 없음 | 기준선 | 2.74 | — / 0 | — | — | 0.108 | 3.63 GB |
 | qwen3-1.7b-onnx | onnxruntime | fleurs | every8 (n=48, 10.2분) | fixed | 없음 | 기준선 | 3.68 | — / 0 | — | — | 0.219 | 4.80 GB |
+| qwen3-1.7b-onnx-int8 | onnxruntime | fleurs | every8 (n=48, 10.2분) | fixed | 없음 | 기준선 | 2.74 | — / 0 | — | — | 0.306 | 6.24 GB |
 | qwen3-1.7b | mlx | hike | every1 (n=1121, 133.3분) | fixed | 없음 | 기준선 | 26.19 (32.7) | 2 / 0 | — | — | 0.121 | 4.05 GB |
 | qwen3-1.7b-onnx | onnxruntime | hike | every1 (n=1121, 133.3분) | fixed | 없음 | 기준선 | 29.02 (42.9) | 6 / 0 | — | — | 0.199 | 5.31 GB |
 | qwen3-1.7b | mlx | hike | every16 (n=71, 8.5분) | auto | 없음 | 기준선 | 24.98 (32.8) | 0 / 0 | — | — | 0.124 | 2.93 GB |
@@ -118,3 +123,7 @@ ONNX는 onnxruntime CPU(arm64), MLX는 GPU라 RTF는 이 Mac에서의 참고값�
 | qwen3-1.7b-onnx | onnxruntime | hike | every16 (n=71, 8.5분) | fixed | 없음 | 기준선 | 49.76 (45.2) | 2 / 0 | — | — | 0.225 | 5.68 GB |
 | qwen3-1.7b | mlx | hike | every16 (n=71, 8.5분) | fixed | 없음 | 앱 (silero-vad-v6) | 27.49 (32.5) | 0 / 0 | — | 0 (0) | 0.129 | 2.65 GB |
 | qwen3-1.7b-onnx | onnxruntime | hike | every16 (n=71, 8.5분) | fixed | 없음 | 앱 (silero-vad-v6-onnx) | 31.66 (37.2) | 0 / 0 | — | 0 (0) | 0.198 | 5.39 GB |
+| qwen3-1.7b-onnx-al0 | onnxruntime | hike | every16 (n=71, 8.5분) | fixed | 없음 | 기준선 | 38.02 (31.6) | 1 / 0 | — | — | 1.393 | 5.05 GB |
+| qwen3-1.7b-onnx-int8 | onnxruntime | hike | every16 (n=71, 8.5분) | fixed | 없음 | 기준선 | 28.37 (28.3) | 0 / 0 | — | — | 0.473 | 6.23 GB |
+| qwen3-1.7b-onnx-int8-al4 | onnxruntime | hike | every1 (n=1121, 133.3분) | fixed | 없음 | 기준선 | 26.83 (32.5) | 1 / 0 | — | — | 0.349 | 6.23 GB |
+| qwen3-1.7b-onnx-int8-al4 | onnxruntime | hike | every16 (n=71, 8.5분) | fixed | 없음 | 기준선 | 28.37 (28.3) | 0 / 0 | — | — | 0.358 | 6.08 GB |
