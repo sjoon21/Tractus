@@ -1,0 +1,72 @@
+{
+ "clips": 22,
+ "glossary": 105,
+ "terms": 35,
+ "hotwords_max": 50,
+ "models": {
+  "qwen3-0.6b": {
+   "natural": {
+    "before": {
+     "cer": 8.75,
+     "term_recall": 69.2,
+     "auto_retries": 0,
+     "loops_left": 0
+    },
+    "after": {
+     "cer": 8.75,
+     "term_recall": 69.2,
+     "auto_retries": 0,
+     "loops_left": 0
+    },
+    "differ": 0
+   },
+   "forced": {
+    "before": {
+     "cer": 9.78,
+     "term_recall": 63.1,
+     "auto_retries": 22,
+     "loops_left": 0
+    },
+    "after": {
+     "cer": 10.53,
+     "term_recall": 58.5,
+     "auto_retries": 22,
+     "loops_left": 0
+    },
+    "differ": 6
+   }
+  },
+  "qwen3-1.7b": {
+   "natural": {
+    "before": {
+     "cer": 26.89,
+     "term_recall": 70.8,
+     "auto_retries": 0,
+     "loops_left": 0
+    },
+    "after": {
+     "cer": 26.89,
+     "term_recall": 70.8,
+     "auto_retries": 0,
+     "loops_left": 0
+    },
+    "differ": 0
+   },
+   "forced": {
+    "before": {
+     "cer": 11.27,
+     "term_recall": 56.9,
+     "auto_retries": 22,
+     "loops_left": 0
+    },
+    "after": {
+     "cer": 11.38,
+     "term_recall": 55.4,
+     "auto_retries": 22,
+     "loops_left": 0
+    },
+    "differ": 7
+   }
+  }
+ }
+}
