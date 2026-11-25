@@ -31,6 +31,11 @@ MODELS = {
     # Windows 런타임 후보 (2026-11-19, docs/design/asr-onnx.md): andrewleech/qwen3-asr-*-onnx int4, onnxruntime CPU
     "qwen3-1.7b-onnx": ("qwen3-asr-1.7b-onnx-int4", "qwen-onnx"),
     "qwen3-0.6b-onnx": ("qwen3-asr-0.6b-onnx-int4", "qwen-onnx"),
+    # 정밀도 대조 (2026-11-25, 설계 11절 10번 나): 같은 원본(df916193). 제품 어댑터가 표지 파일 이름(.int4)을 찾으므로 측정 폴더는 그 이름을 그대로 쓴다
+    "qwen3-1.7b-onnx-al0": ("qwen3-asr-1.7b-onnx-al0", "qwen-onnx"),  # int4 가중치 그대로, MatMulNBits accuracy_level 4 → 0 (활성값 int8 → fp32 계산)
+    "qwen3-1.7b-onnx-int8": ("qwen3-asr-1.7b-onnx-int8", "qwen-onnx"),  # 올린 판 voyagar/Qwen3-ASR-1.7B-onnx-int8 @ 550f7a71: int8-al4 + decoder_init 입력 임베딩 표 fp32 → fp16(+Cast). 공유 가중치 3.10 → 2.48GB
+    "qwen3-1.7b-onnx-int8-al4": ("qwen3-asr-1.7b-onnx-int8-al4", "qwen-onnx"),  # fp32 디코더를 MatMulNBits 8bit block 64, accuracy_level 4로 (ORT DefaultWeightOnlyQuantConfig + share_weights.py). accuracy_level 0은 M3에서 RTF 20 넘게 느려 뺐다
+    "qwen3-1.7b-onnx-fp32": ("qwen3-asr-1.7b-onnx-fp32", "qwen-onnx"),  # 양자화 없는 디코더 (상한)
     "sensevoice": ("sensevoice-small", "sensevoice"),  # mlx-community/SenseVoiceSmall (FunASR Model License)
     # 2026-10-29 측정 전용: LiquidAI/LFM3-Audio-2B-MLX-8bit (mlx-vlm, LFM Open License v1.0: 연 매출 1천만 달러 이상 상업 사용 불가)
     "lfm3-audio-2b": ("lfm3-audio-2b-mlx-8bit", "lfm3"),

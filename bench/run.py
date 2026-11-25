@@ -92,15 +92,20 @@ def machine(power: str | None) -> dict:
     return {"name": name, "cores": os.cpu_count(), "ram_gb": round(ram / 2**30) if ram else None, "power": power}
 
 
-def ort_threads(n: int):
-    """onnxruntime 세션의 intra-op 스레드 수를 바꾼다. 제품 어댑터(asr_onnx.OnnxQwen3ASR.load)에 인자가 없어 벤치가 세션 생성을 감싼다."""
+def ort_options(n: int, config: list[str]):
+    """onnxruntime 세션의 intra-op 스레드 수(0이면 그대로)와 세션 설정(`키=값`, 예: session.disable_prepacking=1)을 바꾼다.
+    제품 어댑터(asr_onnx.OnnxQwen3ASR.load)에 인자가 없어 벤치가 세션 생성을 감싼다."""
     import onnxruntime as ort
 
     real = ort.InferenceSession
+    entries = [c.split("=", 1) for c in config]
 
     def session(path, sess_options=None, *a, **kw):
         opts = sess_options or ort.SessionOptions()
-        opts.intra_op_num_threads = n
+        if n:
+            opts.intra_op_num_threads = n
+        for key, value in entries:
+            opts.add_session_config_entry(key, value)
         return real(path, opts, *a, **kw)
 
     ort.InferenceSession = session
@@ -165,6 +170,7 @@ def main():
     ap.add_argument("--app", action="store_true", help="앱 경로: 제품 VAD(find_chunks) + Transcriber(재시도·ITN 포함). --segments는 쓰지 않는다")
     ap.add_argument("--vad", type=Path, default=None, help="--app의 VAD 폴더 (기본 models/silero-vad-v6, ONNX는 silero_vad_16k_op15.onnx가 든 폴더)")
     ap.add_argument("--threads", type=int, default=0, help="onnxruntime intra-op 스레드 수 (0: ORT 기본)")
+    ap.add_argument("--ort-config", action="append", default=[], help="onnxruntime 세션 설정 키=값 (여러 번 쓸 수 있다)")
     ap.add_argument("--power", default=None, help="요약 cpu 칸에 남길 전원 조건 (예: 'AC, 최고 성능')")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--minutes", type=float, default=0, help="AI Hub 부분 표본: 세션마다 앞 N분 (발화 사이 빈틈에서 자름)")
@@ -189,8 +195,8 @@ def main():
     tag = raw_path.stem
     raw_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if args.threads:
-        ort_threads(args.threads)
+    if args.threads or args.ort_config:
+        ort_options(args.threads, args.ort_config)
     t_load = time.perf_counter()
     asr = App(args.model, vad_dir) if args.app else ASR(args.model)
     load_s = time.perf_counter() - t_load
@@ -260,6 +266,7 @@ def main():
         "runtime": runtime,
         "ort_version": ort.__version__ if ort and runtime == "onnxruntime" else None,
         "threads": (args.threads or None) if runtime == "onnxruntime" else None,
+        **({"ort_config": args.ort_config} if args.ort_config else {}),
         "cpu": machine(args.power),
         "n": len(rows),
         "errors": sum(1 for r in rows if r["error"]),

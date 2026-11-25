@@ -13,7 +13,7 @@ Mac에서 할 수 있는 준비(Stage 0)는 끝났고, 남은 일은 Windows 기
 | 녹음 프로그램 | `recorder/win/` Rust `tractus-rec.exe`. Swift판과 같은 계약, `--fake` 계약 시험, Windows 대상 컴파일 검사, CI 빌드·시험 (#110) | 실제 마이크·시스템 소리 녹음 확인 (W1) | 코드 있음, 실기기 미확인 |
 | 코어 (Python) | 플랫폼 갈래 모듈로 `fcntl`·`fchmod`·`os.kill`·`sysconf` 정리, CI `windows-core.yml` (#109). W2: Windows CI 0 실패 (2.2) | 실제 기기에서 `uv run pytest`·`tractus doctor` 확인 (W2 남은 항목) | CI 통과, 실기기 미확인 |
 | 앱 (Tauri, Rust) | `cfg` 갈래로 경로·하위 프로세스·클립보드·권한·언어 감지 정리, CI `windows-app.yml` (#111) | `pnpm tauri dev`로 창 띄우기, 녹음 연결 (W3) | 진행 중 |
-| 텍스트 변환 (ASR) | Mac CPU에서 ONNX int4 Qwen3-ASR 측정 (CER 9.51, RTF 0.26, plan.md 6.1) | 후보 런타임을 Windows CPU에서 측정하고 고르기 (W4) | 결정 필요 |
+| 텍스트 변환 (ASR) | Mac CPU에서 ONNX 판 측정. 1.7B int8 판(`voyagar/Qwen3-ASR-1.7B-onnx-int8`)이 품질 기준 통과 (설계 8.6절) | int8 판의 속도·메모리를 Windows CPU에서 재기 (W4) | Windows 측정 남음 |
 | VAD·화자 분리·단어 정렬·검색 임베딩·목소리·실시간 자막 | — | 미리보기에서는 기능 잠금, Stage 2에서 하나씩 (W6) | 미착수 |
 | 설치·업데이트 | — | NSIS per-user 설치본, Python 런타임 번들, 설치 후 스모크 (W5) | 미착수 |
 
@@ -164,6 +164,7 @@ pnpm tauri dev
 - [x] A의 어댑터(설계 [docs/design/asr-onnx.md](../design/asr-onnx.md) 9절 1번 PR, v3.141): `asr_onnx`·`vad_onnx`, 모델 폴더 표지 파일로 가르기, Qwen에 numpy 넘기기(`test_asr`의 Qwen 시험이 Windows에서 돈다), `runtime_missing`. 등록·의존성은 아직이라 사용자에게 보이지 않는다.
 - [ ] 측정은 `bench/`로 하고 AI Hub 전사는 로컬에만 둔다(지표만 커밋).
 - [x] Mac 품질 측정(설계 9절 2번 PR, v3.142, 결과는 설계 8.5절): 1.7B int4는 AI Hub CER을 통과하지만 용어 재현율·HiKE 언어 고정에서 떨어지고, 0.6B int4는 모든 세트에서 떨어진다. M3 CPU RTF는 1.7B 0.19–0.29. 남은 것: 판 고르기(설계 11절 10·11번)와 Windows 기준 기기의 속도·메모리.
+- [x] 더 정밀한 판(설계 8.6절, 2026-11-25): 같은 원본 디코더를 8bit(accuracy_level 4)로 다시 양자화해 `voyagar/Qwen3-ASR-1.7B-onnx-int8`에 올렸다. HiKE 전체 MER +0.64, AI Hub CER −0.03·용어 같음, FLEURS every8 같음으로 품질 기준을 모두 넘는다. 최대 메모리는 6.1–7.2GB로 6GB 기준을 넘는다. 0.6B는 Windows 목록에 두지 않는다. 남은 것: Windows 기준 기기의 속도·메모리, 등록 목록 갈래.
 - [ ] 고르면 `models_registry`에 플랫폼별 모델 항목을 더하고, 기능 잠금(`CAPABILITIES`)은 그대로 쓴다.
 - [ ] onnxruntime을 다시 들이면(번들 약 75MB) 그 결정을 ARCHITECTURE.md에 남긴다(v3.99에서 뺐다).
 

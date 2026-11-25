@@ -13,7 +13,7 @@ Windows에서는 Mac과 **같은 모델 계열(Qwen3-ASR)**을 ONNX int4로 바�
 2. Silero VAD ONNX 어댑터 `src/tractus/vad_onnx.py`
 3. 두 런타임을 **같은 조건**으로 재는 `bench/` 갈래(토큰 상한 같음, 앱 경로 모드 포함)
 
-모델은 `andrewleech/qwen3-asr-1.7b-onnx`·`-0.6b-onnx`의 int4 판이다. 등록 목록에는 측정이 끝난 뒤에만, **Windows에서만 보이는 항목**으로 올린다. ID는 Mac과 같다(`vad`·`asr-std`·`asr-lite`). Windows 목록에 없는 단계(화자 분리·목소리·단어 싱크)는 파이프라인이 모델을 찾기 전에 건너뛴다.
+모델은 `andrewleech/qwen3-asr-1.7b-onnx`·`-0.6b-onnx`의 int4 판에서 출발했다. **2026-11-25부터 1.7B는 같은 원본에서 직접 만든 int8 판 `voyagar/Qwen3-ASR-1.7B-onnx-int8`을 쓴다(8.6절). 0.6B는 Windows 목록에 두지 않는다(11절 11번).** 등록 목록에는 측정이 끝난 뒤에만, **Windows에서만 보이는 항목**으로 올린다. ID는 Mac과 같다(`vad`·`asr-std`·`asr-lite`). Windows 목록에 없는 단계(화자 분리·목소리·단어 싱크)는 파이프라인이 모델을 찾기 전에 건너뛴다.
 
 미루는 것:
 
@@ -623,6 +623,43 @@ uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py
 - `--app`의 AI Hub 4세션 전체와 `--app --vad`의 4세션: 세션 하나의 앞 20분만.
 - 메모리 최악 경우(30초 청크 + 사전 50개 이상), 스레드 4·8, 첫 실행 시간: Windows 기준 기기 몫이다(8.4절).
 
+### 8.6 int8 판 (Mac, 2026-11-25)
+
+**결론: 같은 원본의 디코더를 8bit로 다시 양자화한 판이 8.3절 품질 기준을 모두 넘는다.** MLX 8bit와 점수가 거의 같고, 반복 루프는 오히려 적다. 남은 것은 최대 메모리(6GB 기준을 넘는 6.2–7.2GB)와 Windows 기기에서의 속도다.
+
+**만든 것** (`voyagar/Qwen3-ASR-1.7B-onnx-int8` @ `550f7a71`, 변환 스크립트와 측정표를 모델 카드에 넣었다)
+
+1. andrewleech @ `df916193`의 fp32 디코더 둘을 onnxruntime 1.32.0 `MatMulNBitsQuantizer` + `DefaultWeightOnlyQuantConfig(bits=8, block_size=64, is_symmetric=False)`로 양자화했다. 원본 `quantize_nbits.py`의 RTN 갈래는 ORT 1.32에서 `bits`를 무시해 4bit가 된다.
+2. 원본 `share_weights.py`로 두 디코더가 가중치 파일 하나를 쓰게 했다.
+3. `MatMulNBits` 197개 모두 `accuracy_level=4`(int8 계산)로 했다. `accuracy_level=0`(fp32 계산)은 M3에서 RTF 20을 넘었다.
+4. `decoder_init`에만 있던 fp32 입력 임베딩 표(`lm_head.weight`, 1.24GB)를 fp16 + `Cast`로 바꿨다. 가중치 파일이 3.10GB에서 2.48GB로 줄었다. 측정 행의 최대 메모리는 바뀌지 않았다.
+5. 파일 이름은 `.int4`를 그대로 둔다. 어댑터가 표지 `decoder_step.int4.onnx`와 그 이름들을 찾기 때문이다(3.1절). 안에 든 정밀도는 `config.json`의 `quantization`이 적는다.
+
+**결과** (조건은 8.5절과 같다. 언어 고정, 제품 토큰 상한. `qwen3-1.7b-onnx-int8-al4`는 4번 전, `qwen3-1.7b-onnx-int8`은 올린 판이다)
+
+| 세트 · 표본 | MLX 8bit | ONNX int4 | **ONNX int8** | 차이 (int8 − MLX) |
+| --- | --- | --- | --- | --- |
+| HiKE 전체 MER (PIER), 루프 | 26.19 (32.74), 2 | 29.02 (42.93), 6 | **26.83 (32.48), 1** | +0.64 |
+| HiKE every16 MER (PIER), 루프 | 25.00 (27.29), 0 | 49.76 (45.25), 2 | **28.37 (28.34), 0** (4번 전후 같음) | +3.37 |
+| AI Hub head30m + 사전 CER, 용어 | 8.89, 28/31 | 9.31, 25/31 | **8.86, 28/31** | −0.03, 0%p |
+| AI Hub head8m + 사전 CER, 용어 | 8.96, 11/11 | 9.01, 10/11 | **8.79, 11/11** (4번 전후 같음) | −0.17 |
+| FLEURS every8 CER | 2.74 | 3.68 | **2.74** | 0.00 |
+| 최대 RSS | 3.25–4.22 GB | 5.31–5.94 GB | **6.08–7.16 GB** | |
+| RTF (참고) | 0.10–0.13 | 0.19–0.27 | 0.31–0.47 | |
+
+**8.3절 기준 판정:** AI Hub CER·FLEURS CER·HiKE MER(전체 +0.64)·용어 재현율·반복 모두 **통과**한다. every16의 +3.37은 71개 표본에서 짧은 단어 클립 몇 개가 흔든 값이고, 전체 1121개에서는 +0.64다. 최대 메모리는 **6GB 기준을 넘는다**.
+
+**관찰**
+
+- int4 판이 떨어진 원인은 양자화 정밀도였다. accuracy_level만 0으로 낮춘 int4(`qwen3-1.7b-onnx-al0`)는 HiKE every16 38.02, AI Hub head8m 용어 10/11로 조금만 나아졌다. 가중치를 8bit로 올려야 MLX 수준이 된다.
+- 메모리: 디코더 두 세션이 각각 양자화 가중치를 미리 풀어 올리는 것(prepacking)으로 추정한다. `session.disable_prepacking`을 켜면 오히려 커지고(int4 3.5 → 4.9GB) 느려졌다(RTF 19). ORT Python에는 세션 사이에 미리 푼 가중치를 나누는 통로가 없다. Windows 기기에서 실제 메모리를 잰 뒤, 16GB 미만 기기에서 막을지 정한다.
+
+**하지 않은 것**
+
+- FLEURS 전체: 소유자 지시로 중간에 멈췄고, every8로 대신했다.
+- fp32 판(상한): M3에서 RTF 12라 세트 전체를 재지 않았다.
+- 자동 감지(`--lang auto`), 앱 경로(`--app`), Windows 기기에서의 속도·메모리(W4).
+
 ## 9. 단계·PR 나누기
 
 각 PR은 혼자 합쳐도 macOS 동작이 바뀌지 않는다.
@@ -672,5 +709,5 @@ uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py
 7. **언어 고정 루프 재시도가 사전 전체를 넘기는 것(asr.py:198)을 `hw`로 바꿀지.** Mac hotwords 규칙 변경이라 CLAUDE.md에 따라 가상 음성 A/B를 재거나 면제 기록을 남겨야 한다.
 8. **미리보기에서 Windows `models add`(직접 추가)를 막을지**(권하는 답: 막는다).
 9. **스레드 수 정책:** ORT 기본(물리 코어)으로 둘지, 녹음·앱 반응성을 위해 상한을 둘지.
-10. **어떤 ONNX 판으로 W4를 이어갈지(8.5절, 2026-11-19 Mac 측정 뒤).** 지금 int4 판은 1.7B가 AI Hub CER은 통과하지만 용어 재현율(−9.7%p)·HiKE 언어 고정에서 떨어진다. 고를 수 있는 것: (가) 그대로 두고 기준을 다시 정한다, (나) 같은 원본에서 더 정밀한 판(int8, 또는 accuracy_level을 낮춘 int4)을 직접 변환해 같은 표본으로 다시 잰다(권하는 답), (다) 병합 디코더 판(6번)을 함께 잰다. (나)·(다)는 받는 크기·메모리가 커진다.
-11. **0.6B를 Windows 목록에 둘지.** int4 0.6B는 AI Hub +2.8–4.2, FLEURS 자동 +4.95로 기준에서 멀다(8.5절). 권하는 답: 더 정밀한 판이 기준을 넘기 전까지 Windows에는 1.7B 하나만 둔다.
+10. **어떤 ONNX 판으로 W4를 이어갈지(8.5절, 2026-11-19 Mac 측정 뒤).** 지금 int4 판은 1.7B가 AI Hub CER은 통과하지만 용어 재현율(−9.7%p)·HiKE 언어 고정에서 떨어진다. 고를 수 있는 것: (가) 그대로 두고 기준을 다시 정한다, (나) 같은 원본에서 더 정밀한 판(int8, 또는 accuracy_level을 낮춘 int4)을 직접 변환해 같은 표본으로 다시 잰다(권하는 답), (다) 병합 디코더 판(6번)을 함께 잰다. (나)·(다)는 받는 크기·메모리가 커진다. → **2026-11-25 (나)로 진행(소유자 "제안 순서대로"):** int8 판 `voyagar/Qwen3-ASR-1.7B-onnx-int8`이 품질 기준을 모두 넘었다(8.6절). 남은 것은 최대 메모리 6GB 기준과 Windows 기기에서의 속도다.
+11. **0.6B를 Windows 목록에 둘지.** int4 0.6B는 AI Hub +2.8–4.2, FLEURS 자동 +4.95로 기준에서 멀다(8.5절). 권하는 답: 더 정밀한 판이 기준을 넘기 전까지 Windows에는 1.7B 하나만 둔다. → **2026-11-25 소유자가 권하는 답대로 진행:** Windows에는 1.7B 하나만 둔다.
