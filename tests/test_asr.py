@@ -63,6 +63,19 @@ def test_fixed_language_loop_retries_with_auto_detect():
     assert seg.text == "Thank you all" and seg.lang == "en" and seg.repaired
 
 
+def test_fixed_language_loop_retry_keeps_the_hotword_safeguards():
+    words = [f"단어{i}" for i in range(HOTWORDS_MAX + 10)]
+    model = FakeModel({"Korean": FakeOut(LOOP), None: FakeOut("Thank you all", language="English")})
+    Transcriber(model).transcribe(AUDIO, language="ko", hotwords=words)
+    Transcriber(model).transcribe([0.0] * 8000, language="ko", hotwords=words)  # 0.5초
+    assert [len(c["hotwords"] or []) for c in model.calls] == [HOTWORDS_MAX, HOTWORDS_MAX, 0, 0]
+    hw = ["Kubernetes", "Project Atlas", "김민수", "p95"]
+    model = FakeModel({"Korean": FakeOut("Kubernetes, Project Atlas, 김민수, p95"), ("nohw", "Korean"): FakeOut(LOOP),
+                       None: FakeOut("Thank you all", language="English")})
+    Transcriber(model).transcribe(AUDIO, language="ko", hotwords=hw)
+    assert [c["hotwords"] for c in model.calls] == [hw, None, None]  # 받아 적어 단어를 뺐으면 재시도에도 넣지 않는다
+
+
 def test_loop_is_retried_once_with_temperature_then_collapsed():
     model = FakeModel({None: FakeOut("준비해 " + LOOP)})
     seg = Transcriber(model).transcribe(AUDIO, language=None)

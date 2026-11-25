@@ -210,7 +210,7 @@ class Transcriber:
         looped = self._capped(out, cap)
         if looped and name is not None:
             # 언어 고정 시 영어 발화를 번역하다 루프에 빠지는 경우가 많다(Phase 0). 자동 감지로 한 번 더 시도한다.
-            out = self._generate(audio, None, hotwords, cap)
+            out = self._generate(audio, None, hw, cap)  # 다른 재시도와 같이 상한·짧은 청크·받아 적기 규칙을 거친 단어
             looped = self._capped(out, cap)
             text = collapse_repeats(out.text) if looped else out.text.strip()
             return Segment(text=text, lang=_lang_code(out.language), repaired=True)
