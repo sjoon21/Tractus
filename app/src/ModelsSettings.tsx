@@ -19,6 +19,7 @@ import { warningText } from "./lib";
 import { KEY_CHANGED } from "./llmKey";
 import {
   capChip,
+  engineLayout,
   diskShort,
   downloadErrorView,
   DOWNLOAD_DONE,
@@ -295,8 +296,7 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
   const [adding, setAdding] = useState(false);
   const inUse = list ? engineInUse(list.models, asrEngine, caps.report?.doctor?.recommended_track) : null;
   // 드롭다운: 모든 변환 엔진이 보이고, 받지 않은 엔진을 고르면 받기를 시작한다. 빈 값 = 자동
-  const engines = list ? list.models.filter((m) => m.engine) : [];
-  const singleEngine = engines.length === 1; // Windows 미리보기: 등록 목록의 변환 엔진이 asr-std 하나 (설계 asr-onnx.md 4.4)
+  const { engines, picker, tableRows } = engineLayout(list?.models ?? []); // Windows 미리보기: 등록 목록의 변환 엔진이 asr-std 하나면 고르기·직접 추가가 없다
   const autoEngine = list ? list.models.find((m) => m.id === engineInUse(list.models, null, caps.report?.doctor?.recommended_track)) : undefined;
   const pickValue = asrEngine && engines.some((m) => m.id === asrEngine) ? asrEngine : "";
   const choose = async (m: ModelRow | null) => {
@@ -512,7 +512,7 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
           </div>
         )}
 
-        {list && !singleEngine && (
+        {list && picker && (
           <Section title={ENGINE_PICK_TITLE} description={inUse ? engineNowUsing(engineName(list.models.find((m) => m.id === inUse) ?? { name: inUse, model_name: null })) + " " + ENGINE_PICK_HINT : ENGINE_NONE_INSTALLED}>
             <div role="radiogroup" aria-label={ENGINE_PICK_TITLE} className="divide-y divide-border">
               <EngineChoice id="asr-engine-auto" checked={pickValue === ""} busy={busy} title={autoEngine ? engineAutoOption(engineName(autoEngine)) : ENGINE_AUTO_OPTION} note={ENGINE_AUTO_NOTE} onPick={() => void pickEngine(null)} />
@@ -553,9 +553,8 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
 
         {list && (
           // 엔진이 하나뿐이면(Windows 미리보기) 고를 것이 없어 엔진 고르기를 그리지 않고, 그 엔진은 이 표에 함께 둔다
-          <Section title={singleEngine ? MODELS_LABEL : OTHER_MODELS_TITLE}>
-            {list.models
-              .filter((m) => !m.engine || singleEngine)
+          <Section title={picker ? OTHER_MODELS_TITLE : MODELS_LABEL}>
+            {tableRows
               .map((m) => {
                 const detailRows = modelDetailRows(m);
                 const unusedHere = m.id === EMBEDDING_ID && viaUpstage;

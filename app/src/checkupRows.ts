@@ -60,8 +60,12 @@ function systemRows(report: DoctorReport | null, models: ModelsList | null, wind
   const arch = sys.arch;
   if (windows) {
     // Apple Silicon·macOS 줄 대신 코어 점검의 Windows 판정 (doctor.system.problems: unsupported_arch·windows_too_old, x64·빌드 19041 이상)
-    const bad = (sys.problems ?? []).some((p) => p === "unsupported_arch" || p === "windows_too_old");
-    rows.push({ id: "os", label: "Windows", status: bad ? "blocked" : "ok", detail: bad ? t("Windows 10 2004 이상의 x64가 필요합니다 (지금: {arch})", { arch: arch ?? "?" }) : (arch ?? "") });
+    const problems = sys.problems ?? [];
+    const bad = [
+      problems.includes("unsupported_arch") ? t("x64 Windows가 필요합니다 (지금: {arch})", { arch: arch ?? "?" }) : null,
+      problems.includes("windows_too_old") ? t("Windows 10 2004(빌드 19041) 이상이 필요합니다") : null,
+    ].filter((x) => x !== null);
+    rows.push({ id: "os", label: "Windows", status: bad.length ? "blocked" : "ok", detail: bad.length ? bad.join(" ") : (arch ?? "") });
   } else {
     rows.push(
       arch === null

@@ -33,6 +33,7 @@ import {
   engineInUse,
   validRepo,
   visiblePresets,
+  engineLayout,
   memoryWarned,
   PRESETS,
 } from "./models";
@@ -332,6 +333,16 @@ describe("구성 단추: 등록 목록에서 만든다 (설계 asr-onnx.md 4.4)"
     expect(v.presets.map((p) => p.id)).toEqual(["required"]);
     expect(v.main).toBe("required");
     expect(v.presets[0].note).not.toContain("나중에");
+  });
+  test("엔진이 하나면 엔진 고르기·직접 추가를 그리지 않고 그 엔진을 모델 표에 둔다", () => {
+    const engine = (id: string) => (id.startsWith("asr-") ? { engine: "qwen3" } : {});
+    const win = engineLayout(["vad", "asr-std"].map((id) => row(id, engine(id))));
+    expect(win.picker).toBe(false);
+    expect(win.tableRows.map((m) => m.id)).toEqual(["vad", "asr-std"]);
+    const mac = engineLayout(ALL.map((m) => ({ ...m, ...engine(m.id) })));
+    expect(mac.picker).toBe(true); // macOS 목록: 엔진이 둘 이상이라 예전 그대로
+    expect(mac.engines.map((m) => m.id)).toEqual(["asr-std", "asr-lite"]);
+    expect(mac.tableRows.some((m) => m.engine)).toBe(false);
   });
   test("작은 엔진만 빠진 목록: 저사양만 숨긴다", () => {
     expect(visiblePresets(ALL.filter((m) => m.id !== "asr-lite"), "standard").presets.map((p) => p.id)).toEqual(["standard", "required"]);

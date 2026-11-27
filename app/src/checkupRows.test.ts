@@ -202,6 +202,13 @@ describe("checkupSections: Windows 미리보기 (등록 목록 vad·asr-std)", (
     expect(row(s, "os").status).toBe("ok");
     expect(row(win(winList(), { arch: "ARM64", problems: ["unsupported_arch"] }), "os").status).toBe("blocked");
   });
+  test("막힌 이유는 문제마다 맞는 문장 (빌드만 낮은 x64에 아키텍처를 탓하지 않는다)", () => {
+    const old = row(win(winList(), { arch: "AMD64", problems: ["windows_too_old"] }), "os");
+    expect(old).toMatchObject({ status: "blocked", detail: "Windows 10 2004(빌드 19041) 이상이 필요합니다" });
+    expect(row(win(winList(), { arch: "ARM64", problems: ["unsupported_arch"] }), "os").detail).toBe("x64 Windows가 필요합니다 (지금: ARM64)");
+    expect(row(win(winList(), { arch: "ARM64", problems: ["unsupported_arch", "windows_too_old"] }), "os").detail).toContain("빌드 19041");
+    expect(row(win(winList(), { arch: "AMD64", problems: ["memory_low"] }), "os").status).toBe("ok");
+  });
   test("9명 이상 구분 도구 줄은 macOS에만", () => {
     expect(row(win(winList(), {}, false), "diar-helper")).toBeUndefined();
     expect(row(checkupSections({ report: report({ helper: false }), models: list(), keySaved: true, windows: false }), "diar-helper")).toBeDefined();

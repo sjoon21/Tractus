@@ -173,6 +173,13 @@ export function presetIds(preset: Preset, models: ModelRow[], recommendedTrack: 
 
 /** 목록에 맞는 구성 단추: 작은 엔진이 목록에 없으면 저사양을, 표준이 더하는 기능 모델(참석자 구분 등)이 하나도 없으면 표준을 숨긴다.
  * main: 강조할 단추 (하나만 보이면 그것, 아니면 메모리가 표준을 권할 때 표준) */
+/** 모델 화면의 변환 엔진 배치: 엔진이 하나뿐이면(Windows 미리보기, 설계 asr-onnx.md 4.4) 고를 것이 없어 엔진 고르기·직접 추가를 그리지 않고 그 엔진을 모델 표에 둔다 */
+export function engineLayout<M extends Pick<ModelRow, "engine">>(models: M[]): { engines: M[]; picker: boolean; tableRows: M[] } {
+  const engines = models.filter((m) => m.engine);
+  const single = engines.length === 1;
+  return { engines, picker: !single, tableRows: models.filter((m) => !m.engine || single) };
+}
+
 export function visiblePresets(models: Pick<ModelRow, "id">[], recommendedTrack: string | null | undefined): { presets: typeof PRESETS; main: Preset | null } {
   const listed = (id: string) => models.some((m) => m.id === id);
   const shown = PRESETS.filter((p) => (p.id === "lite" ? listed("asr-lite") : p.id === "standard" ? STANDARD_EXTRA.some((id) => !ASR_IDS.includes(id) && listed(id)) : true));
