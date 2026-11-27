@@ -167,7 +167,7 @@ pnpm tauri dev
 - [ ] 측정은 `bench/`로 하고 AI Hub 전사는 로컬에만 둔다(지표만 커밋).
 - [x] Mac 품질 측정(설계 9절 2번 PR, v3.142, 결과는 설계 8.5절): 1.7B int4는 AI Hub CER을 통과하지만 용어 재현율·HiKE 언어 고정에서 떨어지고, 0.6B int4는 모든 세트에서 떨어진다. M3 CPU RTF는 1.7B 0.19–0.29. 남은 것: 판 고르기(설계 11절 10·11번)와 Windows 기준 기기의 속도·메모리.
 - [x] 더 정밀한 판(설계 8.6절, 2026-11-25): 같은 원본 디코더를 8bit(accuracy_level 4)로 다시 양자화해 `voyagar/Qwen3-ASR-1.7B-onnx-int8`에 올렸다. HiKE 전체 MER +0.64, AI Hub CER −0.03·용어 같음, FLEURS every8 같음으로 품질 기준을 모두 넘는다. 최대 메모리는 6.1–7.2GB로 6GB 기준을 넘는다. 0.6B는 Windows 목록에 두지 않는다. 남은 것: Windows 기준 기기의 속도·메모리, 등록 목록 갈래.
-- [ ] x64 러너 측정(`windows-asr-bench.yml`, 설계 8.4절): FLEURS CER이 Mac과 0.2 이내인지, RTF·최대 메모리 대략값. 워크플로는 만들었고 실행 결과를 설계 문서에 적는 것이 남았다.
+- [x] x64 러너 측정(`windows-asr-bench.yml`, 설계 8.4·8.7절, 2026-11-27): FLEURS CER 2.78(Mac 2.74, 통과). RTF 0.7–0.93(최악 1.2), 최대 메모리 8.8GB(최악 10.2GB). 소유자 결정으로 이 측정이 기준 기기 W4를 대신하는 등록 관문이다. 남은 것: 메모리 최소 사양(설계 11절 12번).
 - [ ] 고르면 `models_registry`에 플랫폼별 모델 항목을 더하고, 기능 잠금(`CAPABILITIES`)은 그대로 쓴다.
 - [ ] onnxruntime을 다시 들이면(번들 약 75MB) 그 결정을 ARCHITECTURE.md에 남긴다(v3.99에서 뺐다).
 
