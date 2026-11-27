@@ -155,8 +155,10 @@ def skip_locked(diarize: bool, align: bool) -> tuple[bool, bool]:
     """등록 목록에 없는 모델의 단계(Windows 미리보기의 참석자 구분·단어 싱크)는 모델을 찾기 전에 빼고, 뺀 것을 경고 하나(platform)로 알린다.
     → (diarize, align). 목소리 제안은 화자 분리 결과가 있어야 돌므로 따로 알리지 않는다 (_suggest_voices)."""
     keep_d, keep_a = diarize and registry.find("diarizer") is not None, align and registry.find("aligner") is not None
-    if names := [name for asked, kept, name in ((diarize, keep_d, t("참석자 구분")), (align, keep_a, t("단어 싱크"))) if asked and not kept]:
-        common.warn("platform", t("Windows 미리보기에서는 {steps}을(를) 아직 쓸 수 없어 이 단계 없이 변환합니다", steps="·".join(names)))
+    skipped = (diarize and not keep_d, align and not keep_a)
+    if any(skipped):
+        steps = {(True, False): t("참석자 구분"), (False, True): t("단어 싱크"), (True, True): t("참석자 구분과 단어 싱크")}[skipped]
+        common.warn("platform", t("Windows 미리보기에서는 {steps}을(를) 아직 쓸 수 없어 이 단계 없이 변환합니다", steps=steps, n=sum(skipped)))
     return keep_d, keep_a
 
 

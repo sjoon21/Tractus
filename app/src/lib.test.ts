@@ -360,6 +360,10 @@ describe("녹음 방식", () => {
     // 코드 문장이 있으면 코어 문구 대신 그것 (WORDS.md §4.7)
     expect(warningText({ code: "system_zero", message: "system 트랙이 5초 동안 정확히 0입니다" })).toBe(WARNING_TEXT.system_zero);
     expect(warningText({ code: "diarizer_missing", message: "화자 분리 모델이 없습니다" })).toMatch(/^참석자 구분에 필요한 파일이 없어/);
+    // platform은 건너뛴 단계 이름이 든 코어 문장 그대로 (Windows 미리보기, WORDS.md §4.7)
+    const core = "Windows 미리보기에서는 단어 싱크을(를) 아직 쓸 수 없어 이 단계 없이 변환합니다";
+    expect(WARNING_TEXT.platform).toBeUndefined();
+    expect(warningText({ code: "platform", message: core })).toBe(core);
   });
   test("녹음 상태는 시작할 때 고른 방식을 유지한다", () => {
     const s = recReduce({ ...IDLE_REC, phase: "starting", mode: "hybrid" }, { event: "started", dir: "/r", tracks: ["mic", "system"], started_at: "" });

@@ -160,7 +160,7 @@ def test_transcribe_on_windows_skips_locked_steps_with_one_warning(win_env, fake
     assert r.exit_code == 0, r.output
     ev = events(r.stdout)
     warnings = [e for e in ev if e["event"] == "warning"]
-    assert [w["code"] for w in warnings] == ["platform"] and "참석자 구분·단어 싱크" in warnings[0]["message"]
+    assert [w["code"] for w in warnings] == ["platform"] and "참석자 구분과 단어 싱크를" in warnings[0]["message"].replace("을(를)", "를")
     assert not {"diarize", "align", "voices"} & {e["stage"] for e in ev if e["event"] == "stage"}
     (d,) = (home / "meetings").iterdir()
     t = store.read_transcript(d)
@@ -229,3 +229,14 @@ def test_mac_list_results_are_unchanged(root, monkeypatch):
     assert caps["live"]["missing"] == ["vad", "asr-lite", "recorder", "memory"]
     monkeypatch.setattr(reg, "physical_memory", lambda: 8 * GB)
     assert engines.recommended_track() is engines.Track.lite
+
+
+@pytest.mark.parametrize("args,want", [([], "Speaker detection and word sync aren’t available"), (["--no-align"], "Speaker detection isn’t available"),
+                                       (["--no-diarize"], "Word sync isn’t available")])
+def test_platform_warning_names_only_the_skipped_steps_in_english(win_env, fake_asr, monkeypatch, args, want):
+    """경고는 앱이 고정 문장 없이 그대로 보이므로(WORDS §4.7) 건너뛴 단계만 이름을 들고, 영어는 수에 맞춘다."""
+    monkeypatch.setenv("TRACTUS_LANG", "en")
+    _, wav = win_env
+    r = CliRunner().invoke(cli.app, ["transcribe", str(wav), *args, "--progress-json"])
+    (w,) = [e for e in events(r.stdout) if e["event"] == "warning"]
+    assert w["code"] == "platform" and w["message"].startswith(want)

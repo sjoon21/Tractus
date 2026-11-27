@@ -207,7 +207,7 @@ CAPABILITIES = _capabilities(MODELS)
 _BY_ID = {m.id: m for m in MODELS}
 ONNX_REPOS = frozenset(m.repo for m in _windows_models() if m.engine)  # 이 저장소로 변환한 노트는 asr.runtime이 onnxruntime이다 (store.build_transcript)
 CUSTOM_SUPPORTED = not platform_compat.WINDOWS  # 변환 엔진 직접 추가 (NEEDED_FILES가 MLX 판 기준이라 Windows 미리보기에서는 받지 않는다: models add → unsupported_platform)
-PLATFORM_LOCKED = t("이 기능은 Windows 미리보기에서 아직 쓸 수 없습니다.")  # 기능이 요구하는 모델이 등록 목록에 없다 (missing "platform", 코드 platform)
+PLATFORM_LOCKED = t("Windows 미리보기에서는 아직 쓸 수 없는 기능입니다.")  # 기능이 요구하는 모델이 등록 목록에 없다 (missing "platform", 코드 platform)
 
 # ── 직접 추가한 변환 엔진 (docs/design/asr-engines.md) ─────────────────────────
 # 모델 폴더의 custom-models.json에 둔다: 모델 폴더를 옮기면 함께 옮긴다. ID는 custom-…, 폴더 이름은 ID다
