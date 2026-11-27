@@ -1737,6 +1737,7 @@ dependencies = [
     { name = "openai" },
     { name = "python-docx" },
     { name = "sqlite-vec" },
+    { name = "truststore" },
     { name = "typer" },
 ]
 
@@ -1754,6 +1755,7 @@ requires-dist = [
     { name = "openai", specifier = ">=3.23.0" },
     { name = "python-docx", specifier = ">=1.2" },
     { name = "sqlite-vec", specifier = "==0.1.9" },
+    { name = "truststore", specifier = ">=0.10.4" },
     { name = "typer", specifier = ">=0.12" },
 ]
 

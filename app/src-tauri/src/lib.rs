@@ -315,6 +315,9 @@ pub fn run() {
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]
     let builder = builder.menu(quit::app_menu);
+    // Windows: 두 번째 실행은 뜨지 않고 기존 창을 앞으로 (플러그인 안내대로 맨 먼저 등록한다). macOS는 OS가 하나만 띄운다
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_main(app)));
     builder
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();

@@ -46,3 +46,15 @@ def load_env(root: Path) -> None:
             for key, value in _parse(path.read_text(encoding="utf-8")).items():
                 if value and not os.environ.get(key):  # 셸에 빈 값으로 export된 변수도 비어 있는 것으로 본다
                     os.environ[key] = value
+
+
+def trust_system_certificates() -> None:
+    """HTTPS 검증에 OS 인증서 저장소(macOS 키체인·Windows 인증서 저장소)를 쓴다. 회사망이 HTTPS를 검사하며 다시 서명하는
+    사내 루트 인증서는 certifi 목록에 없어 모델 받기·AI 호출·Upstage 임베딩이 실패한다(Yogurt #115와 같은 문제).
+    `ssl.SSLContext`를 바꿔 끼우므로 HTTP 클라이언트를 만들기 전에 부른다. 실패하면 조용히 넘어간다(certifi 그대로)."""
+    try:
+        import truststore
+
+        truststore.inject_into_ssl()
+    except Exception:  # noqa: BLE001
+        pass

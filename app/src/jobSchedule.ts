@@ -36,5 +36,7 @@ export const canStartTranscribe = (a: Activity): boolean =>
 export const canStartConvert = (a: Activity): boolean =>
   a.converting && convertsWhileRecording(a.recording, a.liveRec) && !a.asking && !a.transcribeRunning && !a.transcribeWaiting && !a.finishRunning && !a.importRunning;
 
-/** 가져오기 줄의 첫 파일을 시작해도 되는가: 가져오기가 돌지 않고 어떤 변환도 없을 때 (녹음 변환이 먼저다) */
-export const canStartImport = (a: Activity): boolean => a.importWaiting && !a.importRunning && !isTranscribing(a);
+/** 가져오기 줄의 첫 파일을 시작해도 되는가: 가져오기가 돌지 않고 어떤 변환도 없을 때 (녹음 변환이 먼저다).
+ * Windows는 녹음 중에도 기다린다(자막과 상관없이). macOS는 예전처럼 녹음 중에도 시작한다 */
+export const canStartImport = (a: Activity, windows?: boolean): boolean =>
+  a.importWaiting && !a.importRunning && !isTranscribing(a) && convertsWhileRecording(a.recording, false, windows);

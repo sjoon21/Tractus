@@ -90,6 +90,17 @@ PR 번호는 이 문서를 쓸 때의 것이다. 합쳐졌는지는 `git log --o
 
 macOS CI(`ci.yml`)는 그대로다. Windows CI가 실패해도 macOS 릴리스는 막지 않는다.
 
+### 2.5 앱 기본기 (0.6.0 계획 15·16·18·19·20·22번, 브랜치 `windows/app-basics`)
+
+- **화면의 운영체제 판별은 `app/src/platform.ts` 한 곳이다:** `isWindows()`는 userAgent(WebView2에는 `Windows`가 든다)로 가른다. 미리보기는 `/preview.html?os=windows`로 Windows 화면을 강제한다(`?os=mac`도 된다). 앞으로 단축키·문구 정리(계획 11번)도 이것을 쓴다.
+- **앱 하나만 띄우기 (15):** `tauri-plugin-single-instance`(MIT/Apache-2.0)를 Windows에서만 붙인다(`[target.'cfg(windows)'.dependencies]`, `lib.rs`에서 맨 먼저 등록). 두 번째 실행은 뜨지 않고 기존 창을 `tray::show_main`으로 앞으로 가져온다(숨긴 창도 다시 보인다). macOS는 OS가 이미 하나만 띄우므로 붙이지 않는다: macOS 빌드에는 이 크레이트가 들어가지 않는다.
+- **트레이 아이콘 (16):** macOS는 그대로 단색 템플릿(`tray-idle@2x`·`tray-recording@2x`). Windows는 템플릿 표시가 없어 검정 아이콘이 어두운 작업 표시줄에서 안 보이므로 컬러 앱 아이콘(`icons/32x32.png`), 녹음 중은 빨간 점을 얹은 `icons/tray/tray-win-recording.png`(32 px)다.
+- **녹음 중에는 변환을 시작하지 않는다 (18):** `recordBusy.convertsWhileRecording`이 Windows면 실시간 텍스트 변환과 상관없이 녹음이 끝날 때까지 기다린다(int8 변환이 CPU 전 코어·6–7GB를 쓴다, 설계 asr-onnx.md 8.6). 파일 가져오기도 녹음이 끝날 때까지 기다린다(`jobSchedule.canStartImport`, macOS는 그대로 녹음 중에도 시작). 녹음을 시작할 때 돌던 변환 전 노트의 변환은 멈췄다가 녹음이 끝나면 이어서 한다(`pauseConvert`, macOS는 자막을 켰을 때만). 이미 돌던 바로 변환·가져오기는 멈추지 않는다. 기다리는 노트에는 `녹음이 끝나면 변환을 시작합니다`가 보인다. 변환 스레드 상한은 Windows 측정 뒤 다시 본다.
+- **삭제 안내 경로 (19):** `remove.ts`·`lib.baseName`이 역슬래시 경로도 자른다. Windows 문구는 `되돌리려면 휴지통에서 ‘{폴더}’ 폴더를 복원하세요.`(WORDS.md §4.9). 확인 단추 `휴지통으로 이동`의 영어(`Move to Trash`)는 계획 11번에서 `Recycle Bin`으로 맞춘다.
+- **렌더 오류 복구 화면 (20):** `ErrorBoundary.tsx`가 메인 창 전체를 감싼다. 렌더 오류가 나면 흰 창 대신 `화면을 그리지 못했습니다` + `다시 불러오기`(+ 접힌 `자세히`)를 보인다. 녹음 미니 창·메뉴 막대 팝오버에는 아직 없다.
+- **업데이트 확인 끄기 (22):** `paths.rs` `update_available`이 macOS 번들일 때만 참이다(`latest.json`에 `darwin-aarch64`만 있다). Windows 설정의 업데이트 절에는 `Windows 판은 아직 앱 안에서 업데이트하지 않습니다. 새 버전은 소개 사이트에서 받으세요.` 한 줄만 보인다. 켜는 일은 W5의 `latest.json` 결정 뒤다.
+- **Mac에서 확인 못 한 것:** Mac에서는 `ring` 빌드 스크립트가 MSVC 헤더를 요구해 앱의 Windows 대상 `cargo check`가 안 된다. 단일 실행 플러그인 호출은 macOS에서 잠깐 켜서 컴파일만 확인했고, Windows 컴파일은 `windows-app.yml`이 본다.
+
 ## 3. Windows 기기 준비
 
 | 도구 | 설치 | 확인 |
@@ -157,6 +168,8 @@ pnpm tauri dev
 - [ ] 녹음 버튼이 `recorder\win\target\release\tractus-rec.exe`를 찾는다 (`paths.rs`의 Windows 갈래, 2.3 참고). 못 찾으면 설정 › 경로에서 직접 지정해 본다.
 - [ ] 하위 프로세스가 콘솔 창을 띄우지 않는다 (`CREATE_NO_WINDOW`).
 - [x] 코어 표준 입출력은 Windows에서도 UTF-8이다(2026-11-25, v3.145): 앱은 `PYTHONIOENCODING=utf-8`을 주고, 코어가 시작할 때 `platform_compat.utf8_stdio()`로 다시 맞춘다(번들 파이썬 `-I`는 환경변수를 보지 않는다). 기기에서 볼 것: 한국어 제목 노트를 만들고 목록·검색에 제목이 깨지지 않는가.
+- [ ] 2.5의 앱 기본기: 앱을 두 번 실행하면 창이 하나만 남고 앞으로 오는가(창을 닫아 트레이에 숨긴 상태에서도), 트레이 아이콘이 밝은·어두운 작업 표시줄 모두에서 보이고 녹음 중 빨간 점으로 바뀌는가(125%·150% 배율에서 흐리지 않은가), 녹음 중에 변환 전 노트의 변환이 기다리는가, 노트 삭제 창의 폴더 이름과 휴지통 `복원`이 맞는가, 설정의 업데이트 절에 확인 단추가 없는가.
+- [ ] 회사망 HTTPS 검사: 코어는 시작할 때 `truststore.inject_into_ssl()`로 OS 인증서 저장소를 믿는다(`env.trust_system_certificates`, CLI 콜백·MCP 시작). 기기에서 볼 것: 사내 루트 인증서가 있는 망(또는 mitmproxy 루트를 `신뢰할 수 있는 루트 인증 기관`에 넣은 상태)에서 모델 받기·AI 연결 테스트가 되는가. Tauri 업데이터(reqwest)는 따로 확인한다.
 - [ ] 트레이 아이콘·녹음 미니 창·⌘ 단축키(Windows는 Ctrl)가 어떻게 보이는지 기록한다. 고칠 목록은 WORDS.md 규칙("이 Mac" 같은 플랫폼 문구)부터 정한다.
 
 ### W4. 텍스트 변환 런타임 고르기 (결정 필요)

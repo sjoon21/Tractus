@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { IDLE_UPDATE, markSeen, newVersionToast, SEEN_KEY, seenVersion, updateNotice, noteExcerpt, progressPct, updateErrorView, updateReduce, updateText, versionLine, type UpdateEvent, type UpdateState, notesVersion } from "./update";
+import { IDLE_UPDATE, markSeen, newVersionToast, SEEN_KEY, seenVersion, updateNotice, noteExcerpt, progressPct, updateErrorView, updateReduce, updateText, versionLine, type UpdateEvent, type UpdateState, notesVersion, noUpdateNote, REPO_NOTE, WINDOWS_NOTE } from "./update";
 
 const run = (events: UpdateEvent[], from: UpdateState = IDLE_UPDATE) => events.reduce(updateReduce, from);
 
@@ -121,5 +121,13 @@ describe("시작 때 새 버전 알림", () => {
     expect(seenVersion(broken)).toBeNull();
     expect(() => markSeen("0.4.5", broken)).not.toThrow();
     expect(seenVersion(null)).toBeNull();
+  });
+});
+
+describe("업데이트 확인이 없는 앱의 안내", () => {
+  test("Windows는 update.sh가 아니라 소개 사이트를 말한다", () => {
+    expect(noUpdateNote(false)).toBe(REPO_NOTE);
+    expect(noUpdateNote(true)).toBe(WINDOWS_NOTE);
+    expect(WINDOWS_NOTE).not.toContain("update.sh");
   });
 });

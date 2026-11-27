@@ -2,6 +2,7 @@
 // 자동 설치는 없다: 앱 시작 약 10초 뒤와 `업데이트 확인` 단추에서만 확인하고, `업데이트 설치`를 누른 뒤에만 받아 설치한다. 설정 파일에 남기는 값은 없다.
 import type { Update } from "@tauri-apps/plugin-updater";
 import { t } from "./i18n";
+import { isWindows } from "./platform";
 
 /** 시작 확인까지 기다리는 시간. 첫 화면·점검이 먼저 그려지게 */
 export const START_DELAY_MS = 10_000;
@@ -14,6 +15,9 @@ export const OPEN_SETTINGS_LABEL = t("설정 열기");
 export const RELAUNCH_WAIT = t("녹음·변환이 끝난 뒤 누르세요.");
 /** 저장소에서 install.sh로 만든 앱·개발 실행에서는 확인하지 않는다 */
 export const REPO_NOTE = t("저장소에서 만든 앱은 scripts/update.sh로 업데이트합니다.");
+/** Windows는 업데이트 확인을 끈다(update_available, latest.json에 Windows 판이 없다) */
+export const WINDOWS_NOTE = t("Windows 판은 아직 앱 안에서 업데이트하지 않습니다. 새 버전은 소개 사이트에서 받으세요.");
+export const noUpdateNote = (windows = isWindows()): string => (windows ? WINDOWS_NOTE : REPO_NOTE);
 export const UPDATE_HINT = t("‘업데이트 설치’를 누를 때만 받습니다(약 240 MB).");
 
 /** 릴리스 노트(소개 사이트의 버전 페이지)를 여는 링크. 앱 안에는 노트 앞부분만 보이므로 전체는 웹에서 본다 */
