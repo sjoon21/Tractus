@@ -1,0 +1,167 @@
+# Windows 설치본 스모크 (docs/windows/README.md W5, 계획 24·25번): scripts/build_windows_bundle.sh 로 NSIS 설치본을 만들고,
+# 러너에 /S 로 설치해 설치된 런타임으로 코어·녹음 프로그램·앱이 도는지, 제거가 앱 데이터(모델·키)를 남기는지 본다.
+# 서명 안 된 .exe·.dll·.pyd 수, 가장 긴 경로, 설치본 크기를 잡 요약에 남긴다. 모델 받기·변환 스모크는 넣지 않는다(측정 워크플로가 따로 있다).
+# 필수 검사가 아니다: macOS 합치기·릴리스를 막지 않는다.
+name: Windows bundle
+
+on:
+  push:
+    branches: ["windows/bundle-*"]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "scripts/build_windows_bundle.sh"
+      - "scripts/bundle_slim.py"
+      - "scripts/bundle_modules.txt"
+      - "src/tractus/paths.py"
+      - "app/src-tauri/src/paths.rs"
+      - "app/src-tauri/tauri.conf.json"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/windows-bundle.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bundle:
+    name: 설치본 만들기 · 설치 스모크 (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      UV_PYTHON_PREFERENCE: only-managed
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            app/src-tauri
+            recorder/win
+      - run: pnpm install --frozen-lockfile
+        working-directory: app
+
+      - name: 설치본 만들기
+        run: scripts/build_windows_bundle.sh 2>&1 | tee build.txt
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tractus-windows-setup
+          path: dist/windows/*_x64-setup.exe
+          retention-days: 7
+
+      - name: 설치 (/S, 사용자별)
+        run: |
+          setup=$(ls dist/windows/*_x64-setup.exe | head -1)
+          ./"$setup" //S  # Git Bash가 /S를 경로로 바꾸지 않게
+          inst="$LOCALAPPDATA/Tractus"
+          for i in $(seq 1 60); do [ -f "$inst/runtime/python.exe" ] && break; sleep 2; done
+          ls "$inst" "$inst/bin"
+          echo "INST=$inst" >> "$GITHUB_ENV"
+          echo "SETUP=$setup" >> "$GITHUB_ENV"
+
+      - name: 설치된 런타임으로 doctor · 메모(한글 제목) · 목록
+        run: |
+          set -o pipefail
+          core() { "$INST/runtime/python.exe" -I -B -u -X utf8 -m tractus.cli "$@"; }  # 앱(paths.rs core_args)과 같은 인수
+          export TRACTUS_HOME="$RUNNER_TEMP/home" TRACTUS_MODELS_DIR="$RUNNER_TEMP/models"
+          unset TRACTUS_REC_BIN
+          core doctor --json > doctor.json || echo "doctor 종료 $?"
+          python - <<'PY'
+          import json, os
+          d = json.load(open("doctor.json", encoding="utf-8"))
+          rec = d["tools"]["recorder"]
+          print("system", d["system"]); print("recorder", rec); print("ffmpeg", d["tools"]["ffmpeg"])
+          assert rec["found"] and rec["path"].replace("\\", "/").endswith("bin/tractus-rec.exe"), "doctor가 설치본의 tractus-rec.exe를 찾는다"
+          open(os.environ["GITHUB_ENV"], "a").write(f"DOCTOR_PROBLEMS={json.dumps(d['system'].get('problems'), ensure_ascii=False)}\n")
+          PY
+          core note new --title "한글 제목 노트" | tee new.json
+          core notes list --json | tee list.json
+          python -c "import json; ids=[n.get('title') for n in json.load(open('list.json', encoding='utf-8'))['notes']]; print(ids); assert '한글 제목 노트' in ids"
+
+      - name: 설치된 tractus-rec.exe record --fake
+        run: |
+          set -o pipefail
+          out=$( (sleep 2; echo stop) | timeout 30 "$INST/bin/tractus-rec.exe" record --out "$RUNNER_TEMP/rec" --fake )
+          echo "$out" | head -3; echo "$out" | tail -1
+          echo "$out" | python -c "import sys,json; ev=[json.loads(l)['event'] for l in sys.stdin if l.strip()]; assert ev[0]=='started' and ev[-1]=='stopped', ev"
+          ls -la "$RUNNER_TEMP/rec"
+          test -s "$RUNNER_TEMP/rec/recording.json" && test -s "$RUNNER_TEMP/rec/mic.wav"
+
+      - name: 앱이 20초 동안 떠 있는다
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem $env:INST -Filter *.exe | Where-Object Name -ne 'uninstall.exe' | Select-Object -First 1
+          Write-Output "앱: $($exe.FullName)"
+          $p = Start-Process $exe.FullName -PassThru
+          Start-Sleep 20
+          $alive = -not $p.HasExited
+          Get-Process | Where-Object { $_.Path -like "$env:INST*" } | Format-Table Id, ProcessName, WorkingSet64 -AutoSize | Out-String | Write-Output
+          if (-not $alive) { throw "앱이 20초 안에 끝났다 (종료 코드 $($p.ExitCode))" }
+          Stop-Process -Id $p.Id -Force
+          Get-Process | Where-Object { $_.Path -like "$env:INST*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep 2
+
+      - name: 서명 · 경로 길이 · 크기
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem $env:INST -Recurse -File
+          $bins = $files | Where-Object { $_.Extension -in '.exe', '.dll', '.pyd' }
+          $unsigned = $bins | Where-Object { (Get-AuthenticodeSignature $_.FullName).Status -ne 'Valid' }
+          $longest = $files | Sort-Object { $_.FullName.Length } -Descending | Select-Object -First 1
+          $over = ($files | Where-Object { $_.FullName.Length -ge 260 }).Count
+          $setupMB = [math]::Round((Get-Item $env:SETUP).Length / 1MB, 1)
+          $instMB = [math]::Round(($files | Measure-Object Length -Sum).Sum / 1MB, 1)
+          $byExt = $unsigned | Group-Object Extension | ForEach-Object { "$($_.Name) $($_.Count)" }
+          $len = (Select-String -Path build.txt -Pattern '가장 긴 경로' | Select-Object -Last 1).Line
+          @(
+            "## Windows 설치본 스모크",
+            "",
+            "| 항목 | 값 |",
+            "| --- | --- |",
+            "| 설치본 크기 | $setupMB MB |",
+            "| 설치 폴더 | $instMB MB, 파일 $($files.Count)개 |",
+            "| 서명 안 된 .exe·.dll·.pyd | $($unsigned.Count) / $($bins.Count) ($($byExt -join ', ')) |",
+            "| 가장 긴 경로 (러너) | $($longest.FullName.Length)자, 260자 이상 $over 개 |",
+            "| 가장 긴 경로 (사용자 이름 20자 가정, 빌드 출력) | $($len.Trim()) |",
+            "| doctor system.problems | $env:DOCTOR_PROBLEMS |",
+            "",
+            "가장 긴 경로: ``$($longest.FullName)``"
+          ) -join "`n" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+          Write-Output "서명 안 된 파일 (앞 30개):"
+          $unsigned | Select-Object -First 30 | ForEach-Object { $_.FullName.Substring($env:INST.Length) }
+
+      - name: 제거 (/S) — 앱 데이터(모델·키)는 남는다
+        shell: pwsh
+        run: |
+          # 앱 설정 폴더(%APPDATA%, 키·settings.json)와 모델 폴더(%LOCALAPPDATA%\dev.tractus.app\models) 자리에 표시 파일을 둔다
+          $cfg = "$env:APPDATA\dev.tractus.app"; $models = "$env:LOCALAPPDATA\dev.tractus.app\models"
+          New-Item -ItemType Directory -Force $cfg, $models | Out-Null
+          Set-Content "$cfg\keep.marker" "x"; Set-Content "$models\keep.marker" "x"
+          & "$env:INST\uninstall.exe" /S
+          for ($i = 0; $i -lt 90 -and (Test-Path "$env:INST\runtime\python.exe"); $i++) { Start-Sleep 2 }
+          if (Test-Path "$env:INST\runtime\python.exe") { throw "제거가 끝나지 않았다" }
+          $left = @(Get-ChildItem $env:INST -Recurse -File -ErrorAction SilentlyContinue)
+          Write-Output "설치 폴더에 남은 파일: $($left.Count)"
+          $left | Select-Object -First 10 | ForEach-Object { $_.FullName }
+          if (-not (Test-Path "$cfg\keep.marker") -or -not (Test-Path "$models\keep.marker")) { throw "제거가 앱 데이터를 지웠다" }
+          "`n제거 뒤: 설치 폴더에 남은 파일 $($left.Count)개, %APPDATA%·%LOCALAPPDATA%\dev.tractus.app 표시 파일 그대로" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY

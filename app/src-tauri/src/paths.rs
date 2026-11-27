@@ -26,9 +26,9 @@ pub struct Bin {
 pub const TRACTUS: Bin = Bin { env: "TRACTUS_BIN", bundle: "runtime/bin/tractus", repo: ".venv/bin/tractus", known: &["~/.local/bin/tractus", "/opt/homebrew/bin/tractus"] };
 #[cfg(not(windows))]
 pub const REC: Bin = Bin { env: "TRACTUS_REC_BIN", bundle: "bin/tractus-rec", repo: "recorder/.build/release/tractus-rec", known: &[] };
-// Windows (Stage 0, docs/internal/windows-port.md §7.3): 번들 배치는 아직 없다. 실행 파일 이름(.exe)과 venv의 Scripts/, 녹음 프로그램 recorder/win/(Rust)만 정해 둔다
+// Windows: 설치본(scripts/build_windows_bundle.sh)은 코어를 `runtime/python.exe -m tractus.cli`로 띄운다(core_args). 저장소 배치는 venv의 Scripts/, 녹음 프로그램은 recorder/win/(Rust)
 #[cfg(windows)]
-pub const TRACTUS: Bin = Bin { env: "TRACTUS_BIN", bundle: "runtime/bin/tractus.exe", repo: ".venv/Scripts/tractus.exe", known: &["~/.local/bin/tractus.exe"] };
+pub const TRACTUS: Bin = Bin { env: "TRACTUS_BIN", bundle: "runtime/python.exe", repo: ".venv/Scripts/tractus.exe", known: &["~/.local/bin/tractus.exe"] };
 #[cfg(windows)]
 pub const REC: Bin = Bin { env: "TRACTUS_REC_BIN", bundle: "bin/tractus-rec.exe", repo: "recorder/win/target/release/tractus-rec.exe", known: &[] };
 
@@ -86,6 +86,13 @@ impl Bin {
     }
 }
 
+/// 코어 실행 파일 앞에 붙일 인수. Windows 설치본의 `runtime/python.exe`만 해당한다: pip 콘솔 스크립트 tractus.exe는 만든 곳의 파이썬 절대 경로를 품어
+/// 옮기면 깨지므로 파이썬을 직접 부른다. 플래그는 macOS 래퍼 runtime/bin/tractus와 같다(-I라 PYTHON* 환경변수를 보지 않아 -u·-X utf8로 준다). macOS는 늘 빈 목록
+pub fn core_args(program: &Path) -> &'static [&'static str] {
+    const PYTHON_CORE: &[&str] = &["-I", "-B", "-u", "-X", "utf8", "-m", "tractus.cli"];
+    if cfg!(windows) && program.file_name().is_some_and(|n| n.eq_ignore_ascii_case("python.exe")) { PYTHON_CORE } else { &[] }
+}
+
 /// 미리 만든 앱(번들)인가: 실행 파일 옆 `../Resources/runtime/bin/tractus` 가 있을 때만. 저장소에서 install.sh 로 만든 앱·개발 실행은 아니다
 pub fn is_bundled(exe: Option<&Path>) -> bool {
     TRACTUS.in_bundle(exe).is_some_and(|p| p.is_file())
@@ -94,7 +101,8 @@ pub fn is_bundled(exe: Option<&Path>) -> bool {
 /// 업데이트 확인을 할 수 있는가(= 번들인가). 저장소에서 만든 앱은 scripts/update.sh 로 업데이트하므로 화면이 확인을 건너뛴다 (docs/desktop.md)
 #[tauri::command]
 pub fn update_available() -> bool {
-    is_bundled(std::env::current_exe().ok().as_deref())
+    // Windows 설치본은 아직 업데이트 피드(latest.json의 windows-x86_64)가 없어 확인하지 않는다 (docs/windows/README.md W5)
+    !cfg!(windows) && is_bundled(std::env::current_exe().ok().as_deref())
 }
 
 /// 버전의 릴리스 노트 페이지 (소개 사이트, scripts/releases_page.py). 화면 언어를 따른다.
@@ -201,6 +209,13 @@ mod tests {
         touch(&res.join(TRACTUS.bundle));
         assert!(is_bundled(Some(&exe)));
         assert!(!is_bundled(None));
+    }
+
+    #[test]
+    fn core_args_only_for_the_bundled_windows_python() {
+        assert!(core_args(Path::new("/x/runtime/bin/tractus")).is_empty());
+        assert!(core_args(Path::new("/x/.venv/Scripts/tractus.exe")).is_empty());
+        assert_eq!(core_args(Path::new("/x/runtime/python.exe")).ends_with(&["-m", "tractus.cli"]), cfg!(windows));
     }
 
     #[test]
