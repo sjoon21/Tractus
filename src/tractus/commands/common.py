@@ -42,9 +42,10 @@ def fail(message: str, code: str | None = None, exit_code: int = 1) -> NoReturn:
     raise typer.Exit(exit_code)
 
 
-def require_registered(model_id: str) -> None:
-    """이 명령에 필요한 모델이 등록 목록에 없다(Windows 미리보기의 단어 싱크·목소리·실시간): 받을 수 없으니 code platform, 종료 코드 2."""
-    if registry.find(model_id) is None:
+def require_registered(capability: str) -> None:
+    """이 명령의 기능이 잠겼다(요구 모델이 등록 목록에 없다, Windows 미리보기의 단어 싱크·목소리·실시간): 받을 수 없으니 code platform, 종료 코드 2.
+    모델 하나가 아니라 기능으로 본다: 개발용 옵션(live --engine std)이 목록에 있는 다른 모델로 잠금을 지나가지 않게."""
+    if registry.capability_locked(capability):
         fail(registry.PLATFORM_LOCKED, code="platform", exit_code=2)
 
 

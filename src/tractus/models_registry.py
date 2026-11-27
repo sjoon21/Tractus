@@ -438,6 +438,11 @@ def capability_status(states: dict[str, str], tools: dict[str, bool], memory: in
     return out
 
 
+def capability_locked(capability_id: str) -> bool:
+    """이 운영체제에서 받을 수 없는 기능인가 (missing "platform"). 모르는 ID는 잠기지 않은 것으로 본다."""
+    return any(_locked(c) for c in CAPABILITIES if c.id == capability_id)
+
+
 def _locked(c: Capability) -> bool:
     """기능이 요구하는 모델(묶음)이 등록 목록에 하나도 없다: 이 운영체제에서는 받을 수 없다 (missing "platform")."""
     return any(not any(i in _BY_ID for i in group) for group in c.models)

@@ -181,7 +181,7 @@ def test_track_lite_is_refused_on_windows(win_env, fake_asr):
 
 
 @pytest.mark.parametrize("args", [["align", "x"], ["voices", "enroll", "x", "S1", "--name", "a", "--consent"], ["voices", "match", "x"],
-                                  ["live", "--recording", "."]])
+                                  ["live", "--recording", "."], ["live", "--recording", ".", "--engine", "std"]])
 def test_locked_commands_fail_with_platform_code(win_env, args):
     r = CliRunner().invoke(cli.app, args)
     assert r.exit_code == 2 and reg.PLATFORM_LOCKED in r.output
@@ -191,9 +191,9 @@ def test_require_registered_emits_the_platform_code(windows, monkeypatch):
     seen = []
     monkeypatch.setattr(common, "emit_error", lambda message, code=None: seen.append(code))
     with pytest.raises(typer.Exit) as e:
-        common.require_registered("aligner")
+        common.require_registered("align")
     assert e.value.exit_code == 2 and seen == ["platform"]
-    common.require_registered("asr-std")
+    common.require_registered("convert")
 
 
 def test_runtime_follows_the_repo():
