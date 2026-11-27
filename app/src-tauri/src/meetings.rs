@@ -1,5 +1,6 @@
 //! 회의 폴더 읽기. 파일이 원본이다(ARCHITECTURE.md §4.1, §6). 쓰기는 하지 않는다.
 
+use crate::applog::log_eprintln;
 use crate::i18n::{t, tv};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -375,7 +376,7 @@ pub fn list(home: &Path) -> Vec<MeetingInfo> {
                     Some(m)
                 }
                 Err(err) => {
-                    eprintln!("회의 건너뜀: {err}");
+                    log_eprintln!("회의 건너뜀: {err}");
                     None
                 }
             }

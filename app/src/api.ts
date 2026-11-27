@@ -346,6 +346,8 @@ export const api = {
   deleteRecording: (dir: string) => invoke<void>("delete_recording", { dir }),
   /** ⌘Q로 미룬 종료를 이어 간다 (쓰던 메모를 저장한 뒤) */
   quitReady: () => invoke<void>("quit_ready"),
+  /** 녹음 중 종료를 묻는 창에서 `계속 녹음`: 다음 ⌘Q를 다시 받는다 */
+  quitCancel: () => invoke<void>("quit_cancel"),
   /** `tractus ask --progress-json` (Phase 6.3). 이벤트는 "ask" */
   askStart: (args: AskArgs) => invoke<void>("ask_start", { ...args }),
   /** 질문 멈추기 (프로세스 kill) */

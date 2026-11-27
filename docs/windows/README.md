@@ -116,6 +116,13 @@ macOS CI(`ci.yml`)는 그대로다. Windows CI가 실패해도 macOS 릴리스�
 - **macOS 전용 기능 (13):** 캘린더(설정 `캘린더` 섹션, 홈의 곧 시작하는 일정 카드, 이번 주 띠의 일정·`메모 준비`)는 Windows에서 숨기고 일정을 읽지 않는다(띠는 노트만, 빈 날 `노트가 없습니다`). Rust `calendar_next`·`calendar_week`는 캘린더가 꺼져 있으면 녹음 프로그램을 부르지 않는다. 통화 감지 설정 두 줄을 숨긴다(Rust `calls::start`가 macOS에서만 돈다). 9명 이상 구분(fluid)은 Windows 목록에 없어 모델 화면에 없고, 점검의 `9명 이상 구분 도구` 행도 숨긴다. Claude Code 플러그인(`plugins/tractus`, bash 실행기 `bin/tractus-mcp`)은 앱 화면에 설정이 없다: Windows에서 쓸 수 없다는 것은 docs/mcp.md 몫이고, 앱 안 검색 프로세스(`mcp.rs`, `tractus mcp`)는 그대로 돈다.
 - **미리보기:** `/preview.html?os=windows`는 가짜 점검·모델 데이터도 Windows 목록 모양(vad·asr-std, 나머지 기능 `platform`, 메모리 15.7GB)으로 바꾼다.
 
+### 2.8 하위 프로세스 정리·앱 로그·녹음 중 종료 확인 (0.6.0 계획 17·21·23번, 브랜치 `windows/proc-log-quit`)
+
+- **하위 프로세스 트리 정리 (17):** 앱이 띄운 프로세스(`procs::spawn`)는 Windows에서 앱 전체에 하나인 Job Object(`KILL_ON_JOB_CLOSE`, `windows-sys` 0.61, 이미 `Cargo.lock`에 있던 크레이트)에 들어간다. 앱이 끝나면(작업 관리자의 강제 종료 포함) 코어(`tractus.exe` 실행기 → python)·실시간 텍스트 변환·검색 프로세스와 그 자손(ffmpeg)이 함께 끝난다. 남으면 업데이트·제거가 실패한다. **녹음 프로그램은 넣지 않는다**(stdin EOF로 스스로 WAV를 마무리해야 한다, macOS와 같다). 멈추기는 `procs::kill_tree` = `taskkill /F /T`(자손까지, 질문 멈추기·변환 멈추기·검색 정보 갱신 멈추기·연결 테스트 시간 초과·검색 프로세스 다시 띄우기·실시간 변환 정지 시간 초과). macOS는 지금처럼 `Child::kill`이다. 알려진 틈: 띄운 직후에 Job에 넣으므로 그 사이 몇 ms 안에 생긴 손자는 Job 밖이다(멈추기는 `taskkill /T`가 잡는다).
+- **시험:** `cfg(unix)` 25개 가운데 정지·kill 경로를 sh 대신 시험 실행 파일 자신을 하위 프로세스로 띄우는 `procs::tests::test_child`로 다시 썼다. 두 OS에서 도는 것: JSON 줄 전달·종료 코드·stderr, kill·stop·정지 시간 초과(`procs`), 검색 정보 갱신 멈추기(`lib`), 연결 테스트 시간 초과(`llm_key`), 받기 멈추기(`models`). Windows에서만 도는 것: 멈추기가 손자까지 끝내는지, Job을 닫으면 자식·손자가 끝나는지. Mac에서는 앱 전체의 Windows 대상 `check`가 안 되므로 `procs.rs`·`applog.rs`만 작은 크레이트로 `cargo check --tests --target x86_64-pc-windows-msvc` 했다(통과). 실제로 도는지는 `windows-app.yml`이 본다.
+- **앱 로그 (21):** `%APPDATA%\dev.tractus.app\logs\app.log`(+ `app.old.log`, 1 MB씩). 앱 진단, 실패한 하위 프로세스의 stderr 꼬리, 녹음 프로그램의 진단을 남기고 노트 문장·제목·이름·키·사용자 이름은 가린다(docs/desktop.md §3.10). macOS도 같은 파일을 쓴다.
+- **녹음 중 종료 확인 (23):** 트레이 `종료`·창 닫기로 앱이 끝나려 할 때 녹음 중이면 창을 보이고 `녹음을 끝내고 종료할까요?`를 묻는다(macOS의 ⌘Q도 같다).
+
 ## 3. Windows 기기 준비
 
 | 도구 | 설치 | 확인 |
@@ -187,6 +194,7 @@ pnpm tauri dev
 - [ ] 회사망 HTTPS 검사: 코어는 시작할 때 `truststore.inject_into_ssl()`로 OS 인증서 저장소를 믿는다(`env.trust_system_certificates`, CLI 콜백·MCP 시작). 기기에서 볼 것: 사내 루트 인증서가 있는 망(또는 mitmproxy 루트를 `신뢰할 수 있는 루트 인증 기관`에 넣은 상태)에서 모델 받기·AI 연결 테스트가 되는가. Tauri 업데이터(reqwest)는 따로 확인한다.
 - [ ] 트레이 아이콘·녹음 미니 창이 어떻게 보이는지 기록한다.
 - [ ] 2.6의 단축키: Ctrl+K·Ctrl+N·Ctrl+J·Ctrl+F·Ctrl+B·Ctrl+Alt+B가 앱 동작을 하고 WebView2 기본 동작(Ctrl+N 새 창, Ctrl+F 페이지 찾기, Ctrl+J 다운로드 등)이 뜨지 않는가. 한국어 IME 상태에서도 같은가. 메모 입력창 Ctrl+S·Ctrl+Enter·Ctrl+B/I. 화면 문구에 `Mac`·`⌘`·`메뉴 막대`가 남지 않았는가(설정·시작 점검·모델·삭제 창). 제목줄 아래 52px 윗줄이 어색하지 않은가.
+- [ ] 2.8: 변환·질문 중에 앱을 트레이 `종료`로 끝내고, 작업 관리자로도 강제 종료해 본 뒤 `tractus.exe`·`python.exe`·`ffmpeg.exe`가 남지 않는가. 녹음 중 종료는 묻고, `녹음 끝내고 종료` 뒤 `tractus-rec.exe`가 스스로 끝나며 다음 실행에 `변환 대기 중인 녹음`이 보이는가(WAV가 재생되는가). `%APPDATA%\dev.tractus.app\logs\app.log`에 사용자 이름·노트 제목이 없는가. Windows 종료·로그오프 중에 녹음하고 있으면 묻는 창이 종료를 막지 않는가.
 
 ### W4. 텍스트 변환 런타임 고르기 (결정 필요)
 

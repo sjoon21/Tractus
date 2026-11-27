@@ -492,7 +492,7 @@ fn wait_with_deadline(mut child: Child, limit: Duration) -> Result<Option<Output
         match child.try_wait().map_err(|e| e.to_string())? {
             Some(status) => break status,
             None if start.elapsed() >= limit => {
-                let _ = child.kill();
+                crate::procs::kill_tree(&mut child);
                 let _ = child.wait();
                 return Ok(None);
             }
@@ -512,7 +512,7 @@ fn run_llm_sub(s: &Settings, config_dir: Option<&Path>, provider: Option<&str>, 
     }
     let mut cmd = s.tractus_llm_with(&["llm", sub], config_dir, provider, env)?;
     cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    let child = cmd.spawn().map_err(|e| crate::procs::cannot_run(&s.tractus_resolved().path, e))?;
+    let child = crate::procs::spawn(&mut cmd).map_err(|e| crate::procs::cannot_run(&s.tractus_resolved().path, e))?;
     Ok(wait_with_deadline(child, TEST_DEADLINE)?.ok_or_else(|| ("llm_conn", t("시간이 너무 오래 걸렸습니다"))))
 }
 
@@ -912,13 +912,18 @@ mod tests {
         assert_eq!(parse_models(list, "", true).models.len(), 5);
     }
 
-    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn test_process_is_killed_after_the_deadline() {
-        let spawn = |script: &str| Command::new("sh").args(["-c", script]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        let sleeper = crate::procs::tests::test_child("sleep").stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
         let t0 = Instant::now();
-        assert!(wait_with_deadline(spawn("sleep 30"), Duration::from_millis(300)).unwrap().is_none());
+        assert!(wait_with_deadline(sleeper, Duration::from_millis(300)).unwrap().is_none());
         assert!(t0.elapsed() < Duration::from_secs(5));
+    }
+
+    #[cfg(unix)] // sh 스크립트를 쓴다
+    #[test]
+    fn test_process_output_is_kept() {
+        let spawn = |script: &str| Command::new("sh").args(["-c", script]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
         let out = wait_with_deadline(spawn("echo hi; echo oops >&2"), Duration::from_secs(10)).unwrap().unwrap();
         assert_eq!((String::from_utf8_lossy(&out.stdout).trim(), String::from_utf8_lossy(&out.stderr).trim(), out.status.success()), ("hi", "oops", true));
     }

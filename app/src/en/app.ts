@@ -194,6 +194,11 @@ export default {
   "계속 쓰기": "Keep writing",
   "{reason} 그래도 닫을까요?": "{reason} Close anyway?",
   "계속 변환": "Keep transcribing",
+  "녹음을 끝내고 종료할까요?": "Stop recording and quit?",
+  "지금까지 녹음한 내용은 저장됩니다. 다음에 Tractus를 열면 ‘변환 대기 중인 녹음’에서 텍스트로 변환할 수 있습니다.":
+    "What you’ve recorded so far is saved. Next time you open Tractus, you can transcribe it from “Recordings waiting to transcribe”.",
+  "계속 녹음": "Keep recording",
+  "녹음 끝내고 종료": "Stop and quit",
   "단어 싱크를 맞췄습니다. 단어를 누르면 그 단어부터 재생합니다": "Words are synced. Click a word to play from there",
   "스마트 검색 정보를 갱신하지 못했습니다": "Couldn’t update smart search",
   "예시 노트를 열지 못했습니다: {error}": "Couldn’t open the sample note: {error}",

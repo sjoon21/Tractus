@@ -1,4 +1,5 @@
 //! ⌘Q·마지막 창 닫기 종료 흐름: 화면이 쓰던 메모를 저장할 때까지(최대 3초) 종료를 미룬다.
+//! 녹음 중이면 시간 제한 없이 화면이 먼저 묻는다(`녹음을 끝내고 종료할까요?`, docs/desktop.md §3.10): 끝내기는 quit_ready, 계속은 quit_cancel.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -17,7 +18,14 @@ pub fn quit_ready(app: AppHandle) {
     app.exit(0);
 }
 
-/// 종료를 한 번만 미루고 화면에 저장하라고 알린다. 3초 안에 quit_ready가 오지 않아도 끝낸다
+/// 녹음 중 종료를 묻는 창에서 `계속 녹음`을 골랐다: 다음 종료 요청을 다시 받는다
+#[tauri::command]
+pub fn quit_cancel() {
+    QUIT_ASKED.store(false, Ordering::SeqCst);
+}
+
+/// 종료를 한 번만 미루고 화면에 저장하라고 알린다. 3초 안에 quit_ready가 오지 않아도 끝낸다.
+/// 녹음 중이면 창을 보이고 화면이 묻게 한다(시간 제한 없음: 사람이 고를 때까지 기다린다)
 pub(crate) fn begin_quit(app: &AppHandle) {
     if app.webview_windows().is_empty() {
         QUIT_READY.store(true, Ordering::SeqCst);
@@ -26,7 +34,12 @@ pub(crate) fn begin_quit(app: &AppHandle) {
     if QUIT_ASKED.swap(true, Ordering::SeqCst) {
         return;
     }
-    let _ = app.emit("quit-requested", ());
+    let recording = app.state::<crate::AppState>().rec.lock().unwrap().is_some();
+    let _ = app.emit("quit-requested", serde_json::json!({ "recording": recording }));
+    if recording {
+        crate::tray::show_main(app); // 메뉴 막대의 종료: 숨긴 창에 묻는 창이 뜬다
+        return;
+    }
     let handle = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(QUIT_WAIT);

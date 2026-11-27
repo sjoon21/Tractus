@@ -38,6 +38,8 @@ base64 = "0.22"
 # 앱을 하나만 띄운다: 두 번째 실행은 기존 창을 앞으로 (MIT/Apache-2.0). macOS는 OS가 이미 하나만 띄우므로 붙이지 않는다
 tauri-plugin-single-instance = "2"
 trash = { version = "5", default-features = false, features = ["coinit_apartmentthreaded"] }
+# 하위 프로세스를 앱의 Job Object에 넣는다: 앱이 끝나면 코어·ffmpeg가 남지 않게 (MIT/Apache-2.0, 이미 Cargo.lock에 있던 0.61, procs.rs)
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
 
 # 개발 빌드의 디버그 정보를 줄 번호만 남긴다 (역추적은 그대로, 깨끗한 개발 빌드의 target이 약 28% 작다: docs/setup.md 2026-10-15 실측).
 # 증분 컴파일은 기본값(켜짐)을 그대로 둔다. 릴리스 빌드(install.sh)에는 영향이 없다.

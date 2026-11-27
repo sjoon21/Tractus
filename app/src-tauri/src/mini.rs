@@ -1,6 +1,7 @@
 // 녹음 미니 창 (창 `mini`, mini.html): 녹음 중 다른 앱을 쓰는 동안 화면 구석에 떠 있는 작은 녹음 막대.
 // 상태·단추는 메뉴 막대 팝오버와 같다 (tray.rs `popover_state`·`tray_popover_action`). 여기는 언제 보이는지와 창 만들기만 한다.
 // 참고: Yogurt(FrigadeHQ/yogurt, MIT)의 떠 있는 녹음기. 코드는 가져오지 않았다.
+use crate::applog::log_eprintln;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::Value;
@@ -72,7 +73,7 @@ pub fn sync(app: &AppHandle, phase: Phase, mut state: Value) {
         None => match build(app) {
             Ok(w) => w,
             Err(e) => {
-                eprintln!("녹음 미니 창을 만들지 못했습니다: {e}");
+                log_eprintln!("녹음 미니 창을 만들지 못했습니다: {e}");
                 return;
             }
         },
