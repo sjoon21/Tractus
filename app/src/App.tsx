@@ -188,7 +188,7 @@ export function App() {
   // 못 쓰는 기능을 눌렀을 때(메뉴·끌어 놓기): 같은 이유와 고치는 길을 알림으로 보인다
   const notifyBlocked = useCallback(
     (d: ReturnType<typeof caps.can>) => {
-      if (!d.ok) notify({ text: d.reason, error: true, action: { label: d.fix.label, run: () => capsRef.current.fixAction(d.fix) } });
+      if (!d.ok) notify({ text: d.reason, error: true, action: d.fix ? { label: d.fix.label, run: () => d.fix && capsRef.current.fixAction(d.fix) } : undefined });
     },
     [notify],
   );
@@ -800,8 +800,8 @@ export function App() {
             <button
               type="button"
               className="self-start px-1 text-left text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-              title={`${convertGate.reason} (${convertGate.fix.label})`}
-              onClick={() => caps.fixAction(convertGate.fix)}
+              title={convertGate.fix ? `${convertGate.reason} (${convertGate.fix.label})` : convertGate.reason}
+              onClick={() => convertGate.fix && caps.fixAction(convertGate.fix)}
             >
               {recordNotice(convertGate)}
             </button>

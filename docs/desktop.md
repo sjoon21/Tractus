@@ -176,6 +176,8 @@ macOS 캘린더(EventKit) 읽기. 설계: [docs/design/calendar.md](design/calen
   | 코드 | 명령 | 언제 |
   | --- | --- | --- |
   | `model_missing` | transcribe, live, align | ASR·VAD·단어 정렬 모델이 없음 (`message`에 `tractus models download <id>`와 `hf download …`, §2.15) |
+  | `platform` | transcribe(경고), align·voices(오류, 종료 코드 2) | 이 운영체제의 등록 목록에 없는 단계·기능(Windows 미리보기의 화자 분리·단어 정렬·목소리). 변환은 그 단계를 건너뛰고 경고 하나를 낸다 |
+  | `unsupported_platform` | transcribe `--track lite`, models add | 이 운영체제에서 지원하지 않는 선택(Windows 미리보기, 종료 코드 2) |
   | `runtime_missing` | transcribe | ONNX 모델 폴더(Windows, docs/design/asr-onnx.md)인데 onnxruntime을 불러오지 못함(설치 누락, DLL·VC++ 런타임 문제) |
   | `audio_failed` | transcribe, align, recording finish | ffmpeg가 오디오를 읽지 못함, 소리 없는 파일 |
   | `ffmpeg_missing` | transcribe, align, recording finish | ffmpeg가 설치되지 않음 (`brew install ffmpeg`) |
@@ -795,7 +797,7 @@ ID와 프리셋을 함께 주면 합친다(중복 제거, 레지스트리 순서
 
 - 최소 사양: Apple Silicon(`arm64`), macOS 14.4 이상, 메모리 8GB 이상. 못 미치면 `meets_min: false`와 `problems`(`not_apple_silicon` · `macos_too_old` · `memory_low`). 표준 엔진은 16GB 이상을 권한다(`standard_recommended`).
 - 도구 위치: `brew`는 `PATH` 또는 `/opt/homebrew/bin`·`/usr/local/bin`(ffmpeg 설치 안내용, 기능에는 쓰지 않는다), `ffmpeg`는 `PATH`, `recorder`는 `$TRACTUS_REC_BIN` → 앱 번들(`sys.executable`이 `<앱>/Contents/Resources/runtime/bin`에 있을 때 `../../bin/tractus-rec`) → 저장소에서 빌드한 `recorder/.build/release/tractus-rec` 순으로 찾고, `diar_helper`는 같은 규칙으로 `$TRACTUS_DIAR_BIN` → `bin/tractus-diar` → `recorder/diar/.build/release/tractus-diar`다(`paths.tool_bin`, 존재하는 첫 후보. 하나도 없으면 저장소 배치일 때 저장소 경로, 아니면 번들 경로를 `path`로 알린다). **코어는 저장소 위치를 가정하지 않는다**: `capabilities[].hint`와 `helper_missing`의 빌드 명령(`cd <저장소>/recorder … swift build`)은 저장소 배치(`recorder/Package.swift`가 있음)일 때만 나오고, 아니면 `TRACTUS_REC_BIN`·`TRACTUS_DIAR_BIN`으로 위치를 알리라는 일반 안내가 나온다(`paths.build_hint`). 앱이 다른 위치를 쓰면(설정의 녹음 프로그램 경로) 환경변수로 넘긴다. 마이크·시스템 오디오 권한은 macOS가 첫 녹음에서 물으므로 미리 확인할 방법이 없다.
-- `capabilities[].missing`은 채울 모델 ID와 도구 이름(`ffmpeg` · `recorder` · `diar_helper`), 그리고 못 채우는 `memory`(live, 16GB 미만)다. `vad`+엔진이 둘 다 없으면 엔진은 메모리가 권하는 쪽만 적는다. `partial`·`corrupt`인 모델은 없는 것으로 친다. `hint`는 개발자용 명령이다(`tractus models download <id>`, `brew install ffmpeg`, 빌드 명령).
+- `capabilities[].missing`은 채울 모델 ID와 도구 이름(`ffmpeg` · `recorder` · `diar_helper`), 그리고 못 채우는 `memory`(live, 16GB 미만)와 `platform`(이 운영체제의 등록 목록에 기능의 모델이 없음, Windows 미리보기, docs/design/asr-onnx.md 4.2)이다. 앱(`caps.ts` `decide`)은 `platform`을 다른 이유보다 먼저 보고, 모델 화면 대신 이유 한 문장(`Windows 미리보기에서는 아직 쓸 수 없는 기능입니다. 다음 판에서 하나씩 엽니다.`)만 보인다. 모델 화면의 구성 단추·엔진 고르기와 점검의 모델 행도 등록 목록에서 만든다(목록에 없는 구성·행은 숨긴다, WORDS.md §4.15). `vad`+엔진이 둘 다 없으면 엔진은 메모리가 권하는 쪽만 적는다. `partial`·`corrupt`인 모델은 없는 것으로 친다. `hint`는 개발자용 명령이다(`tractus models download <id>`, `brew install ffmpeg`, 빌드 명령).
 - `recommended_track`: 메모리가 권하는 트랙(`standard`|`lite`). `effective_track`: 지금 `--track` 없이 변환하면 쓸 트랙, 쓸 수 있는 엔진이 없으면 `null`.
 
 #### 변환 엔진 자동 선택 (`transcribe`)

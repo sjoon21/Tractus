@@ -19,6 +19,7 @@ Tractus 앱을 설치했다면 이것으로 끝입니다. 플러그인이 `tract
 - **들어 있는 것:** MCP 서버 `tractus`(도구 이름 `mcp__plugin_tractus_tractus__search_meetings` 등), 스킬 `meetings`(과거 회의 질문에 검색하고 `(노트 제목, 시각)`으로 인용), `/tractus:recap [기간]`(결정·할 일·미결 회고).
 - 서버는 데이터 폴더에서 실행되고(열어 둔 프로젝트의 `.env`를 읽지 않음), 노트는 ID나 이 데이터 폴더 안의 경로로만 찾습니다.
 - 노트 색인은 앱이 합니다(앱을 한 번 열면 됨). 앱 없이 저장소에서 쓰면 `uv run tractus index`를 먼저 돌립니다.
+- **macOS 전용입니다.** 실행기 `bin/tractus-mcp`가 bash 스크립트라 Windows 미리보기에서는 플러그인이 돌지 않습니다(docs/windows/README.md 2.6). Windows에서는 아래 `직접 연결`로 `tractus mcp`를 띄웁니다(아직 실기기에서 확인하지 않았습니다).
 - 스마트 검색을 Upstage로 고른 경우 플러그인은 Upstage 키를 받지 않으므로 키워드 검색으로 찾습니다(키를 MCP에 넘기지 않는다는 원칙).
 
 ## 직접 연결 (Codex·Antigravity·플러그인 없이)

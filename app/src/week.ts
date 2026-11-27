@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, type CalendarEvent, type MeetingInfo } from "./api";
 import { POLL_MS } from "./calendar";
 import { isMemo } from "./memo";
+import { isWindows } from "./platform";
 
 /** 이 Mac 시간대의 날짜 "YYYY-MM-DD" */
 export function ymd(d: Date): string {
@@ -86,6 +87,7 @@ export const preparable = (ev: WeekEvent, now: Date) => !ev.all_day && new Date(
 export function useWeekEvents(from: string): WeekEvent[] {
   const [events, setEvents] = useState<WeekEvent[]>([]);
   useEffect(() => {
+    if (isWindows()) return; // 캘린더는 macOS(EventKit)만 읽는다: Windows의 띠는 노트만 보인다
     let on = true;
     const load = () => void api.calendarWeek(from).then((list) => on && setEvents(list), () => on && setEvents([]));
     load();

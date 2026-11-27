@@ -467,12 +467,15 @@ export const WARNING_TEXT: Record<string, string> = {
   chat_save_failed: t("질문 기록을 저장하지 못했습니다. 답변은 그대로 볼 수 있습니다."),
   append_remap_failed: t("요약이나 질문 기록의 일부를 새 내용에 맞게 옮기지 못했습니다."),
   live_lagging: t("실시간 텍스트 변환이 녹음을 따라가지 못해 일부 구간을 건너뜁니다. 녹음과 녹음 종료 후 변환에는 영향이 없습니다."),
+  platform: t("Windows 미리보기에서는 참석자 구분과 단어 싱크를 아직 쓸 수 없어 이 기능 없이 변환했습니다."),
   system_zero: t("상대방 소리(시스템 오디오)가 5초 동안 들리지 않습니다. 시스템 설정 > 개인정보 보호 및 보안 > 화면 및 시스템 오디오 녹음 권한을 확인하세요."),
 };
 
 export const ERROR_TEXT: Record<string, string> = {
   model_missing: MODEL_MISSING_ERROR,
   model_load_failed: MODEL_LOAD_FAILED_ERROR,
+  platform: t("Windows 미리보기에서는 아직 쓸 수 없는 기능입니다."),
+  unsupported_platform: t("Windows 미리보기에서는 아직 지원하지 않습니다."),
   runtime_missing: t("텍스트로 변환하는 데 필요한 구성 요소를 불러오지 못했습니다. 앱을 다시 설치하세요."),
   audio_failed: t("음성 파일을 읽지 못했습니다. 소리가 있는 오디오·동영상 파일인지 확인하세요."),
   ffmpeg_missing: t("음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요."),

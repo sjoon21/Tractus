@@ -396,9 +396,11 @@ export function MeetingView({
           {!memoNote && !diarized && !diarizeGate.ok && speakerHintVisible({ diarize: diarizeGate, isRecording: true, segments: segments.length, speakers: stats.length, dismissed: hintGone }) && (
             <p className="speaker-hint mt-4 mb-0 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground" role="status">
               <span className="mr-auto">{SPEAKER_HINT}</span>
-              <Button variant="outline" size="sm" className="h-6" onClick={() => caps.fixAction(diarizeGate.fix)}>
-                {diarizeGate.fix.label}
-              </Button>
+              {diarizeGate.fix && (
+                <Button variant="outline" size="sm" className="h-6" onClick={() => diarizeGate.fix && caps.fixAction(diarizeGate.fix)}>
+                  {diarizeGate.fix.label}
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"

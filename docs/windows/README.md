@@ -98,6 +98,14 @@ macOS CI(`ci.yml`)는 그대로다. Windows CI가 실패해도 macOS 릴리스�
 - **업데이트 확인 끄기 (22):** `paths.rs` `update_available`이 macOS 번들일 때만 참이다(`latest.json`에 `darwin-aarch64`만 있다). Windows 설정의 업데이트 절에는 `Windows 판은 아직 앱 안에서 업데이트하지 않습니다. 새 버전은 소개 사이트에서 받으세요.` 한 줄만 보인다. 켜는 일은 W5의 `latest.json` 결정 뒤다.
 - **Mac에서 확인 못 한 것:** Mac에서는 `ring` 빌드 스크립트가 MSVC 헤더를 요구해 앱의 Windows 대상 `cargo check`가 안 된다. 단일 실행 플러그인 호출은 macOS에서 잠깐 켜서 컴파일만 확인했고, Windows 컴파일은 `windows-app.yml`이 본다.
 
+### 2.6 앱 쪽 등록 목록 반영·macOS 전용 기능 잠금 (0.6.0 계획 12·13번, 브랜치 `windows/ui-registry-locks`)
+
+- **목록에서 만든다 (12):** 앱은 운영체제가 아니라 코어 등록 목록(`models list`·`doctor`)을 보고 그린다(설계 asr-onnx.md 4.4). `models.ts` `visiblePresets`: 목록에 `asr-lite`가 없으면 `저사양 구성 설치`, 표준이 더하는 기능 모델(참석자 구분·단어 싱크·스마트 검색·목소리)이 하나도 없으면 `표준 구성 설치`를 숨기고, 남은 단추가 하나면 그것을 강조한다. `presetIds`는 목록에 없는 ID를 내지 않는다(권장 트랙이 lite여도 `asr-lite`가 없으면 `asr-std`). 변환 엔진이 하나뿐이면 엔진 고르기·직접 추가를 그리지 않고 그 엔진을 `모델` 표에 둔다. 점검의 필수 모델 행은 엔진이 하나면 `변환 엔진 파일`, 목록에 없는 권장·선택 행은 없다. macOS 목록은 모두 있으므로 결과가 같다.
+- **`platform` 잠금:** `caps.ts` `decide`가 `missing`의 `platform`을 맨 먼저 보고 이유만 낸다(`Decision.fix`가 `null`이면 고치는 단추를 그리지 않는다). 노트의 참석자 구분 안내도 보이지 않는다. 경고·오류 코드 `platform`·`unsupported_platform`은 `lib.ts`에 문장이 있다.
+- **메모리 경고:** Windows에서 `doctor.system.standard_recommended`가 false면 구성 단추 아래와 점검 메모리 행에 경고(변환 중 약 7GB, 막지 않음). 점검의 `Apple Silicon`·`macOS 14.4 이상` 행은 Windows에서 `Windows` 행 하나(코어 `problems`의 `unsupported_arch`·`windows_too_old`면 막힘)로 바뀐다.
+- **macOS 전용 기능 (13):** 캘린더(설정 `캘린더` 섹션, 홈의 곧 시작하는 일정 카드, 이번 주 띠의 일정·`메모 준비`)는 Windows에서 숨기고 일정을 읽지 않는다(띠는 노트만, 빈 날 `노트가 없습니다`). Rust `calendar_next`·`calendar_week`는 캘린더가 꺼져 있으면 녹음 프로그램을 부르지 않는다. 통화 감지 설정 두 줄을 숨긴다(Rust `calls::start`가 macOS에서만 돈다). 9명 이상 구분(fluid)은 Windows 목록에 없어 모델 화면에 없고, 점검의 `9명 이상 구분 도구` 행도 숨긴다. Claude Code 플러그인(`plugins/tractus`, bash 실행기 `bin/tractus-mcp`)은 앱 화면에 설정이 없다: Windows에서 쓸 수 없다는 것은 docs/mcp.md 몫이고, 앱 안 검색 프로세스(`mcp.rs`, `tractus mcp`)는 그대로 돈다.
+- **미리보기:** `/preview.html?os=windows`는 가짜 점검·모델 데이터도 Windows 목록 모양(vad·asr-std, 나머지 기능 `platform`, 메모리 15.7GB)으로 바꾼다.
+
 ## 3. Windows 기기 준비
 
 | 도구 | 설치 | 확인 |
