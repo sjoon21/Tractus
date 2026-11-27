@@ -13,7 +13,7 @@ Windows에서는 Mac과 **같은 모델 계열(Qwen3-ASR)**을 ONNX int4로 바�
 2. Silero VAD ONNX 어댑터 `src/tractus/vad_onnx.py`
 3. 두 런타임을 **같은 조건**으로 재는 `bench/` 갈래(토큰 상한 같음, 앱 경로 모드 포함)
 
-모델은 `andrewleech/qwen3-asr-1.7b-onnx`·`-0.6b-onnx`의 int4 판에서 출발했다. **2026-11-25부터 1.7B는 같은 원본에서 직접 만든 int8 판 `voyagar/Qwen3-ASR-1.7B-onnx-int8`을 쓴다(8.6절). 0.6B는 Windows 목록에 두지 않는다(11절 11번).** 등록 목록에는 측정이 끝난 뒤에만, **Windows에서만 보이는 항목**으로 올린다. ID는 Mac과 같다(`vad`·`asr-std`·`asr-lite`). Windows 목록에 없는 단계(화자 분리·목소리·단어 싱크)는 파이프라인이 모델을 찾기 전에 건너뛴다.
+모델은 `andrewleech/qwen3-asr-1.7b-onnx`·`-0.6b-onnx`의 int4 판에서 출발했다. **2026-11-25부터 1.7B는 같은 원본에서 직접 만든 int8 판 `voyagar/Qwen3-ASR-1.7B-onnx-int8`을 쓴다(8.6절). 0.6B는 Windows 목록에 두지 않는다(11절 11번).** 등록 목록에는 측정이 끝난 뒤에만, **Windows에서만 보이는 항목**으로 올린다. ID는 Mac과 같고(`vad`·`asr-std`), Windows 목록에는 변환 엔진이 `asr-std` 하나뿐이다. 그래서 메모리로 엔진을 고르는 곳·모델 구성(프리셋)·앱 구성 단추가 목록에 없는 `asr-lite`를 권하지 않게 고친다(4.4절). Windows 목록에 없는 단계(화자 분리·목소리·단어 싱크)는 파이프라인이 모델을 찾기 전에 건너뛴다.
 
 미루는 것:
 
@@ -54,6 +54,15 @@ macOS 번들·동작은 바뀌지 않는다. onnxruntime은 `sys_platform == 'wi
 ## 2. 모델 선택
 
 ### 2.1 고른 것
+
+**등록할 판 (2026-11-25 갱신):** Windows `asr-std`는 아래 표의 andrewleech int4가 아니라 같은 원본에서 직접 만든 int8 판이다(8.6절, 11절 10번). 0.6B는 Windows 목록에 두지 않는다(11절 11번). 아래 두 표는 출발점 기록으로 남긴다.
+
+| ID | 저장소 @ revision | 폴더 | 받는 파일 | 합계 | 라이선스 |
+| --- | --- | --- | --- | --- | --- |
+| `asr-std` | `voyagar/Qwen3-ASR-1.7B-onnx-int8` @ `550f7a719e1e60fa813c5681193ffa8fb478a924` | `qwen3-asr-1.7b-onnx-int8` | `encoder.int4.onnx` 1,270,241,779 · `decoder_init.int4.onnx` 359,023 · `decoder_step.int4.onnx` 358,443 · `decoder_weights.int4.data` 2,477,658,112 · `embed_tokens.bin` 622,329,856 · `tokenizer.json` 11,429,377 · `config.json` 1,310 | 4,382,377,900 B (약 4.38GB) | Apache-2.0 |
+
+- 파일 이름의 `.int4`는 어댑터 표지(3.1절)와 맞추려고 그대로 두었다. 디코더 가중치는 8bit다(`config.json` `quantization`).
+- 받지 않는 파일: `README.md`, `scripts/`. 크기는 5번 PR에서 허브 API(`model_info(files_metadata=True)`)로 다시 대조한다(위 값은 올린 파일과 sha256이 같은 로컬 사본에서 쟀다).
 
 | 크기 | 저장소 @ revision | 양자화 | 합계 | 라이선스 |
 | --- | --- | --- | --- | --- |
@@ -301,7 +310,7 @@ return Output(text, lang, len(out))
 - **`store.build_transcript`** (`:289`, `"runtime": "mlx-audio"`가 박힌 곳은 `:316`): 이 함수는 세 곳이 부른다(`write_transcript`, `deferred.finish_convert` deferred.py:172, `attach.finish_append` attach.py:135). 그래서 인자를 더하지 않고 **함수 안에서 `job.model`(=저장소)로 정한다**: `"onnxruntime" if job.model in registry.ONNX_REPOS else "mlx-audio"`. `ONNX_REPOS`는 레지스트리가 `_windows_models()`의 변환 엔진 저장소로 만든다(ASR 저장소의 원본은 레지스트리). store는 레지스트리를 함수 안에서 늦게 불러온다(레지스트리가 align·diarize 등을 import하므로 모듈 머리에서 부르지 않는다). `Job`·`write_transcript` 시그니처는 그대로다. 시험은 새 노트·`--into`·`--append-to` 세 경로를 본다.
 - **onnxruntime을 불러오지 못할 때**(DLL·VC++ 런타임 문제, 휠 누락): `vad.find_chunks`는 `_new_job`에서 try 없이 ASR보다 먼저 돈다(pipeline.py:292). `_new_job`의 이 호출과 `_run`의 모델 올리기에서 잡아 `common.fail(..., code="runtime_missing")`로 끝낸다. 문구는 WORDS.md·`i18n_en.json`·앱 `lib.ts` `ERROR_TEXT`에 한 줄씩. `tractus doctor`의 Windows 갈래에 onnxruntime import 점검을 더한다(의존성이 들어오는 4번 PR).
   - **구현(1번 PR):** 모든 `ImportError`가 아니라 `asr.RuntimeMissing`(`ImportError`의 하위 클래스)만 잡는다. `asr_onnx.ort()`가 onnxruntime import 실패를 이것으로 바꾼다. 그래야 Mac에서 직접 추가한 엔진이 mlx-audio 안에서 내는 `ImportError`는 지금처럼 `model_load_failed`로 남는다. 클래스는 `asr.py`에 둔다: 파이프라인이 numpy를 부르는 `asr_onnx`를 CLI 시작 때 불러오지 않게(`test_cli_starts_without_heavy_libraries`).
-- **`commands/engines.py`**: 고치지 않는다. Windows 항목이 같은 ID(`asr-std`·`asr-lite`·`vad`)를 쓰므로 `MODELS`·`TRACK_MODEL`·`VAD_MODEL`·`auto_track`이 그대로 맞는다(4절).
+- **`commands/engines.py`**: 고친다(4.4절). 처음에는 같은 ID라 고치지 않아도 된다고 보았지만, Windows 목록에서 `asr-lite`를 빼면 모듈 머리의 `MODELS = {…, Track.lite: registry.get("asr-lite").repo}`가 **import 때 `KeyError`**를 낸다. `cli.py`가 `commands.transcribe`(→ `engines`)를 모듈 머리에서 불러오므로 **`tractus` 명령 전체가 시작부터 죽는다**.
 - **`live.py`**: 고치지 않는다. Windows에서는 `live` 기능 잠금으로 막는다.
 
 ## 4. 모델 목록(`models_registry`) 변경
@@ -320,34 +329,36 @@ ONNX_REPOS = frozenset(m.repo for m in _windows_models() if m.engine)
 | ID | Mac (그대로) | Windows |
 | --- | --- | --- |
 | `vad` | `mlx-community/silero-vad-v6` | `istupakov/silero-vad-onnx` @ `b3e3ee3c…`, `silero_vad_16k_op15.onnx` 1,289,603 B, 폴더 `silero-vad-v6-onnx`, MIT |
-| `asr-std` | `mlx-community/Qwen3-ASR-1.7B-8bit` | `andrewleech/qwen3-asr-1.7b-onnx` @ `df916193…`, 2.1절 파일, 폴더 `qwen3-asr-1.7b-onnx-int4`, `engine="qwen3"`, `level_note=ONE_OF` |
-| `asr-lite` | `mlx-community/Qwen3-ASR-0.6B-8bit` | `andrewleech/qwen3-asr-0.6b-onnx` @ `4fc24a14…`, 폴더 `qwen3-asr-0.6b-onnx-int4`, `engine="qwen3"`, `level_note=ONE_OF` |
+| `asr-std` | `mlx-community/Qwen3-ASR-1.7B-8bit` | `voyagar/Qwen3-ASR-1.7B-onnx-int8` @ `550f7a71…`, 2.1절 첫 표의 파일, 폴더 `qwen3-asr-1.7b-onnx-int8`, `engine="qwen3"`, `level="required"`, `level_note` 없음 |
+| `asr-lite` | `mlx-community/Qwen3-ASR-0.6B-8bit` | **없음** (11절 11번: int4 0.6B가 품질 기준에서 멀다) |
 | `asr-ko-mix`·`asr-ko-univa`·`diarizer`·`fluid`·`aligner`·`embedding`·`voices` | 그대로 | **없음** (미리보기 범위 밖, 4.3절) |
 
-**같은 ID를 쓰는 이유:** 아래 것들이 고치지 않고 그대로 맞는다.
+**같은 ID를 쓰는 이유:** 아래 것들이 그대로 맞는다.
 
-- `engines.py`, `pick_asr`·`preferred_asr`·`preset_ids`(asr-std/asr-lite를 박아 둠)
 - `capability_status`의 `"asr-std" in group` 가정
 - 앱 설정 `asr_engine`, 앱 TS 타입
 - `models list --json` 키 집합(`tests/test_models.py:576`)
 
+다만 `asr-lite`를 박아 둔 곳(`engines.py`, `preferred_asr`·`pick_asr`·`preset_ids`, 앱 `presetIds`·구성 단추)은 그대로 두면 목록에 없는 엔진을 권한다. 고치는 규칙은 4.4절이다.
+
 `local_dir`·`repo`는 Mac과 다르다. `asr.model`(저장소)만 보아도 어느 런타임으로 변환했는지 알 수 있다. 플랫폼 칸을 `Model`에 더하지 않으므로 JSON 키도 늘지 않는다.
 
-- **`level`/`ONE_OF`:** Windows 변환 엔진도 둘이고, `required` + `one_of`(`필수 (둘 중 하나)`) 의미가 그대로다. `vad`는 `required`다.
-- **`files`:** 2.1절 표 그대로이고, 하위 폴더는 없다. `_inspect_files`가 크기를 대조한다. 받기는 `snapshot_download(allow_patterns=list(m.files))`라 파일 종류와 상관없이 그대로 돈다.
+- **`level`/`ONE_OF`:** Windows 변환 엔진은 하나뿐이라 `asr-std`는 그냥 `required`다. `one_of`를 달면 화면에 `필수 (엔진 중 하나)`로 보여 고를 것이 있는 것처럼 읽힌다. `vad`도 `required`다. 앱 `engineSummary`는 `one_of` 모델이 없으면 요약 줄을 그리지 않고(옛 코어와 같은 모양), `asr-std` 행이 `필수`로 보인다.
+- **`files`:** 2.1절 첫 표 그대로이고, 하위 폴더는 없다. `_inspect_files`가 크기를 대조한다. 받기는 `snapshot_download(allow_patterns=list(m.files))`라 파일 종류와 상관없이 그대로 돈다.
 - **`usable`** (`:366-374`): 고친다. 대체 갈래는 `config.json`이 있고 `model.safetensors`가 없고 받다 만 파일이 없으면 True다. ONNX 폴더에는 `model.safetensors`가 원래 없으므로, `config.json`만 있고 `decoder_weights.int4.data`가 빠진 폴더도 쓸 수 있다고 본다. 그러면 `engines.local_model`(engines.py:47)이 통과시키고 `model_missing` 대신 ORT 세션 오류로 끝난다. 대체 갈래에 `"model.safetensors" in m.files` 조건을 더한다. 지금 Mac의 hf 항목은 모두 `files`에 `model.safetensors`가 있어 Mac 동작은 같다.
 - **`models prune`:** `unregistered`의 "알려진 폴더"를 두 목록(`_mac_models()`·`_windows_models()`)의 `local_dir` 합집합으로 만든다. 그래야 두 운영체제가 모델 폴더를 함께 써도 서로의 폴더를 지우지 않는다. 등록 전(5번 PR 전) Mac의 개발용 ONNX 폴더는 여전히 지워진다(7절 경고).
 - **`install_hint`:** `registry.install_hint`가 저장소·리비전에서 문구를 만들므로 그대로다.
-- **소개 문구:** `asr-lite`의 Mac 설명("실시간 텍스트 변환에는 이 엔진이 따로 필요합니다")은 Windows에서 틀린 말이 된다. Windows 항목은 그 문장을 뺀 설명을 쓴다.
+- **소개 문구:** Windows `asr-std` 설명은 Mac 문구를 쓰지 않는다. 실시간 텍스트 변환·0.6B를 말하지 않고, 변환 중 메모리를 많이 쓴다는 것(8.6절 최대 6–7GB)을 적는다.
 - **`NEEDED_FILES`·`add_custom`:** 고치지 않는다(직접 추가는 비목표). Windows에서는 `custom_models()`가 `()`를 돌려주고, `models add`가 `unsupported_platform`으로 거절한다(종료 코드 2).
-- **메모리 판정:** Windows `physical_memory()`는 `GlobalMemoryStatusEx.ullTotalPhys`(platform_compat.py:96-110)다. 하드웨어 예약분·내장 GPU 몫을 뺀 값이라 "16GB" 노트북에서 16GiB보다 작게 나오고, `preferred_asr`(`STANDARD_MIN_MEMORY = 16 GiB`)가 늘 0.6B를 고른다. `platform_compat`의 Windows 갈래를 `GetPhysicallyInstalledSystemMemory`(설치된 용량)로 바꾼다. Mac은 그대로다. 기준 기기의 두 값을 8.4절 측정에 적는다.
+- **메모리 판정:** Windows `physical_memory()`는 `GlobalMemoryStatusEx.ullTotalPhys`(platform_compat.py:96-110)다. 하드웨어 예약분·내장 GPU 몫을 뺀 값이라 "16GB" 노트북에서 16GiB보다 작게 나온다. 엔진 고르기에는 더 쓰지 않지만(4.4절, 엔진이 하나), 메모리 경고(4.4절)와 `doctor`의 메모리 표시에 쓴다. `platform_compat`의 Windows 갈래를 `GetPhysicallyInstalledSystemMemory`(설치된 용량)로 바꾼다. Mac은 그대로다. 기준 기기의 두 값을 8.4절 측정에 적는다.
 - **새 문구와 번역:** 위 Windows 설명, `unsupported_platform`, `runtime_missing`, 4.2절 `platform` 이유, 4.3절 경고는 모두 `t()`로 쓰고 영어를 더한다. 코어는 `src/tractus/i18n_en.json`, 앱은 `app/src/en/*.ts`와 `lib.ts` `ERROR_TEXT`. 확인은 `tests/test_i18n.py`, `app/src/i18n.test.ts`, `scripts/check_words.sh`(출력 없음).
 
 ### 4.2 기능 잠금
 
 - 실제 기능 ID는 `record`·`convert`·`diarize`·`diarize-many`·`align`·`smart-search`·`live`·`voices`다(models_registry.py:168-177).
 - **규칙:** `capability_status`는 기능이 요구하는 모델 ID가 등록 목록(`_BY_ID`)에 없으면 `missing=["platform"]`을 넣는다. Windows 기능 목록을 따로 적지 않으므로 플랫폼 판별은 목록 고르기 한 곳에 남는다. Windows에서 `diarize`·`diarize-many`·`align`·`smart-search`·`voices`가 이렇게 잠긴다.
-- **`live`는 예외다.** 요구 모델(`vad`·`asr-lite`)이 Windows 목록에도 있어 위 규칙으로는 잠기지 않는다. `Capability`에 `mac_only=True`를 달고, Windows면 `"platform"`을 넣는다. 0.6B로 확정 지연을 잰 뒤에 연다.
+- **`live`도 같은 규칙으로 잠긴다.** 요구 모델 `asr-lite`가 Windows 목록에 없기 때문이다. 처음 안의 `Capability.mac_only`는 필요 없다. 0.6B ONNX 판이 품질 기준을 넘고 확정 지연을 잰 뒤에 연다(9절 6번).
+- **`platform`은 다른 이유보다 먼저 본다.** `capability_status`는 `platform`이면 `memory`·다른 모델을 `missing`에 더하지 않는다. 앱 `caps.ts` `decide`도 `platform`을 맨 앞에서 가른다. 지금 `live` 갈래는 `memory`를 먼저 보고 `asr-lite`가 없으면 `모델 화면 열기`로 안내하므로, 그대로 두면 받을 수 없는 모델로 보낸다.
 - **`fix_command("platform")`:** 지금은 `tractus models download platform`이라는 없는 명령으로 떨어진다. `platform`이면 이유 문구("Windows 미리보기에서는 아직 쓸 수 없습니다" 등, WORDS.md)를 돌려준다. 앱은 "모델 화면 열기" 대신 이유를 보인다(README W5). 새 `missing` 값이므로 앱 `lib.ts`·WORDS.md·docs/desktop.md 표를 함께 고친다.
 - **`convert`:** `(vad,)` + `engine`이 있는 모델이고, 그대로다. 필수 모델(VAD + 변환 엔진 하나)과 ffmpeg만으로 변환 → 요약이 돌아야 한다는 규칙도 Windows에서 그대로 지킨다.
 - 시험은 `_BY_ID`를 Windows 목록으로 바꿔 끼우고 `capability_status`를 부른다.
@@ -366,6 +377,32 @@ ONNX_REPOS = frozenset(m.repo for m in _windows_models() if m.engine)
 - `install_hint`가 없는 ID를 받게 하지는 않는다. 오류를 숨길 뿐이다.
 - 잠긴 기능의 CLI 명령(`align`·`voices enroll|match`)도 같은 검사로 `common.fail(code="platform", exit_code=2)`한다.
 - 시험: `_windows_models()`로 바꿔 끼우고 diarizer·aligner 폴더 없이 `transcribe`를 돌리면 종료 코드 0, 경고 코드는 `platform` 하나다.
+
+### 4.4 권하는 엔진·모델 구성 (2026-11-26)
+
+**결론: 권하는 엔진·구성은 운영체제 이름이 아니라 등록 목록에 든 것으로 정한다.** 미리 만든 앱에는 모델이 들어 있지 않다. 모델은 처음 실행할 때 받는다. Mac `.dmg`와 Windows 설치본은 코드가 같고 `MODELS`만 다르므로(4.1절) 권하는 것도 따라 달라진다. 이 규칙은 4.2절 기능 잠금과 같아서, 운영체제를 가르는 곳은 목록을 고르는 한 줄로 남는다. Mac은 목록에 `asr-lite`가 있으므로 지금과 결과가 같다.
+
+Windows 목록에는 변환 엔진이 `asr-std` 하나뿐이다. 그래서 `asr-lite`를 박아 둔 곳을 그대로 두면 아래처럼 깨진다.
+
+| 곳 | 지금 | 그대로 두면 Windows에서 | 고친 뒤 (`asr-lite`가 목록에 없을 때) |
+| --- | --- | --- | --- |
+| `registry.preferred_asr` | 메모리 16GB 미만이면 `asr-lite` | 목록에 없는 엔진을 권한다 | 언제나 `asr-std` |
+| `registry.preset_ids("required")` | VAD + `preferred_asr` | 목록에 없는 ID가 조용히 빠져 **VAD만 받는다**. 변환이 안 된다 | VAD + `asr-std` |
+| `registry.preset_ids("lite")` | VAD + `asr-lite` + `diarizer` | VAD만 받는다 | `ValueError`(`models download --preset lite` 종료 코드 2). 조용히 VAD만 받지 않는다 |
+| `registry.preset_ids("standard")` | 필수 + `asr-std`·`diarizer`·`aligner`·`embedding`·`voices` | 목록에 있는 것만 남아 VAD + `asr-std` | 그대로(목록으로 거르기). `required`와 같은 집합이 된다 |
+| `registry.pick_asr` | `asr-std`·`asr-lite` 순서 고정 | 해는 없다(설치된 것만 고른다) | 순서에서 목록에 없는 ID를 뺀다 |
+| `registry.capability_status` | 엔진이 없으면 `preferred_asr`를 `missing`에 | `asr-lite`를 받으라고 한다 | 그대로. `preferred_asr`가 `asr-std`를 낸다 |
+| `commands/engines.py` `MODELS`·`TRACK_MODEL` | 모듈 머리에서 `get("asr-lite")` | **import `KeyError`로 CLI 전체가 죽는다**(3.5절) | 목록에 있는 트랙만 담는다(`registry.find`). `--track lite`는 `common.fail(code="unsupported_platform", exit_code=2)`. `recommended_track`은 `preferred_asr`에서 정한다(16GB 비교를 한 곳에) |
+| `doctor` `recommended_track` | `TRACK_OF[preferred_asr]` | `lite`라고 알린다 | 그대로. `standard`가 나온다 |
+| 앱 `models.ts` `PRESETS`·`presetIds` | 구성 단추 셋 고정, `lite`는 `asr-lite` 고정 | `저사양 구성 설치`를 누르면 VAD만 받는다 | 단추를 목록에서 만든다. 목록에 `asr-lite`가 없으면 `lite`를 숨기고, `standard`가 더하는 모델이 목록에 하나도 없으면 `standard`를 숨긴다. Windows 미리보기에는 `필수만 설치` 하나가 남는다(보이는 단추가 하나면 그것을 강조) |
+| 앱 변환 엔진 고르기 | `자동` + 엔진 목록 | `자동`과 `asr-std` 두 줄이 같은 뜻이다 | 엔진이 하나뿐이면 고르기 목록을 그리지 않는다 |
+| 앱 `caps.ts` `decide("live")` | 메모리 → `asr-lite` 순 | 받을 수 없는 모델로 안내한다 | `platform`을 먼저 본다(4.2절) |
+| 앱 `checkupRows.ts` | `변환 엔진(표준·가벼운 것 중 하나)` | 없는 선택지를 말한다 | 목록에 엔진이 하나면 `변환 엔진` |
+
+- **메모리 경고:** int8 판은 Mac에서 최대 6.1–7.2GB를 썼다(8.6절). Mac의 16GB 기준은 1.7B와 0.6B를 고르는 데 쓰는 값이라, Windows에서는 고를 엔진이 없다. 대신 설치된 메모리(`GetPhysicallyInstalledSystemMemory`, 4.1절)가 16GB 미만이면 **막지 않고 경고한다**. 경고는 모델 화면의 구성 단추 설명과 점검 화면의 메모리 행에 나온다(`doctor.system`, Windows 갈래는 #135). 막을 하한을 둘지, 그 값은 W4 측정 뒤 소유자가 정한다(11절 12번).
+- **화면 문구:** `자동 (이 Mac에 맞게)`, `ONBOARD_MODELS`의 `이 Mac에만 저장됩니다`, 구성 설명의 `메모리 16 GB 이상 권장`처럼 엔진·모델 화면에 있는 Mac 문구는 이 PR에서 운영체제에 맞게 고친다(WORDS.md에 Windows 표기를 더한다). 앱 전체의 다른 `이 Mac` 문구(목소리·테마·패널 등)는 W5 문구 정리에서 따로 한다.
+- **고치지 않는 것:** `asr_engine` 설정에 목록에 없는 ID(`asr-lite`)가 있으면 `choose_asr`가 `BadParameter`로 끝난다. Windows 설정 폴더(`%APPDATA%`)는 Mac과 따로라 새 설치에서는 생기지 않는다. 설정을 옮겨 온 사람이 생기면 그때 `asr_engine_missing` 경고 후 기본 엔진으로 바꾼다.
+- **`scripts/install.sh --models`:** macOS 전용 스크립트라 그대로다. Windows 설치본(W5)은 모델을 담지 않고, 첫 실행 때 앱의 모델 화면(`필수만 설치`)으로 받는다.
 
 ## 5. Windows의 VAD (Silero ONNX)
 
@@ -446,7 +483,9 @@ dependencies = [
 | 같은 파일 (Mac 대조) | `pytest.importorskip("transformers")`: `log_mel`과 `WhisperFeatureExtractor`(128 bins, `padding=True, truncation=False`)가 임의 음성 5초·31초에서 같다(`atol 1e-4`, 모양 `(1,128,500)`·`(1,128,3100)`) | Mac (Windows는 transformers가 없으면 건너뜀) |
 | 같은 파일 (`slow`) | 모델 폴더가 있을 때 mlx-audio `_build_prompt`와 `build_prompt` + `tokenizers`의 **토큰 ID가 같다**(자주 쓰는 단어 + 한국어 고정, 자동 감지). 실제 0.6B ONNX로 가상 `say` 음성을 받아 적는다 | Mac `uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py` |
 | `tests/test_vad_onnx.py` (새로) | ① 순수 함수: 가짜 확률열 → 구간(임계값·최소 발화·최소 무음·패딩·끝 자르기) ② 가짜 세션(`run`이 받은 `input` 모양을 기록하고 `stateN = state + 1`을 돌려줌)으로 창 나누기·문맥 64·상태 이어받기·**길이가 512의 배수가 아닌 입력**의 꼬리 채우기 ③ `vad.find_chunks` 폴더 판별 ④ (`slow`) 실제 ONNX 그래프와 MLX판 확률 대조 | ①②③ 모두, ④ Mac `--with onnxruntime` |
-| `tests/test_models.py` (더함) | `_windows_models()`: ID 집합 `{vad, asr-std, asr-lite}`, `ONE_OF` 집합, `convert` 묶음 = `asr_ids`, 파일 크기 합 = `size_bytes`. `_BY_ID`를 바꿔 끼워 `capability_status`: `diarize`·`align`·`smart-search`·`voices`·`live`가 `"platform"`. `config.json`만 있는 ONNX 폴더는 `usable`이 아니다. prune이 다른 플랫폼 폴더를 지우지 않는다. 기존 Mac 집합 시험은 `_mac_models()` 기준으로 그대로 | 모두 |
+| `tests/test_models.py` (더함) | `_windows_models()`: ID 집합 `{vad, asr-std}`, `ONE_OF` 모델 없음, `convert` 묶음 = `asr_ids`, 파일 크기 합 = `size_bytes`. `_BY_ID`를 바꿔 끼워 `capability_status`: `diarize`·`align`·`smart-search`·`voices`·`live`가 `"platform"`. `config.json`만 있는 ONNX 폴더는 `usable`이 아니다. prune이 다른 플랫폼 폴더를 지우지 않는다. 기존 Mac 집합 시험은 `_mac_models()` 기준으로 그대로 | 모두 |
+| `tests/test_models.py`·`test_cli.py` (더함, 4.4절) | Windows 목록으로 바꿔 끼우고: `preferred_asr(8 GiB)`·`(32 GiB)` 모두 `asr-std`, `preset_ids("required")`·`("standard")` = `[vad, asr-std]`, `preset_ids("lite")`는 `ValueError`, `capability_status`의 `live` `missing`은 `["platform"]` 하나, `pick_asr`는 `asr-lite`를 내지 않는다. Windows 목록에서 `commands.engines`를 불러와도 죽지 않고 `--track lite`는 종료 코드 2. Mac 목록 결과는 지금 시험 그대로 | 모두 |
+| 앱 `models.test.ts`·`caps.test.ts` (더함, 4.4절) | `asr-lite`·`diarizer` 등이 없는 목록에서 구성 단추는 `required` 하나, `presetIds`가 목록에 없는 ID를 내지 않는다. `decide("live")`가 `platform`이면 메모리·모델보다 먼저 그 이유를 낸다. 엔진이 하나면 엔진 고르기를 그리지 않는다 | 모두 |
 | `tests/test_pipeline*`·`test_cli.py` | `_free_mlx`가 mlx 없이 통과(`sys.modules`에 mlx가 없는 것처럼 바꿔 끼움). Windows 목록으로 `transcribe`가 끝까지 돌고 경고는 `platform` 하나(4.3절). `asr.runtime`이 새 노트·`--into`·`--append-to` 세 경로에서 저장소대로 쓰인다. onnxruntime import 실패 → `runtime_missing` | 모두 |
 
 **CI**
@@ -670,7 +709,7 @@ uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py
 | 2 | `windows/asr-onnx-bench` | `bench/asr.py`·`run.py` 늦은 import + ONNX 갈래, **두 갈래 같은 토큰 상한**, `--app`·`--vad` 모드, 메모리 키 정리, `silero-vad` darwin 표지, `vad_compare.py`, **MLX 기준선 재측정**과 Mac ONNX 측정 결과(지표만), 이 문서 결과 절 | 같은 조건의 Mac 품질 숫자가 나온다 |
 | 3 | (소유자, W4) | 기준 기기에서 8.4절 오른쪽 열 측정 → 결과 PR | 런타임을 채택할지 결정한다 |
 | 4 | `windows/onnxruntime-dep` | `pyproject`: `onnxruntime` win32 표지 + `huggingface-hub`·`numpy`·`tokenizers` 직접 의존성, `uv lock`(새 uv), `windows-core.yml` 라이선스 필수 단계, ARCHITECTURE.md 행, CLAUDE.md 문장, Mac 번들 복사본 확인(onnxruntime 없음, DMG 크기) | Windows 설치에 onnxruntime이 들어간다 |
-| 5 | `windows/registry-onnx` | `_mac_models`/`_windows_models`·`CAPABILITIES`·`_BY_ID`·`ONNX_REPOS`, `build_transcript`의 `runtime`, 기능 잠금 `"platform"`·`live` mac_only·`fix_command`, 파이프라인 단계 건너뛰기(4.3절), `usable` 조건, prune 합집합, Windows `physical_memory`, `models add` 거절, 문구·번역(4.1절 마지막 항목), `test_models`·파이프라인 시험 | **3번 측정이 기준을 통과했을 때만** 합친다. Windows에서 변환이 돈다 |
+| 5 | `windows/registry-onnx` | `_mac_models`/`_windows_models`·`CAPABILITIES`·`_BY_ID`·`ONNX_REPOS`, `build_transcript`의 `runtime`, 기능 잠금 `"platform"`·`fix_command`, 파이프라인 단계 건너뛰기(4.3절), 권하는 엔진·구성과 앱 구성 단추·엔진 고르기·메모리 경고(4.4절), `engines.py` 트랙, `usable` 조건, prune 합집합, Windows `physical_memory`, `models add` 거절, 문구·번역(4.1절 마지막 항목), `test_models`·파이프라인 시험 | **3번 측정이 기준을 통과했을 때만** 합친다. Windows에서 변환이 돈다 |
 | 6 | 나중 | UNIVA ONNX 변환·업로드·측정(2.3절), 병합 디코더 측정, 0.6B 실시간 자막(`live_sim` Windows판), DirectML | — |
 
 1·2번은 Mac에서 바로 할 수 있고 서로 기다리지 않는다. 4·5번은 3번 결과를 기다린다. Windows 번들(W5)은 5번 뒤에 하고, 이때 mlx `darwin` 표지와 Windows 모듈 목록을 다룬다.
@@ -686,13 +725,14 @@ uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py
 | `decoder_init`이 모든 위치의 logits `[1,S,151936]` f32를 낸다(토큰당 약 0.6MB) | 30초 청크 + 사전이면 순간 메모리가 는다. 언어 고정 루프 재시도는 사전 전체를 넣어(asr.py:198) GB 단위가 될 수 있다 | 최악 경우를 잰다(8.2절). 198행은 소유자 결정(11절 7번). 병합 디코더(마지막 위치만)를 측정 후보로 둔다 |
 | 측정 조건이 런타임마다 다름 | ONNX가 엉뚱한 이유로 좋아 보인다 | 두 갈래 같은 상한, MLX 재측정, 반복 정의 통일(8.1절) |
 | 보통 Windows CPU 속도 미측정, KV 복사 비용 | M3 RTF 0.26이 기준 기기에서 0.5를 넘을 수 있다 | 8.3절 대안 순서(io_binding 먼저) |
-| int4 RTN 한국어 품질(0.6B) 미측정 | 저사양 엔진이 기준을 못 넘을 수 있다 | 0.6B도 같은 기준으로 잰다 |
+| int4 RTN 한국어 품질(0.6B) | 쟀고 기준을 못 넘었다(8.5절) | Windows 목록에서 뺐다(11절 11번). 다시 넣으려면 더 정밀한 0.6B 판을 같은 기준으로 잰다 |
+| 목록에 없는 `asr-lite`를 권하는 코드 | 16GB 미만 기기가 변환 엔진 없이 설치를 마치거나, `engines.py` import `KeyError`로 CLI 전체가 죽는다 | 권하는 것을 등록 목록에서 정한다(4.4절), Windows 목록으로 바꿔 끼운 시험 |
 | x64와 arm64 `MatMulNBits`(accuracy_level 4) 수치 차이 | Mac에서 잰 품질이 Windows와 다를 수 있다 | Windows에서 일부 세트를 다시 잰다(8.4절) |
 | 온도 0.3 표본 추출이 mlx-lm과 다르게 구현될 위험 | 루프 재시도 성공률이 달라진다 | 같은 식(softmax/T, top_p 1)을 쓰고 `--app` 재시도 횟수로 확인한다 |
 | `.data` 외부 파일이 두 세션에 두 번 올라갈 가능성 | 메모리가 2.2GB 더 든다 | plan 6.1의 4.3GB는 짧은 발화라 근거가 약하다. 최악 경우 측정으로 확인한다 |
 | Silero ONNX와 MLX의 경계 차이 | 청크가 달라져 CER이 바뀐다 | 같은 ASR에서 VAD만 바꾼 CER 차이 ≤ 0.2(필수) |
 | onnxruntime DLL 로드 실패 | 코드 없는 트레이스백 | `runtime_missing` 코드, `doctor` 점검 |
-| Windows `physical_memory`가 설치 용량보다 작다 | 16GB 기기에서 늘 0.6B를 고른다 | `GetPhysicallyInstalledSystemMemory`(4.1절) |
+| Windows `physical_memory`가 설치 용량보다 작다 | 16GB 기기에서 메모리 경고가 잘못 뜬다(엔진 고르기에는 더 쓰지 않는다, 4.4절) | `GetPhysicallyInstalledSystemMemory`(4.1절) |
 | W5에서 mlx-audio에 darwin 표지 | 전이 의존성(`huggingface_hub`·`numpy`·`tokenizers`)이 빠져 받기·변환이 깨진다 | 4번 PR에서 직접 의존성으로 올린다 |
 | 4.1GB 받기, Defender 첫 검사 | 첫 실행이 느리다 | 측정해 설치 안내에 적는다 |
 | onnxruntime 재도입 규칙 위반으로 보일 수 있음 | CLAUDE.md·v3.99와 충돌 | win32 표지, Mac 번들 확인, 문서 세 곳 갱신 |
@@ -700,9 +740,9 @@ uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py
 
 ## 11. 소유자가 정할 것
 
-1. **Windows 항목 ID를 Mac과 같게(`asr-std`·`asr-lite`·`vad`) 둘지.** 권하는 답은 같은 ID다. 앱·설정·선택 코드가 그대로 맞고, 런타임은 `asr.model`(저장소)로 구별된다.
+1. **Windows 항목 ID를 Mac과 같게(`asr-std`·`vad`) 둘지.** 권하는 답은 같은 ID다. 앱·설정·선택 코드가 대부분 그대로 맞고, 런타임은 `asr.model`(저장소)로 구별된다. `asr-lite`를 박아 둔 곳은 4.4절대로 고친다.
 2. **통과 기준 확정:** AI Hub CER +1.0, RTF 0.5 외에 FLEURS(+1.0), HiKE(+2.0), 용어 재현율(−3%p), `--app` 재시도 수, VAD CER 차이(+0.2), 최대 메모리(6GB)를 기준으로 삼을지.
-3. **Windows 기본 엔진:** Mac처럼 메모리 16GB 이상이면 1.7B로 할지, 측정 전까지 0.6B를 기본으로 할지.
+3. **Windows 기본 엔진:** Mac처럼 메모리 16GB 이상이면 1.7B로 할지, 측정 전까지 0.6B를 기본으로 할지. → **11번 결정(2026-11-25)으로 정리됨:** Windows 엔진은 1.7B int8 하나라 메모리와 상관없이 그것을 쓴다(4.4절).
 4. **기준 기기:** RTF를 잴 Windows 기기(CPU 모델·코어·RAM·전원 조건). AI Hub 데이터와 `bench/cache`를 그 기기로 복사해도 되는지(재배포가 아니라 소유자 기기 안 이동).
 5. **`asr-ko-univa` ONNX 변환·`voyagar` 업로드 시점,** 그리고 이번에는 면제 없이 `bench/` 세 세트를 잴지(권하는 답: 잰다).
 6. **병합 디코더(rhasspy 0.6B·craigandrews 1.7B)를 첫 측정에 함께 넣을지,** 미리보기 뒤로 미룰지.
@@ -711,3 +751,4 @@ uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py
 9. **스레드 수 정책:** ORT 기본(물리 코어)으로 둘지, 녹음·앱 반응성을 위해 상한을 둘지.
 10. **어떤 ONNX 판으로 W4를 이어갈지(8.5절, 2026-11-19 Mac 측정 뒤).** 지금 int4 판은 1.7B가 AI Hub CER은 통과하지만 용어 재현율(−9.7%p)·HiKE 언어 고정에서 떨어진다. 고를 수 있는 것: (가) 그대로 두고 기준을 다시 정한다, (나) 같은 원본에서 더 정밀한 판(int8, 또는 accuracy_level을 낮춘 int4)을 직접 변환해 같은 표본으로 다시 잰다(권하는 답), (다) 병합 디코더 판(6번)을 함께 잰다. (나)·(다)는 받는 크기·메모리가 커진다. → **2026-11-25 (나)로 진행(소유자 "제안 순서대로"):** int8 판 `voyagar/Qwen3-ASR-1.7B-onnx-int8`이 품질 기준을 모두 넘었다(8.6절). 남은 것은 최대 메모리 6GB 기준과 Windows 기기에서의 속도다.
 11. **0.6B를 Windows 목록에 둘지.** int4 0.6B는 AI Hub +2.8–4.2, FLEURS 자동 +4.95로 기준에서 멀다(8.5절). 권하는 답: 더 정밀한 판이 기준을 넘기 전까지 Windows에는 1.7B 하나만 둔다. → **2026-11-25 소유자가 권하는 답대로 진행:** Windows에는 1.7B 하나만 둔다.
+12. **Windows에서 메모리가 적은 기기를 막을지.** int8 판은 Mac에서 최대 6.1–7.2GB를 썼다(8.6절). 권하는 답: 미리보기에서는 설치된 메모리 16GB 미만이면 경고만 하고(4.4절), W4에서 기준 기기의 실제 최대 메모리를 잰 뒤 막을 하한을 정한다.
