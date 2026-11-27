@@ -42,10 +42,35 @@ def fleurs_ref(raw: str) -> str:
     return re.sub(r"\([^()]*\)", "", raw)
 
 
+FLEURS_KO = DATA_DIR / "fleurs/parquet-data/ko_kr/test-00000-of-00001.parquet"
+
+
 def fleurs():
-    t = pq.read_table(DATA_DIR / "fleurs/parquet-data/ko_kr/test-00000-of-00001.parquet")
+    t = pq.read_table(FLEURS_KO)
     for r in t.to_pylist():
         yield Sample(f"fleurs-{r['id']}-{r['path']}", _decode(r["audio"]["bytes"]), fleurs_ref(r["raw_transcription"]), "ko")
+
+
+def fleurs30(max_s: float = 30.0, n_terms: int = 50):
+    """메모리 최악 경우(docs/design/asr-onnx.md 8.2절)를 AI Hub 없이: FLEURS 클립을 차례로 이어 max_s초 이하로 묶고 max_s − 3초 이상인
+    묶음만 낸다(전체 382개에서 43묶음). 사전은 FLEURS 정답에서 처음 나온 4글자 이상 낱말 n_terms개(모든 묶음에 같은 목록, run.py --glossary)."""
+    texts = pq.read_table(FLEURS_KO, columns=["raw_transcription"]).column(0).to_pylist()
+    glossary = list(dict.fromkeys(w for t in texts for w in re.findall(r"\w{4,}", fleurs_ref(t))))[:n_terms]
+    buf: list[Sample] = []
+
+    def joined():
+        if sum(len(b.audio) for b in buf) < (max_s - 3) * SR:
+            return []
+        return [Sample("+".join(b.id for b in buf), np.concatenate([b.audio for b in buf]), " ".join(b.ref for b in buf), "ko",
+                       {"glossary": glossary})]
+
+    for s in fleurs():
+        if buf and sum(len(b.audio) for b in buf) + len(s.audio) > max_s * SR:
+            yield from joined()
+            buf = []
+        buf.append(s)
+    if buf:
+        yield from joined()
 
 
 def hike():
@@ -101,4 +126,4 @@ def aihub():
         yield Sample(sid, a, ref, "ko", meta)
 
 
-DATASETS = {"fleurs": fleurs, "hike": hike, "ami": ami, "aihub": aihub}
+DATASETS = {"fleurs": fleurs, "fleurs30": fleurs30, "hike": hike, "ami": ami, "aihub": aihub}

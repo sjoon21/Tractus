@@ -500,7 +500,7 @@ dependencies = [
 
 ```bash
 hf download andrewleech/qwen3-asr-0.6b-onnx --revision 4fc24a1402e74db89c4d2ef256875e71680128c4 \
-  --include encoder.int4.onnx 'decoder_*.int4.onnx' decoder_weights.int4.data embed_tokens.bin tokenizer.json config.json \
+  encoder.int4.onnx 'decoder_*.int4.onnx' decoder_weights.int4.data embed_tokens.bin tokenizer.json config.json \
   --local-dir models/qwen3-asr-0.6b-onnx-int4
 uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py
 ```
@@ -585,6 +585,8 @@ uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py
 | 프롬프트 토큰 ID·mel 대조(시험) | 설치본에서 받기(4.1GB)·이어받기·경로 길이, `physical_memory()` 보고값(`ullTotalPhys`와 설치 용량) |
 
 결과는 `bench/results/summary.jsonl`·`REPORT.md`(지표만)와 이 문서 "측정 결과" 절에 남긴다. AI Hub 전사는 커밋하지 않는다.
+
+**x64 러너 측정 (`.github/workflows/windows-asr-bench.yml`, 2026-11-27).** 기준 기기 전에 x64 커널 값을 보려고 GitHub `windows-latest` 러너(공개 저장소 표준: 4 vCPU·16GB RAM)에서 int8 판(`550f7a71`)과 Silero ONNX(`b3e3ee3c`)를 돌린다. 수동 실행과 이 워크플로·`bench/` 측정 코드를 고치는 PR에서 돈다. 모델 4.4GB와 FLEURS 0.3GB는 리비전 세 개를 묶은 키 하나로 `actions/cache`에 두고(저장소 한도 10GB, 받자마자 저장해 측정이 실패해도 남긴다. PR에서 만든 캐시는 그 PR에서만 보여 PR마다 한 벌 생길 수 있다), 측정마다 `run.py`를 따로 띄워 최대 메모리(`PeakWorkingSetSize`)를 따로 잡는다. 재는 것은 넷이다: ① FLEURS every8(48개) 언어 고정 스레드 4 ② 같은 것 스레드 2 ③ 앱 경로(`--app --vad silero-vad-v6-onnx`) ④ 메모리 최악 경우 `fleurs30`(FLEURS 클립을 이은 27–30초 묶음 8개 + 사전 50개, `--glossary`, 앱 경로라 루프 재시도·받아 적기 안전장치를 지난다). ④는 Mac 기준값이 없는 참고값이다: Mac에서 짧은 클립 48개(every8)가 6.24GB로 30초 1묶음(앱 경로 4.11GB)보다 컸으므로, 메모리는 청크 길이보다 호출 수·누적을 따라 커질 수 있다. 6GB 판정은 ①과 ④ 가운데 큰 값으로 한다. `run.py --threads`는 제품이 정한 세션 스레드(VAD의 1)를 바꾸지 않는다. ①②의 CER을 Mac M3 int8 값 2.74와 비교해 차이 0.2 이하면 x64 커널이 같은 값을 낸다고 본다. `fleurs30`의 사전은 FLEURS 정답 낱말이라 CER은 품질 지표가 아니다. 결과는 잡 요약 표와 아티팩트 `windows-asr-bench`(이 잡이 더한 요약 줄만)로 나온다. 전사 원문은 올리지 않고, AI Hub는 쓰지 않는다(그래서 위 표의 "AI Hub 1세션" 대조는 러너에서 하지 않는다). 러너는 기준 기기가 아니므로 RTF·메모리는 대략값이고, 8.3절 판정은 실기기 측정이 맡는다.
 
 ### 8.5 측정 결과 (Mac, 2026-11-19)
 
@@ -699,6 +701,23 @@ uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py
 - fp32 판(상한): M3에서 RTF 12라 세트 전체를 재지 않았다.
 - 자동 감지(`--lang auto`), 앱 경로(`--app`), Windows 기기에서의 속도·메모리(W4).
 
+### 8.7 x64 러너 결과 (2026-11-27, 소유자 결정: 이 측정을 등록 관문으로 쓴다)
+
+**결론: x64에서도 품질이 Mac과 같다(FLEURS CER 2.78 대 2.74, 차이 +0.04 ≤ 0.2). 등록 목록 PR(9절 5번)의 관문을 통과했다.** 소유자가 2026-11-27 기준 기기 측정(W4) 대신 이 러너 측정을 관문으로 정했다. 속도와 메모리는 러너 값이라 대략값이지만, 메모리가 Mac보다 크게 나와 Windows 최소 메모리를 정해야 한다(11절 12번).
+
+- 러너: GitHub `windows-latest`, AMD EPYC 7763 논리 코어 4, RAM 16GiB, onnxruntime 1.32.0, int8 판 `550f7a71`. run 45957040553(PR #140).
+
+| 측정 | 스레드 | n | 오류 | CER | RTF | 로드 s | 최대 메모리 (PeakWorkingSet) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| FLEURS every8 언어 고정 | 4 | 48 | 0 | **2.78** (Mac 2.74) | 0.93 | 7.3 | 8.81 GB |
+| 같은 것 | 2 | 48 | 0 | 2.78 | 0.96 | 9.6 | 8.83 GB |
+| 앱 경로 + ONNX VAD | 4 | 48 | 0 | 3.11 (Mac 기준값 없음) | 0.69 | 7.8 | 8.66 GB |
+| 메모리 최악: 30초 묶음 8개 + 사전 50개, 앱 경로 | 4 | 8 | 0 | (지표 아님) | 1.20 | 7.1 | **10.16 GB** |
+
+- **속도:** 논리 코어 4개 공유 VM에서 RTF 0.7–0.93, 최악 1.2다. 1시간 노트 변환에 약 40–60분이 걸린다는 뜻이다. 보통 노트북(코어 8개 이상)은 더 빠를 것으로 보지만 재지 않았다. 스레드 2와 4의 차이가 작아(0.96 대 0.93) 이 러너에서는 메모리 대역폭이 병목으로 보인다(확인하지 않음).
+- **메모리:** Mac(같은 세트 6.24GB)보다 2.6GB 크고 최악 경우 10GB를 넘는다. Windows `PeakWorkingSetSize`가 메모리 매핑된 가중치 파일 페이지까지 세는 차이일 수 있으나 확인하지 않았다. 어느 쪽이든 **8GB 기기에서는 쓸 수 없고, 16GB 기기에서도 앱·브라우저와 함께면 빠듯하다.** 줄일 후보: 병합 디코더(세션 하나, 9절 6번), 미리 푼 가중치 나누기. 0.6.0 이후 과제다.
+- **앱 경로 CER 3.11:** VAD로 자른 청크라 클립 단위(2.78)와 조건이 다르다. Mac `--app` 같은 세트 값이 없어 대조하지 않았다.
+
 ## 9. 단계·PR 나누기
 
 각 PR은 혼자 합쳐도 macOS 동작이 바뀌지 않는다.
@@ -707,9 +726,9 @@ uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py
 | --- | --- | --- | --- |
 | 1 | `windows/asr-onnx-adapter` | `asr_onnx.py`(`decode` 분리), `vad_onnx.py`, 폴더 판별(`Transcriber.load`·`vad.find_chunks`), `_generate` numpy 기본, `_free_mlx` 가드, `runtime_missing`, 시험(7절, 가짜 세션), `windows-core.yml` 필수 시험 단계, CLAUDE.md의 mlx-audio 업그레이드 줄. **의존성·레지스트리는 고치지 않는다** | 코드는 있지만 등록되지 않아 사용자에게 보이지 않는다. Mac 동작은 그대로다 |
 | 2 | `windows/asr-onnx-bench` | `bench/asr.py`·`run.py` 늦은 import + ONNX 갈래, **두 갈래 같은 토큰 상한**, `--app`·`--vad` 모드, 메모리 키 정리, `silero-vad` darwin 표지, `vad_compare.py`, **MLX 기준선 재측정**과 Mac ONNX 측정 결과(지표만), 이 문서 결과 절 | 같은 조건의 Mac 품질 숫자가 나온다 |
-| 3 | (소유자, W4) | 기준 기기에서 8.4절 오른쪽 열 측정 → 결과 PR | 런타임을 채택할지 결정한다 |
+| 3 | ~~(소유자, W4)~~ → x64 러너(`windows-asr-bench.yml`) | 2026-11-27 소유자 결정으로 기준 기기 대신 러너 측정이 관문이다. 결과 8.7절(통과) | 런타임을 채택했다 |
 | 4 | `windows/onnxruntime-dep` | `pyproject`: `onnxruntime` win32 표지 + `huggingface-hub`·`numpy`·`tokenizers` 직접 의존성, `uv lock`(새 uv), `windows-core.yml` 라이선스 필수 단계, ARCHITECTURE.md 행, CLAUDE.md 문장, Mac 번들 복사본 확인(onnxruntime 없음, DMG 크기) | Windows 설치에 onnxruntime이 들어간다 |
-| 5 | `windows/registry-onnx` | `_mac_models`/`_windows_models`·`CAPABILITIES`·`_BY_ID`·`ONNX_REPOS`, `build_transcript`의 `runtime`, 기능 잠금 `"platform"`·`fix_command`, 파이프라인 단계 건너뛰기(4.3절), 권하는 엔진·구성과 앱 구성 단추·엔진 고르기·메모리 경고(4.4절), `engines.py` 트랙, `usable` 조건, prune 합집합, Windows `physical_memory`, `models add` 거절, 문구·번역(4.1절 마지막 항목), `test_models`·파이프라인 시험 | **3번 측정이 기준을 통과했을 때만** 합친다. Windows에서 변환이 돈다 |
+| 5 | `windows/registry-onnx` | `_mac_models`/`_windows_models`·`CAPABILITIES`·`_BY_ID`·`ONNX_REPOS`, `build_transcript`의 `runtime`, 기능 잠금 `"platform"`·`fix_command`, 파이프라인 단계 건너뛰기(4.3절), 권하는 엔진·구성과 앱 구성 단추·엔진 고르기·메모리 경고(4.4절), `engines.py` 트랙, `usable` 조건, prune 합집합, Windows `physical_memory`, `models add` 거절, 문구·번역(4.1절 마지막 항목), `test_models`·파이프라인 시험 | **3번 측정이 기준을 통과했을 때만** 합친다(2026-11-27 러너 측정 통과, 8.7절). Windows에서 변환이 돈다 |
 | 6 | 나중 | UNIVA ONNX 변환·업로드·측정(2.3절), 병합 디코더 측정, 0.6B 실시간 자막(`live_sim` Windows판), DirectML | — |
 
 1·2번은 Mac에서 바로 할 수 있고 서로 기다리지 않는다. 4·5번은 3번 결과를 기다린다. Windows 번들(W5)은 5번 뒤에 하고, 이때 mlx `darwin` 표지와 Windows 모듈 목록을 다룬다.
