@@ -6,13 +6,19 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
+    # huggingface-hub·numpy·tokenizers는 mlx-audio·transformers를 거쳐서도 들어오지만, Windows의 모델 받기·변환·VAD가 직접 쓰므로 직접 의존성으로 둔다 (지금 잠금의 판이라 Mac 번들은 그대로)
+    "huggingface-hub>=1.33.0",
     "kaldi-native-fbank==1.22.3",
     "mcp>=2.2,<2.3",
     "mlx-audio>=0.5.7",
     "mlx-lm>=0.32.0",
+    "numpy>=2.5.3",
+    # Windows 변환·VAD 전용 (docs/design/asr-onnx.md 6절). macOS는 표지가 거짓이라 설치하지 않는다: 목소리 모델은 onnx_mlx 그대로 (v3.99)
+    "onnxruntime==1.32.0; sys_platform == 'win32'",
     "openai>=3.23.0",
     "python-docx>=1.2",
     "sqlite-vec==0.1.9",
+    "tokenizers>=0.23.2",
     "typer>=0.12",
 ]
 

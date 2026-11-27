@@ -166,6 +166,7 @@ macOS 캘린더(EventKit) 읽기. 설계: [docs/design/calendar.md](design/calen
 {"event":"warning","code":"aligner_missing","message":"…"}    // 단어 정렬 모델이 없음 → words null로 완료 (aligner_failed: 실패 → words null로 완료). 모델이 있는데 한 세그먼트만 못 맞추면 경고 없이 단어를 고르게 편 words(approx)로 완료
 {"event":"warning","code":"voices_model_missing","message":"…"} // 등록된 목소리가 있는데 모델이 없음 → 제안 없이 계속 (voices_failed: 실패 → 제안 없이 계속)
 {"event":"warning","code":"asr_track_fallback","message":"…"}   // --track 없이 변환할 때 메모리가 권하는 트랙의 변환 엔진이 없고 다른 쪽이 있어 그쪽으로 변환 (§2.15)
+{"event":"warning","code":"platform","message":"…"}             // 등록 목록에 모델이 없는 단계(Windows 미리보기: 참석자 구분·단어 싱크)를 모델을 찾기 전에 뺐다. 한 번만, 뺀 단계 이름을 message에 (§2.15)
 {"event":"warning","code":"duplicate","message":"…"}           // 이미 전사된 파일 → 바로 기존 회의의 done이 이어진다 (종료 코드 0)
 {"event":"done","meeting_id":"01K…","meeting_dir":"/…/meetings/2026-10-02_…"}
 {"event":"error","message":"…","code":"audio_failed"}   // 종료 코드 1 (중단은 130). code는 있을 때만
@@ -197,6 +198,8 @@ macOS 캘린더(EventKit) 읽기. 설계: [docs/design/calendar.md](design/calen
   | `llm_invalid` | summarize, ask | 요약 응답이 2회 연속 검증 실패(`message`는 짧은 문장, 원문은 stderr), 질의 답이 빔 |
   | `live_low_memory` | live | 메모리 16GB 미만, `--force` 없음 |
   | `live_failed` | live | 녹음 파일·WAV 형식 오류 등으로 실시간 전사를 멈춤 |
+  | `platform` (v3.151) | align, voices enroll·match, live | 이 명령의 모델이 등록 목록에 없음(Windows 미리보기, 종료 코드 2). 받을 수 없으므로 `model_missing`과 다르다 |
+  | `unsupported_platform` (v3.151) | models add, transcribe `--track lite` | Windows 미리보기가 받지 않는 선택(직접 추가한 변환 엔진, 목록에 없는 트랙). 종료 코드 2 |
   | `bad_input` (추가) | recording finish | 제목이 비었거나 120자 초과 (종료 코드 2, 아무것도 만들지 않음) |
   | `not_recorded` | transcribe `--into` | 대상이 "변환 전" 노트가 아님: 이미 변환했거나 메모 노트이거나, 변환하는 사이 다른 실행이 먼저 변환함 (종료 코드 2, §2.16) |
   | `not_converted` | summarize, align, speakers·segments·voices의 편집 명령 | "변환 전" 노트라 대화 내용이 없음 (종료 코드 2). `ask`는 같은 코드의 **경고**만 내고 LLM을 부르지 않는다 (§2.16) |
@@ -713,6 +716,8 @@ MCP: `list_meetings`는 `favorite`·`tags`·`folder`(이름)·`folder_id`를 싣
 
 크기 합계(GiB): `required` 2.3(16GB 이상, 미만이면 1.0), `standard` 4.3, `lite` 1.1, `all`(fluid 제외) 5.2.
 
+**운영체제별 목록 (v3.151, docs/design/asr-onnx.md 4절).** 목록은 `models_registry.MODELS = _windows_models() if platform_compat.WINDOWS else _mac_models()` 한 줄에서 고른다. Windows 미리보기는 `vad`(Silero ONNX)·`asr-std`(Qwen3-ASR 1.7B ONNX int8, `level_note` 없음) 두 줄이고 ID·JSON 키는 Mac과 같다. 권하는 엔진·구성도 목록에서 정한다: 목록에 `asr-lite`가 없으면 `preferred_asr`는 언제나 `asr-std`, `--preset lite`는 종료 코드 2(`bad_argument`), `standard`·`all`은 목록에 있는 것만 남는다. 직접 추가한 엔진은 Windows에서 읽지도 받지도 않는다(`models add` → `unsupported_platform`). `models prune`은 두 목록의 폴더를 모두 등록된 것으로 본다. `transcript.json`의 `asr.runtime`은 ONNX 저장소면 `onnxruntime`, 아니면 `mlx-audio`다.
+
 기능(`capabilities`): `record`(도구 `recorder`) · `convert`(`vad` + `asr-std`/`asr-lite` 중 하나 + 도구 `ffmpeg`) · `diarize`(`diarizer`) · `diarize-many`(`fluid`) · `align`(`aligner` + 도구 `ffmpeg`: 노트 오디오를 디코딩한다) · `smart-search`(`embedding`) · `live`(`vad` + `asr-lite` + 도구 `recorder` + 메모리 16GB 이상: **표준 엔진이 있어도 0.6B가 따로 필요하다.** 1.7B로 실시간을 재 봤으나 확정 지연 p95가 1.59–1.95초로 기준(1.0초)을 넘어 쓰지 않는다, §2.8. 16GB 미만이면 `tractus live`가 `live_low_memory`로 거절하므로 `missing`에 `memory`가 든다) · `voices`(`voices` + 도구 `ffmpeg`). 요약·질문은 모델이 아니라 API 키라 코어 점검에 없다(앱이 키 상태를 더한다). 녹음 자체는 모델이 필요 없다: 변환 엔진이 없어도 녹음은 저장되고 앱은 `변환 대기 중인 녹음`으로 보인다.
 
 #### `tractus models list [--json]`
@@ -795,7 +800,7 @@ ID와 프리셋을 함께 주면 합친다(중복 제거, 레지스트리 순서
 
 - 최소 사양: macOS는 Apple Silicon(`arm64`), macOS 14.4 이상, 메모리 8GB 이상(`not_apple_silicon` · `macos_too_old` · `memory_low`), Windows는 x64(`AMD64`/`x86_64`), Windows 10 빌드 19041 이상, 메모리 8GB 이상(`unsupported_arch` · `windows_too_old` · `memory_low`). 못 미치면 `meets_min: false`와 `problems`. 표준 엔진은 16GB 이상을 권한다(`standard_recommended`).
 - 도구 위치: `brew`는 `PATH` 또는 `/opt/homebrew/bin`·`/usr/local/bin`(ffmpeg 설치 안내용, 기능에는 쓰지 않는다), `ffmpeg`는 `PATH`, `recorder`는 `$TRACTUS_REC_BIN` → 앱 번들(`sys.executable`이 `<앱>/Contents/Resources/runtime/bin`에 있을 때 `../../bin/tractus-rec`) → 저장소에서 빌드한 `recorder/.build/release/tractus-rec`(Windows는 `recorder/win/target/release/tractus-rec.exe`) 순으로 찾고, `diar_helper`는 같은 규칙으로 `$TRACTUS_DIAR_BIN` → `bin/tractus-diar` → `recorder/diar/.build/release/tractus-diar`다(`paths.tool_bin`, 존재하는 첫 후보. 하나도 없으면 저장소 배치일 때 저장소 경로, 아니면 번들 경로를 `path`로 알린다). **코어는 저장소 위치를 가정하지 않는다**: `capabilities[].hint`와 `helper_missing`의 빌드 명령(`cd <저장소>/recorder … swift build`, Windows 녹음 프로그램은 `cargo build --release`)은 저장소 배치(`recorder/Package.swift`가 있음)일 때만 나오고, 아니면 `TRACTUS_REC_BIN`·`TRACTUS_DIAR_BIN`으로 위치를 알리라는 일반 안내가 나온다(`paths.build_hint`). 앱이 다른 위치를 쓰면(설정의 녹음 프로그램 경로) 환경변수로 넘긴다. 마이크·시스템 오디오 권한은 macOS가 첫 녹음에서 물으므로 미리 확인할 방법이 없다.
-- `capabilities[].missing`은 채울 모델 ID와 도구 이름(`ffmpeg` · `recorder` · `diar_helper`), 그리고 못 채우는 `memory`(live, 16GB 미만)다. `vad`+엔진이 둘 다 없으면 엔진은 메모리가 권하는 쪽만 적는다. `partial`·`corrupt`인 모델은 없는 것으로 친다. `hint`는 개발자용 명령이다(`tractus models download <id>`, `brew install ffmpeg`, 빌드 명령).
+- `capabilities[].missing`은 채울 모델 ID와 도구 이름(`ffmpeg` · `recorder` · `diar_helper`), 그리고 못 채우는 `memory`(live, 16GB 미만)와 `platform`(v3.151: 요구 모델이 이 운영체제의 등록 목록에 없음. 이때 `missing`은 `["platform"]` 하나이고 `hint`는 이유 문장)이다. `vad`+엔진이 둘 다 없으면 엔진은 메모리가 권하는 쪽만 적는다. `partial`·`corrupt`인 모델은 없는 것으로 친다. `hint`는 개발자용 명령이다(`tractus models download <id>`, `brew install ffmpeg`, 빌드 명령).
 - `recommended_track`: 메모리가 권하는 트랙(`standard`|`lite`). `effective_track`: 지금 `--track` 없이 변환하면 쓸 트랙, 쓸 수 있는 엔진이 없으면 `null`.
 
 #### 변환 엔진 자동 선택 (`transcribe`)

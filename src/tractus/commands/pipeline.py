@@ -131,6 +131,7 @@ def transcribe_source(
         raise typer.Exit(0)
 
     job = find_job(meetings, digest, append[1]["meeting_id"] if append else None, into[1]["meeting_id"] if into else None)
+    diarize, align = skip_locked(diarize and job is None, align)  # 이어하기는 화자 분리를 다시 돌리지 않는다
     if job and not engines.engine_ready(job.model):  # 이어 할 변환 엔진을 지웠다: 같은 노트 폴더에서 지금 고른 엔진으로 처음부터
         asr = engines.choose_asr(track, asr_engine)
         if registry.usable(asr.id, models_dir()):
@@ -148,6 +149,15 @@ def transcribe_source(
         job, pcm = _new_job(source, meetings, digest, title, engines.choose_asr(track, asr_engine), language, term, diarize, max_speakers, engine, append, into)
 
     _run(job, pcm, source, keep_tracks, align)
+
+
+def skip_locked(diarize: bool, align: bool) -> tuple[bool, bool]:
+    """등록 목록에 없는 모델의 단계(Windows 미리보기의 참석자 구분·단어 싱크)는 모델을 찾기 전에 빼고, 뺀 것을 경고 하나(platform)로 알린다.
+    → (diarize, align). 목소리 제안은 화자 분리 결과가 있어야 돌므로 따로 알리지 않는다 (_suggest_voices)."""
+    keep_d, keep_a = diarize and registry.find("diarizer") is not None, align and registry.find("aligner") is not None
+    if names := [name for asked, kept, name in ((diarize, keep_d, t("참석자 구분")), (align, keep_a, t("단어 싱크"))) if asked and not kept]:
+        common.warn("platform", t("Windows 미리보기에서는 {steps}을(를) 아직 쓸 수 없어 이 단계 없이 변환합니다", steps="·".join(names)))
+    return keep_d, keep_a
 
 
 def _free_mlx() -> None:
@@ -218,7 +228,9 @@ def _diarize(pcm, max_speakers: int | None, engine: engines.DiarizerEngine = eng
 
 def _suggest_voices(pcm, turns: list[dict]) -> dict:
     """화자 분리 결과를 등록된 목소리와 맞춘 제안 {라벨: {person_id, name, score}}. 등록된 사람이 없으면 조용히 건너뛴다.
-    모델이 없거나 실패해도 전사는 계속한다 (가중치 28MB라 MLX로 돌려도 다른 모델과 겹치는 메모리가 작다)."""
+    모델이 없거나 실패해도 전사는 계속한다 (가중치 28MB라 MLX로 돌려도 다른 모델과 겹치는 메모리가 작다). 등록 목록에 없으면(Windows) 부르지 않는다."""
+    if registry.find("voices") is None:
+        return {}
     try:
         people = voices.usable_people(voices.load_profiles(home_dir()))
         if not people or not turns:

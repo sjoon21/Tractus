@@ -714,6 +714,8 @@ uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py
 
 1·2번은 Mac에서 바로 할 수 있고 서로 기다리지 않는다. 4·5번은 3번 결과를 기다린다. Windows 번들(W5)은 5번 뒤에 하고, 이때 mlx `darwin` 표지와 Windows 모듈 목록을 다룬다.
 
+**진행 (2026-11-27, ARCHITECTURE v3.151):** 4·5번의 코어 내용은 한 브랜치 `windows/registry-onnx`에 코드로 준비했다(앱 구성 단추·엔진 고르기·`caps.ts`·메모리 경고 화면은 앱 PR). 합치는 것은 소유자가 3번을 러너 측정으로 대신할지 정한 뒤다. 구현에서 정한 것: 경고 `platform`은 변환 한 번에 하나이고 이어하기에서는 단어 싱크만 센다, 잠긴 기능은 모델의 `needed_by`에서 뺀다, 직접 추가 엔진은 `CUSTOM_SUPPORTED` 한 값으로 끈다, 시험은 `conftest.use_models`로 목록을 바꿔 끼운다.
+
 ## 10. 위험
 
 | 위험 | 영향 | 대응 |

@@ -37,3 +37,29 @@ def _home_in_tmp(tmp_path_factory, monkeypatch):
     """`env` 픽스처를 빠뜨린 시험이 이 Mac의 실제 노트 폴더(~/Tractus, 저장소 .env의 TRACTUS_HOME)에 노트를 만들지 않게 한다.
     셸 환경변수가 .env보다 이기므로 여기서 정하면 CLI도 이 폴더를 쓴다. `env` 픽스처는 이것을 다시 덮어쓴다."""
     monkeypatch.setenv("TRACTUS_HOME", str(tmp_path_factory.mktemp("home")))
+
+
+def use_models(monkeypatch, models) -> None:
+    """등록 목록을 바꿔 끼운다: `models_registry.MODELS = …` 한 줄에서 import 때 계산되는 것 모두(기능·ID 표·직접 추가 허용, engines의 트랙·VAD 저장소).
+    Windows 목록 시험은 `use_models(monkeypatch, reg._windows_models())`, 운영체제와 상관없이 Mac 목록을 보는 시험은 `_mac_models()`."""
+    from tractus import models_registry as reg
+    from tractus.commands import engines
+
+    windows = any(m.repo in reg.ONNX_REPOS for m in models)
+    monkeypatch.setattr(reg, "MODELS", models)
+    monkeypatch.setattr(reg, "CAPABILITIES", reg._capabilities(models))
+    monkeypatch.setattr(reg, "_BY_ID", {m.id: m for m in models})
+    monkeypatch.setattr(reg, "CUSTOM_SUPPORTED", not windows)
+    track_model = {tr: mid for tr, mid in ((engines.Track.standard, "asr-std"), (engines.Track.lite, "asr-lite")) if reg.find(mid)}
+    monkeypatch.setattr(engines, "TRACK_MODEL", track_model)
+    monkeypatch.setattr(engines, "MODELS", {tr: reg.get(mid).repo for tr, mid in track_model.items()})
+    monkeypatch.setattr(engines, "VAD_MODEL", reg.get("vad").repo)
+
+
+@pytest.fixture(autouse=True)
+def _mac_model_list(monkeypatch):
+    """Windows CI에서도 지금까지의 시험은 Mac 목록을 본다(Windows 목록은 그것을 바꿔 끼운 시험이 따로 본다). macOS에서는 아무것도 바꾸지 않는다."""
+    if WINDOWS:
+        from tractus import models_registry as reg
+
+        use_models(monkeypatch, reg._mac_models())

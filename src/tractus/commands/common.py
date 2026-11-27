@@ -10,7 +10,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
-from tractus import audio
+from tractus import audio, models_registry as registry
 from tractus.i18n import t
 from tractus.paths import home_dir, models_dir
 from tractus.store import find_meeting_dir
@@ -40,6 +40,12 @@ def fail(message: str, code: str | None = None, exit_code: int = 1) -> NoReturn:
     emit_error(message, code)
     console.print(f"[red]{escape(message)}[/red]")
     raise typer.Exit(exit_code)
+
+
+def require_registered(model_id: str) -> None:
+    """이 명령에 필요한 모델이 등록 목록에 없다(Windows 미리보기의 단어 싱크·목소리·실시간): 받을 수 없으니 code platform, 종료 코드 2."""
+    if registry.find(model_id) is None:
+        fail(registry.PLATFORM_LOCKED, code="platform", exit_code=2)
 
 
 def fail_audio(e: audio.FFmpegError) -> NoReturn:
