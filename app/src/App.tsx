@@ -409,6 +409,14 @@ export function App() {
   const [quitAsk, setQuitAsk] = useState<"open" | "closing" | null>(null);
   const busyRef = useRef("");
   busyRef.current = !(transcribing || imp.job.running || queue.length) ? "" : queue.length ? t("진행 중인 변환과 대기 중인 파일 {n}개가 취소됩니다.", { n: queue.length }) : t("진행 중인 변환이 취소됩니다.");
+  // 창 닫기로 끝날 때의 확인: 저장하지 못한 메모가 있으면 묻고, 진행 중인 변환이 있으면 묻는다 (⌘Q는 묻지 않고 저장만 마친다: quit-requested)
+  const confirmClose = async (): Promise<boolean> =>
+    ((await flushMemos()) || (await ask(t("저장하지 못한 메모가 있습니다. 그래도 닫을까요?"), { title: t("Tractus 닫기"), kind: "warning", okLabel: t("저장하지 않고 닫기"), cancelLabel: t("계속 쓰기") }))) &&
+    (!busyRef.current || (await ask(t("{reason} 그래도 닫을까요?", { reason: busyRef.current }), { title: t("Tractus 닫기"), kind: "warning", okLabel: t("닫기"), cancelLabel: t("계속 변환") })));
+  const confirmCloseRef = useRef(confirmClose);
+  confirmCloseRef.current = confirmClose;
+  // 묻는 창이 창 닫기에서 왔는가: 그러면 `녹음 끝내고 종료` 뒤에도 위 확인을 지난다
+  const quitFromClose = useRef(false);
   useEffect(() => {
     const un = getCurrentWindow().onCloseRequested(async (e) => {
       // 메뉴 막대에 남기는 설정이면 Rust가 창을 숨기기만 한다: 앱이 계속 돌아 녹음·변환이 이어지므로 묻지 않는다. 쓰던 메모는 저장해 둔다
@@ -418,11 +426,10 @@ export function App() {
       }
       if (recordingRef.current) {
         e.preventDefault();
+        quitFromClose.current = true;
         return setQuitAsk("open");
       }
-      // 저장하지 못한 메모가 있으면 묻는다 (⌘Q는 묻지 않고 저장만 마친다: quit-requested)
-      if (!(await flushMemos()) && !(await ask(t("저장하지 못한 메모가 있습니다. 그래도 닫을까요?"), { title: t("Tractus 닫기"), kind: "warning", okLabel: t("저장하지 않고 닫기"), cancelLabel: t("계속 쓰기") }))) return e.preventDefault();
-      if (busyRef.current && !(await ask(t("{reason} 그래도 닫을까요?", { reason: busyRef.current }), { title: t("Tractus 닫기"), kind: "warning", okLabel: t("닫기"), cancelLabel: t("계속 변환") }))) e.preventDefault();
+      if (!(await confirmCloseRef.current())) e.preventDefault();
     });
     return () => void un.then((f) => f());
   }, []);
@@ -430,19 +437,25 @@ export function App() {
   // ⌘Q: 코어가 종료를 미루고 알리면 쓰던 메모를 저장한 뒤 이어 간다 (저장하지 못해도 끝낸다). 녹음 중이면 먼저 묻는다(Rust가 기다린다)
   useEffect(() => {
     const un = listen<{ recording?: boolean } | null>("quit-requested", (e) => {
-      if (e.payload?.recording) setQuitAsk("open");
-      else void flushMemos().finally(() => void api.quitReady());
+      if (e.payload?.recording) {
+        quitFromClose.current = false;
+        setQuitAsk("open");
+      } else void flushMemos().finally(() => void api.quitReady());
     });
     return () => void un.then((f) => f());
   }, []);
-  const quitAfterRecording = () => {
+  const quitAfterRecording = async () => {
     setQuitAsk("closing");
-    void flushMemos().finally(() => void api.quitReady());
+    // 창 닫기는 예전 확인 둘(메모·변환)을 지나고, 거기서 그만두면 녹음을 이어 간다. ⌘Q·메뉴 막대 `종료`는 메모 저장만 마친다
+    if (quitFromClose.current) {
+      if (!(await confirmClose())) return keepRecording();
+    } else await flushMemos().catch(() => false);
+    void api.quitReady();
   };
-  const keepRecording = () => {
+  function keepRecording() {
     setQuitAsk(null);
     void api.quitCancel();
-  };
+  }
 
   // 단어 싱크는 노트를 닫아도 계속 돈다: 끝나면 열려 있는 노트와 상관없이 알린다 (alignJobs.ts)
   useEffect(
@@ -962,7 +975,7 @@ export function App() {
           confirmLabel={t("녹음 끝내고 종료")}
           busy={quitAsk === "closing"}
           onCancel={keepRecording}
-          onConfirm={quitAfterRecording}
+          onConfirm={() => void quitAfterRecording()}
         />
       )}
       {afterAsk && <AfterRecordDialog seconds={afterAsk.seconds} convert={convertGate} onChoose={chooseAfter} />}

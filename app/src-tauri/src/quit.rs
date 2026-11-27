@@ -8,6 +8,8 @@ use tauri::{AppHandle, Emitter, Manager};
 /// ⌘Q 종료 흐름: 화면이 쓰던 메모를 저장하는 동안 종료를 미룬다. QUIT_ASKED는 한 번만 묻게, QUIT_READY는 미룬 종료를 통과시킨다
 static QUIT_ASKED: AtomicBool = AtomicBool::new(false);
 static QUIT_READY: AtomicBool = AtomicBool::new(false);
+/// 녹음 중이라 화면에 묻고 답을 기다리는 중이다. 이때 종료를 또 요청하면(화면이 멈췄거나 묻는 창을 받지 못함) 예전처럼 끝낸다
+static ASKING_RECORDING: AtomicBool = AtomicBool::new(false);
 /// 화면이 응답하지 않아도 이 시간 뒤에는 끝낸다
 const QUIT_WAIT: Duration = Duration::from_secs(3);
 
@@ -21,24 +23,51 @@ pub fn quit_ready(app: AppHandle) {
 /// 녹음 중 종료를 묻는 창에서 `계속 녹음`을 골랐다: 다음 종료 요청을 다시 받는다
 #[tauri::command]
 pub fn quit_cancel() {
+    ASKING_RECORDING.store(false, Ordering::SeqCst);
     QUIT_ASKED.store(false, Ordering::SeqCst);
 }
 
+/// 종료 요청 하나를 어떻게 다룰지 (QUIT_ASKED·ASKING_RECORDING을 고친다)
+#[derive(Debug, PartialEq)]
+enum Step {
+    /// 이미 메모 저장을 기다리는 중: 그대로 둔다
+    Wait,
+    /// 녹음 중: 화면이 묻는다 (시간 제한 없음)
+    AskRecording,
+    /// 메모를 저장할 때까지(최대 3초) 기다렸다 끝낸다. 녹음 프로그램은 앱이 끝나며 stdin EOF로 스스로 마무리한다
+    ExitSoon,
+}
+
+fn step(recording: bool) -> Step {
+    if QUIT_ASKED.swap(true, Ordering::SeqCst) {
+        // 묻는 창에 답이 없는 채 다시 종료를 요청했다: 영구히 막히지 않게 예전 길로 끝낸다
+        return if ASKING_RECORDING.swap(false, Ordering::SeqCst) { Step::ExitSoon } else { Step::Wait };
+    }
+    if recording {
+        ASKING_RECORDING.store(true, Ordering::SeqCst);
+        Step::AskRecording
+    } else {
+        Step::ExitSoon
+    }
+}
+
 /// 종료를 한 번만 미루고 화면에 저장하라고 알린다. 3초 안에 quit_ready가 오지 않아도 끝낸다.
-/// 녹음 중이면 창을 보이고 화면이 묻게 한다(시간 제한 없음: 사람이 고를 때까지 기다린다)
+/// 녹음 중이면 창을 보이고 화면이 묻게 한다(시간 제한 없음: 사람이 고를 때까지 기다린다). 묻는 중에 다시 종료하면 끝낸다
 pub(crate) fn begin_quit(app: &AppHandle) {
     if app.webview_windows().is_empty() {
         QUIT_READY.store(true, Ordering::SeqCst);
         return app.exit(0);
     }
-    if QUIT_ASKED.swap(true, Ordering::SeqCst) {
-        return;
-    }
     let recording = app.state::<crate::AppState>().rec.lock().unwrap().is_some();
-    let _ = app.emit("quit-requested", serde_json::json!({ "recording": recording }));
-    if recording {
-        crate::tray::show_main(app); // 메뉴 막대의 종료: 숨긴 창에 묻는 창이 뜬다
-        return;
+    match step(recording) {
+        Step::Wait => return,
+        Step::AskRecording => {
+            let _ = app.emit("quit-requested", serde_json::json!({ "recording": true }));
+            return crate::tray::show_main(app); // 메뉴 막대의 종료: 숨긴 창에 묻는 창이 뜬다
+        }
+        Step::ExitSoon => {
+            let _ = app.emit("quit-requested", serde_json::json!({ "recording": false }));
+        }
     }
     let handle = app.clone();
     std::thread::spawn(move || {
@@ -74,4 +103,23 @@ pub(crate) fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri
         app_sub.append(&MenuItem::with_id(app, QUIT_MENU_ID, format!("Quit {name}"), true, Some("Cmd+Q"))?)?;
     }
     Ok(menu)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_second_quit_while_asking_about_the_recording_quits_instead_of_waiting_forever() {
+        quit_cancel();
+        assert_eq!(step(false), Step::ExitSoon);
+        assert_eq!(step(false), Step::Wait); // 메모 저장을 기다리는 중
+        quit_cancel();
+        assert_eq!(step(true), Step::AskRecording);
+        assert_eq!(step(true), Step::ExitSoon); // 화면이 답하지 않아도 두 번째 종료는 끝낸다
+        assert_eq!(step(true), Step::Wait);
+        quit_cancel(); // `계속 녹음`: 다음 종료 요청은 다시 묻는다
+        assert_eq!(step(true), Step::AskRecording);
+        quit_cancel();
+    }
 }

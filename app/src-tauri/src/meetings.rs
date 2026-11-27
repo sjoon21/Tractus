@@ -292,6 +292,11 @@ fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
     serde_json::from_str(&raw).map_err(|e| tv("노트 파일을 읽지 못했습니다\n{path}: {e}", &[("path", path.display().to_string()), ("e", e.to_string())]))
 }
 
+/// serde 오류를 로그에 남길 모양으로: 종류·줄·열만 (값은 남기지 않는다)
+fn json_error_brief(e: &serde_json::Error) -> String {
+    format!("{:?} error at line {} column {}", e.classify(), e.line(), e.column())
+}
+
 /// "memo"만 메모이고 없거나 모르는 값은 녹음이다 (옛 파일을 옮기지 않는다)
 fn kind_of(t: &Transcript) -> &'static str {
     if t.kind.as_deref() == Some("memo") {
@@ -369,14 +374,16 @@ pub fn list(home: &Path) -> Vec<MeetingInfo> {
                 fresh.insert(file, (*m, *n, hit.clone()));
                 return Some(refresh_dynamic(&dir, hit.clone()));
             }
-            match read_json::<Transcript>(&file) {
+            // 로그에는 오류의 종류·줄·열만: serde 문구(`invalid type: string "…"`)는 따옴표 안에 노트 문장·제목을 담는다 (docs/desktop.md §3.10)
+            let parsed = fs::read_to_string(&file).map_err(|e| format!("{:?}", e.kind())).and_then(|raw| serde_json::from_str::<Transcript>(&raw).map_err(|e| json_error_brief(&e)));
+            match parsed {
                 Ok(t) => {
                     let m = info(&dir, &t);
                     fresh.insert(file, (sig.0, sig.1, m.clone()));
                     Some(m)
                 }
-                Err(err) => {
-                    log_eprintln!("회의 건너뜀: {err}");
+                Err(why) => {
+                    log_eprintln!("회의 건너뜀: {}: {why}", file.display());
                     None
                 }
             }
@@ -553,6 +560,14 @@ pub fn load_chat(home: &Path, id: &str) -> Result<Vec<ChatEntry>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_broken_note_is_logged_without_its_text() {
+        let e = serde_json::from_str::<Transcript>(r#"{"segments": "김민수 면담 메모"}"#).unwrap_err();
+        assert!(e.to_string().contains("김민수")); // serde 문구는 값을 담는다
+        let brief = json_error_brief(&e);
+        assert!(!brief.contains("김민수") && brief.contains("line 1"), "{brief}");
+    }
 
     /// 가상 회의 코퍼스. TRACTUS_TEST_HOME으로 바꿀 수 있다 (예: Phase 4 합성 홈).
     fn fixture_home() -> PathBuf {

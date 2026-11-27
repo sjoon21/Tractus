@@ -79,7 +79,8 @@ pub fn scrub(msg: &str, who: &Who) -> String {
 fn mask_note_dirs(line: &str) -> String {
     let mut out = String::new();
     let mut rest = line;
-    while let Some(i) = rest.find("meetings/").or_else(|| rest.find("meetings\\")) {
+    // `/`와 `\` 경로가 한 줄에 섞일 수 있다(파이썬 traceback): 둘 중 앞선 것부터
+    while let Some(i) = [rest.find("meetings/"), rest.find("meetings\\")].into_iter().flatten().min() {
         let start = i + "meetings/".len();
         out.push_str(&rest[..start]);
         let tail = &rest[start..];
@@ -176,6 +177,7 @@ mod tests {
         assert_eq!(s, "Error: ‘…’에 해당하는 노트가 없습니다 (~/Tractus/meetings/…");
         assert_eq!(scrub("노트 파일을 읽지 못했습니다\n/Users/kim/T/meetings/2026-10-02_예산 회의_01X/transcript.json: EOF", &who), "노트 파일을 읽지 못했습니다\n~/T/meetings/…/transcript.json: EOF");
         assert_eq!(scrub(r"C:\T\meetings\2026_예산_01X\a.json", &who), r"C:\T\meetings\…\a.json");
+        assert_eq!(scrub(r"C:\T\meetings\2026_예산 회의_01X\a.json … /x/meetings/2026_면담_02Y/b", &who), r"C:\T\meetings\…\a.json … /x/meetings/…/b");
         assert_eq!(scrub("“김민수” 님 kim@host", &who), "“…” 님 <user>@host");
         assert_eq!(scrub("Authorization: Bearer up_a1b2c3d4e5f6g7h8i9j0k1", &who), "Authorization: Bearer ***");
         // 노트 ID(ULID, 대문자)와 장치 이름·소리 크기는 그대로다 (녹음 프로그램 진단)

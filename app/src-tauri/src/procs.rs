@@ -6,6 +6,7 @@
 use crate::i18n::{t, tv};
 use serde_json::{json, Map, Value};
 use std::collections::VecDeque;
+use std::ffi::{OsStr, OsString};
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -60,16 +61,27 @@ pub fn kill_tree(child: &mut Child) {
     let _ = child.kill();
 }
 
-/// 하위 프로세스가 실패하면(녹음 프로그램은 늘: 장치·소리 크기 진단) 이름·종료 코드·stderr 꼬리를 앱 로그에 남긴다. 가리기는 applog가 한다
-pub fn log_exit(program: &str, code: Option<i32>, stderr: &str) {
+/// 하위 프로세스가 실패하면(녹음 프로그램은 늘: 장치·소리 크기 진단) 이름·종료 코드·stderr 꼬리를 앱 로그에 남긴다.
+/// 인수로 넘긴 파일의 이름은 여기서 가리고(hide_arg_files), 나머지 가리기는 applog가 한다
+pub fn log_exit<'a>(program: &str, code: Option<i32>, stderr: &str, args: impl IntoIterator<Item = &'a OsStr>) {
     if code == Some(0) && !is_recorder(program) {
         return;
     }
     let name = Path::new(program).file_name().map_or_else(|| program.to_string(), |n| n.to_string_lossy().into_owned());
+    let stderr = hide_arg_files(stderr, args);
     let lines: Vec<&str> = stderr.lines().collect();
     let tail = lines[lines.len().saturating_sub(STDERR_TAIL)..].join("\n");
     let code = code.map_or_else(|| "none".to_string(), |c| c.to_string());
     crate::applog::write(&format!("{name} exited (code {code}){}{tail}", if tail.is_empty() { "" } else { ":\n" }));
+}
+
+/// 인수로 넘긴 파일(가져온 녹음 등)의 이름에는 사람 이름·제목이 든다: 경로 구분자가 있고 확장자가 있는 인수의 파일 이름을 `…`로 가린다
+/// (따옴표 없이 찍는 ffmpeg 오류나 파이썬의 '…' 표기도 함께 가린다)
+fn hide_arg_files<'a>(stderr: &str, args: impl IntoIterator<Item = &'a OsStr>) -> String {
+    args.into_iter()
+        .filter_map(|a| a.to_str().filter(|a| a.contains(['/', '\\'])))
+        .filter_map(|a| Path::new(a).extension().and(Path::new(a).file_name()).and_then(|n| n.to_str()).map(str::to_owned))
+        .fold(stderr.to_string(), |s, n| s.replace(&n, "…"))
 }
 
 /// `tag`의 필드를 모든 이벤트에 덧붙인다 (예: {"job": "01K…", "kind": "transcribe"}).
@@ -79,6 +91,7 @@ pub fn spawn_streaming(
     emit: impl Fn(Value) + Send + Sync + 'static,
 ) -> Result<(ChildStdin, Arc<Mutex<Child>>), String> {
     let program = cmd.get_program().to_string_lossy().into_owned();
+    let args: Vec<OsString> = cmd.get_args().map(OsStr::to_owned).collect();
     let mut child = spawn(cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())).map_err(|e| cannot_run(&program, e))?;
     let stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
@@ -115,7 +128,7 @@ pub fn spawn_streaming(
         let code = waiter.lock().unwrap().wait().ok().and_then(|s| s.code());
         let _ = err_thread.join();
         let stderr = tail.lock().unwrap().iter().cloned().collect::<Vec<String>>().join("\n");
-        log_exit(&program, code, &stderr);
+        log_exit(&program, code, &stderr, args.iter().map(OsString::as_os_str));
         let Value::Object(exit) = json!({"event": "exit", "code": code, "stderr": stderr}) else { unreachable!() };
         emit(with_tag(exit));
     });
@@ -245,6 +258,16 @@ mod win {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn log_hides_the_names_of_files_passed_as_arguments() {
+        let args = ["transcribe", "/Users/kim/Downloads/김민수 면담.m4a", "--progress-json", "-m", "tractus.cli", "/Users/kim/Tractus"].map(OsStr::new);
+        let err = "ffmpeg: /Users/kim/Downloads/김민수 면담.m4a: Invalid data\nFileNotFoundError: '/x/김민수 면담.m4a'";
+        let got = hide_arg_files(err, args);
+        assert!(!got.contains("김민수"), "{got}");
+        assert!(got.contains("Invalid data") && got.contains("/Users/kim/Downloads/…")); // 폴더·오류 문구는 남는다 (홈 폴더는 applog가 가린다)
+        assert_eq!(hide_arg_files("tractus.cli failed in /Users/kim/Tractus", args), "tractus.cli failed in /Users/kim/Tractus"); // 확장자 없는 폴더·모듈 이름은 그대로
+    }
 
     #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]

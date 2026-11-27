@@ -285,7 +285,7 @@ fn run_tractus(s: &Settings, args: &[String], input: Option<&str>, what: &str) -
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
-        procs::log_exit(&s.tractus_resolved().path, out.status.code(), &err);
+        procs::log_exit(&s.tractus_resolved().path, out.status.code(), &err, cmd.get_args());
         return Err(last_error_line(&err).unwrap_or_else(|| tv("{what} (종료 코드 {code})", &[("what", what.to_string()), ("code", out.status.code().map_or(t("없음"), |c| c.to_string()))])));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
