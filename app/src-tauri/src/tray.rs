@@ -1019,7 +1019,8 @@ mod tests {
 
     #[test]
     fn icons_are_png_template_sizes() {
-        for (bytes, size) in [(ICON_IDLE, 36), (ICON_RECORDING, 36)] {
+        let size = if cfg!(windows) { 32 } else { 36 }; // Windows는 32 px 컬러 아이콘, 그 밖은 @2x 템플릿
+        for bytes in [ICON_IDLE, ICON_RECORDING] {
             assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
             assert_eq!(u32::from_be_bytes(bytes[16..20].try_into().unwrap()), size);
             assert_eq!(u32::from_be_bytes(bytes[20..24].try_into().unwrap()), size);
