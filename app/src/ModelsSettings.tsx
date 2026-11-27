@@ -12,7 +12,6 @@ import { Row, Section } from "@/components/ui/section";
 import { checkClass } from "@/components/ui/switch";
 import { cn } from "@/components/ui/utils";
 import { api, errDetail, errText } from "./api";
-import { trackOf } from "./caps";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorDetail } from "./ErrorDetail";
 import { t } from "./i18n";
@@ -63,8 +62,10 @@ import {
   overallFraction,
   planOf,
   planSize,
+  memoryWarned,
+  MEMORY_WARN_WINDOWS,
   presetIds,
-  PRESETS,
+  visiblePresets,
   progressLine,
   removeDialog,
   STATE_LABEL,
@@ -74,10 +75,11 @@ import {
   type ModelRow,
   type ModelsList,
   type PlanItem,
-  type Preset,
 } from "./models";
 import { cancelDownload, startDownload, useDownload } from "./modelsJob";
 import { patchSettings, pickPath } from "./pathFix";
+import { MODELS_LABEL } from "./caps";
+import { isWindows } from "./platform";
 import { useCapabilities } from "./useCapabilities";
 
 const LIST_FAILED = t("모델 목록을 읽지 못했습니다");
@@ -132,13 +134,15 @@ export function PresetButtons({ list, dl }: { list: ModelsList; dl: DownloadStat
   const { report } = useCapabilities();
   const track = report?.doctor?.recommended_track;
   const free = list.disk_free_bytes;
+  const { presets, main: mainId } = visiblePresets(list.models, track);
+  const memWarn = memoryWarned(report?.doctor?.system.standard_recommended, isWindows());
   return (
-    <div className="grid gap-2 sm:grid-cols-3" role="group" aria-label={t("모델 구성")}>
-      {PRESETS.map((p) => {
-        const plan = planOf(toInstall(presetIds(p.id as Preset, list.models, track), list.models), list.models);
+    <div className={cn("grid gap-2", presets.length > 1 && "sm:grid-cols-3")} role="group" aria-label={t("모델 구성")}>
+      {presets.map((p) => {
+        const plan = planOf(toInstall(presetIds(p.id, list.models, track), list.models), list.models);
         const short = diskShort(plan, free);
         const done = plan.length === 0;
-        const main = p.id === "standard" && trackOf(track) === "std";
+        const main = p.id === mainId;
         return (
           <div key={p.id} className="flex flex-col items-start gap-2 rounded-lg border border-border bg-card p-3">
             <Button variant={main ? "default" : "outline"} size="sm" disabled={busy || done || !!short} onClick={() => void startPreset(plan, list.models)}>
@@ -146,6 +150,7 @@ export function PresetButtons({ list, dl }: { list: ModelsList; dl: DownloadStat
               <span className={cn("text-[11px] font-normal tabular-nums", main ? "opacity-70" : "text-muted-foreground")}>{done ? t("설치됨") : t("약 {size}", { size: fmtBytes(planSize(plan)) })}</span>
             </Button>
             <p className={cn("m-0 text-xs leading-relaxed", short ? WARN_TEXT : "text-muted-foreground")}>{short ?? p.note}</p>
+            {memWarn && !short && <p className={cn("m-0 text-xs leading-relaxed", WARN_TEXT)}>{MEMORY_WARN_WINDOWS}</p>}
           </div>
         );
       })}
@@ -291,6 +296,7 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
   const inUse = list ? engineInUse(list.models, asrEngine, caps.report?.doctor?.recommended_track) : null;
   // 드롭다운: 모든 변환 엔진이 보이고, 받지 않은 엔진을 고르면 받기를 시작한다. 빈 값 = 자동
   const engines = list ? list.models.filter((m) => m.engine) : [];
+  const singleEngine = engines.length === 1; // Windows 미리보기: 등록 목록의 변환 엔진이 asr-std 하나 (설계 asr-onnx.md 4.4)
   const autoEngine = list ? list.models.find((m) => m.id === engineInUse(list.models, null, caps.report?.doctor?.recommended_track)) : undefined;
   const pickValue = asrEngine && engines.some((m) => m.id === asrEngine) ? asrEngine : "";
   const choose = async (m: ModelRow | null) => {
@@ -506,7 +512,7 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
           </div>
         )}
 
-        {list && (
+        {list && !singleEngine && (
           <Section title={ENGINE_PICK_TITLE} description={inUse ? engineNowUsing(engineName(list.models.find((m) => m.id === inUse) ?? { name: inUse, model_name: null })) + " " + ENGINE_PICK_HINT : ENGINE_NONE_INSTALLED}>
             <div role="radiogroup" aria-label={ENGINE_PICK_TITLE} className="divide-y divide-border">
               <EngineChoice id="asr-engine-auto" checked={pickValue === ""} busy={busy} title={autoEngine ? engineAutoOption(engineName(autoEngine)) : ENGINE_AUTO_OPTION} note={ENGINE_AUTO_NOTE} onPick={() => void pickEngine(null)} />
@@ -546,9 +552,10 @@ export function ModelsView({ onBack }: { onBack: () => void }) {
         )}
 
         {list && (
-          <Section title={OTHER_MODELS_TITLE}>
+          // 엔진이 하나뿐이면(Windows 미리보기) 고를 것이 없어 엔진 고르기를 그리지 않고, 그 엔진은 이 표에 함께 둔다
+          <Section title={singleEngine ? MODELS_LABEL : OTHER_MODELS_TITLE}>
             {list.models
-              .filter((m) => !m.engine)
+              .filter((m) => !m.engine || singleEngine)
               .map((m) => {
                 const detailRows = modelDetailRows(m);
                 const unusedHere = m.id === EMBEDDING_ID && viaUpstage;

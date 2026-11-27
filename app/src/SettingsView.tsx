@@ -24,6 +24,7 @@ import { CalendarSection } from "./CalendarSettings";
 import { HELP_REPLAY, HELP_REPLAY_BUTTON, HELP_REPLAY_HINT, HELP_SECTION, HELP_TIPS, HELP_TIPS_HINT, resetOnboard } from "./onboarding";
 import { readTips, resetTips, tipsOff } from "./tips";
 import { TemplatesSection } from "./TemplatesSettings";
+import { isWindows } from "./platform";
 import { TRAY_KEEP_HINT, TRAY_KEEP_LABEL, TRAY_SHOW_HINT, TRAY_SHOW_LABEL } from "./trayText";
 import { getVersion } from "@tauri-apps/api/app";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -46,6 +47,7 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack, toUpdate }: { o
   const [status, setStatus] = useState<McpStatus | { text: string; detail: string | null } | null>(null);
   const caps = useCapabilities();
   const liveGate = caps.can("live");
+  const windows = isWindows();
 
   useEffect(() => {
     api.getSettings().then(
@@ -185,14 +187,19 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack, toUpdate }: { o
             htmlFor="mini-recorder"
             control={<Switch id="mini-recorder" checked={miniOn} onChange={(e) => void setMini(e.target.checked)} />}
           />
-          <Row label={CALL_DETECT_LABEL} hint={CALL_DETECT_HINT} htmlFor="call-detect" control={<Switch id="call-detect" checked={callOn} onChange={(e) => void setCall(e.target.checked, autoStopOn)} />} />
-          <Row
-            label={CALL_STOP_LABEL}
-            hint={CALL_STOP_HINT}
-            htmlFor="call-autostop"
-            className={callOn ? undefined : "opacity-60"}
-            control={<Switch id="call-autostop" checked={autoStopOn && callOn} disabled={!callOn} onChange={(e) => void setCall(callOn, e.target.checked)} />}
-          />
+          {/* 통화 감지는 macOS 앱(번들 ID)만 본다 (calls.rs start가 다른 플랫폼에서 돌지 않는다) */}
+          {!windows && (
+            <>
+              <Row label={CALL_DETECT_LABEL} hint={CALL_DETECT_HINT} htmlFor="call-detect" control={<Switch id="call-detect" checked={callOn} onChange={(e) => void setCall(e.target.checked, autoStopOn)} />} />
+              <Row
+                label={CALL_STOP_LABEL}
+                hint={CALL_STOP_HINT}
+                htmlFor="call-autostop"
+                className={callOn ? undefined : "opacity-60"}
+                control={<Switch id="call-autostop" checked={autoStopOn && callOn} disabled={!callOn} onChange={(e) => void setCall(callOn, e.target.checked)} />}
+              />
+            </>
+          )}
           <Row
             label={AFTER_SETTING.label}
             hint={AFTER_SETTING.hint}
@@ -252,7 +259,8 @@ export function SettingsView({ onSaved, relaunchBlocked, onBack, toUpdate }: { o
         <TemplatesSection />
         <VoicesSection />
 
-        <CalendarSection />
+        {/* 캘린더는 녹음 프로그램의 EventKit(macOS)으로 읽는다. Windows 녹음 프로그램에는 calendar 명령이 없다 */}
+        {!windows && <CalendarSection />}
 
         <ObsidianSection initial={s} />
 

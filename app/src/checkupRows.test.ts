@@ -178,3 +178,38 @@ describe("권한 줄", () => {
     expect(checkupHeadline([{ id: "permissions", title: "", rows: permissionRows("denied") }])).toContain("1");
   });
 });
+
+describe("checkupSections: Windows 미리보기 (등록 목록 vad·asr-std)", () => {
+  const winList = (...installed: string[]): ModelsList => ({ models_dir: "/m", disk_free_bytes: 5e10, download_active: false, models: ["vad", "asr-std"].map((id) => m(id, installed.includes(id))) });
+  const win = (l: ModelsList, sys: NonNullable<Parameters<typeof report>[0]>["sys"] = {}, helper = false) => checkupSections({ report: report({ sys, helper }), models: l, keySaved: true, windows: true });
+  test("엔진이 하나면 `둘 중 하나`를 말하지 않고, 목록에 없는 권장·선택 모델 줄은 없다", () => {
+    const s = win(winList("vad"));
+    expect(row(s, "required").detail).toContain("변환 엔진 파일");
+    expect(row(s, "required").detail).not.toContain("가벼운");
+    expect(row(win(winList("vad", "asr-std")), "required")).toMatchObject({ status: "ok" });
+    expect(row(win(winList("vad", "asr-std")), "required").detail).not.toContain("둘 중 하나");
+    expect(rows(s, "models").map((r) => r.id)).toEqual(["required"]);
+  });
+  test("메모리 16 GB 미만이면 막지 않고 경고 (변환 중 약 7 GB)", () => {
+    expect(row(win(winList(), { memory_gb: 15.7, standard_recommended: false }), "memory")).toMatchObject({ status: "warn" });
+    expect(row(win(winList(), { memory_gb: 15.7, standard_recommended: false }), "memory").detail).toContain("7 GB");
+    expect(row(win(winList(), { memory_gb: 32, standard_recommended: true }), "memory").status).toBe("ok");
+    expect(row(win(winList(), { memory_gb: 4, standard_recommended: false }), "memory").status).toBe("blocked");
+  });
+  test("Apple Silicon·macOS 줄 대신 Windows 줄 (코어 problems로 막힘)", () => {
+    const s = win(winList(), { arch: "AMD64", macos_version: "" });
+    expect(rows(s, "system").map((r) => r.id)).toEqual(["os", "memory", "disk"]);
+    expect(row(s, "os").status).toBe("ok");
+    expect(row(win(winList(), { arch: "ARM64", problems: ["unsupported_arch"] }), "os").status).toBe("blocked");
+  });
+  test("9명 이상 구분 도구 줄은 macOS에만", () => {
+    expect(row(win(winList(), {}, false), "diar-helper")).toBeUndefined();
+    expect(row(checkupSections({ report: report({ helper: false }), models: list(), keySaved: true, windows: false }), "diar-helper")).toBeDefined();
+  });
+  test("macOS 목록은 예전 그대로: 권장·선택 줄과 `표준·가벼운 것 중 하나`", () => {
+    const s = checkupSections({ report: report({ sys: { memory_gb: 12, standard_recommended: false } }), models: list("vad"), keySaved: true, windows: false });
+    expect(rows(s, "models").map((r) => r.id)).toEqual(["required", "recommended", "optional"]);
+    expect(row(s, "required").detail).toContain("표준·가벼운 것 중 하나");
+    expect(row(s, "memory").detail).toContain("저사양 구성");
+  });
+});

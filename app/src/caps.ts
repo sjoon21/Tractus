@@ -25,7 +25,7 @@ export interface DoctorTool {
 }
 
 export interface Doctor {
-  system: { arch: string | null; macos_version: string | null; memory_gb: number | null; meets_min: boolean | null; disk_free_bytes: number | null };
+  system: { arch: string | null; macos_version: string | null; memory_gb: number | null; meets_min: boolean | null; disk_free_bytes: number | null; /** 메모리 16 GB 이상인가 (옛 코어는 없다) */ standard_recommended?: boolean | null; /** 최소 사양에 못 미치는 이유 코드 (not_apple_silicon·macos_too_old·unsupported_arch·windows_too_old·memory_low) */ problems?: string[] };
   tools: { ffmpeg: DoctorTool; recorder: DoctorTool; diar_helper: DoctorTool; brew: DoctorTool | null };
   models: { id: string; state: ModelState; installed: boolean }[];
   capabilities: DoctorCap[];
@@ -58,9 +58,13 @@ export interface Fix {
   label: string;
 }
 
-export type Decision = { ok: true } | { ok: false; reason: string; missing: string[]; fix: Fix };
+/** fix가 null이면 고칠 길이 없다 (운영체제가 아직 지원하지 않는 기능 `platform`): 이유만 보인다 */
+export type Decision = { ok: true } | { ok: false; reason: string; missing: string[]; fix: Fix | null };
 
 export const OK: Decision = { ok: true };
+
+/** 코어가 `missing`에 넣는, 이 운영체제의 등록 목록에 없는 기능 (Windows 미리보기, 설계 asr-onnx.md 4.2). 다른 이유보다 먼저 본다 */
+export const PLATFORM_MISSING = "platform";
 
 /** 코어가 `missing`에 모델과 함께 돌려줄 수 있는 도구 이름 (이 밖은 모델 ID로 본다. `memory`는 live만 따로 먼저 읽는다) */
 const TOOL_IDS = new Set(["ffmpeg", "recorder", "tractus-rec", "diar_helper", "diar-helper", "tractus-diar"]);
@@ -90,6 +94,7 @@ export const FIX_CHECKUP: Fix = { kind: "checkup", label: CHECKUP_OPEN };
 export const FIX_SETTINGS: Fix = { kind: "settings", label: t("설정 열기") };
 
 const REASON = {
+  platform: t("Windows 미리보기에서는 아직 쓸 수 없는 기능입니다. 다음 판에서 하나씩 엽니다."),
   convert: t("변환 엔진이 없어 텍스트로 변환할 수 없습니다. 모델 화면에서 설치하세요."),
   convertBoth: t("변환 엔진과 ffmpeg가 없어 텍스트로 변환할 수 없습니다. 모델 화면에서 변환 엔진을 설치하고, 터미널에서 brew install ffmpeg를 실행하세요."),
   ffmpeg: t("음성 파일을 읽는 데 필요한 ffmpeg가 없어 텍스트로 변환할 수 없습니다. 터미널에서 brew install ffmpeg로 설치한 뒤 시작 점검에서 다시 확인하세요."),
@@ -122,6 +127,8 @@ export function decide(report: DoctorReport | null | undefined, id: CapId): Deci
   if (id === "record") return report && !report.rec_bin_exists ? { ok: false, reason: REASON.record, missing: ["recorder"], fix: FIX_SETTINGS } : OK;
   const cap = report?.doctor?.capabilities.find((c) => c.id === id);
   if (!cap || cap.ready) return OK; // 모르면(옛 코어·점검 실패) 막지 않는다
+  // 받을 수 있는 모델이 없으니 모델 화면으로 보내지 않는다. Upstage 스마트 검색은 Rust가 missing을 바꿔 여기를 지나지 않는다
+  if (cap.missing.includes(PLATFORM_MISSING)) return { ok: false, reason: REASON.platform, missing: cap.missing, fix: null };
   const models = cap.missing.filter((m) => !isTool(m));
   const tools = cap.missing.filter(isTool);
   const noFfmpeg = tools.includes("ffmpeg");
@@ -164,7 +171,7 @@ export const RECORD_NOTICE_MODELS = t("녹음만 저장됩니다 · 변환 엔�
 export const RECORD_NOTICE_FFMPEG = t("녹음만 저장됩니다 · ffmpeg 설치");
 export function recordNotice(d: Decision): string | null {
   if (d.ok) return null;
-  return d.fix.kind === "checkup" ? RECORD_NOTICE_FFMPEG : RECORD_NOTICE_MODELS;
+  return d.fix?.kind === "checkup" ? RECORD_NOTICE_FFMPEG : RECORD_NOTICE_MODELS;
 }
 
 /** 변환을 못 하는 동안 파일을 끌어 오면 보이는 덮개 문장 (놓으면 이유와 고치는 길이 알림으로 보인다) */
@@ -177,9 +184,9 @@ export const UNCONVERTED_SAVED = t("녹음을 저장했습니다. 지금은 텍�
 export const SPEAKER_HINT = t("참석자 구분 모델이 없어 참석자를 나누지 못했습니다");
 export const SPEAKER_HINT_DISMISS = t("이 안내 닫기");
 
-/** 안내를 보일지: 모델이 없고, 이 노트에 참석자가 하나도 없고(대화는 있고), 아직 닫지 않았을 때 */
+/** 안내를 보일지: 모델이 없고(받을 수 있고: platform이 아니고), 이 노트에 참석자가 하나도 없고(대화는 있고), 아직 닫지 않았을 때 */
 export function speakerHintVisible(o: { diarize: Decision; isRecording: boolean; segments: number; speakers: number; dismissed: boolean }): boolean {
-  return !o.diarize.ok && o.isRecording && o.segments > 0 && o.speakers === 0 && !o.dismissed;
+  return !o.diarize.ok && o.diarize.fix !== null && o.isRecording && o.segments > 0 && o.speakers === 0 && !o.dismissed;
 }
 
 /** ⌘K 검색 결과가 단어 일치뿐이고 스마트 검색 모델이 없을 때만 이유와 고치는 길을 보인다 */

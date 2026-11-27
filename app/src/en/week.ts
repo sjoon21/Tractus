@@ -9,5 +9,6 @@ export default {
   요일: "Days",
   "{day}일 {weekday}요일 · 일정 {e} · 노트 {n}": "{weekday} {day} · events {e} · notes {n}",
   "일정과 노트가 없습니다": "No events or notes",
+  "노트가 없습니다": "No notes",
   종일: "All day",
 } satisfies Dict;
