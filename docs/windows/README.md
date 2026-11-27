@@ -30,14 +30,17 @@ PR 번호는 이 문서를 쓸 때의 것이다. 합쳐졌는지는 `git log --o
   | --- | --- | --- |
   | `protocol.rs` | 공통 | stdin 명령·인수·메모·`recording.json`·이벤트 출력 |
   | `wav.rs` | 공통 | WAV 쓰기, 0.25초마다 헤더 갱신, 끊긴 구간 0으로 메우기 |
-  | `meter.rs` | 공통 | 소리 크기(dBFS), 0만 오는 시스템 오디오 감지, float→16-bit |
+  | `meter.rs` | 공통 | 소리 크기(dBFS), 0만 오는 시스템 오디오 감지, float→16-bit, 1분마다 트랙별 가장 큰 소리 진단 로그 |
   | `fake.rs` | 공통 | `--fake` 신호 (마이크 440 Hz, 시스템 660 Hz) |
-  | `recorder.rs` | 공통 | 녹음 상태 기계 (Swift `Recorder.swift`와 같은 규칙) |
+  | `recorder.rs` | 공통 | 녹음 상태 기계 (Swift `Recorder.swift`와 같은 규칙), 장치 바뀜 알림 300ms 묶기 |
   | `gap.rs` | 공통(Windows만 씀) | loopback 무음 채우기 (Yogurt) |
-  | `win.rs` | Windows | WASAPI 마이크, Tractus만 뺀 process loopback → 출력 전체, 장치 바뀜, QPC 시계 (Yogurt) |
+  | `mix.rs` | 공통(Windows만 씀) | 출력 장치 여럿을 들린 시각대로 한 트랙으로 섞기 (Yogurt 1b016b0) |
+  | `win.rs` | Windows | WASAPI 마이크, 시스템 소리(기본 출력 전체 + 다르면 기본 통신 장치, `TRACTUS_REC_LOOPBACK=process`면 Tractus만 뺀 process loopback), 장치 바뀜, QPC 시계, 연 장치 이름 로그 (Yogurt) |
 
+- **시스템 소리 (0.6.0, Yogurt ff38a76·1b016b0):** 기본값은 기본 출력 장치 전체(endpoint loopback, Tractus 소리 포함)다. 기본 통신 장치(`eCommunications`, Teams가 통화 소리를 내는 곳)가 기본 출력과 다르면 그것도 열어 `mix.rs`로 섞는다. 파일은 그대로 `system.wav` 하나다. process loopback("Tractus를 뺀 모든 앱")은 `TRACTUS_REC_LOOPBACK=process`일 때만 쓴다: Yogurt에서 새 Teams 소리를 하나도 못 들은 기기가 있었다(#35, 기본 출력이 Jabra 헤드셋). 기본 출력·통신 장치·입력 장치가 바뀌면 알림을 300ms 묶어 그 트랙만 한 번 다시 연다(알림은 역할마다 따로 오고 블루투스 핸즈프리 전환 때 몰려 온다).
+- **진단 로그 (stderr, 계약 이벤트는 그대로):** 연 장치의 이름(`마이크: …`, `시스템 오디오: 출력 전체 …: …`, `… 기본 통신 장치도 함께 …: …`)과 1분마다 트랙별 가장 큰 소리(`지난 60초 가장 큰 소리: 마이크 -12.5 dBFS, 시스템 오디오 -80.0 dBFS (상대 소리 없음)`, -57 dBFS 아래면 `상대 소리 없음`)를 남긴다. 장치 이름과 소리 크기뿐이고 녹음 내용은 남지 않는다. 앱이 이 줄을 파일로 남기는 것은 앱 로그 작업(0.6.0 계획 21번) 몫이다.
 - **Windows에서 다른 점:** 에코 제거가 없어 `--echo-cancel`은 경고 후 끈다. 시스템 오디오 권한이 없어 `system_zero` 감시를 끈다. 마이크 권한 창이 없어 `mic-permission`은 상태만 읽는다. `mic-apps`(통화 감지)·`calendar`는 없다.
-- **확인한 것:** 단위 시험 13개. 계약 시험 2개(같은 명령을 Swift판과 Rust판 `--fake`에 넣어 이벤트 종류·키와 `recording.json`이 같은지 비교). Mac에서 `cargo check --target x86_64-pc-windows-msvc`. CI `windows-recorder.yml`에서 빌드·시험·VC++ 런타임 의존 없음·장치 없는 러너에서 계약대로 끝나는지.
+- **확인한 것:** 단위 시험 23개(Stage 0의 14개에 0.6.0 녹음 수정에서 섞기 7·알림 묶기 1·소리 로그 1을 더했다). 계약 시험 2개(같은 명령을 Swift판과 Rust판 `--fake`에 넣어 이벤트 종류·키와 `recording.json`이 같은지 비교). Mac에서 `cargo check --target x86_64-pc-windows-msvc`. CI `windows-recorder.yml`에서 빌드·시험·VC++ 런타임 의존 없음·장치 없는 러너에서 계약대로 끝나는지.
 
 ### 2.2 코어 이식성 정리 (#109)
 
@@ -119,10 +122,12 @@ cargo build --release
 
 - [ ] `check`: 마이크가 `granted`인가. 설정 › 개인정보 › 마이크에서 "데스크톱 앱 접근"을 끄면 `denied`인가.
 - [ ] 마이크만 녹음: `mic.wav`가 재생되고, `level` 이벤트의 `mic`가 말할 때 올라가는가.
-- [ ] 시스템 소리: 유튜브 등을 재생하며 `--no-mic` 없이 녹음했을 때 `system.wav`에 들어가는가.
-- [ ] Tractus만 빼기: 앱에서 띄운 경우 Tractus 소리가 `system.wav`에 들어가지 않는가 (W3 이후 확인).
-- [ ] 장치 바뀜: 녹음 중 헤드셋을 꽂고 빼면 `mic_restarted`·`system_restarted`가 나오고 두 WAV 길이가 같은가.
-- [ ] 블루투스 헤드셋(통화 모드)에서 소리가 빨라지거나 끊기지 않는가 (Yogurt 이슈 #23·#27과 같은 증상).
+- [ ] 시스템 소리: 유튜브 등을 재생하며 `--no-mic` 없이 녹음했을 때 `system.wav`에 들어가는가. stderr의 `시스템 오디오: 출력 전체 …: <장치 이름>`이 실제 출력 장치인가.
+- [ ] **새 Teams·Zoom 통화의 상대 목소리**가 `system.wav`에 들어가는가 (기본값 = 출력 전체, Yogurt #35). 1분마다 나오는 `지난 60초 가장 큰 소리` 줄에 통화 중인데 `상대 소리 없음`이 찍히지 않는가.
+- [ ] **헤드셋이 기본 통신 장치이고 스피커가 기본 출력일 때**(소리 설정 › 장치 › "기본 통신 장치로 설정"): stderr에 `기본 통신 장치도 함께 녹음해 섞습니다: <헤드셋 이름>`이 나오고, Teams 상대 목소리와 스피커로 튼 유튜브가 둘 다 `system.wav` 한 파일에 들어가는가. 두 장치가 같으면 이 줄이 없고 한 번만 녹음되는가(소리가 두 겹이 아닌가).
+- [ ] `TRACTUS_REC_LOOPBACK=process`로 띄우면 `Tractus를 뺀 모든 앱 (process loopback)`이 나오고 앱(W3 이후)의 소리가 `system.wav`에 들어가지 않는가. 기본값에서는 Tractus 소리도 들어간다(의도한 것).
+- [ ] 장치 바뀜: 녹음 중 헤드셋을 꽂고 빼면 `mic_restarted`·`system_restarted`가 **바뀜마다 한 번씩만** 나오고(알림 300ms 묶기) 두 WAV 길이가 같은가. 기본 통신 장치만 바꿔도 `system_restarted`가 나오는가.
+- [ ] 블루투스 헤드셋(통화 모드)에서 소리가 빨라지거나 끊기지 않는가 (Yogurt 이슈 #23·#27과 같은 증상). 핸즈프리로 바뀔 때 `_restarted`가 연달아 쏟아지지 않는가 (Yogurt #152).
 - [ ] 일시정지·메모: `pause`·`memo 글`·`resume`·`stop` → `recording.json`의 `marks`·`pauses`.
 - [ ] 1시간 녹음: 메모리가 늘지 않고 WAV 헤더가 맞는가.
 
