@@ -13,8 +13,8 @@ Mac에서 할 수 있는 준비(Stage 0)는 끝났고, 남은 일은 Windows 기
 | 녹음 프로그램 | `recorder/win/` Rust `tractus-rec.exe`. Swift판과 같은 계약, `--fake` 계약 시험, Windows 대상 컴파일 검사, CI 빌드·시험 (#110) | 실제 마이크·시스템 소리 녹음 확인 (W1) | 코드 있음, 실기기 미확인 |
 | 코어 (Python) | 플랫폼 갈래 모듈로 `fcntl`·`fchmod`·`os.kill`·`sysconf` 정리, CI `windows-core.yml` (#109). W2: Windows CI 0 실패 (2.2) | 실제 기기에서 `uv run pytest`·`tractus doctor` 확인 (W2 남은 항목) | CI 통과, 실기기 미확인 |
 | 앱 (Tauri, Rust) | `cfg` 갈래로 경로·하위 프로세스·클립보드·권한·언어 감지 정리, CI `windows-app.yml` (#111) | `pnpm tauri dev`로 창 띄우기, 녹음 연결 (W3) | 진행 중 |
-| 텍스트 변환 (ASR) | Mac CPU에서 ONNX 판 측정. 1.7B int8 판(`voyagar/Qwen3-ASR-1.7B-onnx-int8`)이 품질 기준 통과 (설계 8.6절). 등록 목록 Windows 갈래·onnxruntime win32 의존성 코드 준비(브랜치 `windows/registry-onnx`, v3.151, 측정 관문 결정 뒤 합침) | int8 판의 속도·메모리를 Windows CPU에서 재기 (W4) | Windows 측정 남음 |
-| VAD·화자 분리·단어 정렬·검색 임베딩·목소리·실시간 자막 | VAD는 Silero ONNX로 등록(필수). 나머지는 등록 목록에 없어 코어가 `platform`으로 잠근다: 변환은 그 단계를 건너뛰고 경고 하나, `align`·`voices`·`live`는 종료 코드 2 (v3.151) | Stage 2에서 하나씩 (W6) | 코어 잠금 준비, 앱 화면 남음 |
+| 텍스트 변환 (ASR) | Mac CPU에서 ONNX 판 측정. 1.7B int8 판(`voyagar/Qwen3-ASR-1.7B-onnx-int8`)이 품질 기준 통과 (설계 8.6절). 등록 목록 Windows 갈래·onnxruntime win32 의존성(v3.151)과 앱 쪽 반영(v3.153)을 0.6.0 2차 묶음에 합침(main에는 측정 관문 결정 뒤) | int8 판의 속도·메모리를 Windows CPU에서 재기 (W4) | Windows 측정 남음 |
+| VAD·화자 분리·단어 정렬·검색 임베딩·목소리·실시간 자막 | VAD는 Silero ONNX로 등록(필수). 나머지는 등록 목록에 없어 코어가 `platform`으로 잠근다: 변환은 그 단계를 건너뛰고 경고 하나, `align`·`voices`·`live`는 종료 코드 2 (v3.151) | Stage 2에서 하나씩 (W6) | 코어 잠금·앱 화면 이유 (2.7) |
 | 설치·업데이트 | `scripts/build_windows_bundle.sh`(NSIS currentUser, python-build-standalone + wheel + `tractus-rec.exe`)와 CI 설치 스모크 `windows-bundle.yml` (2.9) | 실기기 설치·SmartScreen·Smart App Control 확인, 자동 업데이트는 다음 판 (W5) | CI 설치 스모크, 실기기 미확인 |
 
 PR 번호는 이 문서를 쓸 때의 것이다. 합쳐졌는지는 `git log --oneline -- recorder/win src/tractus/platform_compat.py`로 본다.
@@ -217,7 +217,7 @@ pnpm tauri dev
 - [ ] 측정은 `bench/`로 하고 AI Hub 전사는 로컬에만 둔다(지표만 커밋).
 - [x] Mac 품질 측정(설계 9절 2번 PR, v3.142, 결과는 설계 8.5절): 1.7B int4는 AI Hub CER을 통과하지만 용어 재현율·HiKE 언어 고정에서 떨어지고, 0.6B int4는 모든 세트에서 떨어진다. M3 CPU RTF는 1.7B 0.19–0.29. 남은 것: 판 고르기(설계 11절 10·11번)와 Windows 기준 기기의 속도·메모리.
 - [x] 더 정밀한 판(설계 8.6절, 2026-11-25): 같은 원본 디코더를 8bit(accuracy_level 4)로 다시 양자화해 `voyagar/Qwen3-ASR-1.7B-onnx-int8`에 올렸다. HiKE 전체 MER +0.64, AI Hub CER −0.03·용어 같음, FLEURS every8 같음으로 품질 기준을 모두 넘는다. 최대 메모리는 6.1–7.2GB로 6GB 기준을 넘는다. 0.6B는 Windows 목록에 두지 않는다. 남은 것: Windows 기준 기기의 속도·메모리, 등록 목록 갈래.
-- [x] (코어, 브랜치 `windows/registry-onnx`, v3.151) `models_registry`의 `_mac_models`/`_windows_models`, 기능 잠금 `platform`, 파이프라인 단계 건너뛰기, 권하는 엔진·구성을 목록으로(`preferred_asr`·`pick_asr`·`preset_ids`·`engines`). 합치는 것은 측정 관문 결정 뒤. 앱 구성 단추·엔진 고르기·`caps.ts`는 앱 PR에서.
+- [x] (코어, 브랜치 `windows/registry-onnx`, v3.151) `models_registry`의 `_mac_models`/`_windows_models`, 기능 잠금 `platform`, 파이프라인 단계 건너뛰기, 권하는 엔진·구성을 목록으로(`preferred_asr`·`pick_asr`·`preset_ids`·`engines`). 앱 구성 단추·엔진 고르기·`caps.ts`는 2.7(v3.153). main에 넣는 것은 측정 관문 결정 뒤.
 - [x] onnxruntime은 win32 표지로만 들였다(`onnxruntime==1.32.0; sys_platform == 'win32'`, v3.151). macOS 번들에는 들어가지 않는다(v3.99 규칙은 macOS에 그대로).
 
 ### W5. 설치본과 "Windows 미리보기"
