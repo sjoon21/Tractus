@@ -15,7 +15,7 @@ Mac에서 할 수 있는 준비(Stage 0)는 끝났고, 남은 일은 Windows 기
 | 앱 (Tauri, Rust) | `cfg` 갈래로 경로·하위 프로세스·클립보드·권한·언어 감지 정리, CI `windows-app.yml` (#111) | `pnpm tauri dev`로 창 띄우기, 녹음 연결 (W3) | 진행 중 |
 | 텍스트 변환 (ASR) | Mac CPU에서 ONNX 판 측정. 1.7B int8 판(`voyagar/Qwen3-ASR-1.7B-onnx-int8`)이 품질 기준 통과 (설계 8.6절) | int8 판의 속도·메모리를 Windows CPU에서 재기 (W4) | Windows 측정 남음 |
 | VAD·화자 분리·단어 정렬·검색 임베딩·목소리·실시간 자막 | — | 미리보기에서는 기능 잠금, Stage 2에서 하나씩 (W6) | 미착수 |
-| 설치·업데이트 | — | NSIS per-user 설치본, Python 런타임 번들, 설치 후 스모크 (W5) | 미착수 |
+| 설치·업데이트 | `scripts/build_windows_bundle.sh`(NSIS currentUser, python-build-standalone + wheel + `tractus-rec.exe`)와 CI 설치 스모크 `windows-bundle.yml` (2.5) | 실기기 설치·SmartScreen·Smart App Control 확인, 자동 업데이트는 다음 판 (W5) | CI 설치 스모크, 실기기 미확인 |
 
 PR 번호는 이 문서를 쓸 때의 것이다. 합쳐졌는지는 `git log --oneline -- recorder/win src/tractus/platform_compat.py`로 본다.
 
@@ -84,8 +84,17 @@ PR 번호는 이 문서를 쓸 때의 것이다. 합쳐졌는지는 `git log --o
 | `windows-recorder.yml` | `recorder/win` 빌드·시험·장치 없는 스모크 | `recorder/win/**` PR, 매주, 수동 |
 | `windows-core.yml` | 코어 pytest (모델 없는 것) | `src/tractus/**` 등 PR, 매주, 수동 |
 | `windows-app.yml` | `app/src-tauri` cargo check·test | `app/src-tauri/**` PR, 매주, 수동 |
+| `windows-bundle.yml` | 설치본 만들기 → `/S` 설치 → 설치된 런타임으로 `doctor --json`·한글 제목 메모·`notes list`·`record --fake`·앱 20초 → 서명 없는 파일 수·가장 긴 경로·크기 요약 → `/S` 제거 뒤 앱 데이터 유지 확인 (2.5) | `windows/bundle-*` 브랜치 push, 번들 관련 경로 PR, 수동 |
 
 macOS CI(`ci.yml`)는 그대로다. Windows CI가 실패해도 macOS 릴리스는 막지 않는다.
+
+### 2.5 Windows 설치본 (v3.155)
+
+- **만들기:** Windows(Git Bash)에서 `scripts/build_windows_bundle.sh [--out D] [--ffmpeg <폴더>]` → `dist/windows/Tractus_<버전>_x64-setup.exe`. 순서는 macOS `build_app_bundle.sh`와 같다: python-build-standalone `cpython-3.12.16+20261110` x86_64-pc-windows-msvc install_only(sha256 고정) → tkinter·테스트·pip 줄이기 → `uv export --frozen` wheel만(`--require-hashes`, `sys_platform` 표지는 번들 파이썬 기준) → `onnxruntime==1.32.0`·`flatbuffers`(아직 `uv.lock` 밖이라 스크립트에서 해시로 고정, 의존성 PR이 들어오면 지운다) → tractus wheel → `bundle_slim.py`(macOS와 같은 목록) → 표준 라이브러리·site-packages 전체 바이트코드(unchecked-hash) → 번들 파이썬으로 `tractus.cli`·`asr_onnx`·`onnxruntime` 불러오기 → `recorder/win` `tractus-rec.exe` → 경로 길이 → `pnpm tauri build --bundles nsis --config <파일>`. `bundle.resources`와 `installMode: currentUser`는 `--config`로만 합치고 `tauri.conf.json`에 고정하지 않는다. 서명·업데이트 아티팩트는 없다.
+- **설치 폴더:** 기본 `%LOCALAPPDATA%\Tractus\`에 앱 실행 파일, `runtime\`(python.exe와 `Lib\site-packages`), `bin\tractus-rec.exe`, `uninstall.exe`. 앱은 코어를 `runtime\python.exe -I -B -u -X utf8 -m tractus.cli`로 띄운다(`paths.rs` `core_args`): pip 콘솔 스크립트 `tractus.exe`는 만든 곳의 파이썬 절대 경로를 품어 설치본에서는 쓸 수 없다. `-B`라 설치 폴더에 `__pycache__`를 쓰지 않는다. 코어 `paths.tool_bin`은 `sys.executable`이 `runtime\` 바로 아래면 `..\bin\`에서 녹음 프로그램을 찾는다. 설치본은 업데이트를 확인하지 않는다(`update_available`이 Windows에서 `false`; 설정 화면의 업데이트 절 문구는 아직 저장소 빌드용이다).
+- **제거:** `uninstall.exe`(또는 설정 › 앱)는 설치 폴더만 지운다. 앱 설정·키(`%APPDATA%\dev.tractus.app`)와 모델(`%LOCALAPPDATA%\dev.tractus.app\models`, 약 4GB)과 노트(`~\Tractus`)는 남는다(CI가 `/S` 제거 뒤 표시 파일로 확인). **주의:** Tauri 기본 제거 창의 `앱 데이터 삭제` 확인란을 사용자가 켜면 `%APPDATA%`·`%LOCALAPPDATA%`의 `dev.tractus.app`(모델·키·설정)을 지운다. 노트는 이 경우에도 남는다. 확인란을 없애려면 NSIS 템플릿을 따로 둬야 해서 미리보기에서는 그대로 둔다.
+- **ffmpeg:** 넣지 않는다(LGPL 빌드를 넣을지는 소유자 결정 대기). `--ffmpeg <폴더>`는 `bin\`에 복사만 하고, 코어는 아직 `PATH`의 ffmpeg만 찾는다. 넣기로 정하면 앱이 하위 프로세스 `PATH` 앞에 `<설치 폴더>\bin`을 붙이고 NOTICE·`check_licenses`를 함께 본다.
+- **CI 결과 (run 45961572794, 2026-11-27, `windows-latest`):** 빌드 371초, 설치본 101.1MB, 설치 폴더 483.8MB·파일 14,455개. 서명 안 된 `.exe`·`.dll`·`.pyd` **240 / 247**(`.pyd` 210, `.dll` 22, `.exe` 8: 앱·`tractus-rec.exe`·`python.exe`·`python312.dll`·휠의 확장 모듈 전부). 가장 긴 경로는 러너에서 194자, 사용자 이름 20자를 가정하면 203자(`onnxruntime\tools\ort_format_model\…\__pycache__\…pyc`)이고 260자 이상은 0개. 설치된 런타임으로 `doctor --json`(녹음 프로그램을 `bin\tractus-rec.exe`로 찾음, `system.problems` 없음, ffmpeg 없음), 한글 제목 메모 만들기·목록, `record --fake`(started…stopped, `mic.wav`·`system.wav`·`recording.json`), 앱 20초(앱이 띄운 번들 `python.exe` 하위 프로세스 확인), `/S` 제거(설치 폴더에 남은 파일 0개, `%APPDATA%`·`%LOCALAPPDATA%\dev.tractus.app` 표시 파일 그대로)가 모두 통과했다.
 
 ## 3. Windows 기기 준비
 
@@ -171,9 +180,11 @@ pnpm tauri dev
 
 ### W5. 설치본과 "Windows 미리보기"
 
-- [ ] Tauri NSIS `installMode: currentUser`, 서명 없음. 첫 실행의 SmartScreen 안내("추가 정보 → 실행")를 README에 넣는다.
-- [ ] Windows용 Python 런타임(python-build-standalone) + wheel만으로 코어를 번들한다. MLX 의존성은 Windows에서 빠지게 한다.
-- [ ] 설치본을 CI에서 실제로 설치하고 `tractus doctor`·`tractus-rec record --fake`·변환 한 번을 도는 스모크 (Yogurt `.github/workflows/preview.yml` "Install it" 참고).
+- [x] Tauri NSIS `installMode: currentUser`, 서명 없음 (`scripts/build_windows_bundle.sh`, 2.5절, v3.155).
+- [ ] 첫 실행의 SmartScreen 안내("추가 정보 → 실행")와 Smart App Control·회사 WDAC 기기에서 서명 없는 `.dll`·`.pyd`가 막힐 수 있다는 안내를 README에 넣는다(5절 서명).
+- [x] Windows용 Python 런타임(python-build-standalone 3.12.16) + wheel만으로 코어를 번들한다. `mlx`는 Windows 휠이 있어 그대로 들어간다(불러오지 않는다). 빼는 것은 의존성 표지를 바꿀 때 함께 본다.
+- [x] 설치본을 CI에서 실제로 설치하고 `tractus doctor`·한글 제목 메모·`tractus-rec record --fake`·앱 20초·제거를 도는 스모크 (`windows-bundle.yml`, Yogurt `preview.yml` "Install it" 참고). **변환 한 번은 아직**: 모델 받기가 들어간 측정 워크플로가 따로 있어 다음 단계에서 붙인다.
+- [ ] 실기기: 설치 → SmartScreen → 첫 실행(Defender 첫 검사 시간) → 녹음·변환 → 제거·다시 설치(남은 python·tractus-rec 프로세스가 막지 않는지).
 - [ ] 업데이트 `latest.json`에 `windows-x86_64`를 넣을지는 미리보기 뒤에 정한다.
 
 미리보기 범위: 녹음 → 변환(W4 런타임 하나) → 요약·질문(원격 AI) → 키워드 검색 → 내보내기. 화자 분리·단어 싱크·목소리·실시간 자막·로컬 스마트 검색·캘린더·통화 감지는 기능 잠금으로 막고 이유를 보인다.
@@ -187,7 +198,7 @@ pnpm tauri dev
 | 결정 | 권하는 답 | 근거 |
 | --- | --- | --- |
 | 대상 OS | Windows 11 x64 + Windows 10 22H2는 "되면 됨" | Yogurt 기준으로 Windows 10 2004 이상이면 앱별 소리 녹음이 된다 |
-| 서명 | 미리보기는 서명 없이, SmartScreen 안내로 | Yogurt도 서명 없이 배포 중. OV 인증서는 비용이 든다 |
+| 서명 | 미리보기는 서명 없이, SmartScreen 안내로. 정식판 전에 서명 방법을 정한다 | OV 인증서는 비용이 든다. Yogurt는 2026-11-17부터 Azure Artifact Signing으로 서명하고(`5a16c3a`·`c80bd7a`), Code Integrity가 서명 없는 DLL을 막은 #99 뒤로 DLL·네이티브 모듈까지 모두 서명한다(`20674b9`, SmartScreen 안내는 `f559f4f`에서 지움). **Smart App Control·회사 WDAC 기기에서는 서명 없는 `.dll`·`.pyd`가 막혀 앱이 뜨지 않을 수 있다.** Tractus 설치본의 서명 없는 파일 수는 `windows-bundle.yml` 잡 요약에 나온다 |
 | 시험 장비 | 노트북 1대(16GB) 이상, 가능하면 NVIDIA 데스크톱 | CI로는 블루투스·장치 바뀜·실제 속도를 못 본다 |
 | 변환 런타임 기준 | MLX 대비 CER +1.0 이내, 배치 RTF 0.5 이하 | 숫자는 W4 측정 뒤 다시 본다 |
 | Whisper 허용 | 저사양 마지막 수단으로만 | Phase 0 탈락 결정을 뒤집는 일이다 |
