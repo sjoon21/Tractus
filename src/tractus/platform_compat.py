@@ -113,10 +113,16 @@ def pid_alive(pid: int) -> bool:
 
 
 def physical_memory() -> int:
-    """물리 메모리 바이트 수."""
+    """물리 메모리 바이트 수. Windows는 설치된 용량(GetPhysicallyInstalledSystemMemory, "16GB" 노트북이면 16GiB)이고,
+    못 읽으면(SMBIOS 표가 없는 가상 기기 등) 예전 값(GlobalMemoryStatusEx: 하드웨어 예약분·내장 GPU 몫을 뺀 값)이다."""
     if not WINDOWS:
         return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
     import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kb = ctypes.c_ulonglong()
+    if kernel32.GetPhysicallyInstalledSystemMemory(ctypes.byref(kb)) and kb.value:
+        return kb.value * 1024
 
     class MemoryStatusEx(ctypes.Structure):
         _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong), ("ullTotalPhys", ctypes.c_ulonglong),
@@ -124,6 +130,6 @@ def physical_memory() -> int:
                     ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong), ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
 
     status = MemoryStatusEx(dwLength=ctypes.sizeof(MemoryStatusEx))
-    if not ctypes.WinDLL("kernel32", use_last_error=True).GlobalMemoryStatusEx(ctypes.byref(status)):
+    if not kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
         raise OSError(ctypes.get_last_error(), "GlobalMemoryStatusEx")
     return status.ullTotalPhys

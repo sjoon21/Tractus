@@ -121,6 +121,7 @@ def live_cmd(
     import threading
 
     common.Events.enabled = progress_json
+    common.require_registered("asr-std" if engine is engines.LiveEngine.std else "asr-lite")  # Windows 미리보기: 0.6B가 목록에 없다
 
     memory = registry.physical_memory()
     if memory < STANDARD_MIN_MEMORY and not force:
@@ -170,6 +171,7 @@ def align_cmd(
     stdout: {"aligned": N, "approximate": A, "failed": M, "skipped": K} (--progress-json이면 같은 값이 done 이벤트에 들어간다).
     approximate: 모델이 못 맞춰 단어를 세그먼트에 고르게 편 수 (words는 있고 단어마다 approx). failed: 단어가 없는 세그먼트."""
     common.Events.enabled = progress_json
+    common.require_registered("aligner")
 
     try:
         d = common.resolve_meeting(meeting)

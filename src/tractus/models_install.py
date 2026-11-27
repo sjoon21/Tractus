@@ -284,7 +284,8 @@ def unregistered(root: Path) -> list[dict]:
     """모델 폴더 바로 아래의 등록되지 않은 모델 폴더(옛 버전 모델 등) → [{"name", "bytes"}] 이름순.
     파일·숨김 항목(잠금 파일 포함)·심볼릭 링크는 세지 않는다 (그래서 prune이 건드리지도 않는다).
     모델이 하나도 없는 곳, 노트 폴더, 모델 모양이 아닌 폴더는 비운다: 사용자가 모델 폴더를 문서·바탕화면 같은 곳으로 잘못 골랐을 때 prune이 지우지 않게."""
-    known = {m.local_dir for m in reg.all_models(root)}  # 직접 추가한 변환 엔진도 등록된 것이다 (prune이 지우지 않는다)
+    # 직접 추가한 변환 엔진도 등록된 것이다. 두 운영체제의 목록을 합친다: 모델 폴더를 함께 써도 다른 쪽 폴더를 지우지 않게 (docs/design/asr-onnx.md 4.1절)
+    known = {m.local_dir for m in (*reg._mac_models(), *reg._windows_models(), *reg.all_models(root))}
     if not root.is_dir() or _is_notes_home(root) or not any((root / d).is_dir() for d in known):
         return []
     return [{"name": p.name, "bytes": reg._dir_bytes(p)} for p in sorted(root.iterdir())
