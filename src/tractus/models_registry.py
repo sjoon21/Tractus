@@ -215,7 +215,8 @@ def all_models(root: Path | None = None) -> tuple[Model, ...]:
 
 def build_hint(item: str) -> str | None:
     """없는 도구를 채우는 안내. 녹음·도우미 프로그램은 저장소 배치일 때만 빌드 명령을 말한다 (paths.build_hint)."""
-    return "brew install ffmpeg" if item == "ffmpeg" else paths.build_hint(item) if item in ("recorder", "diar_helper") else None
+    ffmpeg_hint = "winget install Gyan.FFmpeg" if platform_compat.WINDOWS else "brew install ffmpeg"
+    return ffmpeg_hint if item == "ffmpeg" else paths.build_hint(item) if item in ("recorder", "diar_helper") else None
 
 
 def get(model_id: str) -> Model:
