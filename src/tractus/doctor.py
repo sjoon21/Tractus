@@ -7,18 +7,20 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from tractus import diarize
+from tractus import diarize, platform_compat
 from tractus import models_registry as reg
 from tractus.models_install import disk_free, lock_held, unregistered
 from tractus.paths import tool_bin
 
 MIN_MACOS = (14, 4)
+MIN_WINDOWS_BUILD = 19041  # Windows 10 2004 (process loopback 최소, docs/windows/plan.md §7.1)
 TRACK_OF = {"asr-std": "standard", "asr-lite": "lite"}  # 모델 ID → cli.Track 값
 
 
 def recorder_bin() -> Path:
-    """$TRACTUS_REC_BIN → 앱 번들 → 저장소에서 빌드한 recorder/.build/release/tractus-rec (fluid_bin과 같은 paths.tool_bin 규칙)."""
-    return tool_bin("TRACTUS_REC_BIN", "tractus-rec", "recorder/.build/release/tractus-rec")
+    """$TRACTUS_REC_BIN → 앱 번들 → 저장소에서 빌드한 녹음 프로그램 (fluid_bin과 같은 paths.tool_bin 규칙)."""
+    repo_rel = "recorder/win/target/release/tractus-rec" if platform_compat.WINDOWS else "recorder/.build/release/tractus-rec"
+    return tool_bin("TRACTUS_REC_BIN", "tractus-rec", repo_rel)
 
 
 def _version(cmd: list[str], pattern: str) -> str | None:
@@ -46,17 +48,28 @@ def _macos() -> tuple[int, ...]:
     return tuple(int(x) for x in re.findall(r"\d+", platform.mac_ver()[0])[:2])
 
 
+def _windows_build() -> tuple[int, ...]:
+    return tuple(int(x) for x in re.findall(r"\d+", platform.version())[:3])
+
+
 def system(root: Path) -> dict:
-    """arch·macOS·메모리·디스크. meets_min: Apple Silicon, macOS 14.4 이상, 메모리 8GB 이상. problems에 이유 코드."""
-    memory, mac = reg.physical_memory(), _macos()
+    """arch·OS 버전·메모리·디스크. macOS: arm64·14.4+·8GB+, Windows: x64(AMD64)·빌드 19041+·8GB+. problems에 이유 코드."""
+    memory, os_name, arch = reg.physical_memory(), platform.system(), platform.machine()
     problems = []
-    if platform.machine() != "arm64":
-        problems.append("not_apple_silicon")
-    if platform.system() != "Darwin" or mac < MIN_MACOS:
-        problems.append("macos_too_old")
+    if os_name == "Windows":
+        if arch.lower() not in ("amd64", "x86_64"):
+            problems.append("unsupported_arch")
+        build = _windows_build()
+        if len(build) < 3 or build < (10, 0, MIN_WINDOWS_BUILD):
+            problems.append("windows_too_old")
+    else:
+        if arch != "arm64":
+            problems.append("not_apple_silicon")
+        if os_name != "Darwin" or _macos() < MIN_MACOS:
+            problems.append("macos_too_old")
     if memory < reg.MIN_MEMORY:
         problems.append("memory_low")
-    return {"arch": platform.machine(), "macos_version": platform.mac_ver()[0], "memory_gb": round(memory / 1024**3, 1),
+    return {"arch": arch, "macos_version": platform.mac_ver()[0], "memory_gb": round(memory / 1024**3, 1),
             "meets_min": not problems, "problems": problems, "standard_recommended": memory >= reg.STANDARD_MIN_MEMORY,
             "disk_free_bytes": disk_free(root), "models_dir": str(root)}
 
