@@ -1,7 +1,7 @@
 # Windows 설치본 스모크 (docs/windows/README.md W5, 계획 24·25번): scripts/build_windows_bundle.sh 로 NSIS 설치본을 만들고,
 # 러너에 /S 로 설치해 설치된 런타임으로 코어·녹음 프로그램·앱이 도는지, 제거가 앱 데이터(모델·키)를 남기는지 본다.
 # 서명 안 된 .exe·.dll·.pyd 수, 가장 긴 경로, 설치본 크기를 잡 요약에 남긴다. 모델 받기·변환 스모크는 넣지 않는다(측정 워크플로가 따로 있다).
-# 필수 검사가 아니다: macOS 합치기·릴리스를 막지 않는다.
+# 필수 검사가 아니다: macOS 합치기·릴리스를 막지 않는다. 설치해서 돌려 보는 방식은 Yogurt(MIT) .github/workflows/preview.yml "Install it"을 참고했다(코드는 옮기지 않음).
 name: Windows bundle
 
 on:

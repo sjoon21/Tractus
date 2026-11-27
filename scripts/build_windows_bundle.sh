@@ -107,9 +107,9 @@ find "$SP" -type f -name '*.pyi' -delete
 rm -rf "$SP/mlx/include" "$SP/mlx/share"
 # macOS 와 같은 목록으로 transformers·mlx_audio·mlx_lm·scipy 의 하위 패키지를 지운다. Windows 만 쓰는 모듈(asr_onnx·onnxruntime·tokenizers)은
 # 이 패키지들 밖이라 지워지지 않는다. 아래 5단계가 Windows 경로를 실제로 불러 확인한다
-"$PY" -I "$REPO/scripts/bundle_slim.py" "$SP" "$REPO/scripts/bundle_modules.txt"
+"$PY" -I -X utf8 "$REPO/scripts/bundle_slim.py" "$SP" "$REPO/scripts/bundle_modules.txt"
 # 표준 라이브러리와 site-packages 를 모두 미리 만든다(slim 의 목록은 macOS 에서 쓴 모듈뿐이다). 앱은 -B 로 띄워 설치 폴더에 아무것도 쓰지 않는다
-"$PY" -I -m compileall -q -j0 --invalidation-mode unchecked-hash "$RT/Lib" >/dev/null || echo "  ! 컴파일하지 못한 파일이 있습니다 (그 모듈은 불러올 때 메모리에서 컴파일한다)"
+"$PY" -I -X utf8 -m compileall -q -j0 --invalidation-mode unchecked-hash "$RT/Lib" >/dev/null || echo "  ! 컴파일하지 못한 파일이 있습니다 (그 모듈은 불러올 때 메모리에서 컴파일한다)"
 ok "site-packages $BEFORE → $(mb "$SP"), 전체 runtime $(mb "$RT")"
 
 step "5. 번들 파이썬으로 코어 불러오기 (Windows 경로: 변환 어댑터·onnxruntime·MCP)"
@@ -130,7 +130,7 @@ ok "bin\\: $(ls "$STAGE/bin" | tr '\n' ' ')"
 
 step "7. 경로 길이 (설치 폴더 예: $INSTALL_PREFIX)"
 # Windows 기본 MAX_PATH 는 260자다(긴 경로 설정이 꺼진 기기). 넘는 파일은 설치·불러오기가 실패할 수 있다
-"$PY" -I - "$STAGE" "$INSTALL_PREFIX" <<'LEN'
+"$PY" -I -X utf8 - "$STAGE" "$INSTALL_PREFIX" <<'LEN'
 import os, sys
 stage, prefix = sys.argv[1], sys.argv[2]
 paths = sorted((len(prefix) + len(os.path.relpath(os.path.join(d, f), stage)), os.path.relpath(os.path.join(d, f), stage))
