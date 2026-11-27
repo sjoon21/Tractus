@@ -461,7 +461,7 @@ dependencies = [
 
 ```bash
 hf download andrewleech/qwen3-asr-0.6b-onnx --revision 4fc24a1402e74db89c4d2ef256875e71680128c4 \
-  --include encoder.int4.onnx 'decoder_*.int4.onnx' decoder_weights.int4.data embed_tokens.bin tokenizer.json config.json \
+  encoder.int4.onnx 'decoder_*.int4.onnx' decoder_weights.int4.data embed_tokens.bin tokenizer.json config.json \
   --local-dir models/qwen3-asr-0.6b-onnx-int4
 uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py
 ```
@@ -546,6 +546,8 @@ uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py
 | 프롬프트 토큰 ID·mel 대조(시험) | 설치본에서 받기(4.1GB)·이어받기·경로 길이, `physical_memory()` 보고값(`ullTotalPhys`와 설치 용량) |
 
 결과는 `bench/results/summary.jsonl`·`REPORT.md`(지표만)와 이 문서 "측정 결과" 절에 남긴다. AI Hub 전사는 커밋하지 않는다.
+
+**x64 러너 측정 (`.github/workflows/windows-asr-bench.yml`, 2026-11-27).** 기준 기기 전에 x64 커널 값을 보려고 GitHub `windows-latest` 러너(공개 저장소 표준: 4 vCPU·16GB RAM)에서 int8 판(`550f7a71`)과 Silero ONNX(`b3e3ee3c`)를 돌린다. 수동 실행과 이 워크플로·`bench/` 측정 코드를 고치는 PR에서 돈다. 모델 4.4GB와 FLEURS 0.3GB는 리비전 세 개를 묶은 키 하나로 `actions/cache`에 두고(저장소 한도 10GB), 측정마다 `run.py`를 따로 띄워 최대 메모리(`PeakWorkingSetSize`)를 따로 잡는다. 재는 것은 넷이다: ① FLEURS every8(48개) 언어 고정 스레드 4 ② 같은 것 스레드 2 ③ 앱 경로(`--app --vad silero-vad-v6-onnx`) ④ 메모리 최악 경우 `fleurs30`(FLEURS 클립을 이은 27–30초 묶음 8개 + 사전 50개, `--glossary`). ①②의 CER을 Mac M3 int8 값 2.74와 비교해 차이 0.2 이하면 x64 커널이 같은 값을 낸다고 본다. `fleurs30`의 사전은 FLEURS 정답 낱말이라 CER은 품질 지표가 아니다. 결과는 잡 요약 표와 아티팩트 `windows-asr-bench`(이 잡이 더한 요약 줄만)로 나온다. 전사 원문은 올리지 않고, AI Hub는 쓰지 않는다(그래서 위 표의 "AI Hub 1세션" 대조는 러너에서 하지 않는다). 러너는 기준 기기가 아니므로 RTF·메모리는 대략값이고, 8.3절 판정은 실기기 측정이 맡는다.
 
 ### 8.5 측정 결과 (Mac, 2026-11-19)
 
