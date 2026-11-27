@@ -1,7 +1,9 @@
 // 변환 중 녹음 (docs/desktop.md §3.3, v3.71): 녹음 프로그램은 가벼워 기본은 녹음과 변환이 함께 돈다(연달아 하는 회의를 녹음할 수 있게). words-ok
 // 실시간 텍스트 변환을 켜 두면 자막(0.6B)이 변환(1.7B)과 GPU를 나눠 써 밀리므로, 그때만 예전처럼 변환이 끝난 뒤에 녹음하고
 // 녹음하는 동안에는 변환 전 노트의 변환을 멈춘다. 화면과 무관한 순수 함수: recordBusy.test.ts
+// Windows는 변환(ONNX, CPU)이 전 코어와 수 GB 메모리를 써 녹음이 끊길 수 있어, 자막과 상관없이 녹음이 끝난 뒤에 변환을 시작한다 (docs/windows/README.md)
 import { t } from "./i18n";
+import { isWindows } from "./platform";
 
 export const LIVE_BLOCKS_RECORD = t("실시간 텍스트 변환을 켜 두면 변환이 끝난 뒤에 녹음할 수 있습니다. 설정에서 끄면 변환 중에도 녹음할 수 있습니다");
 
@@ -24,5 +26,5 @@ export function recordBlock(b: RecordBusy): "asking" | "saving" | "live" | null 
   return null;
 }
 
-/** 녹음하는 동안 변환을 시작하거나 계속해도 되는가: 이번 녹음에 실시간 텍스트 변환이 없을 때 */
-export const convertsWhileRecording = (recording: boolean, liveRec: boolean): boolean => !recording || !liveRec;
+/** 녹음하는 동안 변환을 시작해도 되는가: 이번 녹음에 실시간 텍스트 변환이 없고 Windows가 아닐 때 */
+export const convertsWhileRecording = (recording: boolean, liveRec: boolean, windows = isWindows()): boolean => !recording || (!liveRec && !windows);

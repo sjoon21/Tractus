@@ -28,7 +28,7 @@ import { TRAY_KEEP_HINT, TRAY_KEEP_LABEL, TRAY_SHOW_HINT, TRAY_SHOW_LABEL } from
 import { getVersion } from "@tauri-apps/api/app";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
-import { UPDATE_SECTION_ID, CHECK_LABEL, INSTALL_LABEL, NOTES_LABEL, notesVersion, RELAUNCH_LABEL, RELAUNCH_WAIT, remembered, REPO_NOTE, UPDATE_HINT, updateReduce, updateText, versionLine, type UpdateEvent, type UpdateState } from "./update";
+import { UPDATE_SECTION_ID, CHECK_LABEL, INSTALL_LABEL, NOTES_LABEL, noUpdateNote, notesVersion, RELAUNCH_LABEL, RELAUNCH_WAIT, remembered, UPDATE_HINT, updateReduce, updateText, versionLine, type UpdateEvent, type UpdateState } from "./update";
 
 // 변환 엔진 위치는 모델 화면에서 바꾼다 (옮기기까지 함께 한다). 실행 파일 경로는 BinField (자동 / 직접 지정)
 const FIELDS: { key: "home"; label: string; hint: string }[] = [{ key: "home", label: t("데이터 위치"), hint: t("노트와 녹음이 저장되는 폴더") }];
@@ -497,7 +497,7 @@ function UpdateSection({ relaunchBlocked, toUpdate }: { relaunchBlocked: boolean
     <Section id={UPDATE_SECTION_ID} tabIndex={-1} className="outline-none" title={t("업데이트")}>
       <Row
         label={<span className="tabular-nums">{versionLine(version)}</span>}
-        hint={bundle === false ? REPO_NOTE : bundle ? UPDATE_HINT : undefined}
+        hint={bundle === false ? noUpdateNote() : bundle ? UPDATE_HINT : undefined}
         control={
           bundle && (
             <>

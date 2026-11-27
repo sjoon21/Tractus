@@ -45,7 +45,7 @@ import { SettingsView } from "./SettingsView";
 import { createTraySender, deriveTrayState, routeTrayAction } from "./tray";
 import { AfterRecordDialog } from "./AfterRecordDialog";
 import { afterRecord, ASK_BLOCKS_RECORD, effectiveChoice, rememberedChoice, stopAction, type AskChoice } from "./afterRecord";
-import { LIVE_BLOCKS_RECORD, recordBlock } from "./recordBusy";
+import { convertsWhileRecording, LIVE_BLOCKS_RECORD, recordBlock } from "./recordBusy";
 import { recButton } from "./pause";
 import { BULK_MIN, CONVERT_ALL, CONVERT_ALL_TITLE, isRecorded, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
 import { NoteLibrary } from "./NoteLibrary";
@@ -696,7 +696,7 @@ export function App() {
     ...org.tags.map(({ tag }) => ({ id: `tag-${tag}`, label: `#${tag}`, keywords: t("태그"), icon: <Tag />, run: () => showFiltered(() => org.toggleTag(tag)) })),
   ];
 
-  const waitReason = recording && liveRec ? WAIT_RECORDING : WAIT_OTHER;
+  const waitReason = convertsWhileRecording(recording, liveRec) ? WAIT_OTHER : WAIT_RECORDING;
   const convertControls: ConvertControls | undefined = view.kind === "meeting" ? { slot: convert.slotOf(view.id), waitReason, gate: convertGate, onConvert: convertNote } : undefined;
   // 녹음 단추는 녹음을 막는 동안에만 변환 상태를 보인다. 막지 않는 변환(자막이 꺼진 녹음 변환·가져오기)의 진행은 사이드바 카드에 있다
   const liveBlock = recordBlockKind === "live";
