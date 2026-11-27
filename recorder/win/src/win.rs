@@ -1,25 +1,29 @@
-//! WASAPI: 마이크, 시스템 소리(이 앱만 뺀 process loopback, 안 되면 출력 전체), 기본 장치 바뀜 알림.
-//! 공유 모드만 쓰고 통신 역할·독점 모드는 쓰지 않는다: 통화 앱의 마이크를 건드리지 않는다.
+//! WASAPI: 마이크, 시스템 소리(기본 출력 전체 + 다르면 기본 통신 장치를 섞어 한 트랙. 이 앱만 뺀 process loopback은
+//! `TRACTUS_REC_LOOPBACK=process`일 때만), 기본 장치 바뀜 알림.
+//! 마이크는 공유 모드·콘솔 역할만 쓰고 독점 모드는 쓰지 않는다: 통화 앱의 마이크를 건드리지 않는다.
 //! Yogurt(FrigadeHQ/yogurt, MIT, Copyright (c) 2026 Frigade) app/native/yogurt-audio-win/src/win/mod.rs에서 옮겨
 //! Tractus 계약(48 kHz mono 16-bit, `Msg`)에 맞췄다 (NOTICE 12번). Opus·Ogg·PCM 스트림·마이크 고르기는 가져오지 않았다.
+//! 출력 전체 기본값은 Yogurt ff38a76(#35), 통신 장치 섞기는 1b016b0(#167)을 따랐다.
 #![allow(non_snake_case)]
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use windows::core::{implement, w, Interface, Ref, Result as WinResult, HRESULT, IUnknown, PCWSTR};
+use windows::core::{implement, w, Interface, Ref, Result as WinResult, HRESULT, HSTRING, IUnknown, PCWSTR};
+use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Foundation::{CloseHandle, E_ACCESSDENIED, E_FAIL, HANDLE, PROPERTYKEY, WAIT_OBJECT_0};
 use windows::Win32::Media::Audio::*;
 use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
-use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, IAgileObject, IAgileObject_Impl, CLSCTX_ALL, COINIT_MULTITHREADED};
+use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, IAgileObject, IAgileObject_Impl, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ};
 use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
 use windows::Win32::System::Threading::{CreateEventW, GetCurrentProcessId, SetEvent, WaitForSingleObject};
 
 use crate::gap::GapFiller;
 use crate::meter::to_i16;
+use crate::mix::{self, Mix};
 use crate::protocol::log;
 use crate::recorder::{Msg, OpenError, Opener, Source, Track};
 
@@ -63,6 +67,25 @@ pub fn com() {
 
 fn enumerator() -> WinResult<IMMDeviceEnumerator> {
     unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }
+}
+
+fn device_id(d: &IMMDevice) -> Option<String> {
+    unsafe {
+        let p = d.GetId().ok()?;
+        let s = p.to_string().ok();
+        CoTaskMemFree(Some(p.0 as *const _));
+        s
+    }
+}
+
+/// 장치 이름 (진단 로그용, 예: "스피커(Realtek Audio)")
+fn friendly_name(d: &IMMDevice) -> String {
+    let name = unsafe { d.OpenPropertyStore(STGM_READ).and_then(|p| p.GetValue(&PKEY_Device_FriendlyName)) }.map(|v: PROPVARIANT| v.to_string()).unwrap_or_default();
+    if name.trim().is_empty() {
+        "이름 없음".into()
+    } else {
+        name
+    }
 }
 
 fn start_error(e: windows::core::Error) -> OpenError {
@@ -237,6 +260,7 @@ pub fn start_mic(tx: Sender<Msg>) -> Result<Stream, OpenError> {
             let dev = unsafe { enumerator().map_err(start_error)?.GetDefaultAudioEndpoint(eCapture, eConsole) }.map_err(|_| OpenError::Failed("마이크가 없습니다".into()))?;
             let client: IAudioClient = unsafe { dev.Activate(CLSCTX_ALL, None) }.map_err(start_error)?;
             let ch = initialize(&client, false).map_err(start_error)?;
+            log(&format!("마이크: {}", friendly_name(&dev)));
             Ok((client, ch))
         },
         move |p| {
@@ -250,19 +274,84 @@ pub fn start_mic(tx: Sender<Msg>) -> Result<Stream, OpenError> {
     )
 }
 
-/// 시스템 소리. process loopback(Windows 10 2004 이상)은 이 프로그램을 띄운 앱(Tractus)과 그 하위 프로세스만 빼고
-/// 모든 앱을 녹음한다. 안 되면 출력 전체(Tractus 소리 포함). `TRACTUS_REC_LOOPBACK=endpoint`면 일부러 출력 전체 (CI 시험용)
-pub fn start_system(tx: Sender<Msg>, clock: Clock) -> Result<Stream, OpenError> {
+/// 녹음할 출력 장치 ID: 기본 출력, 그리고 기본 통신 장치가 다른 장치면 그것도 (Teams는 통화 소리를 통신 장치로 낸다, Yogurt #167)
+fn default_outputs() -> Vec<String> {
+    let Ok(e) = enumerator() else { return Vec::new() };
+    let id = |role| unsafe { e.GetDefaultAudioEndpoint(eRender, role) }.ok().as_ref().and_then(device_id);
+    mix::outputs(id(eConsole), id(eCommunications))
+}
+
+/// 출력 장치 여럿의 스트림. 하나라도 끊기면 recorder가 전부 다시 연다
+pub struct Outputs(Vec<Stream>);
+
+impl Source for Outputs {
+    fn stop(&mut self) {
+        for s in &mut self.0 {
+            Source::stop(s);
+        }
+    }
+}
+
+/// 시스템 소리. 기본값은 기본 출력 전체(Tractus 소리 포함)이고, 기본 통신 장치가 다르면 그것도 열어 한 트랙으로 섞는다:
+/// process loopback("Tractus를 뺀 모든 앱")은 일부 기기에서 새 Teams 소리를 하나도 못 들었다 (Yogurt #35).
+/// `TRACTUS_REC_LOOPBACK=process`면 process loopback(Windows 10 2004 이상)을 쓰고, 안 되면 출력 전체다 (CI가 두 갈래를 시험한다)
+pub fn start_system(tx: Sender<Msg>, clock: Clock) -> Result<Outputs, OpenError> {
+    if std::env::var("TRACTUS_REC_LOOPBACK").as_deref() == Ok("process") {
+        return start_output(0, None, true, None, tx, clock).map(|s| Outputs(vec![s]));
+    }
+    let ids = default_outputs();
+    if ids.is_empty() {
+        return Err(OpenError::Failed("출력 장치가 없습니다".into()));
+    }
+    let shared = (ids.len() > 1).then(|| Arc::new(Mutex::new(Mix::new(ids.len()))));
+    let mut streams = Vec::new();
+    let mut last = OpenError::Failed("출력 장치가 없습니다".into());
+    for id in ids {
+        // 섞을 자리는 열린 장치만 센다
+        match start_output(streams.len(), Some(id), false, shared.clone(), tx.clone(), clock) {
+            Ok(s) => streams.push(s),
+            Err(e) => {
+                log(&format!("출력 장치 하나를 녹음하지 못했습니다: {e:?}"));
+                last = e;
+            }
+        }
+    }
+    if streams.is_empty() {
+        return Err(last);
+    }
+    // 하나만 열렸으면 섞을 것이 없다: 열린 장치가 0번 자리이니 한 자리로 줄여 다른 자리를 기다리지 않게 한다
+    if let (Some(m), 1) = (&shared, streams.len()) {
+        if let Ok(mut m) = m.lock() {
+            *m = Mix::new(1);
+        }
+    }
+    Ok(Outputs(streams))
+}
+
+/// 출력 장치 하나의 소리: 이 ID의 장치(없으면 기본 출력), 또는 process loopback. `mix`가 있으면 `lane` 자리로 섞는다
+fn start_output(lane: usize, id: Option<String>, process: bool, mix: Option<Arc<Mutex<Mix>>>, tx: Sender<Msg>, clock: Clock) -> Result<Stream, OpenError> {
     let lost_tx = tx.clone();
     let mut gap = GapFiller::new(clock.now_ms());
+    let send = move |s: &[f32], heard: f64| {
+        let mixed = match &mix {
+            Some(m) => match m.lock() {
+                Ok(mut m) => m.push(lane, s, heard).map(|(v, _)| v),
+                Err(_) => None,
+            },
+            None => Some(s.to_vec()),
+        };
+        if let Some(v) = mixed {
+            let _ = tx.send(Msg::Samples(Track::System, to_i16(&v)));
+        }
+    };
     spawn(
         move || {
-            let parent = parent_pid();
-            if parent != 0 && std::env::var("TRACTUS_REC_LOOPBACK").as_deref() != Ok("endpoint") {
+            let parent = if process { parent_pid() } else { 0 };
+            if parent != 0 {
                 match process_loopback(parent) {
                     Ok(client) => match initialize(&client, true) {
                         Ok(ch) => {
-                            log("시스템 오디오: Tractus를 뺀 모든 앱");
+                            log("시스템 오디오: Tractus를 뺀 모든 앱 (process loopback)");
                             return Ok((client, ch));
                         }
                         Err(e) => log(&format!("process loopback을 시작하지 못했습니다({e}): 출력 전체를 녹음합니다")),
@@ -270,10 +359,20 @@ pub fn start_system(tx: Sender<Msg>, clock: Clock) -> Result<Stream, OpenError> 
                     Err(e) => log(&format!("process loopback을 쓸 수 없습니다({e}): 출력 전체를 녹음합니다")),
                 }
             }
-            let dev = unsafe { enumerator().map_err(start_error)?.GetDefaultAudioEndpoint(eRender, eConsole) }.map_err(|_| OpenError::Failed("출력 장치가 없습니다".into()))?;
+            let e = enumerator().map_err(start_error)?;
+            let dev = match &id {
+                Some(id) => unsafe { e.GetDevice(&HSTRING::from(id.as_str())) },
+                None => unsafe { e.GetDefaultAudioEndpoint(eRender, eConsole) },
+            }
+            .map_err(|_| OpenError::Failed("출력 장치가 없습니다".into()))?;
             let client: IAudioClient = unsafe { dev.Activate(CLSCTX_ALL, None) }.map_err(start_error)?;
             let ch = initialize(&client, true).map_err(start_error)?;
-            log("시스템 오디오: 출력 전체 (Tractus 소리 포함)");
+            let name = friendly_name(&dev);
+            if lane == 0 {
+                log(&format!("시스템 오디오: 출력 전체 (Tractus 소리 포함): {name}"));
+            } else {
+                log(&format!("시스템 오디오: 기본 통신 장치도 함께 녹음해 섞습니다 (통화 소리): {name}"));
+            }
             Ok((client, ch))
         },
         move |p| match p {
@@ -282,12 +381,12 @@ pub fn start_system(tx: Sender<Msg>, clock: Clock) -> Result<Stream, OpenError> 
                 let heard = if qpc != 0 { clock.qpc_ms(qpc) } else { clock.now_ms() - frames as f64 / 48.0 };
                 let skip = gap.packet(heard, frames);
                 if skip < frames {
-                    let _ = tx.send(Msg::Samples(Track::System, to_i16(&s[skip..])));
+                    send(&s[skip..], heard + skip as f64 / 48.0);
                 }
             }
             None => {
-                if let Some((_, frames)) = gap.idle(clock.now_ms()) {
-                    let _ = tx.send(Msg::Samples(Track::System, vec![0; frames]));
+                if let Some((at, frames)) = gap.idle(clock.now_ms()) {
+                    send(&vec![0.0; frames], at);
                 }
             }
         },
@@ -386,12 +485,17 @@ impl IMMNotificationClient_Impl for Watcher_Impl {
     fn OnDeviceRemoved(&self, _id: &PCWSTR) -> WinResult<()> {
         Ok(())
     }
-    /// 기본 장치가 바뀌면 그 트랙을 다시 연다 (헤드셋을 꽂았다·뺐다)
+    /// 기본 장치가 바뀌면 그 트랙을 다시 연다 (헤드셋을 꽂았다·뺐다). 출력은 통신 장치도 본다: 통화 소리가 거기로 나온다 (#167).
+    /// 한 번 바뀌어도 역할마다 알림이 여러 개 온다: recorder가 300ms 묶어 한 번만 다시 연다
     fn OnDefaultDeviceChanged(&self, flow: EDataFlow, role: ERole, _id: &PCWSTR) -> WinResult<()> {
-        if role == eConsole {
-            let track = if flow == eRender { Track::System } else { Track::Mic };
-            let _ = self.0.send(Msg::Restart(track, "기본 장치가 바뀌었습니다"));
-        }
+        let track = if flow == eRender && (role == eConsole || role == eCommunications) {
+            Track::System
+        } else if flow == eCapture && role == eConsole {
+            Track::Mic
+        } else {
+            return Ok(());
+        };
+        let _ = self.0.send(Msg::Restart(track, "기본 장치가 바뀌었습니다"));
         Ok(())
     }
     fn OnPropertyValueChanged(&self, _id: &PCWSTR, _key: &PROPERTYKEY) -> WinResult<()> {

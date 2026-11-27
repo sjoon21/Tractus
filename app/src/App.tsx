@@ -38,6 +38,7 @@ import type { NewNoteAction } from "./menu";
 import { RecModeIcon, RecordModeMenu } from "./RecordModeMenu";
 import { NewNoteMenu } from "./NewNoteMenu";
 import { dropMemo, exportFormatsFor, flushMemos, isMemo, settleMemo } from "./memo";
+import { isWindows } from "./platform";
 import { RecordView } from "./RecordView";
 import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, type DeleteTarget } from "./remove";
 import { SearchView } from "./SearchView";
@@ -45,7 +46,7 @@ import { SettingsView } from "./SettingsView";
 import { createTraySender, deriveTrayState, routeTrayAction } from "./tray";
 import { AfterRecordDialog } from "./AfterRecordDialog";
 import { afterRecord, ASK_BLOCKS_RECORD, effectiveChoice, rememberedChoice, stopAction, type AskChoice } from "./afterRecord";
-import { LIVE_BLOCKS_RECORD, recordBlock } from "./recordBusy";
+import { convertsWhileRecording, LIVE_BLOCKS_RECORD, recordBlock } from "./recordBusy";
 import { recButton } from "./pause";
 import { BULK_MIN, CONVERT_ALL, CONVERT_ALL_TITLE, isRecorded, WAIT_OTHER, WAIT_RECORDING, type ConvertControls } from "./recorded";
 import { NoteLibrary } from "./NoteLibrary";
@@ -520,7 +521,7 @@ export function App() {
   // 자막이 없으면 변환은 녹음과 함께 계속 돈다. 이번 녹음의 자막 여부도 여기서 정한다
   const pauseConvert = () => {
     setLiveRec(liveOn);
-    if (liveOn) convert.preempt();
+    if (liveOn || isWindows()) convert.preempt(); // Windows는 변환(CPU)이 녹음을 끊을 수 있어 자막과 상관없이 멈춘다
   };
   /** event: 홈의 `곧 시작하는 일정` 카드에서 시작한 녹음 (일정 제목·참석자를 녹음 폴더에 남긴다) */
   /** recMode: 통화 감지에서 시작한 녹음은 상대 목소리가 들어가게 언제나 `화상·하이브리드` (calls.rs) */
@@ -696,7 +697,7 @@ export function App() {
     ...org.tags.map(({ tag }) => ({ id: `tag-${tag}`, label: `#${tag}`, keywords: t("태그"), icon: <Tag />, run: () => showFiltered(() => org.toggleTag(tag)) })),
   ];
 
-  const waitReason = recording && liveRec ? WAIT_RECORDING : WAIT_OTHER;
+  const waitReason = convertsWhileRecording(recording, liveRec) ? WAIT_OTHER : WAIT_RECORDING;
   const convertControls: ConvertControls | undefined = view.kind === "meeting" ? { slot: convert.slotOf(view.id), waitReason, gate: convertGate, onConvert: convertNote } : undefined;
   // 녹음 단추는 녹음을 막는 동안에만 변환 상태를 보인다. 막지 않는 변환(자막이 꺼진 녹음 변환·가져오기)의 진행은 사이드바 카드에 있다
   const liveBlock = recordBlockKind === "live";

@@ -53,7 +53,11 @@ describe("파일 가져오기 시작", () => {
   test("다른 일이 없으면 시작한다", () => expect(canStartImport(queued)).toBe(true));
   test("가져오기가 돌면 기다린다", () => expect(canStartImport({ ...queued, importRunning: true })).toBe(false));
   test.each(["transcribeRunning", "transcribeWaiting", "finishRunning", "converting"] as const)("%s이면 기다린다 (변환이 먼저다)", (k) => expect(canStartImport({ ...queued, [k]: true })).toBe(false));
-  test("녹음 중이라도 가져오기는 막지 않는다", () => expect(canStartImport({ ...queued, recording: true, liveRec: true })).toBe(true));
+  test("녹음 중이라도 가져오기는 막지 않는다 (macOS)", () => expect(canStartImport({ ...queued, recording: true, liveRec: true }, false)).toBe(true));
+  test("Windows는 녹음 중 가져오기를 녹음이 끝날 때까지 미룬다", () => {
+    expect(canStartImport({ ...queued, recording: true }, true)).toBe(false);
+    expect(canStartImport(queued, true)).toBe(true);
+  });
 });
 
 describe("우선순위: 녹음 변환 → 변환 줄 → 가져오기", () => {

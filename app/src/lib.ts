@@ -856,7 +856,8 @@ export function replaceEdits(segments: Segment[], query: string, replacement: st
 
 /** 가져올 수 있는 파일 (오디오·동영상). 대소문자 무시. 코어가 ffmpeg로 읽는다 */
 export const IMPORT_EXTS = ["m4a", "mp3", "wav", "aac", "flac", "ogg", "opus", "webm", "mp4", "mov", "m4v"];
-export const baseName = (path: string): string => path.split("/").pop() ?? path;
+/** 경로의 마지막 이름. Windows 경로(`C:\…`)의 역슬래시도 자른다 */
+export const baseName = (path: string): string => path.split(/[\\/]/).pop() ?? path;
 export function isImportable(path: string): boolean {
   const m = /^[^.].*\.([^.]+)$/.exec(baseName(path));
   return !!m && IMPORT_EXTS.includes(m[1].toLowerCase());

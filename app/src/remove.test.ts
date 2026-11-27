@@ -63,6 +63,14 @@ describe("dialog text", () => {
     expect(t.body).toContain("/Users/me/Tractus/recordings 폴더에 다시 넣으세요");
   });
 
+  test("Windows paths: names the folder and says to restore it from the Recycle Bin", () => {
+    const win: DeleteTarget = { ...note, dir: "C:\\Users\\me\\Tractus\\meetings\\2026-10-08_3분기_예산_01ABC" };
+    expect(deleteDialogText(win, true).body).toContain("되돌리려면 휴지통에서 ‘2026-10-08_3분기_예산_01ABC’ 폴더를 복원하세요.");
+    // macOS 문구도 역슬래시 경로를 자른다
+    expect(deleteDialogText(win, false).body).toContain("‘2026-10-08_3분기_예산_01ABC’ 폴더를 꺼내 C:\\Users\\me\\Tractus\\meetings 폴더에 다시 넣으세요");
+    expect(deleteDialogText(note, false).body).toContain("/Users/me/Tractus/meetings 폴더에 다시 넣으세요");
+  });
+
   test("recording label matches the sidebar row", () => {
     expect(recordingLabel("2026-10-07T14:05:12+09:00")).toBe("녹음 2026-10-07 14:05");
   });

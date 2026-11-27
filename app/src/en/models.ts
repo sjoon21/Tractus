@@ -263,6 +263,7 @@ export default {
   "다시 열기": "Relaunch",
   "녹음·변환이 끝난 뒤 누르세요.": "Available after recording and transcription finish.",
   "저장소에서 만든 앱은 scripts/update.sh로 업데이트합니다.": "Apps built from the repository update with scripts/update.sh.",
+  "Windows 판은 아직 앱 안에서 업데이트하지 않습니다. 새 버전은 소개 사이트에서 받으세요.": "The Windows version doesn’t update in the app yet. Get new versions from the website.",
   "‘업데이트 설치’를 누를 때만 받습니다(약 240 MB).": "Downloads only when you click “Install update” (about 240 MB).",
   "지금 버전 {version}": "Current version {version}",
   "지금 버전을 읽는 중…": "Reading current version…",

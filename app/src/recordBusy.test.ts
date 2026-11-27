@@ -23,4 +23,9 @@ describe("convertsWhileRecording", () => {
     expect(convertsWhileRecording(true, true)).toBe(false);
     expect(convertsWhileRecording(false, true)).toBe(true);
   });
+  it("waits for the recording to end on Windows (CPU conversion)", () => {
+    expect(convertsWhileRecording(true, false, true)).toBe(false);
+    expect(convertsWhileRecording(false, false, true)).toBe(true);
+    expect(convertsWhileRecording(true, false, false)).toBe(true);
+  });
 });

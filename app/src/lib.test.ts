@@ -630,6 +630,8 @@ describe("파일 가져오기 (5.5)", () => {
   });
   test("파일 이름", () => {
     expect(baseName("/Users/me/회의 녹음.m4a")).toBe("회의 녹음.m4a");
+    expect(baseName("C:\\Users\\me\\회의 녹음.m4a")).toBe("회의 녹음.m4a");
+    expect(isImportable("C:\\Users\\me\\.m4a")).toBe(false);
   });
 });
 

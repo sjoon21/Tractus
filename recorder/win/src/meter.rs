@@ -58,6 +58,40 @@ impl ZeroDetector {
     }
 }
 
+/// 1분마다 트랙별 가장 큰 소리를 진단 로그(stderr) 한 줄로 낸다. "통화 상대 목소리가 녹음되지 않았다"는 신고 때
+/// 시스템 오디오가 무엇이라도 들었는지 보려는 것이다: 소리 크기만 남고 내용은 남지 않는다 (Yogurt 8833360, #35)
+#[derive(Default)]
+pub struct LevelLog {
+    since: Option<f64>,
+    mic: Option<f64>,
+    system: Option<f64>,
+}
+
+impl LevelLog {
+    const EVERY: f64 = 60.0;
+    /// 이보다 조용하면 상대 소리가 없었다고 적는다 (Yogurt의 -60..0 dB 눈금 0.05)
+    const QUIET: f64 = -57.0;
+
+    /// `t`: 오디오 시각(초). 트랙이 없으면 None. 1분이 차면 로그 줄을 돌려주고 다시 센다
+    pub fn feed(&mut self, t: f64, mic: Option<f64>, system: Option<f64>) -> Option<String> {
+        let since = *self.since.get_or_insert(t);
+        let louder = |a: Option<f64>, b: Option<f64>| match (a, b) {
+            (Some(x), Some(y)) => Some(x.max(y)),
+            (x, y) => x.or(y),
+        };
+        self.mic = louder(self.mic, mic);
+        self.system = louder(self.system, system);
+        if t - since < Self::EVERY {
+            return None;
+        }
+        let db = |v: Option<f64>| v.map_or("없음".to_string(), |x| format!("{x:.1} dBFS"));
+        let quiet = if self.system.is_some_and(|x| x < Self::QUIET) { " (상대 소리 없음)" } else { "" };
+        let line = format!("지난 {}초 가장 큰 소리: 마이크 {}, 시스템 오디오 {}{quiet}", (t - since).round(), db(self.mic), db(self.system));
+        *self = LevelLog { since: Some(t), ..Default::default() };
+        Some(line)
+    }
+}
+
 /// WASAPI의 float(-1..1)을 16-bit로 (넘치면 자른다)
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn to_i16(samples: &[f32]) -> Vec<i16> {
@@ -87,6 +121,16 @@ mod tests {
         let mut z = ZeroDetector::new(10);
         assert!(!z.feed(&[0, 1]));
         assert!(!z.feed(&[0; 100]));
+    }
+
+    #[test]
+    fn level_log_once_a_minute_with_loudest_and_quiet_call() {
+        let mut l = LevelLog::default();
+        assert_eq!(l.feed(0.0, Some(-30.0), Some(-100.0)), None);
+        assert_eq!(l.feed(30.0, Some(-12.5), Some(-80.0)), None);
+        assert_eq!(l.feed(60.0, Some(-40.0), Some(-90.0)).unwrap(), "지난 60초 가장 큰 소리: 마이크 -12.5 dBFS, 시스템 오디오 -80.0 dBFS (상대 소리 없음)");
+        assert_eq!(l.feed(90.0, None, Some(-20.0)), None, "다시 센다");
+        assert_eq!(l.feed(120.0, None, Some(-50.0)).unwrap(), "지난 60초 가장 큰 소리: 마이크 없음, 시스템 오디오 -20.0 dBFS");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 // 디자인 확인용 미리보기 (개발 서버 전용, `pnpm dev` → /preview.html). Tauri 없이 브라우저에서 앱을 띄운다.
 // 모든 invoke를 가짜로 받는다: 노트는 저장소의 가상 회의(tests/fixtures/eval), 모델·점검은 `tractus doctor/models list --json` 출력.
-// 빌드(index.html)에는 들어가지 않는다. `?lang=en`이면 화면도 가짜 데이터도 영어다(README 영어 스크린샷·데모).
+// 빌드(index.html)에는 들어가지 않는다. `?lang=en`이면 화면도 가짜 데이터도 영어다(README 영어 스크린샷·데모). `?os=windows`면 Windows 화면(platform.ts).
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import dataKo from "./data/meetings.json";

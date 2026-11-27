@@ -395,11 +395,12 @@ def main() -> None:
     import os
 
     from tractus.embed import load_embedder
-    from tractus.env import load_env_all
+    from tractus.env import load_env_all, trust_system_certificates
     from tractus.paths import home_dir, models_dir
 
     os.environ.setdefault("TQDM_DISABLE", "1")
     logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="tractus-mcp %(levelname)s %(message)s")
+    trust_system_certificates()
     load_env_all()
     home = home_dir()
     with contextlib.redirect_stdout(sys.stderr):
