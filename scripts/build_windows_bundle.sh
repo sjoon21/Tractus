@@ -16,10 +16,6 @@ PBS_TAG="20261110"
 PBS_PY="3.12.16"
 PBS_FILE="cpython-$PBS_PY+$PBS_TAG-x86_64-pc-windows-msvc-install_only.tar.gz"
 PBS_SHA256="e23fe5b16926de1d81661b1a97352e89fb167549c55a6825796ccd0f32ec7f1b"
-# Windows 텍스트 변환 런타임(docs/design/asr-onnx.md 9절). 아직 uv.lock 에 없어 여기서 해시로 고정해 넣는다.
-# 계획 2번(onnxruntime 의존성 PR)이 uv.lock 에 넣으면 이 두 줄과 아래 3b 단계를 지운다.
-ORT_REQ="onnxruntime==1.32.0 --hash=sha256:efe7456952c243a05a53d5b8732953625144642c2f3989094277f6217f0c0c40
-flatbuffers==25.12.19 --hash=sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4"
 # 경로 길이 검사에 쓰는 설치 폴더 예: 사용자 이름 20자 (Tauri NSIS currentUser 기본값 %LOCALAPPDATA%\Tractus)
 INSTALL_PREFIX='C:\Users\aaaaaaaaaaaaaaaaaaaa\AppData\Local\Tractus\'
 
@@ -89,15 +85,13 @@ ok "파이썬 $BEFORE → $(mb "$RT")"
 step "3. 의존성(uv.lock, wheel 만, 해시 검증)과 tractus 설치"
 cd "$REPO"
 uv export --frozen --no-dev --no-emit-project -o "$STAGE/requirements.txt" >/dev/null
-# --python 이 번들 파이썬이라 환경 표지(sys_platform == 'win32' 등)도 Windows 기준으로 고른다. mlx-metal 처럼 darwin 전용은 빠진다
+# --python 이 번들 파이썬이라 환경 표지(sys_platform == 'win32' 등)도 Windows 기준으로 고른다. mlx-metal 처럼 darwin 전용은 빠지고,
+# win32 전용 onnxruntime·flatbuffers(텍스트 변환 런타임, docs/design/asr-onnx.md 9절)는 들어간다
 uv pip install --python "$PY" --target "$SP" --only-binary :all: --no-deps --require-hashes --link-mode copy -r "$STAGE/requirements.txt" --quiet
-step "3b. onnxruntime (아직 uv.lock 밖, 위 ORT_REQ 참고)"
-printf '%s\n' "$ORT_REQ" > "$STAGE/ort.txt"
-uv pip install --python "$PY" --target "$SP" --only-binary :all: --no-deps --require-hashes --link-mode copy -r "$STAGE/ort.txt" --quiet
 uv build --wheel --out-dir "$STAGE/wheel" --quiet
 uv pip install --python "$PY" --target "$SP" --no-deps --link-mode copy "$STAGE"/wheel/tractus-*.whl --quiet
 # 콘솔 스크립트(tractus.exe·typer.exe 등)는 만든 곳의 파이썬 절대 경로를 품는다. 앱은 python.exe -m tractus.cli 만 쓴다
-rm -rf "$STAGE/wheel" "$STAGE/requirements.txt" "$STAGE/ort.txt" "$SP/bin" "$SP/Scripts"
+rm -rf "$STAGE/wheel" "$STAGE/requirements.txt" "$SP/bin" "$SP/Scripts"
 ok "site-packages $(mb "$SP")"
 
 step "4. 줄이기 (tests·__pycache__·*.pyi·쓰지 않는 하위 패키지)와 바이트코드"
@@ -150,7 +144,9 @@ JSON
 cd "$REPO/app"
 [ -d node_modules ] || pnpm install --frozen-lockfile
 pnpm tauri build --bundles nsis --config "$(cygpath -m "$CONF")" 2>&1 | tail -8
-SETUP="$(ls "$REPO"/app/src-tauri/target/release/bundle/nsis/*_x64-setup.exe | head -1)"
+# 이 판의 이름으로 고른다: 이전 빌드의 설치본(예: 0.5.9)이 같은 폴더에 남아 있어도 집지 않게
+SETUP="$REPO/app/src-tauri/target/release/bundle/nsis/Tractus_${VERSION}_x64-setup.exe"
+[ -f "$SETUP" ] || { echo "설치본이 없습니다: $SETUP" >&2; exit 1; }
 cp "$SETUP" "$OUT/"
 SETUP="$OUT/$(basename "$SETUP")"
 

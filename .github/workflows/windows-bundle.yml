@@ -13,8 +13,10 @@ on:
       - "scripts/build_windows_bundle.sh"
       - "scripts/bundle_slim.py"
       - "scripts/bundle_modules.txt"
-      - "src/tractus/paths.py"
       - "app/src-tauri/src/paths.rs"
+      - "app/src-tauri/src/settings.rs"
+      - "recorder/win/**"
+      - "src/tractus/**"
       - "app/src-tauri/tauri.conf.json"
       - "pyproject.toml"
       - "uv.lock"
@@ -114,10 +116,17 @@ jobs:
           $exe = Get-ChildItem $env:INST -Filter *.exe | Where-Object Name -ne 'uninstall.exe' | Select-Object -First 1
           Write-Output "앱: $($exe.FullName)"
           $p = Start-Process $exe.FullName -PassThru
-          Start-Sleep 20
+          # 앱은 시작하자마자 검색 프로세스(tractus mcp)를 띄운다: paths.rs core_args로 번들 runtime\python.exe가 떠야 한다
+          $runtime = Join-Path $env:INST 'runtime\python.exe'
+          $core = $false
+          for ($i = 0; $i -lt 20; $i++) {
+            Start-Sleep 1
+            if (Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $runtime }) { $core = $true }
+          }
           $alive = -not $p.HasExited
-          Get-Process | Where-Object { $_.Path -like "$env:INST*" } | Format-Table Id, ProcessName, WorkingSet64 -AutoSize | Out-String | Write-Output
+          Get-Process | Where-Object { $_.Path -like "$env:INST*" } | Format-Table Id, ProcessName, Path, WorkingSet64 -AutoSize | Out-String -Width 300 | Write-Output
           if (-not $alive) { throw "앱이 20초 안에 끝났다 (종료 코드 $($p.ExitCode))" }
+          if (-not $core) { throw "앱이 20초 안에 번들 파이썬($runtime)으로 코어를 띄우지 않았다" }
           Stop-Process -Id $p.Id -Force
           Get-Process | Where-Object { $_.Path -like "$env:INST*" } | Stop-Process -Force -ErrorAction SilentlyContinue
           Start-Sleep 2
