@@ -50,7 +50,7 @@ jobs:
           python-version: "3.12"
       - name: 모델·FLEURS 캐시
         id: cache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: |
             models/qwen3-asr-1.7b-onnx-int8
@@ -68,6 +68,17 @@ jobs:
             silero_vad_16k_op15.onnx
           uv run hf download google/fleurs --repo-type dataset --revision "$FLEURS_REV" \
             parquet-data/ko_kr/test-00000-of-00001.parquet --local-dir ../data/fleurs
+      # 받자마자 저장한다: 측정이 실패한 잡도 다음 실행이 4.7GB를 다시 받지 않게(actions/cache는 잡이 성공해야 저장한다).
+      # PR에서 만든 캐시는 그 PR ref에서만 보인다: bench를 고치는 PR이 많아지면 10GB 한도에서 다른 캐시를 밀어낼 수 있다
+      - name: 모델·FLEURS 캐시 저장
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            models/qwen3-asr-1.7b-onnx-int8
+            models/silero-vad-v6-onnx
+            data/fleurs
+          key: ${{ steps.cache.outputs.cache-primary-key }}
       - name: 시작 전 요약 줄 수 (이 잡이 더한 줄만 고른다)
         run: echo "BASE_LINES=$(wc -l < results/summary.jsonl)" >> "$GITHUB_ENV"
       # 측정마다 프로세스 하나: 최대 메모리가 측정마다 따로 잡힌다. 하나가 실패해도 나머지를 잰다.
@@ -82,7 +93,7 @@ jobs:
         run: uv run --with "$ORT" python run.py qwen3-1.7b-onnx-int8 fleurs --lang fixed --every 8 --threads 4 --app --vad ../models/silero-vad-v6-onnx --power "GitHub windows-latest"
       - name: 메모리 최악 경우 (30초 묶음 + 사전 50개), 스레드 4
         continue-on-error: true
-        run: uv run --with "$ORT" python run.py qwen3-1.7b-onnx-int8 fleurs30 --lang fixed --glossary --limit 8 --threads 4 --power "GitHub windows-latest"
+        run: uv run --with "$ORT" python run.py qwen3-1.7b-onnx-int8 fleurs30 --lang fixed --glossary --limit 8 --threads 4 --app --vad ../models/silero-vad-v6-onnx --power "GitHub windows-latest"
       - name: 잡 요약 (지표만)
         if: always()
         run: |

@@ -103,7 +103,7 @@ def ort_options(n: int, config: list[str]):
 
     def session(path, sess_options=None, *a, **kw):
         opts = sess_options or ort.SessionOptions()
-        if n:
+        if n and not opts.intra_op_num_threads:  # 제품이 정한 값(VAD의 1)은 그대로 둔다: 앱 경로가 제품과 같은 조건이게
             opts.intra_op_num_threads = n
         for key, value in entries:
             opts.add_session_config_entry(key, value)
