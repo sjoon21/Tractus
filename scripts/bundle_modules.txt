@@ -2227,6 +2227,10 @@ transformers.utils.peft_utils
 transformers.utils.type_validators
 transformers.utils.versions
 transformers.video_utils
+truststore
+truststore._api
+truststore._macos
+truststore._ssl_constants
 typer
 typer._click
 typer._click._compat

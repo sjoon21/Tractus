@@ -64,3 +64,39 @@ def test_home_env_is_read_after_cwd(tmp_path, monkeypatch):
     import os
 
     assert (os.environ["TRACTUS_Z"], os.environ["TRACTUS_W"]) == ("from_cwd", "only_home")
+
+
+def test_entry_points_trust_system_certificates(tmp_path, monkeypatch):
+    """회사망 사내 루트 인증서: CLI 콜백과 MCP 서버 시작이 HTTP 클라이언트보다 먼저 OS 인증서 저장소를 믿게 한다 (truststore)."""
+    import truststore
+
+    from tractus import cli, embed, mcp_server
+
+    calls = []
+    monkeypatch.setattr(truststore, "inject_into_ssl", lambda: calls.append("inject"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TRACTUS_HOME", str(tmp_path))
+    cli.main()
+    assert calls == ["inject"]
+
+    class Server:
+        def run(self):
+            calls.append("run")
+
+    monkeypatch.setattr(embed, "load_embedder", lambda _models: None)
+    monkeypatch.setattr(mcp_server, "build_server", lambda _home, _embedder: Server())
+    mcp_server.main()
+    assert calls == ["inject", "inject", "run"]
+
+
+def test_certificate_injection_failure_is_quiet(monkeypatch):
+    """주입이 실패해도(지원하지 않는 OS·파이썬) 명령은 그대로 돈다: certifi를 그대로 쓴다."""
+    import truststore
+
+    from tractus.env import trust_system_certificates
+
+    def boom():
+        raise RuntimeError("no system trust store")
+
+    monkeypatch.setattr(truststore, "inject_into_ssl", boom)
+    trust_system_certificates()
