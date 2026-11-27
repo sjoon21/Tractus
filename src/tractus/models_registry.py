@@ -409,8 +409,9 @@ def usable(model_id: str, root: Path) -> bool:
         return True
     m = get(model_id)
     d = root / m.local_dir
-    # ONNX 폴더(Windows)에는 model.safetensors가 원래 없어, config.json만 있고 가중치가 빠진 폴더를 쓸 수 있다고 보지 않게 safetensors 모델에만 이 갈래를 연다
-    return m.kind == "hf" and "model.safetensors" in m.files and (d / "config.json").is_file() and not (d / "model.safetensors").exists() and not st.has_incomplete
+    # ONNX 판(Windows)은 config.json만 있고 가중치(.onnx)가 빠진 폴더를 쓸 수 있다고 보지 않는다. 그 밖(MLX 판·직접 추가한 .npz 엔진)은 예전 그대로
+    onnx = any(f.endswith(".onnx") for f in m.files)
+    return m.kind == "hf" and not onnx and (d / "config.json").is_file() and not (d / "model.safetensors").exists() and not st.has_incomplete
 
 
 # ── 기능 ─────────────────────────────────────────────────────────────────────
