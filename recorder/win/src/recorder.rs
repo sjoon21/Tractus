@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 
 use crate::fake::FakeSource;
-use crate::meter::{LevelMeter, ZeroDetector};
+use crate::meter::{LevelLog, LevelMeter, ZeroDetector};
 use crate::protocol::{emit, fatal, iso_local, log, round2, warning, Command, Mark, Pause, RecordingInfo};
 use crate::wav::{WavWriter, SAMPLE_RATE};
 
@@ -40,7 +40,7 @@ pub enum Msg {
     Eof,
     /// 20ms마다: 가짜 신호를 만들고, 250ms마다 소리 크기를 낸다
     Tick,
-    /// 장치가 끊겼거나 기본 장치가 바뀌었다: 다시 연다
+    /// 장치가 끊겼거나 기본 장치가 바뀌었다: 알림이 멎고 `SETTLE` 뒤에 한 번 다시 연다
     Restart(Track, &'static str),
 }
 
@@ -62,6 +62,8 @@ pub type Opener = Box<dyn FnMut(Track, Sender<Msg>) -> Result<Box<dyn Source>, O
 
 /// 표본이 이만큼 안 오면 끊긴 것으로 보고 다시 연다
 const STALL: f64 = 2.0;
+/// 장치 바뀜 알림은 몰려 온다(역할마다 하나, 블루투스 핸즈프리 전환). 마지막 알림 뒤 이만큼 조용하면 한 번만 다시 연다 (Yogurt record.rs SETTLE, #152)
+const SETTLE: Duration = Duration::from_millis(300);
 
 pub struct Recorder {
     dir: PathBuf,
@@ -83,7 +85,10 @@ pub struct Recorder {
     last_sample_at: HashMap<Track, f64>,
     realign: HashSet<Track>,
     failing: HashSet<Track>,
+    /// 다시 열 트랙과 그 시각 (`SETTLE`로 묶은 알림)
+    settling: HashMap<Track, (Instant, &'static str)>,
     last_level: Instant,
+    level_log: LevelLog,
     stopping: bool,
 }
 
@@ -109,7 +114,9 @@ impl Recorder {
             last_sample_at: HashMap::new(),
             realign: HashSet::new(),
             failing: HashSet::new(),
+            settling: HashMap::new(),
             last_level: Instant::now(),
+            level_log: LevelLog::default(),
             stopping: false,
         }
     }
@@ -225,7 +232,7 @@ impl Recorder {
                 Msg::Cmd(line) => self.handle(&line),
                 Msg::Eof => self.stop(None),
                 Msg::Tick => self.tick(),
-                Msg::Restart(track, reason) => self.restart(track, reason),
+                Msg::Restart(track, reason) => self.settle(track, reason, Instant::now()),
             }
         }
         self.stop(None)
@@ -234,6 +241,7 @@ impl Recorder {
     fn tick(&mut self) {
         let now = self.elapsed();
         self.flush_fakes(now);
+        self.restart_settled(Instant::now());
         if self.last_level.elapsed() >= Duration::from_millis(250) {
             self.last_level = Instant::now();
             self.emit_level();
@@ -277,7 +285,24 @@ impl Recorder {
         self.watchdog();
         let mut level = |t: Track| self.meters.get_mut(&t).map(LevelMeter::take);
         let (mic, system) = (level(Track::Mic), level(Track::System));
+        if let Some(line) = self.level_log.feed(self.elapsed(), mic, system) {
+            log(&line);
+        }
         emit(json!({ "event": "level", "t": round2(self.elapsed()), "mic": mic, "system": system }));
+    }
+
+    /// 다시 열기를 마지막 알림에서 `SETTLE` 뒤로 미룬다
+    fn settle(&mut self, track: Track, reason: &'static str, now: Instant) {
+        self.settling.insert(track, (now + SETTLE, reason));
+    }
+
+    /// 알림이 `SETTLE` 동안 멎은 트랙만 다시 연다
+    fn restart_settled(&mut self, now: Instant) {
+        let due: Vec<(Track, &'static str)> = self.settling.iter().filter(|(_, (at, _))| *at <= now).map(|(t, (_, r))| (*t, *r)).collect();
+        for (t, reason) in due {
+            self.settling.remove(&t);
+            self.restart(t, reason);
+        }
     }
 
     fn watchdog(&mut self) {
@@ -502,6 +527,36 @@ mod tests {
         mic_ok.set(true);
         r.restart(Track::Mic, "시험");
         assert!(!r.failing.contains(&Track::Mic) && r.realign.contains(&Track::Mic), "열리면 다음 첫 버퍼에서 앞을 0으로 메운다");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 몰려 온 장치 바뀜 알림은 마지막 알림에서 SETTLE이 지난 뒤 한 번만 다시 연다
+    #[test]
+    fn device_change_bursts_reopen_once_after_they_settle() {
+        let dir = std::env::temp_dir().join(format!("tractus-rec-test-{}-settle", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let opens = Rc::new(Cell::new(0));
+        let n = opens.clone();
+        let opener: Opener = Box::new(move |_, _| {
+            n.set(n.get() + 1);
+            Ok(Box::new(Open))
+        });
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let mut r = Recorder::new(dir.clone(), tx, Some(opener));
+        r.start(&[Track::Mic, Track::System], false);
+        assert_eq!(opens.get(), 2);
+
+        let t0 = Instant::now();
+        for i in 0..3 {
+            let at = t0 + Duration::from_millis(i * 100);
+            r.settle(Track::System, "시험", at);
+            r.restart_settled(at);
+        }
+        assert_eq!(opens.get(), 2, "알림이 이어지는 동안은 다시 열지 않는다");
+        r.restart_settled(t0 + SETTLE + Duration::from_millis(200));
+        assert_eq!(opens.get(), 3, "멎은 뒤 한 번");
+        r.restart_settled(t0 + SETTLE * 10);
+        assert_eq!(opens.get(), 3);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

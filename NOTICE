@@ -148,10 +148,16 @@ channels; `tractus transcribe --diarizer fluid` runs it always.
    changes, last buffer of the IOProc list as the tap, microphone client rate
    following the hardware rate), adapted from app/native/yogurt-audio/main.swift
    (commits 5610d08 and 3806507).
-   Windows recorder: recorder/win/src/win.rs (WASAPI microphone, process
-   loopback with endpoint fallback, device notifications, QPC clock) and
-   recorder/win/src/gap.rs (silence filler), adapted from
+   Windows recorder: recorder/win/src/win.rs (WASAPI microphone, whole-output
+   loopback plus the default communication device by default and process
+   loopback on request (commits ff38a76 and 1b016b0), device notifications,
+   QPC clock), recorder/win/src/gap.rs (silence filler) and
+   recorder/win/src/mix.rs (mixing several outputs into one track, copied from
+   app/native/yogurt-audio-win/src/mix.rs at commit 1b016b0), adapted from
    app/native/yogurt-audio-win/src/win/mod.rs and gap.rs to Tractus's WAV contract.
+   The 300 ms settle before reopening a changed device follows
+   app/native/yogurt-audio-win/src/record.rs (SETTLE) and commit d6083ad; the
+   once-a-minute level line follows commit 8833360.
    MIT License
 
    Copyright (c) 2026 Frigade
