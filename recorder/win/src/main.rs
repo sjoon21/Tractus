@@ -4,6 +4,8 @@ mod fake;
 #[cfg_attr(not(windows), allow(dead_code))] // Windows loopback만 쓴다 (테스트는 어디서나 돈다)
 mod gap;
 mod meter;
+#[cfg_attr(not(windows), allow(dead_code))] // 출력 장치 섞기는 Windows만 쓴다 (테스트는 어디서나 돈다)
+mod mix;
 mod protocol;
 mod recorder;
 mod wav;

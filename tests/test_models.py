@@ -18,7 +18,7 @@ from tractus.commands import common, engines
 from tractus import align, cli, diarize, doctor, embed, voices
 from tractus import models_install as inst
 from tractus import models_registry as reg
-from conftest import FLUID_MAC, mac_only
+from conftest import FLUID_MAC, WINDOWS, mac_only
 
 GB = 1024**3
 
@@ -490,10 +490,11 @@ def test_helper_download_runs_binary_and_maps_failure(root, tmp_path, monkeypatc
 
 # ── doctor ───────────────────────────────────────────────────────────────────
 
-def fake_system(monkeypatch, arch="arm64", mac="15.2", memory=16 * GB, system="Darwin"):
+def fake_system(monkeypatch, arch="arm64", mac="15.2", memory=16 * GB, system="Darwin", win_ver="10.0.22631"):
     monkeypatch.setattr(doctor.platform, "machine", lambda: arch)
     monkeypatch.setattr(doctor.platform, "system", lambda: system)
     monkeypatch.setattr(doctor.platform, "mac_ver", lambda: (mac, ("", "", ""), arch))
+    monkeypatch.setattr(doctor.platform, "version", lambda: win_ver)
     monkeypatch.setattr(reg, "physical_memory", lambda: memory)
 
 
@@ -504,6 +505,11 @@ def fake_system(monkeypatch, arch="arm64", mac="15.2", memory=16 * GB, system="D
     ({"mac": "14.4"}, []),
     ({"memory": 4 * GB}, ["memory_low"]),
     ({"system": "Linux", "mac": ""}, ["macos_too_old"]),
+    ({"system": "Windows", "arch": "AMD64", "win_ver": "10.0.22631"}, []),
+    ({"system": "Windows", "arch": "AMD64", "win_ver": "10.0.19045"}, []),
+    ({"system": "Windows", "arch": "AMD64", "win_ver": "10.0.18363"}, ["windows_too_old"]),
+    ({"system": "Windows", "arch": "x86", "win_ver": "10.0.22631"}, ["unsupported_arch"]),
+    ({"system": "Windows", "arch": "AMD64", "win_ver": "10.0.22631", "memory": 4 * GB}, ["memory_low"]),
 ])
 def test_doctor_system_minimums(root, monkeypatch, kw, problems):
     fake_system(monkeypatch, **kw)
@@ -518,9 +524,10 @@ def test_doctor_report_with_nothing_installed_never_fails(root, monkeypatch):
     assert r["tools"]["ffmpeg"] == {"found": False, "path": None, "version": None}
     assert r["tools"]["recorder"]["found"] is False and r["tools"]["diar_helper"]["found"] is False
     caps = {c["id"]: c for c in r["capabilities"]}
+    ffmpeg_hint = "winget install Gyan.FFmpeg" if WINDOWS else "brew install ffmpeg"
     assert caps["convert"]["missing"] == ["vad", "asr-std", "ffmpeg"] and not caps["convert"]["ready"]
-    assert caps["convert"]["hint"] == "tractus models download vad; tractus models download asr-std; brew install ffmpeg"
-    assert caps["record"]["missing"] == ["recorder"] and "swift build" in caps["record"]["hint"]
+    assert caps["convert"]["hint"] == f"tractus models download vad; tractus models download asr-std; {ffmpeg_hint}"
+    assert caps["record"]["missing"] == ["recorder"] and ("cargo build" if WINDOWS else "swift build") in caps["record"]["hint"]
     assert caps["live"]["missing"] == ["vad", "asr-lite", "recorder"]
     assert (r["recommended_track"], r["effective_track"]) == ("standard", None)
     assert {m["state"] for m in r["models"]} == {"missing"}
