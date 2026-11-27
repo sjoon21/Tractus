@@ -74,7 +74,7 @@ jobs:
         run: |
           setup=$(ls dist/windows/*_x64-setup.exe | head -1)
           ./"$setup" //S  # Git Bash가 /S를 경로로 바꾸지 않게
-          inst="$LOCALAPPDATA/Tractus"
+          inst="$(cygpath -w "$LOCALAPPDATA/Tractus")"  # pwsh 단계의 경로 비교가 맞게 역슬래시로
           for i in $(seq 1 60); do [ -f "$inst/runtime/python.exe" ] && break; sleep 2; done
           ls "$inst" "$inst/bin"
           echo "INST=$inst" >> "$GITHUB_ENV"
@@ -134,7 +134,7 @@ jobs:
           $instMB = [math]::Round(($files | Measure-Object Length -Sum).Sum / 1MB, 1)
           $byExt = $unsigned | Group-Object Extension | ForEach-Object { "$($_.Name) $($_.Count)" }
           $len = (Select-String -Path build.txt -Pattern '가장 긴 경로' | Select-Object -Last 1).Line
-          @(
+          $md = @(
             "## Windows 설치본 스모크",
             "",
             "| 항목 | 값 |",
@@ -147,7 +147,9 @@ jobs:
             "| doctor system.problems | $env:DOCTOR_PROBLEMS |",
             "",
             "가장 긴 경로: ``$($longest.FullName)``"
-          ) -join "`n" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+          ) -join "`n"
+          Write-Output $md
+          $md | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
           Write-Output "서명 안 된 파일 (앞 30개):"
           $unsigned | Select-Object -First 30 | ForEach-Object { $_.FullName.Substring($env:INST.Length) }
 

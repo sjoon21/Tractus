@@ -82,7 +82,7 @@ ok "python $("$PY" -I -c 'import sys; print(sys.version.split()[0])') ($(mb "$RT
 
 step "2. 파이썬 줄이기 (tkinter·idle·테스트·pip·헤더 등 안 쓰는 것)"
 BEFORE="$(mb "$RT")"
-rm -rf "$RT"/{include,libs,Scripts,tcl,pythonw.exe} "$RT"/DLLs/{_tkinter.pyd,tcl86t.dll,tk86t.dll}
+rm -rf "$RT"/{include,libs,Scripts,tcl,pythonw.exe} "$RT"/DLLs/{_tkinter.pyd,tcl86t.dll,tk86t.dll,_ctypes_test.pyd} "$RT"/DLLs/_test*.pyd "$RT"/DLLs/xxlimited*.pyd
 rm -rf "$RT"/Lib/{test,idlelib,tkinter,turtledemo,ensurepip,lib2to3,pydoc_data} "$SP"/*
 ok "파이썬 $BEFORE → $(mb "$RT")"
 
