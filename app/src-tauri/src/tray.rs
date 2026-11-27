@@ -57,8 +57,17 @@ const ID_NOTE: &str = "tray:note:";
 // 문구는 WORDS.md §4.16 (render·recent_label·build_menu에서 t())
 
 // 아이콘은 @2x(36 px)를 쓴다: tray-icon은 macOS에서 어떤 이미지든 높이 18pt로 맞추므로 18pt 격자로 그려 줄이지 않고 픽셀에 딱 맞춘다. 1x 파일은 디자이너가 바꿔 끼우기 쉽게 같이 둔다
+#[cfg(not(windows))]
 const ICON_IDLE: &[u8] = include_bytes!("../icons/tray/tray-idle@2x.png");
+#[cfg(not(windows))]
 const ICON_RECORDING: &[u8] = include_bytes!("../icons/tray/tray-recording@2x.png");
+// Windows 알림 영역은 템플릿(단색) 표시가 없어 검정 아이콘이 어두운 작업 표시줄에서 안 보인다: 컬러 앱 아이콘, 녹음 중은 빨간 점을 얹은 것
+#[cfg(windows)]
+const ICON_IDLE: &[u8] = include_bytes!("../icons/32x32.png");
+#[cfg(windows)]
+const ICON_RECORDING: &[u8] = include_bytes!("../icons/tray/tray-win-recording.png");
+/// macOS는 단색 템플릿 아이콘(메뉴 막대 색을 따른다), Windows는 컬러 아이콘 그대로
+const ICON_TEMPLATE: bool = cfg!(target_os = "macos");
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Phase {
@@ -328,7 +337,7 @@ fn create_tray(app: &AppHandle) -> tauri::Result<TrayIcon<Wry>> {
     // 왼쪽 클릭은 팝오버, 오른쪽 클릭은 기본 메뉴
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon(false)?)
-        .icon_as_template(true)
+        .icon_as_template(ICON_TEMPLATE)
         .tooltip(TOOLTIP)
         .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| {
@@ -421,7 +430,7 @@ fn emit_popover(app: &AppHandle, p: &Payload) {
     }
 }
 
-fn show_main(app: &AppHandle) {
+pub fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(MAIN_WINDOW) {
         let _ = w.show();
         let _ = w.unminimize();
@@ -523,7 +532,7 @@ impl Inner {
                 // macOS의 set_icon은 템플릿 표시를 지운다: 바로 다시 건다
                 Ok(img) => {
                     let _ = tray.set_icon(Some(img));
-                    let _ = tray.set_icon_as_template(true);
+                    let _ = tray.set_icon_as_template(ICON_TEMPLATE);
                     self.shown_recording_icon = Some(view.recording_icon);
                 }
                 Err(e) => eprintln!("메뉴 막대 아이콘을 읽지 못했습니다: {e}"),
@@ -783,6 +792,14 @@ mod tests {
     }
 
     #[test]
+    fn tray_icons_decode() {
+        for recording in [false, true] {
+            let img = icon(recording).expect("아이콘 PNG");
+            assert!(img.width() > 0 && img.height() > 0);
+        }
+    }
+
+    #[test]
     fn icon_rect_uses_the_scale_of_the_screen_the_icon_is_on() {
         let both = [RETINA, EXTERNAL];
         // Retina 메뉴 막대의 아이콘 (pt 1000, 높이 24 → 2배로 온다)
@@ -1002,7 +1019,8 @@ mod tests {
 
     #[test]
     fn icons_are_png_template_sizes() {
-        for (bytes, size) in [(ICON_IDLE, 36), (ICON_RECORDING, 36)] {
+        let size = if cfg!(windows) { 32 } else { 36 }; // Windows는 32 px 컬러 아이콘, 그 밖은 @2x 템플릿
+        for bytes in [ICON_IDLE, ICON_RECORDING] {
             assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
             assert_eq!(u32::from_be_bytes(bytes[16..20].try_into().unwrap()), size);
             assert_eq!(u32::from_be_bytes(bytes[20..24].try_into().unwrap()), size);

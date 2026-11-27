@@ -1,5 +1,6 @@
 // 삭제(휴지통으로 이동) 확인 대화상자의 상태와 문구 (WORDS.md §4.8). 실제 이동은 Rust `delete_meeting`·`delete_recording`이 한다.
 import { t } from "./i18n";
+import { isWindows } from "./platform";
 
 export type DeleteTarget =
   /** memo: 녹음 없이 직접 쓴 노트 (녹음 파일이 없다). withMemo: 녹음 노트에 내가 적은 메모가 있다 */
@@ -40,8 +41,9 @@ export const recordingLabel = (startedAt: string): string => t("녹음 {date} {t
 
 export const noteTitle = (title: string): string => title.trim() || t("제목 없음");
 
-const lastPart = (path: string): string => path.split("/").filter(Boolean).pop() ?? path;
-const parentPath = (path: string): string => path.replace(/\/+$/, "").replace(/\/[^/]*$/, "") || "/";
+// Windows 경로(meetings.rs가 넘기는 `C:\…`)도 자른다
+const lastPart = (path: string): string => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+const parentPath = (path: string): string => path.replace(/[\\/]+$/, "").replace(/[\\/][^\\/]*$/, "") || "/";
 
 export interface DeleteDialogText {
   title: string;
@@ -54,8 +56,11 @@ export interface DeleteDialogText {
   busy: string;
 }
 
-export function deleteDialogText(target: DeleteTarget): DeleteDialogText {
-  const restore = t("되돌리려면 휴지통에서 ‘{folder}’ 폴더를 꺼내 {parent} 폴더에 다시 넣으세요.", { folder: lastPart(target.dir), parent: parentPath(target.dir) });
+export function deleteDialogText(target: DeleteTarget, windows = isWindows()): DeleteDialogText {
+  // Windows 휴지통은 `복원`이 원래 자리로 되돌린다
+  const restore = windows
+    ? t("되돌리려면 휴지통에서 ‘{folder}’ 폴더를 복원하세요.", { folder: lastPart(target.dir) })
+    : t("되돌리려면 휴지통에서 ‘{folder}’ 폴더를 꺼내 {parent} 폴더에 다시 넣으세요.", { folder: lastPart(target.dir), parent: parentPath(target.dir) });
   const common = { cancel: t("취소"), confirm: t("휴지통으로 이동"), busy: t("옮기는 중…") };
   if (target.kind === "note") {
     return {

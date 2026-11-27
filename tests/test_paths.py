@@ -105,3 +105,29 @@ def test_move_cli_prints_json(env, monkeypatch):
     monkeypatch.setenv("TRACTUS_MODELS_DIR", str(src))
     r = CliRunner().invoke(cli.app, ["models", "move", str(env / "dest"), "--yes"])
     assert r.exit_code == 0 and json.loads(r.stdout) == {"moved": ["vad"], "freed_bytes": 0}
+
+
+def test_tool_bin_windows_layout_and_build_hint(tmp_path, monkeypatch):
+    """W3: Windows에서 tool_bin·doctor.recorder_bin이 tractus-rec.exe와 recorder/win/target/release를 찾는다."""
+    from tractus import doctor, platform_compat
+
+    monkeypatch.setattr(platform_compat, "WINDOWS", True)
+    monkeypatch.delenv("TRACTUS_REC_BIN", raising=False)
+    monkeypatch.setattr(paths.sys, "executable", str(tmp_path / ".venv/Scripts/python.exe"))
+
+    no_repo = tmp_path / "no-repo"
+    monkeypatch.setattr(paths, "REPO_ROOT", no_repo)
+    assert not paths.in_repo()
+    assert "cargo build" not in paths.build_hint("recorder") and "TRACTUS_REC_BIN" in paths.build_hint("recorder")
+
+    repo = tmp_path / "repo"
+    (repo / "recorder").mkdir(parents=True)
+    (repo / "recorder/Package.swift").write_text("", encoding="utf-8")
+    monkeypatch.setattr(paths, "REPO_ROOT", repo)
+    assert paths.in_repo()
+    assert doctor.recorder_bin() == repo / "recorder/win/target/release/tractus-rec.exe"
+    assert f"cd {repo}/recorder/win && cargo build --release" == paths.build_hint("recorder")
+
+    custom = tmp_path / "custom" / "tractus-rec.exe"
+    monkeypatch.setenv("TRACTUS_REC_BIN", str(custom))
+    assert doctor.recorder_bin() == custom

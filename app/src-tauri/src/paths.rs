@@ -91,10 +91,15 @@ pub fn is_bundled(exe: Option<&Path>) -> bool {
     TRACTUS.in_bundle(exe).is_some_and(|p| p.is_file())
 }
 
-/// 업데이트 확인을 할 수 있는가(= 번들인가). 저장소에서 만든 앱은 scripts/update.sh 로 업데이트하므로 화면이 확인을 건너뛴다 (docs/desktop.md)
+/// 업데이트 확인을 할 수 있는가(= macOS 번들인가). 저장소에서 만든 앱은 scripts/update.sh 로 업데이트하므로 화면이 확인을 건너뛴다 (docs/desktop.md).
+/// Windows는 끈다: latest.json(release.sh)에 darwin-aarch64만 있어 확인하면 늘 실패한다 (docs/windows/README.md)
 #[tauri::command]
 pub fn update_available() -> bool {
-    is_bundled(std::env::current_exe().ok().as_deref())
+    checks_updates(std::env::current_exe().ok().as_deref())
+}
+
+fn checks_updates(exe: Option<&Path>) -> bool {
+    cfg!(target_os = "macos") && is_bundled(exe)
 }
 
 /// 버전의 릴리스 노트 페이지 (소개 사이트, scripts/releases_page.py). 화면 언어를 따른다.
@@ -201,6 +206,8 @@ mod tests {
         touch(&res.join(TRACTUS.bundle));
         assert!(is_bundled(Some(&exe)));
         assert!(!is_bundled(None));
+        // 업데이트 확인은 macOS 번들에서만 (Windows는 latest.json에 판이 없다)
+        assert_eq!(checks_updates(Some(&exe)), cfg!(target_os = "macos"));
     }
 
     #[test]

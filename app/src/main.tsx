@@ -9,12 +9,14 @@ async function start() {
   const { pref, lang } = await invoke<{ pref: LangPref; lang: Lang }>("ui_lang").catch(() => ({ pref: "system" as LangPref, lang: "ko" as Lang }));
   setLangPref(pref);
   setLang(lang, lang === "en" ? (await import("./en")).EN : {});
-  const [{ createRoot }, { initTheme }, { App }, { PanelsProvider }] = await Promise.all([import("react-dom/client"), import("./themePref"), import("./App"), import("./PanelToggle")]);
+  const [{ createRoot }, { initTheme }, { App }, { PanelsProvider }, { ErrorBoundary }] = await Promise.all([import("react-dom/client"), import("./themePref"), import("./App"), import("./PanelToggle"), import("./ErrorBoundary")]);
   initTheme();
   createRoot(document.getElementById("root")!).render(
-    <PanelsProvider>
-      <App />
-    </PanelsProvider>,
+    <ErrorBoundary>
+      <PanelsProvider>
+        <App />
+      </PanelsProvider>
+    </ErrorBoundary>,
   );
 }
 

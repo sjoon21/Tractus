@@ -1,4 +1,4 @@
-// 앱 틀: lib.ts·App.tsx·pause.ts·panels.ts·rail.ts·menu.ts·print.ts·NewNoteMenu.tsx·trayText.ts·useOrganize.ts·ui/page.tsx·OpenSettings.tsx·GatedButton.tsx·ErrorDetail.tsx
+// 앱 틀: lib.ts·App.tsx·pause.ts·panels.ts·rail.ts·menu.ts·print.ts·NewNoteMenu.tsx·trayText.ts·useOrganize.ts·ui/page.tsx·OpenSettings.tsx·GatedButton.tsx·ErrorDetail.tsx·ErrorBoundary.tsx
 import type { Dict } from "../i18n";
 
 export default {
@@ -233,4 +233,9 @@ export default {
   "직전 문장 다시 듣기": "Replay the last sentence",
   "노트 목록 폭 조절": "Resize note list",
   "오른쪽 패널 폭 조절": "Resize right panel",
+
+  // ErrorBoundary.tsx: 화면을 그리다 오류가 났을 때
+  "화면을 그리지 못했습니다": "Something went wrong showing this screen",
+  "다시 불러오면 대부분 해결됩니다. 노트는 그대로 있습니다.": "Reloading usually fixes it. Your notes are safe.",
+  "다시 불러오기": "Reload",
 } satisfies Dict;

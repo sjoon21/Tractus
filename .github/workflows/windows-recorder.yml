@@ -51,8 +51,12 @@ jobs:
           bin=target/release/tractus-rec.exe
           $bin check; echo "check 종료 $?"
           $bin mic-permission; echo "mic-permission 종료 $?"
-          out=$(echo stop | timeout 20 $bin record --out "$RUNNER_TEMP/rec"); code=$?
-          echo "$out"; echo "record 종료 $code"
-          # 장치가 없으면 경고 뒤 error 이벤트·종료 코드 1, 있으면 started…stopped·종료 코드 0. 어느 쪽이든 stdout은 JSON Lines만
-          echo "$out" | python -c "import sys,json; [json.loads(l) for l in sys.stdin if l.strip()]" || exit 1
-          [ $code -eq 0 ] || [ $code -eq 1 ] || exit 1
+          # 시스템 소리 두 갈래: 기본값(출력 전체 + 통신 장치)과 TRACTUS_REC_LOOPBACK=process
+          for mode in default process; do
+            [ $mode = process ] && export TRACTUS_REC_LOOPBACK=process
+            out=$(echo stop | timeout 20 $bin record --out "$RUNNER_TEMP/rec-$mode"); code=$?
+            echo "$out"; echo "record($mode) 종료 $code"
+            # 장치가 없으면 경고 뒤 error 이벤트·종료 코드 1, 있으면 started…stopped·종료 코드 0. 어느 쪽이든 stdout은 JSON Lines만
+            echo "$out" | python -c "import sys,json; [json.loads(l) for l in sys.stdin if l.strip()]" || exit 1
+            [ $code -eq 0 ] || [ $code -eq 1 ] || exit 1
+          done

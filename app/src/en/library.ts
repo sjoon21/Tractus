@@ -186,6 +186,7 @@ export default {
   "녹음 {date} {time}": "Recording {date} {time}",
   "제목 없음": "Untitled",
   "되돌리려면 휴지통에서 ‘{folder}’ 폴더를 꺼내 {parent} 폴더에 다시 넣으세요.": "To restore it, move the “{folder}” folder from the Trash back into {parent}.",
+  "되돌리려면 휴지통에서 ‘{folder}’ 폴더를 복원하세요.": "To undo, restore the “{folder}” folder from the Recycle Bin.",
   "옮기는 중…": "Moving…",
   "‘{title}’ 노트를 삭제할까요?": "Delete “{title}”?",
   "메모 내용과 요약, 질문 기록도 모두 함께 삭제됩니다.": "The memo, its summaries, and its question history will all be deleted with it.",
