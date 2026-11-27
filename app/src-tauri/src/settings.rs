@@ -262,8 +262,9 @@ impl Settings {
     }
 
     pub(crate) fn tractus<S: AsRef<OsStr>>(&self, args: &[S]) -> Command {
-        let mut cmd = crate::procs::command(self.tractus_path());
-        cmd.args(args).envs(self.child_env()).current_dir(self.tractus_cwd());
+        let program = self.tractus_path();
+        let mut cmd = crate::procs::command(&program);
+        cmd.args(paths::core_args(&program)).args(args).envs(self.child_env()).current_dir(self.tractus_cwd());
         cmd
     }
 
@@ -309,9 +310,10 @@ impl Settings {
     }
 
     pub(crate) fn mcp_spawn(&self) -> mcp::Spawn {
+        let program = self.tractus_path();
         mcp::Spawn {
-            program: self.tractus_path(),
-            args: vec!["mcp".into()],
+            args: paths::core_args(&program).iter().copied().chain(["mcp"]).map(String::from).collect(),
+            program,
             env: self.child_env().into_iter().chain(self.embed_key_env(|k| std::env::var(k).ok())).collect(),
             cwd: Some(self.tractus_cwd()),
         }

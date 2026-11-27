@@ -43,17 +43,22 @@ def in_repo() -> bool:
 
 
 def tool_bin(env: str, name: str, repo_rel: str) -> Path:
-    """녹음·도우미 프로그램 위치: $env → 앱 번들(파이썬이 <앱>/Contents/Resources/runtime/bin에 있으면 ../../bin/<name>) → 저장소에서 빌드한 것.
+    """녹음·도우미 프로그램 위치: $env → 앱 번들(파이썬이 <앱>/Contents/Resources/runtime/bin에 있으면 ../../bin/<name>,
+    Windows 설치본은 <설치 폴더>\\runtime\\python.exe → ..\\bin\\<name>.exe) → 저장소에서 빌드한 것.
     존재하는 첫 후보를 돌려주고, 없으면 저장소 배치일 때 저장소 경로, 아니면 번들 경로(안내와 점검 표시용)."""
     if value := os.environ.get(env):
         return Path(value)
-    if platform_compat.WINDOWS:  # Windows 실행 파일은 .exe가 붙는다 (번들 배치는 아직 정하지 않아 아래 .app 갈래에 걸리지 않는다)
-        name, repo_rel = f"{name}.exe", f"{repo_rel}.exe"
     exe = Path(sys.executable)  # resolve하지 않는다: venv의 python은 링크다
+    if platform_compat.WINDOWS:  # Windows 실행 파일은 .exe가 붙고, 설치본(scripts/build_windows_bundle.sh)은 파이썬을 runtime\ 바로 아래에 둔다
+        name, repo_rel = f"{name}.exe", f"{repo_rel}.exe"
+        bundled = exe.parent.name.lower() == "runtime"
+        bundle = exe.parent.parent / "bin" / name
+    else:  # 앱 번들의 파이썬이 아니면 ~/bin 같은 엉뚱한 곳을 보지 않는다
+        bundled = exe.parts[-6:-1][1:] == ("Contents", "Resources", "runtime", "bin") and exe.parts[-6].endswith(".app")
+        bundle = exe.parent.parent.parent / "bin" / name
     repo = REPO_ROOT / repo_rel
-    if exe.parts[-6:-1][1:] != ("Contents", "Resources", "runtime", "bin") or not exe.parts[-6].endswith(".app"):  # 앱 번들의 파이썬이 아니면 ~/bin 같은 엉뚱한 곳을 보지 않는다
+    if not bundled:
         return repo
-    bundle = exe.parent.parent.parent / "bin" / name
     return next((p for p in (bundle, repo) if p.is_file()), repo if in_repo() else bundle)
 
 
