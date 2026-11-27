@@ -37,6 +37,7 @@ jobs:
         shell: bash
     env:
       UV_PYTHON_PREFERENCE: only-managed
+      PYTHONUTF8: "1" # 검사용 러너 파이썬의 한국어 출력 (설치본 파이썬은 -I라 이 값을 보지 않는다)
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
