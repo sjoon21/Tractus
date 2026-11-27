@@ -38,7 +38,7 @@ import type { NewNoteAction } from "./menu";
 import { RecModeIcon, RecordModeMenu } from "./RecordModeMenu";
 import { NewNoteMenu } from "./NewNoteMenu";
 import { dropMemo, exportFormatsFor, flushMemos, isMemo, settleMemo } from "./memo";
-import { isWindows } from "./platform";
+import { forOs, isMod, isWindows } from "./platform";
 import { RecordView } from "./RecordView";
 import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, type DeleteTarget } from "./remove";
 import { SearchView } from "./SearchView";
@@ -498,13 +498,13 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && e.code === "KeyJ") {
+      if (isMod(e) && e.code === "KeyJ") {
         e.preventDefault();
         setAskOpen((o) => !o);
-      } else if (e.metaKey && !e.shiftKey && !e.altKey && e.code === "KeyN" && !isImeKey(e)) {
+      } else if (isMod(e) && !e.shiftKey && !e.altKey && e.code === "KeyN" && !isImeKey(e)) {
         e.preventDefault();
         void newMemo();
-      } else if (e.metaKey && e.code === "KeyK") {
+      } else if (isMod(e) && e.code === "KeyK") {
         e.preventDefault();
         setPaletteOpen((o) => !o); // 빠른 실행 (CommandPalette.tsx)
       } else if (e.code === "KeyB" && !e.metaKey && !e.ctrlKey && isRecLive(rec.phase) && !isTypingTarget(e.target)) {
@@ -819,7 +819,7 @@ export function App() {
             className={cn(SIDE_ITEM, "group/ai relative isolate hover:bg-transparent aria-expanded:bg-sidebar-accent")}
             aria-expanded={askOpen}
             aria-controls="ask-drawer"
-            aria-keyshortcuts="Meta+J"
+            aria-keyshortcuts={forOs("Meta+J")}
             aria-label={t("AI 어시스턴트")}
             title={t("AI 어시스턴트 (⌘J)")}
             data-tip="ask"

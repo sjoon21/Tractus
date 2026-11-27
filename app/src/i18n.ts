@@ -3,6 +3,8 @@
 // 고른 값은 settings.json `ui_lang`이고 언어는 Rust가 정한다(i18n.rs: `시스템 설정`이면 macOS 언어). 메뉴 막대·코어도 같은 언어를 쓴다.
 // 사전 모양·검사: docs/desktop.md §3.8, WORDS.md §7 (영어 용어), i18n.test.ts (빠진 번역·남은 한국어)
 
+import { forOs } from "./platform";
+
 export type Lang = "ko" | "en";
 export type LangPref = "system" | Lang;
 /** 영어 문장. 배열이면 [n이 1일 때, 그 밖] (vars.n으로 고른다) */
@@ -31,7 +33,8 @@ export function clock(h: number, m: number): string {
 
 export function t(ko: string, vars?: Readonly<Record<string, string | number>>): string {
   const e = lang === "en" ? dict[ko] : undefined;
-  const s = e === undefined ? ko : typeof e === "string" ? e : vars?.n === 1 ? e[0] : e[1];
+  // Windows면 `이 Mac`·⌘ 같은 말을 바꾼다(platform.forOs). 바꾸는 것은 문구뿐이고 넣은 값(노트 제목 등)은 그대로다
+  const s = forOs(e === undefined ? ko : typeof e === "string" ? e : vars?.n === 1 ? e[0] : e[1]);
   return vars ? s.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : s;
 }
 

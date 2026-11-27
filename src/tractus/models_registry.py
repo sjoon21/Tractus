@@ -444,7 +444,7 @@ def _locked(c: Capability) -> bool:
 
 def fix_command(item: str) -> str:
     if item == "memory":
-        return t("메모리 16GB 이상인 Mac에서만 켤 수 있습니다")
+        return t("메모리 16GB 이상인 컴퓨터에서만 켤 수 있습니다") if platform_compat.WINDOWS else t("메모리 16GB 이상인 Mac에서만 켤 수 있습니다")
     if item == "platform":
         return PLATFORM_LOCKED
     return build_hint(item) or f"tractus models download {item}"

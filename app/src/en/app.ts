@@ -154,6 +154,7 @@ export default {
   "창을 열지 않고 메뉴 막대에서 녹음하고 노트를 엽니다.": "Record and open notes from the menu bar without opening the window.",
   "창을 닫아도 메뉴 막대에 남기기": "Keep in the menu bar when the window closes",
   "창을 닫아도 녹음과 변환이 이어집니다. 끝내려면 ⌘Q를 누르세요.": "Recording and transcription continue after you close the window. Press ⌘Q to quit.",
+  "창을 닫아도 녹음과 변환이 이어집니다. 끝내려면 알림 영역의 Tractus 아이콘에서 종료를 누르세요.": "Recording and transcription continue after you close the window. To quit, choose Quit Tractus from the Tractus icon in the notification area.",
   "녹음 중 작은 창 띄우기": "Show a small recorder while recording",
   "통화가 시작되면 녹음할지 묻기": "Ask to record when a call starts",
   "Zoom·Teams·FaceTime 같은 통화 앱이 마이크를 쓰기 시작하면 화면 구석에서 묻습니다. 소리는 듣지 않고 어떤 앱이 마이크를 쓰는지만 봅니다. 브라우저 통화는 캘린더에 지금 일정이 있을 때만 묻습니다.": "When a call app such as Zoom, Teams or FaceTime starts using the microphone, Tractus asks in a corner of the screen. It doesn't listen; it only checks which app is using the microphone. For calls in a browser, it asks only when your calendar has an event now.",

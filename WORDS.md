@@ -684,7 +684,7 @@ LLM 프롬프트(요약·AI 질문)도 이름 없는 참석자를 `참석자 N`�
 | 녹음 미니 창 (v3.120, `app/src/MiniRecorder.tsx`) | 단추는 글자 없이 `aria-label`·`title`만: 녹음 시각 단추 `Tractus 열기` / `북마크 남기기` / `일시정지`·`계속` / `녹음 종료`(팝오버와 같다). 왼쪽 위 모서리 ⓧ `이번 녹음 동안 숨기기`(v3.137: 녹음은 계속되고 다음 녹음에서 다시 뜬다). 설정은 `녹음` 구역의 `녹음 중 작은 창 띄우기` + 안내 `Tractus 창을 보고 있지 않을 때 화면 구석에 녹음 시각과 종료 단추를 띄웁니다. 끌어서 옮길 수 있습니다.` |
 | 설정 (`설정` 화면, 바로 적용) | `메뉴 막대에 Tractus 표시` + 안내 `창을 열지 않고 메뉴 막대에서 녹음하고 노트를 엽니다.` / `창을 닫아도 메뉴 막대에 남기기` + 안내 `창을 닫아도 녹음과 변환이 이어집니다. 끝내려면 ⌘Q를 누르세요.` |
 
-`메뉴 막대`는 macOS의 말이다(`트레이`는 쓰지 않는다). 창을 닫아 숨긴 동안에도 `종료`와 ⌘Q는 쓰던 메모를 저장하고 끝낸다(§4.1 창 닫기 확인은 이 설정이 꺼져 있을 때만 뜬다).
+`메뉴 막대`는 macOS의 말이다(`트레이`는 쓰지 않는다). Windows 화면은 `알림 영역`이고(§8), 앱 메뉴(⌘Q)가 없어 끝내는 법 안내는 `창을 닫아도 녹음과 변환이 이어집니다. 끝내려면 알림 영역의 Tractus 아이콘에서 종료를 누르세요.`다. 창을 닫아 숨긴 동안에도 `종료`와 ⌘Q는 쓰던 메모를 저장하고 끝낸다(§4.1 창 닫기 확인은 이 설정이 꺼져 있을 때만 뜬다).
 
 ### 4.17 양쪽 패널 접기·펼치기 (v3.26)
 
@@ -1329,7 +1329,7 @@ Rust 문장은 `app/src-tauri/src/en.json`, 코어 문장·내보낸 문서는 `
 - 따옴표는 `“{title}”`(곧은 따옴표 `"` 아님). 한국어의 `‘…’`도 영어에서는 `“…”`다.
 - 개수는 복수형을 맞춘다: 영어 문구표의 값을 `["{n} note", "{n} notes"]`처럼 배열로 쓰면 `n`이 1일 때 앞의 것이다.
 - 시각·날짜는 `locale()`(`en-US`)로 만든다. `toLocaleDateString("ko-KR")`을 직접 쓰지 않는다.
-- 단축키 표기는 macOS 그대로(`⌘J`, `Esc`, `Enter`).
+- 단축키 표기는 macOS 그대로(`⌘J`, `Esc`, `Enter`). Windows 화면은 §8이 `Ctrl+J`로 바꾼다.
 
 ### 7.2 용어
 
@@ -1363,3 +1363,22 @@ Rust 문장은 `app/src-tauri/src/en.json`, 코어 문장·내보낸 문서는 `
 | 자세히 | Details | log, stderr |
 | 시스템 설정 (테마·언어 선택지) / `시스템 설정 열기` | System / `Open System Settings` | |
 | 침묵 구간 건너뛰기 / 목소리 선명하게 | Skip silence / Clear voice | |
+
+## 8. Windows 화면 (2026-11-27, v3.152)
+
+macOS 문구가 원본이고 `t()` 키도 그대로다. Windows에서는 화면에 내기 직전에 아래 표대로 바꾼다(앞에서부터 차례로): 화면 `t()`와 `Kbd`가 `platform.forOs`를, Rust `t()`/`tv()`가 `i18n.rs` `WINDOWS_WORDS`를 지난다. 바꾸는 것은 문구뿐이고 넣은 값(노트 제목 등)은 그대로다. macOS 화면은 한 글자도 바뀌지 않는다(`platform.test.ts`가 모든 문구로 확인한다). 판별은 `app/src/platform.ts`(`isWindows()`, 미리보기 `/preview.html?os=windows|mac`).
+
+| macOS | Windows |
+| --- | --- |
+| `⌘K` / `⌥⌘B` / `⇧⌘Z` | `Ctrl+K` / `Ctrl+Alt+B` / `Ctrl+Shift+Z` (`aria-keyshortcuts`의 `Meta+`는 `Control+`) |
+| `이 Mac은` / `이 Mac이` / `이 Mac` / `16 GB 미만 Mac` | `이 컴퓨터는` / `이 컴퓨터가` / `이 컴퓨터` / `16 GB 미만 컴퓨터` |
+| `메뉴 막대` | `알림 영역` |
+| `brew install ffmpeg` | `winget install Gyan.FFmpeg` (시작 점검의 복사 단추도. `Homebrew도 없습니다` 줄은 Windows에 없다: `doctor`가 `brew`를 내지 않는다) |
+| this Mac / This Mac / on Macs with | this computer / This computer / on computers with |
+| menu bar / Menu bar | notification area / Notification area |
+| Trash (`Move to Trash`, `Delete (move to Trash)`, `Moved … to the Trash`) | Recycle Bin. 한국어 `휴지통`은 두 운영체제에서 같다 |
+
+- **단축키 동작도 같은 규칙이다**: 주 수식 키는 macOS ⌘(`metaKey`), Windows Ctrl(`ctrlKey`)이다(`platform.isMod`·`isOtherMod`). Windows의 ⊞ 키는 ⌘ 대신이 아니다.
+- **표로 못 바꾸는 문장은 두 문구를 함께 두고 고른다**: 끝내는 법(§4.16), 삭제 되돌리는 법(§4.9), 업데이트(§4.21). 코어는 `platform_compat.WINDOWS`로 고른다(ffmpeg 안내 `audio.require_ffmpeg`·`models_registry.build_hint`, 실시간 변환 메모리 안내 `fix_command`).
+- 시작 점검의 `Apple Silicon`·`macOS 14.4 이상` 줄은 Windows에 없다. 권한(마이크·시스템 오디오)·캘린더 안내의 `시스템 설정 › 개인정보 보호 및 보안`은 아직 macOS 문구다(0.6.0 계획 13번에서 기능 잠금과 함께 본다).
+- 표에 새 말을 더하면 `platform.ts`와 `i18n.rs`를 함께 고친다.

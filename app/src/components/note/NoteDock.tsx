@@ -10,6 +10,7 @@ import { flushMemos } from "../../memo";
 import type { Rail } from "../../note/useRail";
 import { PolishButton, type usePolish } from "../../PolishControls";
 import { RAIL_LABEL, railKey } from "../../rail";
+import { forOs } from "../../platform";
 
 export function NoteDock({
   rail,
@@ -75,7 +76,7 @@ export function NoteDock({
       )}
       {!memoNote && !recorded && (
         <DockGroup>
-          <Button variant="ghost" size="icon-sm" aria-label={t("찾아 바꾸기")} title={t("찾아 바꾸기 (⌘F)")} onClick={onFind} aria-keyshortcuts="Meta+F">
+          <Button variant="ghost" size="icon-sm" aria-label={t("찾아 바꾸기")} title={t("찾아 바꾸기 (⌘F)")} onClick={onFind} aria-keyshortcuts={forOs("Meta+F")}>
             <TextSearch aria-hidden />
           </Button>
         </DockGroup>

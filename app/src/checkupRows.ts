@@ -6,6 +6,7 @@ import { FIX_MODELS } from "./caps";
 import { fmtBytes, type ModelRow, type ModelsList } from "./models";
 import { binView, BROWSE, HOME_PICK, REVERT_AUTO, type BinKind } from "./paths";
 import { t } from "./i18n";
+import { forOs, isWindows } from "./platform";
 
 export type RowStatus = "ok" | "warn" | "blocked" | "info";
 
@@ -26,7 +27,7 @@ export interface CheckupSection {
   rows: CheckupRow[];
 }
 
-export const BREW_FFMPEG = "brew install ffmpeg";
+export const BREW_FFMPEG = forOs("brew install ffmpeg"); // Windows는 winget
 export const MIN_MACOS = [14, 4] as const;
 export const MIN_MEMORY_GB = 8;
 export const STANDARD_MEMORY_GB = 16;
@@ -57,7 +58,8 @@ function systemRows(report: DoctorReport | null, models: ModelsList | null): Che
   if (!sys) return [unknown("system", t("시스템"))];
   const rows: CheckupRow[] = [];
   const arch = sys.arch;
-  rows.push(
+  // Apple Silicon·macOS 버전 줄은 macOS에서만 (Windows 판은 x64 ONNX로 변환한다)
+  if (!isWindows()) rows.push(
     arch === null
       ? unknown("arch", "Apple Silicon")
       : arch === "arm64"
@@ -65,7 +67,7 @@ function systemRows(report: DoctorReport | null, models: ModelsList | null): Che
         : { id: "arch", label: "Apple Silicon", status: "blocked", detail: t("변환 엔진은 Apple Silicon Mac에서만 동작합니다 (지금: {arch})", { arch }) },
   );
   const mac = macosAtLeast(sys.macos_version);
-  rows.push(
+  if (!isWindows()) rows.push(
     mac === null
       ? unknown("macos", t("macOS 14.4 이상"))
       : { id: "macos", label: t("macOS 14.4 이상"), status: mac ? "ok" : "blocked", detail: mac ? `macOS ${sys.macos_version}` : t("시스템 오디오 녹음에 14.4 이상이 필요합니다 (지금: {version})", { version: sys.macos_version ?? "" }) },

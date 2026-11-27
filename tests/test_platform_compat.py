@@ -171,3 +171,19 @@ def test_cli_writes_utf8_json_without_pythonioencoding(tmp_path):
     out = json.loads(p.stdout.decode("utf-8").strip().splitlines()[-1])
     t = json.loads((Path(out["meeting_dir"]) / "transcript.json").read_text(encoding="utf-8"))
     assert t["title"] == "회의 ✓"
+
+
+@pytest.mark.parametrize("windows", [False, True])
+def test_ffmpeg_hints_follow_the_platform(monkeypatch, windows):
+    """ffmpeg 안내: macOS는 brew(예전 그대로), Windows는 winget. Homebrew 줄은 macOS만 (WORDS.md §8)"""
+    from tractus import audio, doctor
+    from tractus import models_registry as reg
+
+    monkeypatch.setattr(pc, "WINDOWS", windows)
+    monkeypatch.setattr(audio.shutil, "which", lambda _: None)
+    cmd = "winget install Gyan.FFmpeg" if windows else "brew install ffmpeg"
+    with pytest.raises(audio.FFmpegMissing, match=cmd):
+        audio.require_ffmpeg()
+    assert reg.build_hint("ffmpeg") == cmd
+    assert ("컴퓨터" if windows else "Mac") in reg.fix_command("memory")
+    assert ("brew" in doctor.tools()) is not windows

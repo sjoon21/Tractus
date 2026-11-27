@@ -101,6 +101,13 @@ macOS CI(`ci.yml`)는 그대로다. Windows CI가 실패해도 macOS 릴리스�
 - **업데이트 확인 끄기 (22):** `paths.rs` `update_available`이 macOS 번들일 때만 참이다(`latest.json`에 `darwin-aarch64`만 있다). Windows 설정의 업데이트 절에는 `Windows 판은 아직 앱 안에서 업데이트하지 않습니다. 새 버전은 소개 사이트에서 받으세요.` 한 줄만 보인다. 켜는 일은 W5의 `latest.json` 결정 뒤다.
 - **Mac에서 확인 못 한 것:** Mac에서는 `ring` 빌드 스크립트가 MSVC 헤더를 요구해 앱의 Windows 대상 `cargo check`가 안 된다. 단일 실행 플러그인 호출은 macOS에서 잠깐 켜서 컴파일만 확인했고, Windows 컴파일은 `windows-app.yml`이 본다.
 
+### 2.6 화면의 플랫폼 표기·단축키 (0.6.0 계획 11번, 브랜치 `windows/ui-platform-text`)
+
+- **문구:** macOS 문구가 원본(`t()` 키)이고 Windows에서만 화면에 내기 직전에 바꾼다: 화면 `platform.forOs`(`t()`·`Kbd`), Rust `i18n.rs` `WINDOWS_WORDS`. `이 Mac` → `이 컴퓨터`, `메뉴 막대` → `알림 영역`, `brew install ffmpeg` → `winget install Gyan.FFmpeg`, 영어 `Trash` → `Recycle Bin`(표: WORDS.md §8). 끝내는 법은 앱 메뉴(⌘Q)가 없어 `알림 영역의 Tractus 아이콘에서 종료`로 따로 둔다. 코어는 ffmpeg·메모리 안내를 `platform_compat.WINDOWS`로 고르고 `doctor`가 `brew`를 내지 않는다. 시작 점검의 Apple Silicon·macOS 버전 줄은 Windows에서 뺀다.
+- **단축키:** `platform.isMod`가 macOS ⌘(`metaKey`), Windows Ctrl(`ctrlKey`)이다. ⌘K 팔레트·⌘N·⌘J·⌘F·⌘Z·메모 ⌘S·⌘Enter·⌘B/⌘I·패널 ⌘B/⌥⌘B가 모두 이것을 쓴다. 표기는 `Ctrl+K`·`Ctrl+Alt+B`.
+- **창:** `titleBarStyle: Overlay`·`hiddenTitle`·`trafficLightPosition`은 macOS 전용이라 Windows는 기본 제목줄이 따로 생긴다. 화면 맨 위 52px 줄(창 끌기 자리, 패널 접기 단추)은 겹치는 것이 없어 그대로 둔다. 기기에서 보고 빈 띠가 거슬리면 Windows만 줄인다.
+- **아직 macOS 문구인 것:** 권한(마이크·시스템 오디오)·캘린더 안내의 `시스템 설정 › 개인정보 보호 및 보안`(계획 13번에서 기능 잠금과 함께).
+
 ## 3. Windows 기기 준비
 
 | 도구 | 설치 | 확인 |
@@ -170,7 +177,8 @@ pnpm tauri dev
 - [x] 코어 표준 입출력은 Windows에서도 UTF-8이다(2026-11-25, v3.145): 앱은 `PYTHONIOENCODING=utf-8`을 주고, 코어가 시작할 때 `platform_compat.utf8_stdio()`로 다시 맞춘다(번들 파이썬 `-I`는 환경변수를 보지 않는다). 기기에서 볼 것: 한국어 제목 노트를 만들고 목록·검색에 제목이 깨지지 않는가.
 - [ ] 2.5의 앱 기본기: 앱을 두 번 실행하면 창이 하나만 남고 앞으로 오는가(창을 닫아 트레이에 숨긴 상태에서도), 트레이 아이콘이 밝은·어두운 작업 표시줄 모두에서 보이고 녹음 중 빨간 점으로 바뀌는가(125%·150% 배율에서 흐리지 않은가), 녹음 중에 변환 전 노트의 변환이 기다리는가, 노트 삭제 창의 폴더 이름과 휴지통 `복원`이 맞는가, 설정의 업데이트 절에 확인 단추가 없는가.
 - [ ] 회사망 HTTPS 검사: 코어는 시작할 때 `truststore.inject_into_ssl()`로 OS 인증서 저장소를 믿는다(`env.trust_system_certificates`, CLI 콜백·MCP 시작). 기기에서 볼 것: 사내 루트 인증서가 있는 망(또는 mitmproxy 루트를 `신뢰할 수 있는 루트 인증 기관`에 넣은 상태)에서 모델 받기·AI 연결 테스트가 되는가. Tauri 업데이터(reqwest)는 따로 확인한다.
-- [ ] 트레이 아이콘·녹음 미니 창·⌘ 단축키(Windows는 Ctrl)가 어떻게 보이는지 기록한다. 고칠 목록은 WORDS.md 규칙("이 Mac" 같은 플랫폼 문구)부터 정한다.
+- [ ] 트레이 아이콘·녹음 미니 창이 어떻게 보이는지 기록한다.
+- [ ] 2.6의 단축키: Ctrl+K·Ctrl+N·Ctrl+J·Ctrl+F·Ctrl+B·Ctrl+Alt+B가 앱 동작을 하고 WebView2 기본 동작(Ctrl+N 새 창, Ctrl+F 페이지 찾기, Ctrl+J 다운로드 등)이 뜨지 않는가. 한국어 IME 상태에서도 같은가. 메모 입력창 Ctrl+S·Ctrl+Enter·Ctrl+B/I. 화면 문구에 `Mac`·`⌘`·`메뉴 막대`가 남지 않았는가(설정·시작 점검·모델·삭제 창). 제목줄 아래 52px 윗줄이 어색하지 않은가.
 
 ### W4. 텍스트 변환 런타임 고르기 (결정 필요)
 
