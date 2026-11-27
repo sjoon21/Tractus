@@ -307,7 +307,8 @@ impl Recorder {
 
     fn watchdog(&mut self) {
         let now = self.elapsed();
-        let stalled: Vec<Track> = self.sources.keys().copied().filter(|t| now - self.last_sample_at.get(t).copied().unwrap_or(0.0) > STALL).collect();
+        // 장치 알림으로 다시 열기를 기다리는 트랙은 그쪽이 연다 (두 번 열지 않게)
+        let stalled: Vec<Track> = self.sources.keys().copied().filter(|t| !self.settling.contains_key(t) && now - self.last_sample_at.get(t).copied().unwrap_or(0.0) > STALL).collect();
         for t in stalled {
             self.restart(t, "입력이 2초 넘게 끊겼습니다");
         }
@@ -553,6 +554,10 @@ mod tests {
             r.restart_settled(at);
         }
         assert_eq!(opens.get(), 2, "알림이 이어지는 동안은 다시 열지 않는다");
+        r.last_sample_at.insert(Track::System, -10.0); // 표본도 끊겼다
+        r.last_sample_at.insert(Track::Mic, r.elapsed());
+        r.watchdog();
+        assert_eq!(opens.get(), 2, "다시 열기를 기다리는 트랙은 감시가 따로 열지 않는다");
         r.restart_settled(t0 + SETTLE + Duration::from_millis(200));
         assert_eq!(opens.get(), 3, "멎은 뒤 한 번");
         r.restart_settled(t0 + SETTLE * 10);
