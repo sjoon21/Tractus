@@ -404,7 +404,9 @@ export function App() {
   const attachFileRef = useRef<(t: AttachTarget, path?: string) => Promise<void>>(async () => {});
 
   // 창을 닫으면 앱이 끝난다(메뉴 막대에 남기기가 꺼져 있을 때): 전사 중이거나 대기 중인 파일이 있으면 묻는다.
-  // ponytail: ⌘Q는 묻지 않는다(쓰던 메모만 저장하고 끝낸다: quit-requested). 남은 전사 프로세스는 stdout이 닫혀 다음 진행 이벤트에서 끝난다
+  // ponytail: ⌘Q는 녹음 중일 때만 묻는다(아니면 쓰던 메모만 저장하고 끝낸다: quit-requested). 남은 전사 프로세스는 stdout이 닫혀 다음 진행 이벤트에서 끝난다
+  // 녹음 중 종료(⌘Q·메뉴 막대 `종료`·창 닫기)는 먼저 묻는다: 끝내면 앱이 녹음 프로그램에 정지를 보내고, 녹음은 `변환 대기 중인 녹음`에 남는다 (docs/desktop.md §3.10)
+  const [quitAsk, setQuitAsk] = useState<"open" | "closing" | null>(null);
   const busyRef = useRef("");
   busyRef.current = !(transcribing || imp.job.running || queue.length) ? "" : queue.length ? t("진행 중인 변환과 대기 중인 파일 {n}개가 취소됩니다.", { n: queue.length }) : t("진행 중인 변환이 취소됩니다.");
   useEffect(() => {
@@ -414,6 +416,10 @@ export function App() {
         await flushMemos();
         return e.preventDefault();
       }
+      if (recordingRef.current) {
+        e.preventDefault();
+        return setQuitAsk("open");
+      }
       // 저장하지 못한 메모가 있으면 묻는다 (⌘Q는 묻지 않고 저장만 마친다: quit-requested)
       if (!(await flushMemos()) && !(await ask(t("저장하지 못한 메모가 있습니다. 그래도 닫을까요?"), { title: t("Tractus 닫기"), kind: "warning", okLabel: t("저장하지 않고 닫기"), cancelLabel: t("계속 쓰기") }))) return e.preventDefault();
       if (busyRef.current && !(await ask(t("{reason} 그래도 닫을까요?", { reason: busyRef.current }), { title: t("Tractus 닫기"), kind: "warning", okLabel: t("닫기"), cancelLabel: t("계속 변환") }))) e.preventDefault();
@@ -421,11 +427,22 @@ export function App() {
     return () => void un.then((f) => f());
   }, []);
 
-  // ⌘Q: 코어가 종료를 미루고 알리면 쓰던 메모를 저장한 뒤 이어 간다 (저장하지 못해도 끝낸다: ⌘Q는 묻지 않는다)
+  // ⌘Q: 코어가 종료를 미루고 알리면 쓰던 메모를 저장한 뒤 이어 간다 (저장하지 못해도 끝낸다). 녹음 중이면 먼저 묻는다(Rust가 기다린다)
   useEffect(() => {
-    const un = listen("quit-requested", () => void flushMemos().finally(() => void api.quitReady()));
+    const un = listen<{ recording?: boolean } | null>("quit-requested", (e) => {
+      if (e.payload?.recording) setQuitAsk("open");
+      else void flushMemos().finally(() => void api.quitReady());
+    });
     return () => void un.then((f) => f());
   }, []);
+  const quitAfterRecording = () => {
+    setQuitAsk("closing");
+    void flushMemos().finally(() => void api.quitReady());
+  };
+  const keepRecording = () => {
+    setQuitAsk(null);
+    void api.quitCancel();
+  };
 
   // 단어 싱크는 노트를 닫아도 계속 돈다: 끝나면 열려 있는 노트와 상관없이 알린다 (alignJobs.ts)
   useEffect(
@@ -935,6 +952,17 @@ export function App() {
           busy={del.busy}
           onCancel={() => dispatchDel({ type: "cancel" })}
           onConfirm={() => void confirmDelete()}
+        />
+      )}
+      {quitAsk && (
+        <ConfirmDialog
+          title={t("녹음을 끝내고 종료할까요?")}
+          body={t("지금까지 녹음한 내용은 저장됩니다. 다음에 Tractus를 열면 ‘변환 대기 중인 녹음’에서 텍스트로 변환할 수 있습니다.")}
+          cancelLabel={t("계속 녹음")}
+          confirmLabel={t("녹음 끝내고 종료")}
+          busy={quitAsk === "closing"}
+          onCancel={keepRecording}
+          onConfirm={quitAfterRecording}
         />
       )}
       {afterAsk && <AfterRecordDialog seconds={afterAsk.seconds} convert={convertGate} onChoose={chooseAfter} />}

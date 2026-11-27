@@ -98,6 +98,13 @@ macOS CI(`ci.yml`)는 그대로다. Windows CI가 실패해도 macOS 릴리스�
 - **업데이트 확인 끄기 (22):** `paths.rs` `update_available`이 macOS 번들일 때만 참이다(`latest.json`에 `darwin-aarch64`만 있다). Windows 설정의 업데이트 절에는 `Windows 판은 아직 앱 안에서 업데이트하지 않습니다. 새 버전은 소개 사이트에서 받으세요.` 한 줄만 보인다. 켜는 일은 W5의 `latest.json` 결정 뒤다.
 - **Mac에서 확인 못 한 것:** Mac에서는 `ring` 빌드 스크립트가 MSVC 헤더를 요구해 앱의 Windows 대상 `cargo check`가 안 된다. 단일 실행 플러그인 호출은 macOS에서 잠깐 켜서 컴파일만 확인했고, Windows 컴파일은 `windows-app.yml`이 본다.
 
+### 2.6 하위 프로세스 정리·앱 로그·녹음 중 종료 확인 (0.6.0 계획 17·21·23번, 브랜치 `windows/proc-log-quit`)
+
+- **하위 프로세스 트리 정리 (17):** 앱이 띄운 프로세스(`procs::spawn`)는 Windows에서 앱 전체에 하나인 Job Object(`KILL_ON_JOB_CLOSE`, `windows-sys` 0.61, 이미 `Cargo.lock`에 있던 크레이트)에 들어간다. 앱이 끝나면(작업 관리자의 강제 종료 포함) 코어(`tractus.exe` 실행기 → python)·실시간 텍스트 변환·검색 프로세스와 그 자손(ffmpeg)이 함께 끝난다. 남으면 업데이트·제거가 실패한다. **녹음 프로그램은 넣지 않는다**(stdin EOF로 스스로 WAV를 마무리해야 한다, macOS와 같다). 멈추기는 `procs::kill_tree` = `taskkill /F /T`(자손까지, 질문 멈추기·변환 멈추기·검색 정보 갱신 멈추기·연결 테스트 시간 초과·검색 프로세스 다시 띄우기·실시간 변환 정지 시간 초과). macOS는 지금처럼 `Child::kill`이다. 알려진 틈: 띄운 직후에 Job에 넣으므로 그 사이 몇 ms 안에 생긴 손자는 Job 밖이다(멈추기는 `taskkill /T`가 잡는다).
+- **시험:** `cfg(unix)` 25개 가운데 정지·kill 경로를 sh 대신 시험 실행 파일 자신을 하위 프로세스로 띄우는 `procs::tests::test_child`로 다시 썼다. 두 OS에서 도는 것: JSON 줄 전달·종료 코드·stderr, kill·stop·정지 시간 초과(`procs`), 검색 정보 갱신 멈추기(`lib`), 연결 테스트 시간 초과(`llm_key`), 받기 멈추기(`models`). Windows에서만 도는 것: 멈추기가 손자까지 끝내는지, Job을 닫으면 자식·손자가 끝나는지. Mac에서는 앱 전체의 Windows 대상 `check`가 안 되므로 `procs.rs`·`applog.rs`만 작은 크레이트로 `cargo check --tests --target x86_64-pc-windows-msvc` 했다(통과). 실제로 도는지는 `windows-app.yml`이 본다.
+- **앱 로그 (21):** `%APPDATA%\dev.tractus.app\logs\app.log`(+ `app.old.log`, 1 MB씩). 앱 진단, 실패한 하위 프로세스의 stderr 꼬리, 녹음 프로그램의 진단을 남기고 노트 문장·제목·이름·키·사용자 이름은 가린다(docs/desktop.md §3.10). macOS도 같은 파일을 쓴다.
+- **녹음 중 종료 확인 (23):** 트레이 `종료`·창 닫기로 앱이 끝나려 할 때 녹음 중이면 창을 보이고 `녹음을 끝내고 종료할까요?`를 묻는다(macOS의 ⌘Q도 같다).
+
 ## 3. Windows 기기 준비
 
 | 도구 | 설치 | 확인 |
@@ -164,6 +171,7 @@ pnpm tauri dev
 - [ ] 하위 프로세스가 콘솔 창을 띄우지 않는다 (`CREATE_NO_WINDOW`).
 - [x] 코어 표준 입출력은 Windows에서도 UTF-8이다(2026-11-25, v3.145): 앱은 `PYTHONIOENCODING=utf-8`을 주고, 코어가 시작할 때 `platform_compat.utf8_stdio()`로 다시 맞춘다(번들 파이썬 `-I`는 환경변수를 보지 않는다). 기기에서 볼 것: 한국어 제목 노트를 만들고 목록·검색에 제목이 깨지지 않는가.
 - [ ] 2.5의 앱 기본기: 앱을 두 번 실행하면 창이 하나만 남고 앞으로 오는가(창을 닫아 트레이에 숨긴 상태에서도), 트레이 아이콘이 밝은·어두운 작업 표시줄 모두에서 보이고 녹음 중 빨간 점으로 바뀌는가(125%·150% 배율에서 흐리지 않은가), 녹음 중에 변환 전 노트의 변환이 기다리는가, 노트 삭제 창의 폴더 이름과 휴지통 `복원`이 맞는가, 설정의 업데이트 절에 확인 단추가 없는가.
+- [ ] 2.6: 변환·질문 중에 앱을 트레이 `종료`로 끝내고, 작업 관리자로도 강제 종료해 본 뒤 `tractus.exe`·`python.exe`·`ffmpeg.exe`가 남지 않는가. 녹음 중 종료는 묻고, `녹음 끝내고 종료` 뒤 `tractus-rec.exe`가 스스로 끝나며 다음 실행에 `변환 대기 중인 녹음`이 보이는가(WAV가 재생되는가). `%APPDATA%\dev.tractus.app\logs\app.log`에 사용자 이름·노트 제목이 없는가. Windows 종료·로그오프 중에 녹음하고 있으면 묻는 창이 종료를 막지 않는가.
 - [ ] 트레이 아이콘·녹음 미니 창·⌘ 단축키(Windows는 Ctrl)가 어떻게 보이는지 기록한다. 고칠 목록은 WORDS.md 규칙("이 Mac" 같은 플랫폼 문구)부터 정한다.
 
 ### W4. 텍스트 변환 런타임 고르기 (결정 필요)

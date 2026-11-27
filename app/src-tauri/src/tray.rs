@@ -8,6 +8,7 @@
 //! 최근 노트는 오른쪽 클릭의 기본 메뉴에만 있다. 팝오버의 단추도 메뉴 항목과 같은 ID로 `on_menu_event`를 지난다 (팝오버를 못 띄워도 기본 메뉴로 길이 남는다).
 //! 팝오버의 녹음 시각도 Rust 틱이 센다: 틱마다 보이는 팝오버에 상태를 다시 보낸다.
 
+use crate::applog::log_eprintln;
 use crate::i18n::{t, tv};
 use crate::{AppState, Settings};
 use serde_json::{json, Value};
@@ -374,7 +375,7 @@ fn toggle_popover(app: &AppHandle, rect: tauri::Rect) {
         None => match build_popover(app) {
             Ok(w) => w,
             Err(e) => {
-                eprintln!("메뉴 막대 팝오버를 만들지 못했습니다: {e}");
+                log_eprintln!("메뉴 막대 팝오버를 만들지 못했습니다: {e}");
                 return;
             }
         },
@@ -396,7 +397,7 @@ fn toggle_popover(app: &AppHandle, rect: tauri::Rect) {
         })
         .collect();
     let Some((screen, left, bottom)) = icon_rect_pt(pos.x, pos.y, size.height, &screens) else {
-        eprintln!("메뉴 막대 아이콘이 있는 화면을 찾지 못했습니다");
+        log_eprintln!("메뉴 막대 아이콘이 있는 화면을 찾지 못했습니다");
         return;
     };
     let (x, y) = popover_origin(left, bottom, &screen);
@@ -505,13 +506,13 @@ impl Inner {
             match build_menu(app, &view) {
                 Ok((menu, status)) => {
                     if let Err(e) = tray.set_menu(Some(menu)) {
-                        eprintln!("메뉴 막대 메뉴를 바꾸지 못했습니다: {e}");
+                        log_eprintln!("메뉴 막대 메뉴를 바꾸지 못했습니다: {e}");
                     }
                     self.status_item = Some(status);
                     self.shown_status = view.status.clone();
                     self.shown_entries = Some(view.entries.clone());
                 }
-                Err(e) => eprintln!("메뉴 막대 메뉴를 만들지 못했습니다: {e}"),
+                Err(e) => log_eprintln!("메뉴 막대 메뉴를 만들지 못했습니다: {e}"),
             }
         }
         if self.shown_status != view.status {
@@ -535,7 +536,7 @@ impl Inner {
                     let _ = tray.set_icon_as_template(ICON_TEMPLATE);
                     self.shown_recording_icon = Some(view.recording_icon);
                 }
-                Err(e) => eprintln!("메뉴 막대 아이콘을 읽지 못했습니다: {e}"),
+                Err(e) => log_eprintln!("메뉴 막대 아이콘을 읽지 못했습니다: {e}"),
             }
         }
         match (view.ticking, self.ticker.is_some()) {
@@ -614,7 +615,7 @@ impl TrayState {
                     g.forget_shown();
                     g.sync(app);
                 }
-                Err(e) => eprintln!("메뉴 막대 아이콘을 만들 수 없습니다: {e}"),
+                Err(e) => log_eprintln!("메뉴 막대 아이콘을 만들 수 없습니다: {e}"),
             },
             (false, true) => {
                 if let Some(w) = app.get_webview_window(POPOVER_WINDOW) {

@@ -946,6 +946,19 @@ mod tests {
         assert!(!stop(&slot, Duration::from_secs(30))); // 받는 중이 아니면 아무 일도 없다
     }
 
+    /// 모든 OS에서: 받는 중에 멈추면 exit가 가고 칸이 빈다 (Windows는 SIGTERM 대신 taskkill /T)
+    #[test]
+    fn stop_ends_a_running_download_on_every_platform() {
+        let slot = Slot::default();
+        let (tx, rx) = channel();
+        start(&slot, crate::procs::tests::test_child("sleep"), "J", move |v| tx.send(v).unwrap()).unwrap();
+        assert_eq!(rx.recv_timeout(Duration::from_secs(20)).unwrap()["stage"], "sleep");
+        assert!(stop(&slot, Duration::from_millis(300)));
+        let exit = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(exit["event"], "exit");
+        assert!(slot.lock().unwrap().is_none());
+    }
+
     #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn stop_kills_a_process_that_ignores_sigterm() {

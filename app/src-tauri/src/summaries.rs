@@ -2,6 +2,7 @@
 //! `templates`, `summaries`)가 하고 앱은 인수·stdin JSON만 만든다. 요약 목록은 파일(summary.json, summaries/<key>.json)을 느슨하게 읽는다.
 //! 앱은 모든 key·ID를 모양으로 검증한 뒤 인수에 넣는다 (경로 조작·옵션 주입 방지).
 
+use crate::applog::log_eprintln;
 use crate::i18n::{t, tv};
 use super::{blocking, cancel_index, hold, is_meeting_id, meetings, release, run_tractus, stdout_json, AppState, BusyGuard};
 use serde::{Deserialize, Serialize};
@@ -269,7 +270,7 @@ pub fn summary_start(app: AppHandle, state: State<'_, AppState>, id: String, job
             std::thread::spawn(move || {
                 if let Some(input) = input {
                     if let Err(e) = stdin.write_all(input.as_bytes()) {
-                        eprintln!("요약 방법을 넘기지 못했습니다: {e}"); // 코어가 입력 오류로 끝나고 exit가 간다
+                        log_eprintln!("요약 방법을 넘기지 못했습니다: {e}"); // 코어가 입력 오류로 끝나고 exit가 간다
                     }
                 }
             });
