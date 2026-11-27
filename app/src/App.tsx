@@ -38,6 +38,7 @@ import type { NewNoteAction } from "./menu";
 import { RecModeIcon, RecordModeMenu } from "./RecordModeMenu";
 import { NewNoteMenu } from "./NewNoteMenu";
 import { dropMemo, exportFormatsFor, flushMemos, isMemo, settleMemo } from "./memo";
+import { isWindows } from "./platform";
 import { RecordView } from "./RecordView";
 import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, type DeleteTarget } from "./remove";
 import { SearchView } from "./SearchView";
@@ -520,7 +521,7 @@ export function App() {
   // 자막이 없으면 변환은 녹음과 함께 계속 돈다. 이번 녹음의 자막 여부도 여기서 정한다
   const pauseConvert = () => {
     setLiveRec(liveOn);
-    if (liveOn) convert.preempt();
+    if (liveOn || isWindows()) convert.preempt(); // Windows는 변환(CPU)이 녹음을 끊을 수 있어 자막과 상관없이 멈춘다
   };
   /** event: 홈의 `곧 시작하는 일정` 카드에서 시작한 녹음 (일정 제목·참석자를 녹음 폴더에 남긴다) */
   /** recMode: 통화 감지에서 시작한 녹음은 상대 목소리가 들어가게 언제나 `화상·하이브리드` (calls.rs) */

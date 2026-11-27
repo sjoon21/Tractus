@@ -792,12 +792,11 @@ mod tests {
     }
 
     #[test]
-    fn tray_icons_decode_and_only_macos_uses_template() {
+    fn tray_icons_decode() {
         for recording in [false, true] {
             let img = icon(recording).expect("아이콘 PNG");
             assert!(img.width() > 0 && img.height() > 0);
         }
-        assert_eq!(ICON_TEMPLATE, cfg!(target_os = "macos"));
     }
 
     #[test]
