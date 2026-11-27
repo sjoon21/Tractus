@@ -12,3 +12,34 @@ export function detectOs(search: string, userAgent: string): Os {
 export const OS: Os = detectOs(globalThis.location?.search ?? "", globalThis.navigator?.userAgent ?? "");
 
 export const isWindows = (): boolean => OS === "windows";
+
+// ── 단축키·문구 (WORDS.md §8) ──
+
+type ModKeys = { metaKey: boolean; ctrlKey: boolean };
+/** 단축키의 주 수식 키: macOS ⌘(metaKey), Windows Ctrl(ctrlKey) */
+export const isMod = (e: ModKeys, os: Os = OS): boolean => (os === "windows" ? e.ctrlKey : e.metaKey);
+/** 주 수식 키가 아닌 쪽: macOS Ctrl, Windows ⊞(metaKey). 주 수식 키만 받는 단축키가 이것을 거른다 */
+export const isOtherMod = (e: ModKeys, os: Os = OS): boolean => (os === "windows" ? e.metaKey : e.ctrlKey);
+
+/** Windows 화면에서 바꾸는 말 (앞에서부터 차례로). macOS 문구가 원본이고 t() 키도 그대로다. Rust i18n.rs `WINDOWS_WORDS`도 같은 규칙 */
+const WINDOWS_WORDS: readonly (readonly [string, string])[] = [
+  ["⌥⌘", "Ctrl+Alt+"],
+  ["⇧⌘", "Ctrl+Shift+"],
+  ["⌘", "Ctrl+"],
+  ["Meta+", "Control+"], // aria-keyshortcuts
+  ["이 Mac은", "이 컴퓨터는"], // i18n-ok
+  ["이 Mac이", "이 컴퓨터가"], // i18n-ok
+  ["이 Mac", "이 컴퓨터"], // i18n-ok
+  ["미만 Mac", "미만 컴퓨터"], // i18n-ok
+  ["메뉴 막대", "알림 영역"], // i18n-ok
+  ["brew install ffmpeg", "winget install Gyan.FFmpeg"],
+  ["this Mac", "this computer"],
+  ["This Mac", "This computer"],
+  ["on Macs with", "on computers with"],
+  ["menu bar", "notification area"],
+  ["Menu bar", "Notification area"],
+  ["Trash", "Recycle Bin"],
+];
+
+/** 화면에 보이는 문구·단축키 표기를 운영체제에 맞춘다. macOS는 그대로 돌려준다 (t()·Kbd가 부른다) */
+export const forOs = (s: string, os: Os = OS): string => (os === "windows" ? WINDOWS_WORDS.reduce((acc, [a, b]) => acc.replaceAll(a, b), s) : s);

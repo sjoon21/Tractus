@@ -11,6 +11,7 @@ import { checkAtClick, continueList, toggleCheck, wrapSelection, type Edit } fro
 import { EDIT_BLOCKED } from "./remove";
 import { Pencil } from "lucide-react";
 import { cn } from "@/components/ui/utils";
+import { forOs, isMod, isOtherMod } from "./platform";
 
 /** 노트 제목 (보기·입력 모두 같은 크기, DESIGN.md §2) */
 const TITLE = "m-0 text-[22px] font-semibold leading-tight tracking-tight";
@@ -139,7 +140,7 @@ export function MemoEditor({
         value={text}
         placeholder={t("여기에 메모를 쓰세요. 쓰는 대로 자동으로 저장됩니다")}
         aria-label={t("메모 내용")}
-        aria-keyshortcuts="Meta+S Meta+Enter Meta+B Meta+I"
+        aria-keyshortcuts={forOs("Meta+S Meta+Enter Meta+B Meta+I")}
         readOnly={!!locked}
         onChange={(e) => {
           setText(e.target.value);
@@ -157,14 +158,14 @@ export function MemoEditor({
           if (isImeKey(e.nativeEvent) || locked) return;
           const el = e.currentTarget;
           const { selectionStart: s, selectionEnd: end, value } = el;
-          if (e.metaKey && e.code === "KeyS") {
+          if (isMod(e) && e.code === "KeyS") {
             e.preventDefault();
             flushSoon();
             return;
           }
           let r: Edit | null = null;
-          if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.ctrlKey) r = e.metaKey ? toggleCheck(value, s, end) : continueList(value, s, end);
-          else if (e.metaKey && !e.shiftKey && !e.altKey && (e.code === "KeyB" || e.code === "KeyI")) r = wrapSelection(value, s, end, e.code === "KeyB" ? "**" : "*");
+          if (e.key === "Enter" && !e.shiftKey && !e.altKey && !isOtherMod(e)) r = isMod(e) ? toggleCheck(value, s, end) : continueList(value, s, end);
+          else if (isMod(e) && !e.shiftKey && !e.altKey && (e.code === "KeyB" || e.code === "KeyI")) r = wrapSelection(value, s, end, e.code === "KeyB" ? "**" : "*");
           if (!r) return; // ⌘B에 고른 글이 없으면 노트 목록 접기로 간다
           e.preventDefault();
           e.stopPropagation();

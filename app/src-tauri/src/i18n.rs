@@ -37,6 +37,36 @@ pub fn resolve(pref: &str, system: Option<&str>) -> &'static str {
 }
 
 fn pick(ko: &str, n: Option<i64>) -> String {
+    let s = pick_lang(ko, n);
+    if cfg!(windows) { windows_words(&s) } else { s }
+}
+
+/// Windows 화면에서 바꾸는 말 (앞에서부터 차례로). 화면의 app/src/platform.ts `WINDOWS_WORDS`와 같은 표다. macOS는 바꾸지 않는다
+const WINDOWS_WORDS: &[(&str, &str)] = &[
+    ("⌥⌘", "Ctrl+Alt+"),
+    ("⇧⌘", "Ctrl+Shift+"),
+    ("⌘", "Ctrl+"),
+    ("Meta+", "Control+"),
+    ("이 Mac은", "이 컴퓨터는"), // i18n-ok
+    ("이 Mac이", "이 컴퓨터가"), // i18n-ok
+    ("이 Mac", "이 컴퓨터"),     // i18n-ok
+    ("미만 Mac", "미만 컴퓨터"), // i18n-ok
+    ("메뉴 막대", "알림 영역"),  // i18n-ok
+    ("brew install ffmpeg", "winget install Gyan.FFmpeg"),
+    ("this Mac", "this computer"),
+    ("This Mac", "This computer"),
+    ("on Macs with", "on computers with"),
+    ("menu bar", "notification area"),
+    ("Menu bar", "Notification area"),
+    ("Trash", "Recycle Bin"),
+];
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn windows_words(s: &str) -> String {
+    WINDOWS_WORDS.iter().fold(s.to_string(), |s, (a, b)| s.replace(a, b))
+}
+
+fn pick_lang(ko: &str, n: Option<i64>) -> String {
     if !EN.load(Ordering::Relaxed) {
         return ko.to_string();
     }
@@ -101,6 +131,22 @@ mod tests {
         assert_eq!(first_language("(\n    en\n)\n").as_deref(), Some("en"));
         assert_eq!(first_language(""), None);
         assert_eq!(first_language("(\n)\n"), None);
+    }
+
+    #[test]
+    fn windows_words_change_only_mac_terms() {
+        assert_eq!(windows_words("직접 입력한 서비스는 이 Mac이 아니면 API 키가 필요합니다"), "직접 입력한 서비스는 이 컴퓨터가 아니면 API 키가 필요합니다");
+        assert_eq!(windows_words("Couldn’t move to Trash\n{e}"), "Couldn’t move to Recycle Bin\n{e}");
+        assert_eq!(windows_words("unless it runs on this Mac"), "unless it runs on this computer");
+        assert_eq!(windows_words("휴지통으로 옮기지 못했습니다"), "휴지통으로 옮기지 못했습니다");
+    }
+
+    /// macOS 화면 문구는 그대로다 (Windows 갈래는 cfg!(windows)에서만)
+    #[cfg(not(windows))]
+    #[test]
+    fn mac_text_is_unchanged() {
+        // 사전에 없는 문장이라 다른 시험이 언어를 바꿔도 같다
+        assert_eq!(pick("⌘Q · 이 Mac은 · Trash", None), "⌘Q · 이 Mac은 · Trash");
     }
 
     #[test]

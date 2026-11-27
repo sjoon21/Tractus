@@ -215,7 +215,9 @@ def all_models(root: Path | None = None) -> tuple[Model, ...]:
 
 def build_hint(item: str) -> str | None:
     """없는 도구를 채우는 안내. 녹음·도우미 프로그램은 저장소 배치일 때만 빌드 명령을 말한다 (paths.build_hint)."""
-    return "brew install ffmpeg" if item == "ffmpeg" else paths.build_hint(item) if item in ("recorder", "diar_helper") else None
+    if item == "ffmpeg":
+        return "winget install Gyan.FFmpeg" if platform_compat.WINDOWS else "brew install ffmpeg"
+    return paths.build_hint(item) if item in ("recorder", "diar_helper") else None
 
 
 def get(model_id: str) -> Model:
@@ -396,7 +398,7 @@ def capability_status(states: dict[str, str], tools: dict[str, bool], memory: in
 
 def fix_command(item: str) -> str:
     if item == "memory":
-        return t("메모리 16GB 이상인 Mac에서만 켤 수 있습니다")
+        return t("메모리 16GB 이상인 컴퓨터에서만 켤 수 있습니다") if platform_compat.WINDOWS else t("메모리 16GB 이상인 Mac에서만 켤 수 있습니다")
     return build_hint(item) or f"tractus models download {item}"
 
 

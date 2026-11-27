@@ -59,6 +59,7 @@ import { SegmentRow } from "@/components/note/SegmentRow";
 import { MemoRow } from "@/components/note/MemoRow";
 import { livePolish, nextSuggestion, pendingIds, suggestionMarks } from "./polish";
 import { Empty } from "@/components/ui/empty";
+import { isMod } from "./platform";
 
 /** 노트 머리의 내보내기 메뉴와 같은 일을 밖에서 부탁한다: format은 EXPORT_FORMATS의 형식, "print"(PDF) 또는 "obsidian" */
 export type ExportReq = { id: string; format: string; nonce: number };
@@ -236,7 +237,7 @@ export function MeetingView({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isImeKey(e) || memoRef.current) return; // 메모는 본문 편집기(textarea)가 키를 쓴다. 찾기·재생 단축키는 녹음 노트만
-      if (e.metaKey && e.code === "KeyF") {
+      if (isMod(e) && e.code === "KeyF") {
         if (recordedRef.current) return;
         e.preventDefault();
         // 이미 열려 있으면 찾을 말을 고른다. 새로 열면 입력이 autoFocus로 초점을 받는다
@@ -246,7 +247,7 @@ export function MeetingView({
       }
       // 탭 목록처럼 키를 이미 쓴 위젯이 있으면 재생 단축키로 다시 쓰지 않는다
       if (e.defaultPrevented || isTypingTarget(e.target)) return;
-      if (e.metaKey && !e.shiftKey && e.code === "KeyZ") {
+      if (isMod(e) && !e.shiftKey && e.code === "KeyZ") {
         e.preventDefault();
         undo();
         return;
