@@ -39,14 +39,33 @@ def root(tmp_path, monkeypatch):
     return models
 
 
+FAKE = b"FAKE-SIZE:"
+
+
+@pytest.fixture(autouse=True)
+def fake_sizes(monkeypatch):
+    """install()이 쓴 작은 표지 파일은 적힌 크기로 본다. NTFS는 truncate로 늘린 파일도 디스크를 실제로 잡아
+    asr-std(4.4GB) × 시험 수가 러너 디스크를 채웠다(PR #141 Windows CI)."""
+    real = reg._size
+
+    def size(p: Path) -> int | None:
+        try:
+            if p.is_file() and p.stat().st_size < 64 and (head := p.read_bytes()).startswith(FAKE):
+                return int(head[len(FAKE):])
+        except OSError:
+            pass
+        return real(p)
+
+    monkeypatch.setattr(reg, "_size", size)
+
+
 def install(root: Path, model_id: str) -> None:
-    """파일 목록대로 (희소 파일로) 설치된 것처럼 만든다."""
+    """파일 목록대로 설치된 것처럼 만든다 (실제 크기 대신 크기를 적은 표지 파일, fake_sizes)."""
     m = reg.get(model_id)
     for rel, size in m.files.items():
         p = root / m.local_dir / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("wb") as f:
-            f.truncate(size)
+        p.write_bytes(FAKE + str(size).encode())
 
 
 # ── 목록 ─────────────────────────────────────────────────────────────────────

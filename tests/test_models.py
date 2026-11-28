@@ -15,7 +15,7 @@ from typer.testing import CliRunner
 
 from tractus import models_registry as registry
 from tractus.commands import common, engines
-from tractus import align, cli, diarize, doctor, embed, voices
+from tractus import align, cli, diarize, doctor, embed, platform_compat, voices
 from tractus import models_install as inst
 from tractus import models_registry as reg
 from conftest import FLUID_MAC, WINDOWS, mac_only
@@ -535,6 +535,7 @@ def test_doctor_report_with_nothing_installed_never_fails(root, monkeypatch):
 
 def test_capability_matrix(root, monkeypatch):
     fake_system(monkeypatch, memory=8 * GB)
+    monkeypatch.setattr(platform_compat, "WINDOWS", False)  # Mac 목록·Mac 문구를 본다 (Windows CI에서도)
     tools = {"ffmpeg": True, "recorder": True, "diar_helper": False}
     fake_install(root, "vad")
     fake_install(root, "asr-std")
@@ -565,6 +566,7 @@ def test_live_needs_16gb_and_align_voices_need_ffmpeg(root):
 
 
 def test_doctor_reports_brew(root, monkeypatch):
+    monkeypatch.setattr(platform_compat, "WINDOWS", False)  # Windows는 brew 키를 빼므로 Mac 갈래를 본다
     monkeypatch.setattr(doctor.shutil, "which", lambda name: "/opt/homebrew/bin/brew" if name == "brew" else None)
     assert doctor.tools()["brew"] == {"found": True, "path": "/opt/homebrew/bin/brew", "version": None}
     monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
