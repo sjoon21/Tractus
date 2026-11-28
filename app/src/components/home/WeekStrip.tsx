@@ -9,6 +9,7 @@ import { GatedButton } from "../../GatedButton";
 import { clock, t } from "../../i18n";
 import { dayParts } from "../../lib";
 import { isMemo, noteTime } from "../../memo";
+import { isWindows } from "../../platform";
 import { addDays, dayNotes, eventAction, groupWeek, preparable, recordable, weekDays, weekStart, ymd, useWeekEvents, type DayEvent } from "../../week";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
@@ -87,7 +88,7 @@ export function WeekStrip({ notes, onOpen, onRecordEvent, onPrepareEvent, record
         </div>
         <div className="flex flex-col">
           <p className="m-0 px-4 pt-3 pb-1 text-xs font-medium text-muted-foreground">{t("{day}일 {weekday}요일", { day: p.day, weekday: p.weekday })}</p>
-          {!cur.events.length && !cur.notes.length && <p className="m-0 px-4 pt-1 pb-4 text-[13px] text-subtle-foreground">{t("일정과 노트가 없습니다")}</p>}
+          {!cur.events.length && !cur.notes.length && <p className="m-0 px-4 pt-1 pb-4 text-[13px] text-subtle-foreground">{isWindows() ? t("노트가 없습니다") : t("일정과 노트가 없습니다")}</p>}
           <ul className="m-0 list-none p-0 pb-1.5">
             {cur.events.map((ev) => (
               <Fragment key={`${ev.id}-${ev.start}`}>

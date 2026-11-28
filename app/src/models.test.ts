@@ -32,6 +32,10 @@ import {
   type ModelsEvent,
   engineInUse,
   validRepo,
+  visiblePresets,
+  engineLayout,
+  memoryWarned,
+  PRESETS,
 } from "./models";
 
 const row = (id: string, over: Partial<ModelRow> = {}): ModelRow => ({
@@ -314,5 +318,45 @@ describe("default transcription engine", () => {
   test("repo ids for adding an engine", () => {
     for (const ok of ["BuzzASR/korean", " mlx-community/whisper-large-v3-turbo "]) expect(validRepo(ok)).toBe(true);
     for (const bad of ["", "korean", "a/b/c", "../x", "-a/b", "a/ b"]) expect(validRepo(bad)).toBe(false);
+  });
+});
+
+describe("구성 단추: 등록 목록에서 만든다 (설계 asr-onnx.md 4.4)", () => {
+  const WIN = ["vad", "asr-std"].map((id) => row(id)); // Windows 미리보기 목록
+  test("macOS 목록: 단추 셋 그대로, 메모리가 표준을 권하면 표준을 강조", () => {
+    expect(visiblePresets(ALL, "standard")).toEqual({ presets: PRESETS, main: "standard" });
+    expect(visiblePresets(ALL, "lite")).toEqual({ presets: PRESETS, main: null });
+    expect(visiblePresets(ALL, null).main).toBe("standard");
+  });
+  test("Windows 목록: 필수만 하나가 남고 그것을 강조, 설명은 더 받을 기능이 없다는 말", () => {
+    const v = visiblePresets(WIN, "standard");
+    expect(v.presets.map((p) => p.id)).toEqual(["required"]);
+    expect(v.main).toBe("required");
+    expect(v.presets[0].note).not.toContain("나중에");
+  });
+  test("엔진이 하나면 엔진 고르기·직접 추가를 그리지 않고 그 엔진을 모델 표에 둔다", () => {
+    const engine = (id: string) => (id.startsWith("asr-") ? { engine: "qwen3" } : {});
+    const win = engineLayout(["vad", "asr-std"].map((id) => row(id, engine(id))));
+    expect(win.picker).toBe(false);
+    expect(win.tableRows.map((m) => m.id)).toEqual(["vad", "asr-std"]);
+    const mac = engineLayout(ALL.map((m) => ({ ...m, ...engine(m.id) })));
+    expect(mac.picker).toBe(true); // macOS 목록: 엔진이 둘 이상이라 예전 그대로
+    expect(mac.engines.map((m) => m.id)).toEqual(["asr-std", "asr-lite"]);
+    expect(mac.tableRows.some((m) => m.engine)).toBe(false);
+  });
+  test("작은 엔진만 빠진 목록: 저사양만 숨긴다", () => {
+    expect(visiblePresets(ALL.filter((m) => m.id !== "asr-lite"), "standard").presets.map((p) => p.id)).toEqual(["standard", "required"]);
+  });
+  test("presetIds는 목록에 없는 ID를 내지 않는다", () => {
+    expect(presetIds("required", WIN, "lite")).toEqual(["vad", "asr-std"]); // 작은 엔진이 목록에 없으면 표준 엔진
+    expect(presetIds("standard", WIN, "standard")).toEqual(["vad", "asr-std"]);
+    expect(presetIds("lite", WIN, "standard")).toEqual(["vad"]);
+    for (const p of ["required", "standard", "lite"] as const) for (const id of presetIds(p, WIN, "lite")) expect(WIN.some((m) => m.id === id)).toBe(true);
+  });
+  test("메모리 경고는 Windows에서 16 GB 미만일 때만 (막지 않는다)", () => {
+    expect(memoryWarned(false, true)).toBe(true);
+    expect(memoryWarned(true, true)).toBe(false);
+    expect(memoryWarned(null, true)).toBe(false); // 옛 코어
+    expect(memoryWarned(false, false)).toBe(false); // macOS는 저사양 구성이 대신한다
   });
 });

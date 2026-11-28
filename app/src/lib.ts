@@ -473,6 +473,8 @@ export const WARNING_TEXT: Record<string, string> = {
 export const ERROR_TEXT: Record<string, string> = {
   model_missing: MODEL_MISSING_ERROR,
   model_load_failed: MODEL_LOAD_FAILED_ERROR,
+  platform: t("Windows 미리보기에서는 아직 쓸 수 없는 기능입니다."),
+  unsupported_platform: t("Windows 미리보기에서는 아직 지원하지 않습니다."),
   runtime_missing: t("텍스트로 변환하는 데 필요한 구성 요소를 불러오지 못했습니다. 앱을 다시 설치하세요."),
   audio_failed: t("음성 파일을 읽지 못했습니다. 소리가 있는 오디오·동영상 파일인지 확인하세요."),
   ffmpeg_missing: t("음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요."),

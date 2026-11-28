@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from tractus import platform_compat
 from tractus.i18n import t
 
 if TYPE_CHECKING:
@@ -27,6 +28,8 @@ class FFmpegMissing(FFmpegError):
 
 def require_ffmpeg() -> None:
     if shutil.which("ffmpeg") is None:
+        if platform_compat.WINDOWS:
+            raise FFmpegMissing(t("음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 winget install Gyan.FFmpeg로 설치하세요."))
         raise FFmpegMissing(t("음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요."))
 
 

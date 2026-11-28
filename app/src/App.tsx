@@ -38,7 +38,7 @@ import type { NewNoteAction } from "./menu";
 import { RecModeIcon, RecordModeMenu } from "./RecordModeMenu";
 import { NewNoteMenu } from "./NewNoteMenu";
 import { dropMemo, exportFormatsFor, flushMemos, isMemo, settleMemo } from "./memo";
-import { isWindows } from "./platform";
+import { forOs, isMod, isWindows } from "./platform";
 import { RecordView } from "./RecordView";
 import { deleteDialogText, deletedText, deleteFailure, deleteReduce, IDLE_DELETE, type DeleteTarget } from "./remove";
 import { SearchView } from "./SearchView";
@@ -188,7 +188,7 @@ export function App() {
   // 못 쓰는 기능을 눌렀을 때(메뉴·끌어 놓기): 같은 이유와 고치는 길을 알림으로 보인다
   const notifyBlocked = useCallback(
     (d: ReturnType<typeof caps.can>) => {
-      if (!d.ok) notify({ text: d.reason, error: true, action: { label: d.fix.label, run: () => capsRef.current.fixAction(d.fix) } });
+      if (!d.ok) notify({ text: d.reason, error: true, action: d.fix ? { label: d.fix.label, run: () => d.fix && capsRef.current.fixAction(d.fix) } : undefined });
     },
     [notify],
   );
@@ -404,9 +404,19 @@ export function App() {
   const attachFileRef = useRef<(t: AttachTarget, path?: string) => Promise<void>>(async () => {});
 
   // 창을 닫으면 앱이 끝난다(메뉴 막대에 남기기가 꺼져 있을 때): 전사 중이거나 대기 중인 파일이 있으면 묻는다.
-  // ponytail: ⌘Q는 묻지 않는다(쓰던 메모만 저장하고 끝낸다: quit-requested). 남은 전사 프로세스는 stdout이 닫혀 다음 진행 이벤트에서 끝난다
+  // ponytail: ⌘Q는 녹음 중일 때만 묻는다(아니면 쓰던 메모만 저장하고 끝낸다: quit-requested). 남은 전사 프로세스는 stdout이 닫혀 다음 진행 이벤트에서 끝난다
+  // 녹음 중 종료(⌘Q·메뉴 막대 `종료`·창 닫기)는 먼저 묻는다: 끝내면 앱이 녹음 프로그램에 정지를 보내고, 녹음은 `변환 대기 중인 녹음`에 남는다 (docs/desktop.md §3.10)
+  const [quitAsk, setQuitAsk] = useState<"open" | "closing" | null>(null);
   const busyRef = useRef("");
   busyRef.current = !(transcribing || imp.job.running || queue.length) ? "" : queue.length ? t("진행 중인 변환과 대기 중인 파일 {n}개가 취소됩니다.", { n: queue.length }) : t("진행 중인 변환이 취소됩니다.");
+  // 창 닫기로 끝날 때의 확인: 저장하지 못한 메모가 있으면 묻고, 진행 중인 변환이 있으면 묻는다 (⌘Q는 묻지 않고 저장만 마친다: quit-requested)
+  const confirmClose = async (): Promise<boolean> =>
+    ((await flushMemos()) || (await ask(t("저장하지 못한 메모가 있습니다. 그래도 닫을까요?"), { title: t("Tractus 닫기"), kind: "warning", okLabel: t("저장하지 않고 닫기"), cancelLabel: t("계속 쓰기") }))) &&
+    (!busyRef.current || (await ask(t("{reason} 그래도 닫을까요?", { reason: busyRef.current }), { title: t("Tractus 닫기"), kind: "warning", okLabel: t("닫기"), cancelLabel: t("계속 변환") })));
+  const confirmCloseRef = useRef(confirmClose);
+  confirmCloseRef.current = confirmClose;
+  // 묻는 창이 창 닫기에서 왔는가: 그러면 `녹음 끝내고 종료` 뒤에도 위 확인을 지난다
+  const quitFromClose = useRef(false);
   useEffect(() => {
     const un = getCurrentWindow().onCloseRequested(async (e) => {
       // 메뉴 막대에 남기는 설정이면 Rust가 창을 숨기기만 한다: 앱이 계속 돌아 녹음·변환이 이어지므로 묻지 않는다. 쓰던 메모는 저장해 둔다
@@ -414,18 +424,39 @@ export function App() {
         await flushMemos();
         return e.preventDefault();
       }
-      // 저장하지 못한 메모가 있으면 묻는다 (⌘Q는 묻지 않고 저장만 마친다: quit-requested)
-      if (!(await flushMemos()) && !(await ask(t("저장하지 못한 메모가 있습니다. 그래도 닫을까요?"), { title: t("Tractus 닫기"), kind: "warning", okLabel: t("저장하지 않고 닫기"), cancelLabel: t("계속 쓰기") }))) return e.preventDefault();
-      if (busyRef.current && !(await ask(t("{reason} 그래도 닫을까요?", { reason: busyRef.current }), { title: t("Tractus 닫기"), kind: "warning", okLabel: t("닫기"), cancelLabel: t("계속 변환") }))) e.preventDefault();
+      if (recordingRef.current) {
+        e.preventDefault();
+        quitFromClose.current = true;
+        return setQuitAsk("open");
+      }
+      if (!(await confirmCloseRef.current())) e.preventDefault();
     });
     return () => void un.then((f) => f());
   }, []);
 
-  // ⌘Q: 코어가 종료를 미루고 알리면 쓰던 메모를 저장한 뒤 이어 간다 (저장하지 못해도 끝낸다: ⌘Q는 묻지 않는다)
+  // ⌘Q: 코어가 종료를 미루고 알리면 쓰던 메모를 저장한 뒤 이어 간다 (저장하지 못해도 끝낸다). 녹음 중이면 먼저 묻는다(Rust가 기다린다)
   useEffect(() => {
-    const un = listen("quit-requested", () => void flushMemos().finally(() => void api.quitReady()));
+    const un = listen<{ recording?: boolean } | null>("quit-requested", (e) => {
+      if (e.payload?.recording) {
+        quitFromClose.current = false;
+        setQuitAsk("open");
+        void api.quitAsking();
+      } else void flushMemos().finally(() => void api.quitReady());
+    });
     return () => void un.then((f) => f());
   }, []);
+  const quitAfterRecording = async () => {
+    setQuitAsk("closing");
+    // 창 닫기는 예전 확인 둘(메모·변환)을 지나고, 거기서 그만두면 녹음을 이어 간다. ⌘Q·메뉴 막대 `종료`는 메모 저장만 마친다
+    if (quitFromClose.current) {
+      if (!(await confirmClose())) return keepRecording();
+    } else await flushMemos().catch(() => false);
+    void api.quitReady();
+  };
+  function keepRecording() {
+    setQuitAsk(null);
+    void api.quitCancel();
+  }
 
   // 단어 싱크는 노트를 닫아도 계속 돈다: 끝나면 열려 있는 노트와 상관없이 알린다 (alignJobs.ts)
   useEffect(
@@ -498,13 +529,13 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && e.code === "KeyJ") {
+      if (isMod(e) && e.code === "KeyJ") {
         e.preventDefault();
         setAskOpen((o) => !o);
-      } else if (e.metaKey && !e.shiftKey && !e.altKey && e.code === "KeyN" && !isImeKey(e)) {
+      } else if (isMod(e) && !e.shiftKey && !e.altKey && e.code === "KeyN" && !isImeKey(e)) {
         e.preventDefault();
         void newMemo();
-      } else if (e.metaKey && e.code === "KeyK") {
+      } else if (isMod(e) && e.code === "KeyK") {
         e.preventDefault();
         setPaletteOpen((o) => !o); // 빠른 실행 (CommandPalette.tsx)
       } else if (e.code === "KeyB" && !e.metaKey && !e.ctrlKey && isRecLive(rec.phase) && !isTypingTarget(e.target)) {
@@ -800,8 +831,8 @@ export function App() {
             <button
               type="button"
               className="self-start px-1 text-left text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-              title={`${convertGate.reason} (${convertGate.fix.label})`}
-              onClick={() => caps.fixAction(convertGate.fix)}
+              title={convertGate.fix ? `${convertGate.reason} (${convertGate.fix.label})` : convertGate.reason}
+              onClick={() => convertGate.fix && caps.fixAction(convertGate.fix)}
             >
               {recordNotice(convertGate)}
             </button>
@@ -819,7 +850,7 @@ export function App() {
             className={cn(SIDE_ITEM, "group/ai relative isolate hover:bg-transparent aria-expanded:bg-sidebar-accent")}
             aria-expanded={askOpen}
             aria-controls="ask-drawer"
-            aria-keyshortcuts="Meta+J"
+            aria-keyshortcuts={forOs("Meta+J")}
             aria-label={t("AI 어시스턴트")}
             title={t("AI 어시스턴트 (⌘J)")}
             data-tip="ask"
@@ -935,6 +966,17 @@ export function App() {
           busy={del.busy}
           onCancel={() => dispatchDel({ type: "cancel" })}
           onConfirm={() => void confirmDelete()}
+        />
+      )}
+      {quitAsk && (
+        <ConfirmDialog
+          title={t("녹음을 끝내고 종료할까요?")}
+          body={t("지금까지 녹음한 내용은 저장됩니다. 다음에 Tractus를 열면 ‘변환 대기 중인 녹음’에서 텍스트로 변환할 수 있습니다.")}
+          cancelLabel={t("계속 녹음")}
+          confirmLabel={t("녹음 끝내고 종료")}
+          busy={quitAsk === "closing"}
+          onCancel={keepRecording}
+          onConfirm={() => void quitAfterRecording()}
         />
       )}
       {afterAsk && <AfterRecordDialog seconds={afterAsk.seconds} convert={convertGate} onChoose={chooseAfter} />}

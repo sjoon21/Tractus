@@ -16,6 +16,7 @@ export default {
   "모델 설치": "Install models",
 
   // caps.ts: 못 쓰는 이유
+  "Windows 미리보기에서는 아직 쓸 수 없는 기능입니다. 다음 판에서 하나씩 엽니다.": "This feature isn’t available in the Windows preview yet. Features will open up one by one in later versions.",
   "변환 엔진이 없어 텍스트로 변환할 수 없습니다. 모델 화면에서 설치하세요.": "No transcription engine is installed, so transcription isn’t available. Install one in Models.",
   "변환 엔진과 ffmpeg가 없어 텍스트로 변환할 수 없습니다. 모델 화면에서 변환 엔진을 설치하고, 터미널에서 brew install ffmpeg를 실행하세요.":
     "The transcription engine and ffmpeg are missing, so transcription isn’t available. Install an engine in Models, then run brew install ffmpeg in Terminal.",
@@ -91,8 +92,12 @@ export default {
   "데이터 폴더": "Data folder",
   "목소리 구간 감지 파일": "voice activity detection files",
   "변환 엔진(표준·가벼운 것 중 하나)": "a transcription engine (standard or lite)",
+  "변환 엔진 파일": "transcription engine files",
+  "x64 Windows가 필요합니다 (지금: {arch})": "Requires x64 Windows (now: {arch})",
+  "Windows 10 2004(빌드 19041) 이상이 필요합니다": "Requires Windows 10 2004 (build 19041) or later",
   "필수 모델": "Required models",
   "텍스트 변환에 필요한 모델이 모두 있습니다 (변환 엔진은 둘 중 하나면 됩니다)": "All models needed for transcription are installed (one of the two engines is enough)",
+  "텍스트 변환에 필요한 모델이 모두 있습니다": "All models needed for transcription are installed",
   "{missing}이(가) 없어 텍스트로 변환할 수 없습니다. 녹음은 저장됩니다.": "Missing {missing}, so transcription isn’t available. Recordings are still saved.",
   "권장 모델": "Recommended models",
   "참석자 구분 모델이 있습니다": "The speaker detection model is installed",
@@ -168,6 +173,8 @@ export default {
   "저사양 구성 설치": "Install lite set",
   "작은 변환 엔진 0.6B와 참석자 구분. 실시간 텍스트 변환도 쓸 수 있습니다": "Small transcription engine 0.6B plus speaker detection. Live transcription works too",
   "필수만 설치": "Install required only",
+  "녹음을 텍스트로 바꾸는 데 필요한 모델입니다": "The models needed to turn recordings into text",
+  "메모리가 16 GB 미만이라 텍스트로 변환하는 동안 다른 앱이 느려질 수 있습니다. 변환 중에는 메모리를 약 7 GB 씁니다.": "This computer has less than 16 GB of memory, so other apps may slow down during transcription. Transcription uses about 7 GB of memory.",
   "텍스트 변환만 됩니다. 나머지 기능은 나중에 하나씩 설치하세요": "Transcription only. Install other features one at a time later",
   "디스크 여유 공간이 부족합니다 (필요 {need}, 여유 {free}). 공간을 비운 뒤 설치하세요.": "Not enough disk space (need {need}, free {free}). Free up space, then install.",
   "이어 받기": "Resume",

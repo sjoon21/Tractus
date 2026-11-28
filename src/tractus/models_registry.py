@@ -3,6 +3,8 @@
 - 저장소·리비전·폴더 이름은 각 모듈(asr는 이곳, diarize·align·embed·voices)의 상수를 그대로 가져온다. 힌트 문구도 여기서 만든다.
 - `inspect`는 네트워크 없이 파일 존재와 크기만 본다 (파일 목록·크기는 고정한 리비전의 값). 받기가 남긴 완료 표시의 리비전이 다르면 일부만 받은 것으로 본다. 내용 해시는 voices만 확인한다.
 - ASR·VAD는 이 파일이 원본이다 (cli.MODELS·VAD_MODEL이 여기서 가져간다).
+- 목록은 운영체제마다 하나다(`_mac_models`·`_windows_models`, docs/design/asr-onnx.md 4절). 운영체제를 가르는 곳은 아래 `MODELS =` 한 줄이고,
+  기능 잠금(`platform`)·권하는 엔진·구성은 목록에 든 것으로 정한다. 그래서 Mac 결과는 목록이 같은 한 그대로다.
 - Qwen 항목의 publisher t("Alibaba Qwen 팀")은 소유자가 정한 표기다. 카드에는 HF 조직 "Qwen"만 나오고 Alibaba 소속은 적혀 있지 않다 (Alibaba Cloud API 링크뿐).
 - 소개 필드(model_name·publisher·converted_by·license·languages·params)는 2026-10-14에 각 모델 카드(HF API·README, 아래 모델 줄 주석)와 NOTICE로 확인한 값이다.
   확인하지 못한 값은 None이다 (추측하지 않는다). source·revision은 내려받는 상수에서 나온다.
@@ -62,7 +64,7 @@ class Model:
 
     @property
     def needed_by(self) -> tuple[str, ...]:
-        found = tuple(c.id for c in CAPABILITIES if any(self.id in g for g in c.models))
+        found = tuple(c.id for c in CAPABILITIES if any(self.id in g for g in c.models) and not _locked(c))  # 잠긴 기능(Windows의 live)은 세지 않는다
         return found or (("convert",) if self.engine else ())  # 직접 추가한 변환 엔진은 CAPABILITIES에 없다
 
     @property
@@ -94,7 +96,8 @@ def _qwen_asr(size_cfg: int, weights: int, index: int, extra_cfg: int = 12487, g
             "generation_config.json": gen, "tokenizer_config.json": extra_cfg}
 
 
-MODELS: tuple[Model, ...] = (
+def _mac_models() -> tuple[Model, ...]:
+    return (
     _hf("vad", t("목소리 구간 감지"), t("녹음에서 사람이 말하는 구간을 찾습니다."), "required", "convert",
         "mlx-community/silero-vad-v6", "2ebf4a5e10726a2e78ddd4d70eedfb6f1c33eb06", "silero-vad-v6",
         {"config.json": 463, "model.safetensors": 1237860},
@@ -163,20 +166,48 @@ MODELS: tuple[Model, ...] = (
           "optional", "speakers", "helper", diarize.FLUID_DIR, 21_800_000, repo=diarize.FLUID_REPO,
           # 카드 FluidInference/speaker-diarization-coreml: base_model pyannote/speaker-diarization-community-1, 이 범위(Community-1 산출물)는 CC-BY-4.0 (NOTICE.md). 리비전은 FluidAudio v0.17.5가 내려받는 HEAD라 고정하지 않는다 (None)
           model_name="pyannote speaker-diarization community-1 (Core ML)", publisher="pyannote", converted_by=t("FluidInference (Core ML 변환본)"), license="CC-BY-4.0"),
-)
+    )
 
-CAPABILITIES: tuple[Capability, ...] = (
-    Capability("record", t("녹음"), tools=("recorder",)),
-    Capability("convert", t("텍스트로 변환"), models=(("vad",), tuple(m.id for m in MODELS if m.engine)), tools=("ffmpeg",)),  # 변환 엔진 중 하나
-    Capability("diarize", t("참석자 구분"), models=(("diarizer",),)),
-    Capability("diarize-many", t("참석자 구분 (9명 이상)"), models=(("fluid",),)),
-    Capability("align", t("단어 싱크"), models=(("aligner",),), tools=("ffmpeg",)),  # 노트 오디오를 디코딩한다
-    Capability("smart-search", t("스마트 검색"), models=(("embedding",),)),
-    Capability("live", t("실시간 텍스트 변환"), models=(("vad",), ("asr-lite",)), tools=("recorder",), min_memory=STANDARD_MIN_MEMORY),  # cli live_low_memory와 같은 기준
-    Capability("voices", t("참석자 목소리 인식"), models=(("voices",),), tools=("ffmpeg",)),
-)
 
+def _windows_models() -> tuple[Model, ...]:
+    """Windows 미리보기 (docs/design/asr-onnx.md 4.1절): 같은 Silero·Qwen3-ASR의 ONNX 판을 onnxruntime(CPU)으로 돌린다. ID는 Mac과 같다.
+    변환 엔진은 asr-std 하나라 one_of가 아니다. 나머지 모델(MLX)은 목록에 없어 그 기능이 `platform`으로 잠긴다."""
+    return (
+        _hf("vad", t("목소리 구간 감지"), t("녹음에서 사람이 말하는 구간을 찾습니다."), "required", "convert",
+            "istupakov/silero-vad-onnx", "b3e3ee3cce4c11ceb63b1a0b229d916069c1ddf6", "silero-vad-v6-onnx",
+            {"silero_vad_16k_op15.onnx": 1289603},
+            # 카드 istupakov/silero-vad-onnx (2026-11-27 HF API 확인): license mit, "Silero VAD model (version 6.2) in ONNX format". 16k 전용 op15 그래프 하나만 받는다 (sha256 7ed98ddb…2c49)
+            model_name="Silero VAD v6", publisher="Silero", converted_by=t("istupakov (ONNX 변환본)"), license="MIT", params="309K"),
+        _hf("asr-std", t("변환 엔진"), t("변환하는 동안 메모리를 많이 씁니다 (최대 약 7GB). 메모리 16GB 이상을 권합니다."), "required", "convert",
+            "voyagar/Qwen3-ASR-1.7B-onnx-int8", "550f7a719e1e60fa813c5681193ffa8fb478a924", "qwen3-asr-1.7b-onnx-int8",
+            {"encoder.int4.onnx": 1270241779, "decoder_init.int4.onnx": 359023, "decoder_step.int4.onnx": 358443, "decoder_weights.int4.data": 2477658112,
+             "embed_tokens.bin": 622329856, "tokenizer.json": 11429377, "config.json": 1310},
+            engine="qwen3",
+            # 카드 voyagar/Qwen3-ASR-1.7B-onnx-int8 (2026-11-27 HF API 확인, 크기 같음): apache-2.0, andrewleech/qwen3-asr-1.7b-onnx의 FP32를 디코더만 8bit(MatMulNBits)로 다시 양자화해 소유자 계정에 올린 것.
+            # 파일 이름의 .int4는 어댑터 표지(asr_onnx.MARKER)와 맞춘 것이다. 측정: docs/design/asr-onnx.md 8.6절 (Mac 최대 메모리 6.1–7.2GB)
+            model_name=t("Qwen3-ASR 1.7B (8bit 양자화, ONNX)"), publisher=t("Alibaba Qwen 팀"), converted_by=t("Tractus (ONNX 변환본)"), license="Apache-2.0", languages=t("한국어·영어 등 30개 언어와 중국어 방언 22개"), params="1.7B"),
+    )
+
+
+def _capabilities(models: tuple[Model, ...]) -> tuple[Capability, ...]:
+    return (
+        Capability("record", t("녹음"), tools=("recorder",)),
+        Capability("convert", t("텍스트로 변환"), models=(("vad",), tuple(m.id for m in models if m.engine)), tools=("ffmpeg",)),  # 변환 엔진 중 하나
+        Capability("diarize", t("참석자 구분"), models=(("diarizer",),)),
+        Capability("diarize-many", t("참석자 구분 (9명 이상)"), models=(("fluid",),)),
+        Capability("align", t("단어 싱크"), models=(("aligner",),), tools=("ffmpeg",)),  # 노트 오디오를 디코딩한다
+        Capability("smart-search", t("스마트 검색"), models=(("embedding",),)),
+        Capability("live", t("실시간 텍스트 변환"), models=(("vad",), ("asr-lite",)), tools=("recorder",), min_memory=STANDARD_MIN_MEMORY),  # cli live_low_memory와 같은 기준
+        Capability("voices", t("참석자 목소리 인식"), models=(("voices",),), tools=("ffmpeg",)),
+    )
+
+
+MODELS: tuple[Model, ...] = _windows_models() if platform_compat.WINDOWS else _mac_models()  # 운영체제를 가르는 한 곳. 시험은 두 함수를 직접 부른다
+CAPABILITIES = _capabilities(MODELS)
 _BY_ID = {m.id: m for m in MODELS}
+ONNX_REPOS = frozenset(m.repo for m in _windows_models() if m.engine)  # 이 저장소로 변환한 노트는 asr.runtime이 onnxruntime이다 (store.build_transcript)
+CUSTOM_SUPPORTED = not platform_compat.WINDOWS  # 변환 엔진 직접 추가 (NEEDED_FILES가 MLX 판 기준이라 Windows 미리보기에서는 받지 않는다: models add → unsupported_platform)
+PLATFORM_LOCKED = t("Windows 미리보기에서는 아직 쓸 수 없는 기능입니다.")  # 기능이 요구하는 모델이 등록 목록에 없다 (missing "platform", 코드 platform)
 
 # ── 직접 추가한 변환 엔진 (docs/design/asr-engines.md) ─────────────────────────
 # 모델 폴더의 custom-models.json에 둔다: 모델 폴더를 옮기면 함께 옮긴다. ID는 custom-…, 폴더 이름은 ID다
@@ -200,7 +231,9 @@ def _custom_entry(e: object) -> Model | None:
 
 
 def custom_models(root: Path | None = None) -> tuple[Model, ...]:
-    """직접 추가한 변환 엔진 (추가한 순서). 파일이 없거나 깨졌으면 빈 목록."""
+    """직접 추가한 변환 엔진 (추가한 순서). 파일이 없거나 깨졌으면, 직접 추가를 받지 않는 곳(CUSTOM_SUPPORTED)이면 빈 목록."""
+    if not CUSTOM_SUPPORTED:
+        return ()
     try:
         raw = json.loads(((root or paths.models_dir()) / CUSTOM_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -245,7 +278,9 @@ def asr_ids(root: Path | None = None) -> list[str]:
 
 
 def preferred_asr(memory: int | None = None) -> str:
-    """메모리가 권하는 변환 엔진 (16GB 이상이면 표준)."""
+    """메모리가 권하는 변환 엔진 (16GB 이상이면 표준). 목록에 가벼운 엔진이 없으면(Windows) 언제나 표준."""
+    if "asr-lite" not in _BY_ID:
+        return "asr-std"
     return "asr-std" if (physical_memory() if memory is None else memory) >= STANDARD_MIN_MEMORY else "asr-lite"
 
 
@@ -253,7 +288,7 @@ def pick_asr(root: Path, memory: int | None = None) -> str | None:
     """엔진을 정하지 않고 변환할 때 쓸 변환 엔진: 메모리가 권하는 기본 엔진이 쓸 수 있으면 그것, 아니면 다른 기본 엔진, 그다음 받아 둔 다른 엔진 (등록 순서). 없으면 None."""
     first = preferred_asr(memory)
     order = [first, "asr-lite" if first == "asr-std" else "asr-std", *(i for i in asr_ids(root) if i not in ("asr-std", "asr-lite"))]
-    return next((i for i in order if usable(i, root)), None)
+    return next((i for i in order if find(i) and usable(i, root)), None)  # 목록에 없는 기본 엔진(Windows의 asr-lite)은 건너뛴다
 
 
 def preset_ids(preset: str, memory: int | None = None, helper: bool = False) -> list[str]:
@@ -263,6 +298,8 @@ def preset_ids(preset: str, memory: int | None = None, helper: bool = False) -> 
     elif preset == "standard":
         ids = {"vad", "asr-std", "diarizer", "aligner", "embedding", "voices"}
     elif preset == "lite":
+        if "asr-lite" not in _BY_ID:  # 조용히 VAD만 받지 않는다 (models download --preset lite → 종료 코드 2)
+            raise ValueError(t("저사양 구성(lite)은 Windows 미리보기에서 쓸 수 없습니다. required를 쓰세요"))
         ids = {"vad", "asr-lite", "diarizer"}
     elif preset == "all":
         ids = {m.id for m in MODELS if helper or m.id != "fluid"}
@@ -372,16 +409,22 @@ def usable(model_id: str, root: Path) -> bool:
         return True
     m = get(model_id)
     d = root / m.local_dir
-    return m.kind == "hf" and (d / "config.json").is_file() and not (d / "model.safetensors").exists() and not st.has_incomplete
+    # ONNX 판(Windows)은 config.json만 있고 가중치(.onnx)가 빠진 폴더를 쓸 수 있다고 보지 않는다. 그 밖(MLX 판·직접 추가한 .npz 엔진)은 예전 그대로
+    onnx = any(f.endswith(".onnx") for f in m.files)
+    return m.kind == "hf" and not onnx and (d / "config.json").is_file() and not (d / "model.safetensors").exists() and not st.has_incomplete
 
 
 # ── 기능 ─────────────────────────────────────────────────────────────────────
 
 def capability_status(states: dict[str, str], tools: dict[str, bool], memory: int | None = None) -> list[dict]:
     """모델 상태({id: state})와 도구({ffmpeg: 있음})로 기능별 준비 여부. missing: 채워야 할 모델 ID와 도구 이름.
-    하나면 되는 모델(변환 엔진)이 모두 없으면 메모리가 권하는 기본 엔진을 missing에 둔다."""
+    하나면 되는 모델(변환 엔진)이 모두 없으면 메모리가 권하는 기본 엔진을 missing에 둔다.
+    요구 모델이 등록 목록에 없으면(Windows 미리보기의 MLX 모델) missing은 ["platform"] 하나다: 받을 수 없으니 다른 이유(메모리·도구)를 더하지 않는다."""
     out = []
     for c in CAPABILITIES:
+        if _locked(c):
+            out.append({"id": c.id, "name": c.name, "ready": False, "missing": ["platform"], "hint": fix_command("platform")})
+            continue
         missing: list[str] = []
         for group in c.models:
             if "asr-std" in group:  # 직접 추가한 변환 엔진도 하나면 된다
@@ -395,9 +438,21 @@ def capability_status(states: dict[str, str], tools: dict[str, bool], memory: in
     return out
 
 
+def capability_locked(capability_id: str) -> bool:
+    """이 운영체제에서 받을 수 없는 기능인가 (missing "platform"). 모르는 ID는 잠기지 않은 것으로 본다."""
+    return any(_locked(c) for c in CAPABILITIES if c.id == capability_id)
+
+
+def _locked(c: Capability) -> bool:
+    """기능이 요구하는 모델(묶음)이 등록 목록에 하나도 없다: 이 운영체제에서는 받을 수 없다 (missing "platform")."""
+    return any(not any(i in _BY_ID for i in group) for group in c.models)
+
+
 def fix_command(item: str) -> str:
     if item == "memory":
-        return t("메모리 16GB 이상인 Mac에서만 켤 수 있습니다")
+        return t("메모리 16GB 이상인 컴퓨터에서만 켤 수 있습니다") if platform_compat.WINDOWS else t("메모리 16GB 이상인 Mac에서만 켤 수 있습니다")
+    if item == "platform":
+        return PLATFORM_LOCKED
     return build_hint(item) or f"tractus models download {item}"
 
 

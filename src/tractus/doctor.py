@@ -36,12 +36,15 @@ def tools() -> dict:
     ffmpeg = shutil.which("ffmpeg")
     rec, diar = recorder_bin(), diarize.fluid_bin()
     brew = shutil.which("brew") or next((p for p in ("/opt/homebrew/bin/brew", "/usr/local/bin/brew") if os.access(p, os.X_OK)), None)  # ffmpeg 설치 안내용
-    return {
+    out = {
         "brew": {"found": bool(brew), "path": brew, "version": None},
         "ffmpeg": {"found": bool(ffmpeg), "path": ffmpeg, "version": _version([ffmpeg, "-version"], r"ffmpeg version (\S+)") if ffmpeg else None},
         "recorder": {"found": diarize._executable(rec), "path": str(rec)},
         "diar_helper": {"found": diarize._executable(diar), "path": str(diar)},
     }
+    if platform_compat.WINDOWS:
+        del out["brew"]  # Windows는 winget으로 안내한다: Homebrew가 없다는 말을 하지 않게 키를 뺀다
+    return out
 
 
 def _macos() -> tuple[int, ...]:

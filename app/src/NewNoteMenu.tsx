@@ -7,6 +7,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { MENU, MENU_ITEM } from "@/components/menu";
 import { t } from "./i18n";
 import { menuKey, NEW_NOTE_ITEMS, openKey, type NewNoteAction } from "./menu";
+import { forOs } from "./platform";
 
 export function NewNoteMenu({ onPick, disabled, tips }: { onPick: (a: NewNoteAction) => void; disabled: Partial<Record<NewNoteAction, string>>; tips?: Partial<Record<NewNoteAction, string>> }) {
   const [open, setOpen] = useState(false);
@@ -39,7 +40,7 @@ export function NewNoteMenu({ onPick, disabled, tips }: { onPick: (a: NewNoteAct
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? "new-note-menu" : undefined}
-        aria-keyshortcuts="Meta+N"
+        aria-keyshortcuts={forOs("Meta+N")}
         title={t("새 노트: 글쓰기, 녹음, 파일 가져오기 (⌘N은 바로 글쓰기)")}
         onClick={() => {
           focusAt.current = 0;

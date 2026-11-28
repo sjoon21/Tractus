@@ -286,6 +286,13 @@ class IncompleteError(RuntimeError):
     """전사되지 않은 청크가 남아 transcript.json을 쓸 수 없다 (CLI가 code="incomplete"로 알린다)."""
 
 
+def _runtime(repo: str) -> str:
+    """변환한 런타임: 저장소가 등록 목록의 ONNX 판이면 onnxruntime(Windows), 아니면 mlx-audio. 레지스트리가 align·diarize를 불러오므로 늦게 부른다."""
+    from tractus import models_registry
+
+    return "onnxruntime" if repo in models_registry.ONNX_REPOS else "mlx-audio"
+
+
 def build_transcript(job: Job) -> dict:
     """끝난 청크로 만든 새 transcript.json 내용 (쓰지 않는다). 끝나지 않은 청크가 있으면 IncompleteError."""
     done = job.done()
@@ -313,7 +320,7 @@ def build_transcript(job: Job) -> dict:
         "title": job.title,
         "created_at": job.created_at,
         "audio": {"file": job.audio_file, "duration_sec": job.duration_sec, "source": job.source, "sha256": job.sha256},
-        "asr": {"model": job.model, "track": job.track, "engine": job.engine, "runtime": "mlx-audio", "language": job.language, "hotwords": job.hotwords},
+        "asr": {"model": job.model, "track": job.track, "engine": job.engine, "runtime": _runtime(job.model), "language": job.language, "hotwords": job.hotwords},
         "speakers": _speakers_map({k: {"name": None, "suggested": v} for k, v in job.suggestions.items()}, segments),
         "diarization": job.diarizer,
         "segments": segments,

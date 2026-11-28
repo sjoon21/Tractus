@@ -111,6 +111,27 @@ def test_physical_memory():
     assert pc.physical_memory() > 1024**3
 
 
+@pytest.mark.parametrize("installed_kb,expected", [(16 * 1024**2, 16 * 1024**3), (None, 15 * 1024**3)])
+def test_windows_physical_memory_prefers_installed_size(monkeypatch, installed_kb, expected):
+    """설치된 용량(16GB 노트북이면 16GiB)을 쓰고, 못 읽으면 예전 값(OS가 쓸 수 있는 메모리)으로 (가짜 kernel32)."""
+    import ctypes
+
+    class Kernel32:
+        def GetPhysicallyInstalledSystemMemory(self, ref):
+            if installed_kb is None:
+                return 0
+            ref._obj.value = installed_kb
+            return 1
+
+        def GlobalMemoryStatusEx(self, ref):
+            ref._obj.ullTotalPhys = 15 * 1024**3
+            return 1
+
+    monkeypatch.setattr(pc, "WINDOWS", True)
+    monkeypatch.setattr(ctypes, "WinDLL", lambda name, use_last_error=False: Kernel32(), raising=False)
+    assert pc.physical_memory() == expected
+
+
 def test_expand_app_dir_falls_back_when_localappdata_is_unset(monkeypatch):
     """환경을 비운 하위 프로세스에서도 모델 폴더가 작업 폴더 아래 `%LOCALAPPDATA%`라는 상대 경로가 되지 않는다"""
     monkeypatch.setenv("LOCALAPPDATA", "/x/Local")
@@ -150,3 +171,19 @@ def test_cli_writes_utf8_json_without_pythonioencoding(tmp_path):
     out = json.loads(p.stdout.decode("utf-8").strip().splitlines()[-1])
     t = json.loads((Path(out["meeting_dir"]) / "transcript.json").read_text(encoding="utf-8"))
     assert t["title"] == "회의 ✓"
+
+
+@pytest.mark.parametrize("windows", [False, True])
+def test_ffmpeg_hints_follow_the_platform(monkeypatch, windows):
+    """ffmpeg 안내: macOS는 brew(예전 그대로), Windows는 winget. Homebrew 줄은 macOS만 (WORDS.md §8)"""
+    from tractus import audio, doctor
+    from tractus import models_registry as reg
+
+    monkeypatch.setattr(pc, "WINDOWS", windows)
+    monkeypatch.setattr(audio.shutil, "which", lambda _: None)
+    cmd = "winget install Gyan.FFmpeg" if windows else "brew install ffmpeg"
+    with pytest.raises(audio.FFmpegMissing, match=cmd):
+        audio.require_ffmpeg()
+    assert reg.build_hint("ffmpeg") == cmd
+    assert ("컴퓨터" if windows else "Mac") in reg.fix_command("memory")
+    assert ("brew" in doctor.tools()) is not windows

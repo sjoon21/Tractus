@@ -50,9 +50,11 @@ export function AfterRecordDialog({ seconds, convert, onChoose }: { seconds: num
         {view.reason && !convert.ok && (
           <p className="m-0 flex flex-wrap items-center gap-2 rounded-md bg-memo-wash px-3 py-2 text-xs" role="status">
             <span>{view.reason}</span>
-            <Button variant="outline" size="sm" className="h-6" onClick={() => fixAction(convert.fix)}>
-              {convert.fix.label}
-            </Button>
+            {convert.fix && (
+              <Button variant="outline" size="sm" className="h-6" onClick={() => convert.fix && fixAction(convert.fix)}>
+                {convert.fix.label}
+              </Button>
+            )}
           </p>
         )}
         <label className="mt-2 flex items-start gap-2.5 text-[13px]">

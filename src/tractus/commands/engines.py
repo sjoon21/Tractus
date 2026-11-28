@@ -9,7 +9,6 @@ from tractus import models_registry as registry
 from tractus.commands import common
 from tractus.diarize import FLUID, NEMOTRON
 from tractus.i18n import t
-from tractus.models_registry import STANDARD_MIN_MEMORY
 from tractus.paths import models_dir
 
 
@@ -36,8 +35,9 @@ class Language(str, Enum):
 
 
 # Phase 0 확정 모델 (ARCHITECTURE.md §2.2, §8)
-# (저장소·리비전·폴더는 models_registry가 원본이다)
-MODELS = {Track.standard: registry.get("asr-std").repo, Track.lite: registry.get("asr-lite").repo}
+# (저장소·리비전·폴더는 models_registry가 원본이다). 등록 목록에 있는 트랙만 담는다: Windows 목록에는 asr-lite가 없다 (import 때 KeyError로 CLI가 죽지 않게)
+TRACK_MODEL = {tr: mid for tr, mid in ((Track.standard, "asr-std"), (Track.lite, "asr-lite")) if registry.find(mid)}
+MODELS = {tr: registry.get(mid).repo for tr, mid in TRACK_MODEL.items()}
 VAD_MODEL = registry.get("vad").repo
 
 
@@ -52,7 +52,7 @@ def local_model(repo: str) -> Path:
 
 
 def recommended_track() -> Track:
-    return Track.standard if registry.physical_memory() >= STANDARD_MIN_MEMORY else Track.lite
+    return Track.standard if registry.preferred_asr() == "asr-std" else Track.lite  # 16GB 기준은 preferred_asr 한 곳에
 
 
 def auto_track() -> Track:
@@ -65,9 +65,6 @@ def auto_track() -> Track:
     used = Track.lite if want is Track.standard else Track.standard
     common.warn("asr_track_fallback", t("{want} 변환 엔진이 없어 {used} 엔진으로 변환합니다 (받으려면 tractus models download {model})", want=want.value, used=used.value, model="asr-std" if want is Track.standard else "asr-lite"))
     return used
-
-
-TRACK_MODEL = {Track.standard: "asr-std", Track.lite: "asr-lite"}
 
 
 def engine_ready(repo: str) -> bool:
@@ -91,4 +88,6 @@ def choose_asr(track: Track | None, engine_id: str | None) -> registry.Model:
         if registry.usable(m.id, models_dir()):
             return m
         common.warn("asr_engine_missing", t("고른 변환 엔진({name})이 없어 기본 엔진으로 변환합니다 (받으려면 tractus models download {id})", name=m.name, id=m.id))
+    if track and track not in TRACK_MODEL:
+        common.fail(f"{registry.PLATFORM_LOCKED} (--track {track.value})", code="unsupported_platform", exit_code=2)
     return registry.get(TRACK_MODEL[track or auto_track()])

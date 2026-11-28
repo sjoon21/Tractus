@@ -2,6 +2,7 @@
 //! 여기에는 앱 상태(`AppState`)·쓰는 중 표시(`hold`·`BusyGuard`)·코어 실행(`run_tractus`)과 읽기 명령·`run()`만 둔다.
 //! 명령은 영역 모듈에 둔다: 설정 `settings`, 녹음 `recording`, 오래 걸리는 작업 `jobs`, 노트 고치기 `edits`, 사전 `glossary`, 종료 `quit` 등.
 
+mod applog;
 mod ask;
 mod attach;
 mod calendar;
@@ -30,6 +31,7 @@ mod summaries;
 mod tray;
 mod voices;
 
+use crate::applog::log_eprintln;
 use crate::i18n::{t, tv};
 // 여러 모듈이 `super::Settings`·`crate::patch_settings`로 쓰는 설정 이름
 use settings::{expand, merge_flag, patch_settings, Settings};
@@ -65,7 +67,7 @@ fn cancel_index(slot: &IndexSlot) {
     if let Some(child) = slot.lock().unwrap().as_ref() {
         // 대기 스레드가 이미 wait 중이면 끝나는 중이다
         if let Ok(mut c) = child.try_lock() {
-            let _ = c.kill();
+            procs::kill_tree(&mut c);
         }
     }
 }
@@ -244,7 +246,7 @@ async fn delete_recording(state: State<'_, AppState>, dir: String) -> Result<(),
 fn sync_index_later(mcp: Arc<mcp::McpClient>) {
     std::thread::spawn(move || {
         if let Err(e) = mcp.call_tool("status", json!({})) {
-            eprintln!("검색 색인 정리 실패: {e}");
+            log_eprintln!("검색 색인 정리 실패: {e}");
         }
     });
 }
@@ -275,7 +277,7 @@ fn is_tagged(s: &str, prefix: char) -> bool {
 fn run_tractus(s: &Settings, args: &[String], input: Option<&str>, what: &str) -> Result<String, String> {
     let mut cmd = s.tractus(args);
     cmd.stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = cmd.spawn().map_err(|e| procs::cannot_run(&s.tractus_resolved().path, e))?;
+    let mut child = procs::spawn(&mut cmd).map_err(|e| procs::cannot_run(&s.tractus_resolved().path, e))?;
     if let (Some(text), Some(mut stdin)) = (input, child.stdin.take()) {
         // 코어는 stdin을 다 읽은 뒤에 출력하므로 먼저 쓰고 닫아도 막히지 않는다
         stdin.write_all(text.as_bytes()).map_err(|e| tv("{what}\n입력을 넘기지 못했습니다: {e}", &[("what", what.to_string()), ("e", e.to_string())]))?;
@@ -283,6 +285,7 @@ fn run_tractus(s: &Settings, args: &[String], input: Option<&str>, what: &str) -
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
+        procs::log_exit(&s.tractus_resolved().path, out.status.code(), &err, cmd.get_args());
         return Err(last_error_line(&err).unwrap_or_else(|| tv("{what} (종료 코드 {code})", &[("what", what.to_string()), ("code", out.status.code().map_or(t("없음"), |c| c.to_string()))])));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
@@ -351,13 +354,17 @@ pub fn run() {
             let config_path = app.path().app_config_dir()?.join("settings.json");
             let mut settings = Settings::load(std::fs::read_to_string(&config_path).ok().as_deref());
             settings.config_dir = config_path.parent().map(Path::to_path_buf);
+            if let Some(dir) = &settings.config_dir {
+                applog::init(dir);
+            }
+            applog::write(&format!("app start {} ({} {})", app.package_info().version, std::env::consts::OS, std::env::consts::ARCH));
             i18n::set(i18n::resolve(&settings.ui_lang, i18n::system_lang().as_deref()));
             let mcp = Arc::new(mcp::McpClient::new(settings.mcp_spawn()));
             // 첫 검색이 빠르도록 미리 띄워 둔다 (실패해도 검색 때 다시 시도)
             let warm = mcp.clone();
             std::thread::spawn(move || {
                 if let Err(e) = warm.call_tool("status", json!({})) {
-                    eprintln!("MCP 예열 실패: {e}");
+                    log_eprintln!("MCP 예열 실패: {e}");
                 }
             });
             app.manage(AppState { settings: Mutex::new(settings.clone()), config_path, mcp, rec: Arc::default(), asks: Arc::default(), live: Arc::default(), busy: Arc::default(), index: Arc::default() });
@@ -460,6 +467,8 @@ pub fn run() {
             delete_meeting,
             delete_recording,
             quit::quit_ready,
+            quit::quit_cancel,
+            quit::quit_asking,
             llm_config,
             llm_key::llm_key_status,
             llm_key::llm_key_save,
@@ -489,6 +498,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 app.state::<tray::TrayState>().shutdown(); // 메뉴 막대 시계 타이머를 멈춘다
                 let state = app.state::<AppState>();
+                applog::write(if state.rec.lock().unwrap().is_some() { "app exit while recording: sent stop to the recorder" } else { "app exit" });
                 if let Some(stdin) = state.rec.lock().unwrap().as_mut() {
                     let _ = stdin.write_all(b"stop\n").and_then(|_| stdin.flush());
                 }
@@ -542,17 +552,16 @@ mod tests {
         drop(b);
     }
 
-    #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다
     #[test]
     fn cancel_index_kills_a_running_refresh_and_ignores_an_empty_slot() {
         let slot = IndexSlot::default();
         cancel_index(&slot);
-        let child = Command::new("sleep").arg("30").spawn().unwrap();
+        let child = procs::tests::test_child("sleep").stdout(Stdio::null()).spawn().unwrap();
         let child = Arc::new(Mutex::new(child));
         *slot.lock().unwrap() = Some(child.clone());
         cancel_index(&slot);
         let status = child.lock().unwrap().wait().unwrap();
-        assert!(status.code().is_none(), "신호로 끝났다");
+        assert!(!status.success(), "멈췄다"); // macOS는 신호, Windows는 TerminateProcess
     }
 
     #[test]

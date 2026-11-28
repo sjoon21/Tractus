@@ -155,24 +155,43 @@ export const PRESETS: { id: Preset; label: string; note: string }[] = [
   { id: "required", label: t("필수만 설치"), note: t("텍스트 변환만 됩니다. 나머지 기능은 나중에 하나씩 설치하세요") },
 ];
 
+const REQUIRED_ONLY_NOTE = t("녹음을 텍스트로 바꾸는 데 필요한 모델입니다");
 const STANDARD_EXTRA = ["asr-std", "diarizer", "aligner", "embedding", "voices"];
 const ASR_IDS = ["asr-std", "asr-lite"];
 
 /** 구성 → 모델 ID 목록. 필수만: 목소리 구간 분석 + 변환 엔진 하나(이미 있으면 새로 받지 않고, 없으면 메모리에 맞는 쪽).
- * 표준: 필수 + 변환 엔진 1.7B와 나머지(작은 엔진은 실시간 텍스트 변환용이라 넣지 않는다). 저사양: 작은 엔진 + 참석자 구분 */
+ * 표준: 필수 + 변환 엔진 1.7B와 나머지(작은 엔진은 실시간 텍스트 변환용이라 넣지 않는다). 저사양: 작은 엔진 + 참석자 구분.
+ * 목록(코어 등록 목록, Windows는 vad·asr-std뿐)에 없는 ID는 내지 않는다 (설계 asr-onnx.md 4.4) */
 export function presetIds(preset: Preset, models: ModelRow[], recommendedTrack: string | null | undefined): string[] {
+  const listed = (id: string) => models.some((m) => m.id === id);
   const asrInstalled = models.some((m) => ASR_IDS.includes(m.id) && m.installed);
-  const asr = trackOf(recommendedTrack) === "lite" ? "asr-lite" : "asr-std";
+  const asr = trackOf(recommendedTrack) === "lite" && listed("asr-lite") ? "asr-lite" : "asr-std";
   const required = asrInstalled ? ["vad"] : ["vad", asr];
-  switch (preset) {
-    case "required":
-      return required;
-    case "lite":
-      return ["vad", "asr-lite", "diarizer"];
-    case "standard":
-      return [...new Set([...required, ...STANDARD_EXTRA])];
-  }
+  const ids = preset === "required" ? required : preset === "lite" ? ["vad", "asr-lite", "diarizer"] : [...new Set([...required, ...STANDARD_EXTRA])];
+  return ids.filter(listed);
 }
+
+/** 목록에 맞는 구성 단추: 작은 엔진이 목록에 없으면 저사양을, 표준이 더하는 기능 모델(참석자 구분 등)이 하나도 없으면 표준을 숨긴다.
+ * main: 강조할 단추 (하나만 보이면 그것, 아니면 메모리가 표준을 권할 때 표준) */
+/** 모델 화면의 변환 엔진 배치: 엔진이 하나뿐이면(Windows 미리보기, 설계 asr-onnx.md 4.4) 고를 것이 없어 엔진 고르기·직접 추가를 그리지 않고 그 엔진을 모델 표에 둔다 */
+export function engineLayout<M extends Pick<ModelRow, "engine">>(models: M[]): { engines: M[]; picker: boolean; tableRows: M[] } {
+  const engines = models.filter((m) => m.engine);
+  const single = engines.length === 1;
+  return { engines, picker: !single, tableRows: models.filter((m) => !m.engine || single) };
+}
+
+export function visiblePresets(models: Pick<ModelRow, "id">[], recommendedTrack: string | null | undefined): { presets: typeof PRESETS; main: Preset | null } {
+  const listed = (id: string) => models.some((m) => m.id === id);
+  const shown = PRESETS.filter((p) => (p.id === "lite" ? listed("asr-lite") : p.id === "standard" ? STANDARD_EXTRA.some((id) => !ASR_IDS.includes(id) && listed(id)) : true));
+  // 표준이 없으면 `나머지 기능은 나중에 설치` 안내가 맞지 않는다: 더 받을 기능이 없다
+  const presets = shown.some((p) => p.id === "standard") ? shown : shown.map((p) => (p.id === "required" ? { ...p, note: REQUIRED_ONLY_NOTE } : p));
+  const main = presets.length === 1 ? presets[0].id : presets.some((p) => p.id === "standard") && trackOf(recommendedTrack) === "std" ? "standard" : null;
+  return { presets, main };
+}
+
+/** 메모리가 16 GB 미만인 Windows: 고를 작은 엔진이 없어 막지 않고 알리기만 한다 (설계 asr-onnx.md 4.4, int8 판 최대 6–7 GB) */
+export const MEMORY_WARN_WINDOWS = t("메모리가 16 GB 미만이라 텍스트로 변환하는 동안 다른 앱이 느려질 수 있습니다. 변환 중에는 메모리를 약 7 GB 씁니다.");
+export const memoryWarned = (standardRecommended: boolean | null | undefined, windows: boolean): boolean => windows && standardRecommended === false;
 
 /** 이미 설치된 것은 뺀다. 일부만 받은 것·손상된 것은 다시 받는다. 코어가 모르는 ID는 버린다 */
 export const toInstall = (ids: string[], models: ModelRow[]): string[] => ids.filter((id) => models.some((m) => m.id === id && !m.installed));

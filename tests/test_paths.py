@@ -131,3 +131,22 @@ def test_tool_bin_windows_layout_and_build_hint(tmp_path, monkeypatch):
     custom = tmp_path / "custom" / "tractus-rec.exe"
     monkeypatch.setenv("TRACTUS_REC_BIN", str(custom))
     assert doctor.recorder_bin() == custom
+
+
+def test_tool_bin_windows_installer_layout(tmp_path, monkeypatch):
+    """W5: 설치본은 <설치 폴더>/runtime/python.exe → <설치 폴더>/bin/tractus-rec.exe (scripts/build_windows_bundle.sh)."""
+    from tractus import doctor, platform_compat
+
+    monkeypatch.setattr(platform_compat, "WINDOWS", True)
+    monkeypatch.delenv("TRACTUS_REC_BIN", raising=False)
+    monkeypatch.setattr(paths, "REPO_ROOT", tmp_path / "no-repo")
+    inst = tmp_path / "Tractus"
+    monkeypatch.setattr(paths.sys, "executable", str(inst / "runtime/python.exe"))
+    rec = inst / "bin/tractus-rec.exe"
+    assert doctor.recorder_bin() == rec  # 아직 없어도 안내용으로 설치본 경로
+    rec.parent.mkdir(parents=True)
+    rec.write_bytes(b"")
+    assert doctor.recorder_bin() == rec
+    # runtime\ 밖의 파이썬(사용자 설치 등)은 설치본으로 보지 않는다
+    monkeypatch.setattr(paths.sys, "executable", str(inst / "python.exe"))
+    assert doctor.recorder_bin() == tmp_path / "no-repo/recorder/win/target/release/tractus-rec.exe"

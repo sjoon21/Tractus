@@ -345,7 +345,7 @@ ONNX_REPOS = frozenset(m.repo for m in _windows_models() if m.engine)
 
 - **`level`/`ONE_OF`:** Windows 변환 엔진은 하나뿐이라 `asr-std`는 그냥 `required`다. `one_of`를 달면 화면에 `필수 (엔진 중 하나)`로 보여 고를 것이 있는 것처럼 읽힌다. `vad`도 `required`다. 앱 `engineSummary`는 `one_of` 모델이 없으면 요약 줄을 그리지 않고(옛 코어와 같은 모양), `asr-std` 행이 `필수`로 보인다.
 - **`files`:** 2.1절 첫 표 그대로이고, 하위 폴더는 없다. `_inspect_files`가 크기를 대조한다. 받기는 `snapshot_download(allow_patterns=list(m.files))`라 파일 종류와 상관없이 그대로 돈다.
-- **`usable`** (`:366-374`): 고친다. 대체 갈래는 `config.json`이 있고 `model.safetensors`가 없고 받다 만 파일이 없으면 True다. ONNX 폴더에는 `model.safetensors`가 원래 없으므로, `config.json`만 있고 `decoder_weights.int4.data`가 빠진 폴더도 쓸 수 있다고 본다. 그러면 `engines.local_model`(engines.py:47)이 통과시키고 `model_missing` 대신 ORT 세션 오류로 끝난다. 대체 갈래에 `"model.safetensors" in m.files` 조건을 더한다. 지금 Mac의 hf 항목은 모두 `files`에 `model.safetensors`가 있어 Mac 동작은 같다.
+- **`usable`** (`:366-374`): 고친다. 대체 갈래는 `config.json`이 있고 `model.safetensors`가 없고 받다 만 파일이 없으면 True다. ONNX 폴더에는 `model.safetensors`가 원래 없으므로, `config.json`만 있고 `decoder_weights.int4.data`가 빠진 폴더도 쓸 수 있다고 본다. 그러면 `engines.local_model`(engines.py:47)이 통과시키고 `model_missing` 대신 ORT 세션 오류로 끝난다. 대체 갈래를 `.onnx` 파일이 든 모델(Windows ONNX 판)에서는 닫는다. 처음 안의 `"model.safetensors" in m.files` 조건은 Mac에서 직접 추가한 `.npz` 엔진까지 막아(리비전만 바뀐 다시 추가에서 받아 둔 가중치를 못 씀) 이렇게 좁혔다. Mac 등록 모델·직접 추가 엔진의 동작은 같다(`test_a_custom_engine_without_model_safetensors_stays_usable_with_a_stale_marker`).
 - **`models prune`:** `unregistered`의 "알려진 폴더"를 두 목록(`_mac_models()`·`_windows_models()`)의 `local_dir` 합집합으로 만든다. 그래야 두 운영체제가 모델 폴더를 함께 써도 서로의 폴더를 지우지 않는다. 등록 전(5번 PR 전) Mac의 개발용 ONNX 폴더는 여전히 지워진다(7절 경고).
 - **`install_hint`:** `registry.install_hint`가 저장소·리비전에서 문구를 만들므로 그대로다.
 - **소개 문구:** Windows `asr-std` 설명은 Mac 문구를 쓰지 않는다. 실시간 텍스트 변환·0.6B를 말하지 않고, 변환 중 메모리를 많이 쓴다는 것(8.6절 최대 6–7GB)을 적는다.
@@ -359,7 +359,7 @@ ONNX_REPOS = frozenset(m.repo for m in _windows_models() if m.engine)
 - **규칙:** `capability_status`는 기능이 요구하는 모델 ID가 등록 목록(`_BY_ID`)에 없으면 `missing=["platform"]`을 넣는다. Windows 기능 목록을 따로 적지 않으므로 플랫폼 판별은 목록 고르기 한 곳에 남는다. Windows에서 `diarize`·`diarize-many`·`align`·`smart-search`·`voices`가 이렇게 잠긴다.
 - **`live`도 같은 규칙으로 잠긴다.** 요구 모델 `asr-lite`가 Windows 목록에 없기 때문이다. 처음 안의 `Capability.mac_only`는 필요 없다. 0.6B ONNX 판이 품질 기준을 넘고 확정 지연을 잰 뒤에 연다(9절 6번).
 - **`platform`은 다른 이유보다 먼저 본다.** `capability_status`는 `platform`이면 `memory`·다른 모델을 `missing`에 더하지 않는다. 앱 `caps.ts` `decide`도 `platform`을 맨 앞에서 가른다. 지금 `live` 갈래는 `memory`를 먼저 보고 `asr-lite`가 없으면 `모델 화면 열기`로 안내하므로, 그대로 두면 받을 수 없는 모델로 보낸다.
-- **`fix_command("platform")`:** 지금은 `tractus models download platform`이라는 없는 명령으로 떨어진다. `platform`이면 이유 문구("Windows 미리보기에서는 아직 쓸 수 없습니다" 등, WORDS.md)를 돌려준다. 앱은 "모델 화면 열기" 대신 이유를 보인다(README W5). 새 `missing` 값이므로 앱 `lib.ts`·WORDS.md·docs/desktop.md 표를 함께 고친다.
+- **`fix_command("platform")`:** 지금은 `tractus models download platform`이라는 없는 명령으로 떨어진다. `platform`이면 이유 문구 `Windows 미리보기에서는 아직 쓸 수 없는 기능입니다.`(WORDS.md §4.7, 코어 `PLATFORM_LOCKED`·앱 `ERROR_TEXT.platform`이 같은 문장)를 돌려준다. 앱은 "모델 화면 열기" 대신 이유를 보인다(README W5). 새 `missing` 값이므로 앱 `lib.ts`·WORDS.md·docs/desktop.md 표를 함께 고친다.
 - **`convert`:** `(vad,)` + `engine`이 있는 모델이고, 그대로다. 필수 모델(VAD + 변환 엔진 하나)과 ffmpeg만으로 변환 → 요약이 돌아야 한다는 규칙도 Windows에서 그대로 지킨다.
 - 시험은 `_BY_ID`를 Windows 목록으로 바꿔 끼우고 `capability_status`를 부른다.
 
@@ -373,9 +373,9 @@ ONNX_REPOS = frozenset(m.repo for m in _windows_models() if m.engine)
 그래서 파이프라인이 모델을 찾기 전에 가른다.
 
 - `_new_job`·`_run`에서 `registry.find("diarizer")`·`find("voices")`·`find("aligner")`가 None인 단계는 부르지 않는다(`_diarize`·`_suggest_voices`·`_align`).
-- 건너뛴 단계를 묶어 경고 하나(`platform`)를 낸다. 화자 없이, `words: null`로 저장한다.
+- 건너뛴 단계를 묶어 경고 하나(`platform`)를 낸다. 화자 없이, `words: null`로 저장한다. 문장은 건너뛴 단계만 이름을 든다(`참석자 구분`·`단어 싱크`·`참석자 구분과 단어 싱크`, 영어는 수에 맞춰 isn't/aren't). 앱은 코드 문장 없이 이 코어 문장을 그대로 보인다.
 - `install_hint`가 없는 ID를 받게 하지는 않는다. 오류를 숨길 뿐이다.
-- 잠긴 기능의 CLI 명령(`align`·`voices enroll|match`)도 같은 검사로 `common.fail(code="platform", exit_code=2)`한다.
+- 잠긴 기능의 CLI 명령(`align`·`voices enroll|match`·`live`)은 모델 하나가 아니라 기능 잠금(`registry.capability_locked`, 4.2절과 같은 판정)으로 `common.fail(code="platform", exit_code=2)`한다. 그래서 개발용 `live --engine std`도 목록에 있는 `asr-std`로 잠금을 지나가지 않는다.
 - 시험: `_windows_models()`로 바꿔 끼우고 diarizer·aligner 폴더 없이 `transcribe`를 돌리면 종료 코드 0, 경고 코드는 `platform` 하나다.
 
 ### 4.4 권하는 엔진·모델 구성 (2026-11-26)
@@ -400,7 +400,7 @@ Windows 목록에는 변환 엔진이 `asr-std` 하나뿐이다. 그래서 `asr-
 | 앱 `checkupRows.ts` | `변환 엔진(표준·가벼운 것 중 하나)` | 없는 선택지를 말한다 | 목록에 엔진이 하나면 `변환 엔진` |
 
 - **메모리 경고:** int8 판은 Mac에서 최대 6.1–7.2GB를 썼다(8.6절). Mac의 16GB 기준은 1.7B와 0.6B를 고르는 데 쓰는 값이라, Windows에서는 고를 엔진이 없다. 대신 설치된 메모리(`GetPhysicallyInstalledSystemMemory`, 4.1절)가 16GB 미만이면 **막지 않고 경고한다**. 경고는 모델 화면의 구성 단추 설명과 점검 화면의 메모리 행에 나온다(`doctor.system`, Windows 갈래는 #135). 막을 하한을 둘지, 그 값은 W4 측정 뒤 소유자가 정한다(11절 12번).
-- **화면 문구:** `자동 (이 Mac에 맞게)`, `ONBOARD_MODELS`의 `이 Mac에만 저장됩니다`, 구성 설명의 `메모리 16 GB 이상 권장`처럼 엔진·모델 화면에 있는 Mac 문구는 이 PR에서 운영체제에 맞게 고친다(WORDS.md에 Windows 표기를 더한다). 앱 전체의 다른 `이 Mac` 문구(목소리·테마·패널 등)는 W5 문구 정리에서 따로 한다.
+- **화면 문구:** `자동 (이 Mac에 맞게)`, `ONBOARD_MODELS`의 `이 Mac에만 저장됩니다`, 구성 설명의 `메모리 16 GB 이상 권장`처럼 엔진·모델 화면에 있는 Mac 문구를 포함해 화면의 `이 Mac`·`메뉴 막대`·`⌘` 같은 말은 Windows에서 화면에 내기 직전에 바꾼다(v3.152, `platform.forOs`, WORDS.md §8). `t()` 키는 macOS 문구 그대로다.
 - **고치지 않는 것:** `asr_engine` 설정에 목록에 없는 ID(`asr-lite`)가 있으면 `choose_asr`가 `BadParameter`로 끝난다. Windows 설정 폴더(`%APPDATA%`)는 Mac과 따로라 새 설치에서는 생기지 않는다. 설정을 옮겨 온 사람이 생기면 그때 `asr_engine_missing` 경고 후 기본 엔진으로 바꾼다.
 - **`scripts/install.sh --models`:** macOS 전용 스크립트라 그대로다. Windows 설치본(W5)은 모델을 담지 않고, 첫 실행 때 앱의 모델 화면(`필수만 설치`)으로 받는다.
 
@@ -435,7 +435,7 @@ dependencies = [
     "huggingface-hub>=1.33.0",  # 지금은 mlx-audio를 거쳐서만 들어온다. W5에서 mlx-audio에 darwin 표지를 달아도
     "numpy>=2.5.3",             # Windows의 모델 받기(models_install)·변환·VAD가 깨지지 않게 직접 의존성으로 올린다
     "tokenizers>=0.23.2",       # (세 판 모두 지금 잠금의 판이라 Mac 번들은 바뀌지 않는다)
-    "onnxruntime>=1.32; sys_platform == 'win32'",   # Windows 변환·VAD 전용. macOS 번들은 onnx_mlx 그대로 (v3.99)
+    "onnxruntime==1.32.0; sys_platform == 'win32'",   # Windows 변환·VAD 전용. macOS 번들은 onnx_mlx 그대로 (v3.99)
 ]
 ```
 
@@ -732,6 +732,8 @@ uv run --with onnxruntime==1.32.0 pytest -m slow tests/test_asr_onnx.py
 | 6 | 나중 | UNIVA ONNX 변환·업로드·측정(2.3절), 병합 디코더 측정, 0.6B 실시간 자막(`live_sim` Windows판), DirectML | — |
 
 1·2번은 Mac에서 바로 할 수 있고 서로 기다리지 않는다. 4·5번은 3번 결과를 기다린다. Windows 번들(W5)은 5번 뒤에 하고, 이때 mlx `darwin` 표지와 Windows 모듈 목록을 다룬다.
+
+**진행 (2026-11-27, ARCHITECTURE v3.151·v3.153):** 4·5번의 코어 내용은 한 브랜치 `windows/registry-onnx`(v3.151)에, 앱 구성 단추·엔진 고르기·`caps.ts`·메모리 경고 화면은 `windows/ui-registry-locks`(v3.153)에 했고, 두 브랜치를 0.6.0 2차 묶음 `windows/v060-batch2`에 함께 합쳤다. main에 넣는 것은 소유자가 3번을 러너 측정으로 대신할지 정한 뒤다. 구현에서 정한 것: 경고 `platform`은 변환 한 번에 하나이고 이어하기에서는 단어 싱크만 센다, 잠긴 기능은 모델의 `needed_by`에서 뺀다, 직접 추가 엔진은 `CUSTOM_SUPPORTED` 한 값으로 끈다, 시험은 `conftest.use_models`로 목록을 바꿔 끼운다.
 
 ## 10. 위험
 

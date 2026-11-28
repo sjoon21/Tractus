@@ -1,6 +1,7 @@
 //! 노트를 고치는 짧은 명령: 메모·제목·대화 내용·참석자·AI 다듬기 제안·녹음 중 메모, 그리고 내보내기.
 //! 쓰기는 모두 코어 CLI가 하고(앱은 인수와 stdin JSON만 만든다), 도는 동안 노트를 쓰는 중으로 표시한다(`BusyGuard`).
 
+use crate::applog::log_eprintln;
 use crate::i18n::{t, tv};
 use super::{blocking, is_meeting_id, is_tagged, meetings, run_tractus, stdout_json, summaries, AppState, BusyGuard};
 use serde::{Deserialize, Serialize};
@@ -283,7 +284,7 @@ pub async fn export_meeting(state: State<'_, AppState>, id: String, format: Stri
         let path = v["path"].as_str().ok_or_else(|| t("내보낸 파일 위치를 알 수 없습니다"))?.to_string();
         // Finder 보여 주기가 실패해도 파일은 이미 저장됐다
         if let Err(e) = tauri_plugin_opener::reveal_item_in_dir(&path) {
-            eprintln!("Finder에서 보여 주지 못했습니다: {e}");
+            log_eprintln!("Finder에서 보여 주지 못했습니다: {e}");
         }
         Ok(path)
     })

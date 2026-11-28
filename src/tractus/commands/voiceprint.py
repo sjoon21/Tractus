@@ -95,6 +95,7 @@ def voices_enroll(
     consent: bool = typer.Option(False, "--consent", help="본인이거나 녹음·등록에 동의를 받았음 (필수)"),
 ) -> None:
     """화자의 목소리를 기억하고 그 이름으로 확정한다(= speakers rename + 등록). stdout: {"person_id", "name", "samples"}"""
+    common.require_registered("voices")
     if not consent:
         common.console.print(f"[red]{escape(CONSENT_MESSAGE)}[/red]")
         raise typer.Exit(2)
@@ -173,6 +174,7 @@ def voices_match(
     """기존 노트의 목소리 제안을 다시 계산한다. 이름을 확정한 화자와 그 이름의 사람은 건너뛴다.
     stdout: {"suggested": N} (--progress-json이면 같은 값이 done 이벤트에 들어간다)"""
     common.Events.enabled = progress_json
+    common.require_registered("voices")
     try:
         d = common.resolve_meeting(meeting)
     except typer.BadParameter as e:

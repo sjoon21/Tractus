@@ -11,10 +11,26 @@ import dataEn from "./data/meetings-en.json";
 import doctorEn from "./data/doctor-en.json";
 import modelsEn from "./data/models-en.json";
 import templatesEn from "./data/templates-en.json";
+import { isWindows } from "../platform";
 
 const EN = new URLSearchParams(location.search).get("lang") === "en";
 const UPDATE = new URLSearchParams(location.search).get("update") === "1";
-const [data, doctor, models, templates] = EN ? [dataEn, doctorEn, modelsEn, templatesEn] : [dataKo, doctorKo, modelsKo, templatesKo];
+const [data, macDoctor, macModels, templates] = EN ? [dataEn, doctorEn, modelsEn, templatesEn] : [dataKo, doctorKo, modelsKo, templatesKo];
+// `?os=windows`: Windows 미리보기 등록 목록 모양 (설계 asr-onnx.md 4.2·4.4: vad·asr-std뿐, 다른 기능은 platform 잠금, 메모리 16 GB 미만)
+const WIN_IDS = ["vad", "asr-std"];
+const winModel = (m: T) => (m.id === "asr-std" ? { ...m, level_note: null } : m);
+const [doctor, models] = isWindows()
+  ? [
+      {
+        ...macDoctor,
+        system: { ...macDoctor.system, arch: "AMD64", macos_version: "", memory_gb: 15.7, standard_recommended: false },
+        tools: { ...macDoctor.tools, brew: { found: false, path: null, version: null }, diar_helper: { found: false, path: null } },
+        models: macDoctor.models.filter((m) => WIN_IDS.includes(m.id)).map(winModel),
+        capabilities: macDoctor.capabilities.map((c) => (["record", "convert"].includes(c.id) ? c : { ...c, ready: false, missing: ["platform"] })),
+      },
+      { ...macModels, models: (macModels.models as T[]).filter((m) => WIN_IDS.includes(m.id)).map(winModel) },
+    ]
+  : [macDoctor, macModels];
 const Q3 = EN ? "Q3" : "3분기"; // 예시 노트(3분기 예산 회의)를 찾는 제목 조각
 const PEOPLE = EN ? ["Daniel Kim", "Sophie Park", "Ryan Choi", "Hannah Jung"] : ["김지훈", "박소연", "최도윤", "정하은"];
 

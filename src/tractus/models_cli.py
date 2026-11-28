@@ -108,6 +108,8 @@ def register(app: typer.Typer) -> None:
     ) -> None:
         """변환 엔진을 직접 추가한다 (받지는 않는다: 이어서 `tractus models download <ID>`). 네트워크로 파일 목록만 읽는다.
         → {"id", "repo", "revision", "engine", "size_bytes", "license"}. 같은 저장소를 다시 추가하면 리비전을 새로 고친다."""
+        if not reg.CUSTOM_SUPPORTED:
+            _error(t("변환 엔진 직접 추가는 Windows 미리보기에서 아직 쓸 수 없습니다"), "unsupported_platform", exit_code=2)
         try:
             m = inst.add_custom(repo, models_dir(), revision)
         except inst.ModelError as e:

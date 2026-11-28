@@ -45,6 +45,10 @@ jobs:
           choco install ffmpeg --version 9.0.2 -y --no-progress  # 고정: 커뮤니티 패키지의 새 빌드가 말없이 바뀌지 않게
           ffmpeg -version | head -n 1
       - run: uv sync --locked
+      - name: 라이선스 (win32 전용 의존성 onnxruntime·flatbuffers는 macOS CI가 설치하지 않아 여기서만 보인다)
+        run: uv run python scripts/check_licenses.py --only py
+        env:
+          PYTHONIOENCODING: utf-8 # 스크립트가 한국어를 찍는다: 러너 기본 cp1252에서는 UnicodeEncodeError
       - name: 불러오기 (CLI·MCP)
         run: uv run python -c "import tractus.cli, tractus.mcp_server"
       - name: 고른 테스트 (반드시 통과)

@@ -40,7 +40,7 @@ struct Conn {
 
 impl Drop for Conn {
     fn drop(&mut self) {
-        let _ = self.child.kill();
+        crate::procs::kill_tree(&mut self.child);
         let _ = self.child.wait();
     }
 }
@@ -105,7 +105,7 @@ fn connect(spec: Spawn, id: u64) -> Result<Conn, String> {
     if let Some(cwd) = &spec.cwd {
         cmd.current_dir(cwd);
     }
-    let mut child = cmd.spawn().map_err(|e| tv("스마트 검색을 시작하지 못했습니다 ({path})\n{e}", &[("path", spec.program.display().to_string()), ("e", e.to_string())]))?;
+    let mut child = crate::procs::spawn(&mut cmd).map_err(|e| tv("스마트 검색을 시작하지 못했습니다 ({path})\n{e}", &[("path", spec.program.display().to_string()), ("e", e.to_string())]))?;
     let stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let pending: Pending = Arc::default();

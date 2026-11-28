@@ -248,6 +248,10 @@ pub struct System {
     pub memory_gb: Option<f64>,
     pub meets_min: Option<bool>,
     pub disk_free_bytes: Option<u64>,
+    /// 메모리 16 GB 이상인가 (Windows 화면의 메모리 경고, 옛 코어는 없다)
+    pub standard_recommended: Option<bool>,
+    /// 최소 사양에 못 미치는 이유 코드 (not_apple_silicon·macos_too_old·unsupported_arch·windows_too_old·memory_low)
+    pub problems: Vec<String>,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -333,6 +337,8 @@ fn parse_doctor(out: &str) -> Result<Doctor, String> {
             memory_gb: sys.get("memory_gb").and_then(Value::as_f64).filter(|f| f.is_finite() && *f >= 0.0),
             meets_min: bool_of(sys, "meets_min"),
             disk_free_bytes: bytes_of(sys, "disk_free_bytes"),
+            standard_recommended: bool_of(sys, "standard_recommended"),
+            problems: strings_of(sys, "problems"),
         },
         tools: Tools {
             ffmpeg: tool_of(tools.get("ffmpeg")),
@@ -746,6 +752,18 @@ mod tests {
         assert_eq!((d.system.memory_gb, d.recommended_track.as_deref(), d.tools.diar_helper.found), (Some(16.0), Some("standard"), false));
         assert_eq!(d.models[0], ModelSummary { id: "vad".into(), state: "missing".into(), installed: false });
         assert_eq!((d.capabilities[1].ready, d.capabilities[1].missing.len()), (false, 2));
+        assert_eq!((d.system.standard_recommended, d.system.problems.len()), (Some(true), 0));
+    }
+
+    /// Windows 화면의 점검 행·메모리 경고가 읽는 두 키는 화면까지 간다 (예전에는 Rust가 버려 늘 undefined였다)
+    #[test]
+    fn doctor_passes_problems_and_memory_flag_to_the_screen() {
+        let doctor = r#"{"system": {"arch": "AMD64", "macos_version": "", "memory_gb": 7.8, "meets_min": false, "problems": ["windows_too_old", "memory_low"], "standard_recommended": false}, "tools": {}, "models": [], "capabilities": []}"#;
+        let v = serde_json::to_value(parse_doctor(doctor).unwrap()).unwrap();
+        assert_eq!(v["system"]["problems"], serde_json::json!(["windows_too_old", "memory_low"]));
+        assert_eq!(v["system"]["standard_recommended"], serde_json::json!(false));
+        let old = serde_json::to_value(parse_doctor(r#"{"system": {}, "tools": {}, "models": [], "capabilities": []}"#).unwrap()).unwrap();
+        assert_eq!((old["system"]["problems"].clone(), old["system"]["standard_recommended"].clone()), (serde_json::json!([]), serde_json::Value::Null)); // 옛 코어
     }
 
     /// 실제 코어(.venv)를 앱 명령 그대로 띄운다. 모델 폴더·노트 폴더는 임시 폴더라 실제 데이터를 건드리지 않는다: `cargo test -- --ignored real_core`
@@ -944,6 +962,19 @@ mod tests {
         assert_eq!((rest[0]["event"].as_str(), rest[1]["event"].as_str(), rest[1]["code"].as_i64()), (Some("done"), Some("exit"), Some(0)));
         assert!(slot.lock().unwrap().is_none());
         assert!(!stop(&slot, Duration::from_secs(30))); // 받는 중이 아니면 아무 일도 없다
+    }
+
+    /// 모든 OS에서: 받는 중에 멈추면 exit가 가고 칸이 빈다 (Windows는 SIGTERM 대신 taskkill /T)
+    #[test]
+    fn stop_ends_a_running_download_on_every_platform() {
+        let slot = Slot::default();
+        let (tx, rx) = channel();
+        start(&slot, crate::procs::tests::test_child("sleep"), "J", move |v| tx.send(v).unwrap()).unwrap();
+        assert_eq!(rx.recv_timeout(Duration::from_secs(20)).unwrap()["stage"], "sleep");
+        assert!(stop(&slot, Duration::from_millis(300)));
+        let exit = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(exit["event"], "exit");
+        assert!(slot.lock().unwrap().is_none());
     }
 
     #[cfg(unix)] // sh 스크립트·유닉스 신호를 쓴다

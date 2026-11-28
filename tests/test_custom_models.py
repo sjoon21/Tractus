@@ -131,3 +131,17 @@ def test_models_add_cli_prints_the_entry(root, monkeypatch):
     listed = json.loads(CliRunner().invoke(cli.app, ["models", "list", "--json"]).stdout)
     row = next(x for x in listed["models"] if x["id"] == "custom-buzzasr-korean")
     assert (row["custom"], row["engine"], row["state"], row["needed_by"]) == (True, "whisper", "missing", ["convert"])
+
+
+def test_a_custom_engine_without_model_safetensors_stays_usable_with_a_stale_marker(root):
+    """직접 추가한 .npz 엔진을 같은 저장소로 다시 추가해 리비전만 바뀌어도(설치 표시가 옛 것) 받아 둔 가중치로 계속 변환한다 (Mac 동작 그대로)."""
+    (root / reg.CUSTOM_FILE).write_text(json.dumps({"models": [{"id": "custom-npz", "repo": "a/npz", "revision": "new", "engine": "whisper",
+                                                                "files": {"config.json": 2, "weights.npz": 9, "tokenizer.json": 2}}]}))
+    d = root / "custom-npz"
+    d.mkdir()
+    (d / "config.json").write_text("{}")
+    (d / "weights.npz").write_bytes(b"0" * 9)
+    (d / "tokenizer.json").write_text("{}")
+    (d / reg.MARKER).write_text(json.dumps({"id": "custom-npz", "revision": "old"}))
+    assert reg.inspect("custom-npz", root).state == "partial"
+    assert reg.usable("custom-npz", root)

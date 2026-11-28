@@ -1,6 +1,7 @@
 //! 오래 걸리는 작업: 변환·요약·단어 싱크·가져오기("job"), 질문("ask"), 검색 정보 갱신.
 //! 도는 동안 대상을 쓰는 중으로 표시하고(`hold`), 끝나면(exit 이벤트) 푼다.
 
+use crate::applog::log_eprintln;
 use crate::i18n::tv;
 use super::{ask, attach, blocking, cancel_index, hold, is_busy, is_meeting_id, last_error_line, meetings, procs, release, AppState, BusyGuard};
 use serde_json::{json, Value};
@@ -125,7 +126,7 @@ pub fn ask_start(
     // 코어는 stdin을 끝까지 읽고 시작한다. 파이썬이 뜨는 동안 UI 스레드가 파이프에 막히지 않게 따로 쓰고 닫는다
     std::thread::spawn(move || {
         if let Err(e) = stdin.write_all(input.as_bytes()) {
-            eprintln!("질문을 넘기지 못했습니다: {e}"); // 코어가 입력 오류로 끝나고 exit가 간다
+            log_eprintln!("질문을 넘기지 못했습니다: {e}"); // 코어가 입력 오류로 끝나고 exit가 간다
         }
     });
     Ok(())
@@ -136,7 +137,7 @@ pub fn ask_start(
 pub fn ask_cancel(state: State<'_, AppState>, job: String) {
     let child = state.asks.lock().unwrap().get(&job).cloned();
     if let Some(c) = child {
-        let _ = c.lock().unwrap().kill();
+        procs::kill_tree(&mut c.lock().unwrap());
     }
 }
 

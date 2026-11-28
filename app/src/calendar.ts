@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api, type CalendarEvent } from "./api";
 import { clock, t } from "./i18n";
+import { isWindows } from "./platform";
 
 export const POLL_MS = 60_000;
 export const CAL_SECTION = t("캘린더");
@@ -40,6 +41,7 @@ export function attendeeLine(names: string[], show = 2): string | null {
 export function useNextEvent(): CalendarEvent | null {
   const [ev, setEv] = useState<CalendarEvent | null>(null);
   useEffect(() => {
+    if (isWindows()) return; // 캘린더는 macOS(EventKit)만 읽는다
     let on = true;
     const load = () => void api.calendarNext().then((list) => on && setEv(list[0] ?? null), () => on && setEv(null));
     load();

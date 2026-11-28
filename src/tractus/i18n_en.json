@@ -192,6 +192,7 @@
  "메모는 {n}줄까지 쓸 수 있습니다.": "Memos can be up to {n} lines.",
  "메모는 자막 파일로 내보낼 수 없습니다.": "Memos can’t be exported as subtitle files.",
  "메모리 16GB 이상인 Mac에서만 켤 수 있습니다": "Available only on Macs with 16 GB of memory or more",
+ "메모리 16GB 이상인 컴퓨터에서만 켤 수 있습니다": "Available only on computers with 16 GB of memory or more",
  "메모리를 덜 쓰는 가벼운 엔진입니다. 실시간 텍스트 변환에는 이 엔진이 따로 필요합니다.": "A lighter engine that uses less memory. Live transcription needs this engine separately.",
  "메모에 없던 내용": "Not in your memo",
  "메모에는 참석자를 지정할 수 없습니다.": "Memos don’t have speakers.",
@@ -305,6 +306,7 @@
   "Delete the {n} folders above ({size})?"
  ],
  "음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 brew install ffmpeg로 설치하세요.": "ffmpeg, which reads audio files, is missing. Install it with brew install ffmpeg in Terminal.",
+ "음성 파일을 읽는 데 필요한 ffmpeg가 없습니다. 터미널에서 winget install Gyan.FFmpeg로 설치하세요.": "ffmpeg, which reads audio files, is missing. Install it with winget install Gyan.FFmpeg in Terminal.",
  "음성 파일을 읽지 못했습니다: {error}": "Couldn’t read the audio: {error}",
  "이 Python의 sqlite3는 확장 로딩을 지원하지 않습니다. uv가 설치한 Python으로 실행하세요": "This Python’s sqlite3 doesn’t support loading extensions. Run it with the Python that uv installed",
  "이 노트에는 회의록이 없습니다": "This note has no minutes",
@@ -421,5 +423,15 @@
  "변환 엔진 (한국어 파인튜닝)": "Transcription engine (Korean fine-tune)",
  "Qwen3-ASR 1.7B를 한국어로 더 학습한 엔진입니다. 간이 점검만 했습니다. 사전 단어를 쓸 수 있습니다.": "Qwen3-ASR 1.7B trained further on Korean. It has only had a quick check. Custom vocabulary works.",
  "Qwen3-ASR 1.7B 한국어 (8bit 양자화)": "Qwen3-ASR 1.7B Korean (8-bit quantized)",
- "일정 정보가 올바르지 않습니다": "The event details are invalid"
+ "일정 정보가 올바르지 않습니다": "The event details are invalid",
+ "istupakov (ONNX 변환본)": "istupakov (ONNX conversion)",
+ "Tractus (ONNX 변환본)": "Tractus (ONNX conversion)",
+ "변환 엔진": "Transcription engine",
+ "변환하는 동안 메모리를 많이 씁니다 (최대 약 7GB). 메모리 16GB 이상을 권합니다.": "Uses a lot of memory while transcribing (up to about 7 GB). 16 GB of memory or more recommended.",
+ "Qwen3-ASR 1.7B (8bit 양자화, ONNX)": "Qwen3-ASR 1.7B (8-bit quantized, ONNX)",
+ "Windows 미리보기에서는 아직 쓸 수 없는 기능입니다.": "This feature isn’t available in the Windows preview yet.",
+ "저사양 구성(lite)은 Windows 미리보기에서 쓸 수 없습니다. required를 쓰세요": "The low-spec set (lite) isn’t available in the Windows preview. Use required",
+ "Windows 미리보기에서는 {steps}을(를) 아직 쓸 수 없어 이 단계 없이 변환합니다": ["{steps} isn’t available in the Windows preview yet, so transcribing without it", "{steps} aren’t available in the Windows preview yet, so transcribing without them"],
+ "참석자 구분과 단어 싱크": "Speaker detection and word sync",
+ "변환 엔진 직접 추가는 Windows 미리보기에서 아직 쓸 수 없습니다": "Adding your own transcription engine isn’t available in the Windows preview yet"
 }

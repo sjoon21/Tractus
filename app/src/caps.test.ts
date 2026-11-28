@@ -98,7 +98,7 @@ describe("decide: 기능별 이유와 고치는 길", () => {
     for (const id of ids.filter((i) => i !== "record")) {
       const d = why(id, []);
       expect(d.reason.length).toBeGreaterThan(10);
-      expect(d.fix.label.length).toBeGreaterThan(1);
+      expect(d.fix?.label.length).toBeGreaterThan(1);
     }
   });
 });
@@ -180,5 +180,35 @@ describe("검색 안내·변환 엔진 이름·점검 간격", () => {
     expect(focusRefreshDue(0, 6000, false)).toBe(true);
     expect(focusRefreshDue(4000, 6000, false)).toBe(false);
     expect(focusRefreshDue(0, 60000, true)).toBe(false);
+  });
+});
+
+describe("Windows 미리보기: 등록 목록에 없는 기능 (platform)", () => {
+  test("platform은 메모리·모델보다 먼저, 고치는 길 없이 이유만", () => {
+    for (const id of ["live", "diarize", "diarize-many", "align", "smart-search", "voices"] as const) {
+      const d = decide(report([{ id, missing: ["platform", "memory", "asr-lite"] }]), id);
+      if (d.ok) throw new Error("막혀야 한다");
+      expect(d.reason).toContain("Windows 미리보기");
+      expect(d.fix).toBeNull();
+    }
+  });
+  test("참석자 구분 안내는 받을 수 없으면 보이지 않는다", () => {
+    const d = decide(report([{ id: "diarize", missing: ["platform"] }]), "diarize");
+    expect(speakerHintVisible({ diarize: d, isRecording: true, segments: 3, speakers: 0, dismissed: false })).toBe(false);
+  });
+  test("경고·오류 코드 platform·unsupported_platform에 문장이 있다", () => {
+    // 경고는 건너뛴 단계를 이름으로 드는 코어 문장 그대로다 (WORDS.md §4.7 `platform`)
+    const core = "Windows 미리보기에서는 단어 싱크을(를) 아직 쓸 수 없어 이 단계 없이 변환합니다";
+    expect(WARNING_TEXT.platform).toBeUndefined();
+    expect(warningText({ code: "platform", message: core })).toBe(core);
+    expect(ERROR_TEXT.platform).toContain("Windows 미리보기");
+    expect(ERROR_TEXT.unsupported_platform).toContain("Windows 미리보기");
+  });
+  test("macOS의 live는 예전 순서 그대로 (메모리 → 작은 엔진)", () => {
+    const mem = decide(report([{ id: "live", missing: ["memory", "asr-lite"] }]), "live");
+    const lite = decide(report([{ id: "live", missing: ["asr-lite"] }]), "live");
+    if (mem.ok || lite.ok) throw new Error("막혀야 한다");
+    expect(mem.fix).toEqual(FIX_CHECKUP);
+    expect(lite.fix).toEqual(FIX_MODELS);
   });
 });

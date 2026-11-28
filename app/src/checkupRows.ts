@@ -3,9 +3,10 @@
 // 점검은 앱을 막지 않는다: blocked여도 노트 쓰기·검색·녹음 보관은 된다.
 import type { DoctorReport, Fix } from "./caps";
 import { FIX_MODELS } from "./caps";
-import { fmtBytes, type ModelRow, type ModelsList } from "./models";
+import { fmtBytes, MEMORY_WARN_WINDOWS, memoryWarned, type ModelRow, type ModelsList } from "./models";
 import { binView, BROWSE, HOME_PICK, REVERT_AUTO, type BinKind } from "./paths";
 import { t } from "./i18n";
+import { forOs, isWindows } from "./platform";
 
 export type RowStatus = "ok" | "warn" | "blocked" | "info";
 
@@ -26,7 +27,7 @@ export interface CheckupSection {
   rows: CheckupRow[];
 }
 
-export const BREW_FFMPEG = "brew install ffmpeg";
+export const BREW_FFMPEG = forOs("brew install ffmpeg"); // Windows는 winget
 export const MIN_MACOS = [14, 4] as const;
 export const MIN_MEMORY_GB = 8;
 export const STANDARD_MEMORY_GB = 16;
@@ -52,28 +53,42 @@ export function macosAtLeast(version: string | null | undefined, min: readonly [
 
 const unknown = (id: string, label: string): CheckupRow => ({ id, label, status: "warn", detail: t("읽지 못했습니다. 아래 ‘다시 확인’을 눌러 보세요.") });
 
-function systemRows(report: DoctorReport | null, models: ModelsList | null): CheckupRow[] {
+function systemRows(report: DoctorReport | null, models: ModelsList | null, windows: boolean): CheckupRow[] {
   const sys = report?.doctor?.system;
   if (!sys) return [unknown("system", t("시스템"))];
   const rows: CheckupRow[] = [];
   const arch = sys.arch;
-  rows.push(
-    arch === null
-      ? unknown("arch", "Apple Silicon")
-      : arch === "arm64"
-        ? { id: "arch", label: "Apple Silicon", status: "ok", detail: "arm64" }
-        : { id: "arch", label: "Apple Silicon", status: "blocked", detail: t("변환 엔진은 Apple Silicon Mac에서만 동작합니다 (지금: {arch})", { arch }) },
-  );
-  const mac = macosAtLeast(sys.macos_version);
-  rows.push(
-    mac === null
-      ? unknown("macos", t("macOS 14.4 이상"))
-      : { id: "macos", label: t("macOS 14.4 이상"), status: mac ? "ok" : "blocked", detail: mac ? `macOS ${sys.macos_version}` : t("시스템 오디오 녹음에 14.4 이상이 필요합니다 (지금: {version})", { version: sys.macos_version ?? "" }) },
-  );
+  if (windows) {
+    // Apple Silicon·macOS 줄 대신 코어 점검의 Windows 판정 (doctor.system.problems: unsupported_arch·windows_too_old, x64·빌드 19041 이상)
+    const problems = sys.problems ?? [];
+    const bad = [
+      problems.includes("unsupported_arch") ? t("x64 Windows가 필요합니다 (지금: {arch})", { arch: arch ?? "?" }) : null,
+      problems.includes("windows_too_old") ? t("Windows 10 2004(빌드 19041) 이상이 필요합니다") : null,
+    ].filter((x) => x !== null);
+    rows.push({ id: "os", label: "Windows", status: bad.length ? "blocked" : "ok", detail: bad.length ? bad.join(" ") : (arch ?? "") });
+  } else {
+    rows.push(
+      arch === null
+        ? unknown("arch", "Apple Silicon")
+        : arch === "arm64"
+          ? { id: "arch", label: "Apple Silicon", status: "ok", detail: "arm64" }
+          : { id: "arch", label: "Apple Silicon", status: "blocked", detail: t("변환 엔진은 Apple Silicon Mac에서만 동작합니다 (지금: {arch})", { arch }) },
+    );
+    const mac = macosAtLeast(sys.macos_version);
+    rows.push(
+      mac === null
+        ? unknown("macos", t("macOS 14.4 이상"))
+        : { id: "macos", label: t("macOS 14.4 이상"), status: mac ? "ok" : "blocked", detail: mac ? `macOS ${sys.macos_version}` : t("시스템 오디오 녹음에 14.4 이상이 필요합니다 (지금: {version})", { version: sys.macos_version ?? "" }) },
+    );
+  }
   const gb = sys.memory_gb;
   rows.push(
     gb === null
       ? unknown("memory", t("메모리"))
+      : windows && gb >= MIN_MEMORY_GB // Windows는 고를 작은 엔진이 없어 16 GB 미만이면 막지 않고 알리기만 한다 (설계 asr-onnx.md 4.4)
+        ? memoryWarned(sys.standard_recommended ?? gb >= STANDARD_MEMORY_GB, windows)
+          ? { id: "memory", label: t("메모리"), status: "warn", detail: `${gb} GB — ${MEMORY_WARN_WINDOWS}` }
+          : { id: "memory", label: t("메모리"), status: "ok", detail: `${gb} GB` }
       : gb >= STANDARD_MEMORY_GB
         ? { id: "memory", label: t("메모리"), status: "ok", detail: t("{gb} GB — 표준 구성을 쓸 수 있습니다", { gb }) }
         : gb >= MIN_MEMORY_GB
@@ -93,7 +108,7 @@ function systemRows(report: DoctorReport | null, models: ModelsList | null): Che
   return rows;
 }
 
-function toolRows(report: DoctorReport | null): CheckupRow[] {
+function toolRows(report: DoctorReport | null, windows: boolean): CheckupRow[] {
   const rows: CheckupRow[] = [];
   const r = report;
   if (r?.stale_saved?.length) rows.push({ id: "stale-paths", label: t("저장된 경로"), status: "info", detail: STALE_SAVED });
@@ -134,7 +149,7 @@ function toolRows(report: DoctorReport | null): CheckupRow[] {
     );
   }
   const helper = r?.doctor?.tools.diar_helper;
-  if (helper) {
+  if (helper && !windows) { // 9명 이상 구분 도구(Swift·CoreML)는 macOS 전용이다
     rows.push(
       helper.found
         ? { id: "diar-helper", label: t("9명 이상 구분 도구"), status: "ok", detail: helper.path ?? "tractus-diar" }
@@ -163,26 +178,33 @@ function modelRows(report: DoctorReport | null, models: ModelsList | null): Chec
   const fromDoctor = report?.doctor?.models;
   const has = (id: string) => (list ? installed(list, id) : !!fromDoctor?.some((m) => m.id === id && m.installed));
   if (!list && !fromDoctor?.length) return [unknown("models", t("모델"))];
+  // 이 운영체제의 등록 목록에 있는 모델만 말한다 (Windows 미리보기는 vad·asr-std뿐, 설계 asr-onnx.md 4.4). macOS는 모두 있다
+  const listed = (id: string) => (list ? list.some((m) => m.id === id) : !!fromDoctor?.some((m) => m.id === id));
+  const twoEngines = listed("asr-lite");
   const rows: CheckupRow[] = [];
   const lack: string[] = [];
   if (!has("vad")) lack.push(t("목소리 구간 감지 파일"));
-  if (!has("asr-std") && !has("asr-lite")) lack.push(t("변환 엔진(표준·가벼운 것 중 하나)"));
+  if (!has("asr-std") && !has("asr-lite")) lack.push(twoEngines ? t("변환 엔진(표준·가벼운 것 중 하나)") : t("변환 엔진 파일"));
   rows.push(
     lack.length === 0
-      ? { id: "required", label: t("필수 모델"), status: "ok", detail: t("텍스트 변환에 필요한 모델이 모두 있습니다 (변환 엔진은 둘 중 하나면 됩니다)") }
+      ? { id: "required", label: t("필수 모델"), status: "ok", detail: twoEngines ? t("텍스트 변환에 필요한 모델이 모두 있습니다 (변환 엔진은 둘 중 하나면 됩니다)") : t("텍스트 변환에 필요한 모델이 모두 있습니다") }
       : { id: "required", label: t("필수 모델"), status: "blocked", detail: t("{missing}이(가) 없어 텍스트로 변환할 수 없습니다. 녹음은 저장됩니다.", { missing: lack.join(", ") }), fix: FIX_MODELS },
   );
-  rows.push(
-    has("diarizer")
-      ? { id: "recommended", label: t("권장 모델"), status: "ok", detail: t("참석자 구분 모델이 있습니다") }
-      : { id: "recommended", label: t("권장 모델"), status: "warn", detail: t("참석자 구분 모델이 없어 참석자를 나누지 못합니다. 텍스트 변환은 됩니다."), fix: FIX_MODELS },
-  );
-  const optional: [string, string][] = [
-    ["aligner", t("단어 싱크")],
-    ["embedding", t("스마트 검색")],
-    ["voices", t("목소리 등록")],
-    ["fluid", t("9명 이상 구분")],
-  ];
+  if (listed("diarizer"))
+    rows.push(
+      has("diarizer")
+        ? { id: "recommended", label: t("권장 모델"), status: "ok", detail: t("참석자 구분 모델이 있습니다") }
+        : { id: "recommended", label: t("권장 모델"), status: "warn", detail: t("참석자 구분 모델이 없어 참석자를 나누지 못합니다. 텍스트 변환은 됩니다."), fix: FIX_MODELS },
+    );
+  const optional = (
+    [
+      ["aligner", t("단어 싱크")],
+      ["embedding", t("스마트 검색")],
+      ["voices", t("목소리 등록")],
+      ["fluid", t("9명 이상 구분")],
+    ] as const
+  ).filter(([id]) => listed(id));
+  if (optional.length === 0) return rows;
   const lacking = optional.filter(([id]) => !has(id)).map(([, name]) => name);
   rows.push(
     lacking.length === 0
@@ -220,11 +242,12 @@ function aiRows(keySaved: boolean | null): CheckupRow[] {
   ];
 }
 
-export function checkupSections(o: { report: DoctorReport | null; models: ModelsList | null; keySaved: boolean | null; mic?: MicPermission | null }): CheckupSection[] {
+export function checkupSections(o: { report: DoctorReport | null; models: ModelsList | null; keySaved: boolean | null; mic?: MicPermission | null; windows?: boolean }): CheckupSection[] {
   const data = dataRows(o.report);
+  const windows = o.windows ?? isWindows();
   return [
-    { id: "system", title: t("시스템"), rows: systemRows(o.report, o.models) },
-    { id: "tools", title: t("도구"), rows: toolRows(o.report) },
+    { id: "system", title: t("시스템"), rows: systemRows(o.report, o.models, windows) },
+    { id: "tools", title: t("도구"), rows: toolRows(o.report, windows) },
     ...(data.length > 0 ? [{ id: "data" as const, title: t("저장 위치"), rows: data }] : []),
     { id: "models", title: t("모델"), rows: modelRows(o.report, o.models) },
     { id: "permissions", title: t("권한"), rows: permissionRows(o.mic ?? null) },

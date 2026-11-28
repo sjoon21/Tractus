@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { checkClass } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
+import { forOs } from "./platform";
 
 export const EXAMPLE_PROMPT = t("예: 고객이 말한 불만을 유형별로 모아서, 유형마다 어떤 대화에서 나왔는지 정리해 줘");
 
@@ -118,7 +119,7 @@ export function CustomSummaryDialog({ onCancel, onSubmit }: { onCancel: () => vo
         <Button variant="outline" onClick={onCancel}>
           {t("취소")}
         </Button>
-        <Button aria-disabled={!check.ok} title="⌘Enter" onClick={submit}>
+        <Button aria-disabled={!check.ok} title={forOs("⌘Enter")} onClick={submit}>
           {t("요약 만들기")}
         </Button>
       </div>

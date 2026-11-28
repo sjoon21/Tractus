@@ -6,6 +6,7 @@ import { SpeakerChip, spkStyle } from "../../Speakers";
 import { SegmentEditor } from "../../TranscriptTools";
 import { PolishDiff } from "../../PolishControls";
 import { AI_EDITED, type PolishSuggestion } from "../../polish";
+import { isMod } from "../../platform";
 
 export const SegmentRow = memo(function SegmentRow({
   seg,
@@ -96,7 +97,7 @@ export const SegmentRow = memo(function SegmentRow({
           }}
           onDoubleClick={() => onEdit(seg)}
           onKeyDown={(e) => {
-            if (e.key !== "Enter" || e.metaKey || isImeKey(e.nativeEvent)) return;
+            if (e.key !== "Enter" || isMod(e) || isImeKey(e.nativeEvent)) return;
             e.preventDefault();
             onEdit(seg);
           }}

@@ -1,6 +1,7 @@
 // 양쪽 사이드 패널 접기·펼치기 (왼쪽 노트 목록, 오른쪽 패널). 화면과 무관한 순수 로직: panels.test.ts, docs/desktop.md §3.2.
 
 import { t } from "./i18n";
+import { forOs, isMod, isOtherMod, OS, type Os } from "./platform";
 
 export type Side = "left" | "right";
 /** true = 접힘. 둘 다 펼친 것이 기본이다 */
@@ -17,8 +18,8 @@ export const NARROW_PX = 960;
 
 /** 문구 (WORDS.md §4.17) */
 export const PANEL_TEXT = {
-  left: { collapse: t("노트 목록 접기"), expand: t("노트 목록 펼치기"), controls: "sidebar-body", toggleId: "panel-toggle-left", key: "⌘B", shortcut: "Meta+B" },
-  right: { collapse: t("오른쪽 패널 접기"), expand: t("오른쪽 패널 펼치기"), controls: "rail-body", toggleId: "panel-toggle-right", key: "⌥⌘B", shortcut: "Alt+Meta+B" },
+  left: { collapse: t("노트 목록 접기"), expand: t("노트 목록 펼치기"), controls: "sidebar-body", toggleId: "panel-toggle-left", key: forOs("⌘B"), shortcut: forOs("Meta+B") },
+  right: { collapse: t("오른쪽 패널 접기"), expand: t("오른쪽 패널 펼치기"), controls: "rail-body", toggleId: "panel-toggle-right", key: forOs("⌥⌘B"), shortcut: forOs("Alt+Meta+B") },
 } as const;
 
 /** 단추 이름(`aria-label`)과 `title`. 단축키는 title에만 덧붙인다 (aria-keyshortcuts가 따로 알린다) */
@@ -114,9 +115,9 @@ export async function canCollapse(side: Side, flush: () => Promise<boolean>): Pr
   return side === "right" ? flush() : true;
 }
 
-/** ⌘B → 왼쪽, ⌥⌘B → 오른쪽. 물리 키(code)로 본다: 한글 입력 상태에서도 같고 ⌥B는 `∫`이다. 그 밖의 조합은 null */
-export function panelKey(e: { code: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }): Side | null {
-  if (e.code !== "KeyB" || !e.metaKey || e.ctrlKey || e.shiftKey) return null;
+/** ⌘B → 왼쪽, ⌥⌘B → 오른쪽 (Windows는 Ctrl+B·Ctrl+Alt+B). 물리 키(code)로 본다: 한글 입력 상태에서도 같고 ⌥B는 `∫`이다. 그 밖의 조합은 null */
+export function panelKey(e: { code: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }, os: Os = OS): Side | null {
+  if (e.code !== "KeyB" || !isMod(e, os) || isOtherMod(e, os) || e.shiftKey) return null;
   return e.altKey ? "right" : "left";
 }
 

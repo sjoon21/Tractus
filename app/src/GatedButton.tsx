@@ -17,9 +17,11 @@ export function GateHint({ gate, className = "" }: GateProps & { className?: str
   return (
     <p className={cn("m-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground", className)} role="status">
       <span>{gate.reason}</span>
-      <Button variant="outline" size="sm" className="h-6" onClick={() => fixAction(gate.fix)}>
-        {gate.fix.label}
-      </Button>
+      {gate.fix && (
+        <Button variant="outline" size="sm" className="h-6" onClick={() => gate.fix && fixAction(gate.fix)}>
+          {gate.fix.label}
+        </Button>
+      )}
     </p>
   );
 }
@@ -60,18 +62,20 @@ export function GatedButton({ gate, onClick, className = "", disabled, children,
           {(close) => (
             <div className="grid max-w-[280px] gap-2.5 p-2">
               <p className="m-0 text-[13px] leading-relaxed text-muted-foreground">{gate.reason}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="justify-self-start"
-                autoFocus
-                onClick={() => {
-                  close();
-                  fixAction(gate.fix);
-                }}
-              >
-                {gate.fix.label}
-              </Button>
+              {gate.fix && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-self-start"
+                  autoFocus
+                  onClick={() => {
+                    close();
+                    if (gate.fix) fixAction(gate.fix);
+                  }}
+                >
+                  {gate.fix.label}
+                </Button>
+              )}
             </div>
           )}
         </Popover>

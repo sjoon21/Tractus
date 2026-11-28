@@ -10,7 +10,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
-from tractus import audio
+from tractus import audio, models_registry as registry
 from tractus.i18n import t
 from tractus.paths import home_dir, models_dir
 from tractus.store import find_meeting_dir
@@ -40,6 +40,13 @@ def fail(message: str, code: str | None = None, exit_code: int = 1) -> NoReturn:
     emit_error(message, code)
     console.print(f"[red]{escape(message)}[/red]")
     raise typer.Exit(exit_code)
+
+
+def require_registered(capability: str) -> None:
+    """이 명령의 기능이 잠겼다(요구 모델이 등록 목록에 없다, Windows 미리보기의 단어 싱크·목소리·실시간): 받을 수 없으니 code platform, 종료 코드 2.
+    모델 하나가 아니라 기능으로 본다: 개발용 옵션(live --engine std)이 목록에 있는 다른 모델로 잠금을 지나가지 않게."""
+    if registry.capability_locked(capability):
+        fail(registry.PLATFORM_LOCKED, code="platform", exit_code=2)
 
 
 def fail_audio(e: audio.FFmpegError) -> NoReturn:
