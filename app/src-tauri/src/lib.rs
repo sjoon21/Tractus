@@ -468,6 +468,7 @@ pub fn run() {
             delete_recording,
             quit::quit_ready,
             quit::quit_cancel,
+            quit::quit_asking,
             llm_config,
             llm_key::llm_key_status,
             llm_key::llm_key_save,

@@ -1,7 +1,8 @@
 //! ⌘Q·마지막 창 닫기 종료 흐름: 화면이 쓰던 메모를 저장할 때까지(최대 3초) 종료를 미룬다.
 //! 녹음 중이면 시간 제한 없이 화면이 먼저 묻는다(`녹음을 끝내고 종료할까요?`, docs/desktop.md §3.10): 끝내기는 quit_ready, 계속은 quit_cancel.
+//! 화면이 3초 안에 묻는 창을 띄웠다고(quit_asking) 알리지 않으면 예전처럼 끝낸다.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -10,6 +11,9 @@ static QUIT_ASKED: AtomicBool = AtomicBool::new(false);
 static QUIT_READY: AtomicBool = AtomicBool::new(false);
 /// 녹음 중이라 화면에 묻고 답을 기다리는 중이다. 이때 종료를 또 요청하면(화면이 멈췄거나 묻는 창을 받지 못함) 예전처럼 끝낸다
 static ASKING_RECORDING: AtomicBool = AtomicBool::new(false);
+/// 녹음 중 묻기의 번호와, 화면이 묻는 창을 띄웠다고 알린 번호(quit_asking). 3초 안에 같아지지 않으면 화면이 묻지 못한 것이다
+static ASK_ID: AtomicU32 = AtomicU32::new(0);
+static ASK_SHOWN: AtomicU32 = AtomicU32::new(0);
 /// 화면이 응답하지 않아도 이 시간 뒤에는 끝낸다
 const QUIT_WAIT: Duration = Duration::from_secs(3);
 
@@ -18,6 +22,18 @@ const QUIT_WAIT: Duration = Duration::from_secs(3);
 pub fn quit_ready(app: AppHandle) {
     QUIT_READY.store(true, Ordering::SeqCst);
     app.exit(0);
+}
+
+/// 화면이 녹음 중 종료를 묻는 창을 띄웠다: 사람이 고를 때까지 기다린다
+#[tauri::command]
+pub fn quit_asking() {
+    ASK_SHOWN.store(ASK_ID.load(Ordering::SeqCst), Ordering::SeqCst);
+}
+
+/// 묻기 `id`에 화면이 답하지 않았다(오류 화면·멈춘 화면이라 묻는 창이 없다): 예전처럼 끝낸다.
+/// 그사이 `계속 녹음`을 골랐거나 새로 물었으면 아니다
+fn ask_unanswered(id: u32) -> bool {
+    ASK_ID.load(Ordering::SeqCst) == id && ASK_SHOWN.load(Ordering::SeqCst) != id && ASKING_RECORDING.load(Ordering::SeqCst)
 }
 
 /// 녹음 중 종료를 묻는 창에서 `계속 녹음`을 골랐다: 다음 종료 요청을 다시 받는다
@@ -62,8 +78,18 @@ pub(crate) fn begin_quit(app: &AppHandle) {
     match step(recording) {
         Step::Wait => return,
         Step::AskRecording => {
+            let id = ASK_ID.fetch_add(1, Ordering::SeqCst) + 1;
             let _ = app.emit("quit-requested", serde_json::json!({ "recording": true }));
-            return crate::tray::show_main(app); // 메뉴 막대의 종료: 숨긴 창에 묻는 창이 뜬다
+            crate::tray::show_main(app); // 메뉴 막대의 종료: 숨긴 창에 묻는 창이 뜬다
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(QUIT_WAIT);
+                if ask_unanswered(id) {
+                    QUIT_READY.store(true, Ordering::SeqCst);
+                    handle.exit(0);
+                }
+            });
+            return;
         }
         Step::ExitSoon => {
             let _ = app.emit("quit-requested", serde_json::json!({ "recording": false }));
@@ -121,5 +147,16 @@ mod tests {
         quit_cancel(); // `계속 녹음`: 다음 종료 요청은 다시 묻는다
         assert_eq!(step(true), Step::AskRecording);
         quit_cancel();
+
+        // 화면이 묻는 창을 띄우지 못하면(답 없음) 3초 뒤 끝낸다. 띄웠거나 `계속 녹음`·새 묻기가 있으면 기다린다
+        assert_eq!(step(true), Step::AskRecording);
+        let id = ASK_ID.fetch_add(1, Ordering::SeqCst) + 1;
+        assert!(ask_unanswered(id));
+        quit_asking();
+        assert!(!ask_unanswered(id));
+        ASK_ID.fetch_add(1, Ordering::SeqCst);
+        assert!(!ask_unanswered(id)); // 더 새로운 묻기가 있다
+        quit_cancel();
+        assert!(!ask_unanswered(id + 1)); // `계속 녹음`을 골랐다
     }
 }

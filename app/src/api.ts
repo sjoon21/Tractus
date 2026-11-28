@@ -348,6 +348,8 @@ export const api = {
   quitReady: () => invoke<void>("quit_ready"),
   /** 녹음 중 종료를 묻는 창에서 `계속 녹음`: 다음 ⌘Q를 다시 받는다 */
   quitCancel: () => invoke<void>("quit_cancel"),
+  /** 녹음 중 종료를 묻는 창을 띄웠다: 알리지 않으면 Rust가 3초 뒤 끝낸다(오류 화면 등) */
+  quitAsking: () => invoke<void>("quit_asking"),
   /** `tractus ask --progress-json` (Phase 6.3). 이벤트는 "ask" */
   askStart: (args: AskArgs) => invoke<void>("ask_start", { ...args }),
   /** 질문 멈추기 (프로세스 kill) */

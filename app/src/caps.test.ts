@@ -197,7 +197,10 @@ describe("Windows 미리보기: 등록 목록에 없는 기능 (platform)", () =
     expect(speakerHintVisible({ diarize: d, isRecording: true, segments: 3, speakers: 0, dismissed: false })).toBe(false);
   });
   test("경고·오류 코드 platform·unsupported_platform에 문장이 있다", () => {
-    expect(WARNING_TEXT.platform).toContain("Windows 미리보기");
+    // 경고는 건너뛴 단계를 이름으로 드는 코어 문장 그대로다 (WORDS.md §4.7 `platform`)
+    const core = "Windows 미리보기에서는 단어 싱크을(를) 아직 쓸 수 없어 이 단계 없이 변환합니다";
+    expect(WARNING_TEXT.platform).toBeUndefined();
+    expect(warningText({ code: "platform", message: core })).toBe(core);
     expect(ERROR_TEXT.platform).toContain("Windows 미리보기");
     expect(ERROR_TEXT.unsupported_platform).toContain("Windows 미리보기");
   });

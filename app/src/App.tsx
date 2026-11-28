@@ -440,6 +440,7 @@ export function App() {
       if (e.payload?.recording) {
         quitFromClose.current = false;
         setQuitAsk("open");
+        void api.quitAsking();
       } else void flushMemos().finally(() => void api.quitReady());
     });
     return () => void un.then((f) => f());
