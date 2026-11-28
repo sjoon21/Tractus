@@ -1,0 +1,136 @@
+# Windows 변환 측정 (docs/design/asr-onnx.md 8.4절, 0.6.0 계획 3번): windows-latest(x64) 러너에서 Windows 변환 int8 판과
+# Silero VAD ONNX를 FLEURS 한국어로 돌려 Mac arm64 CER과 대조하고, RTF·최대 메모리(PeakWorkingSetSize)·스레드 2·4를 남긴다.
+# AI Hub 데이터는 쓰지 않는다(재배포 금지). 결과는 지표만(잡 요약·아티팩트): 전사 원문(bench/results/raw)은 올리지 않는다.
+# 러너(공개 저장소 표준 windows-latest): 4 vCPU·16GB RAM. 모델 4.4GB + FLEURS 0.3GB는 actions/cache 하나(저장소 한도 10GB)에 둔다.
+# 러너 수치는 기준 기기가 아니다: 속도·메모리 판정(8.3절)은 실기기 측정이 맡고, 여기서는 x64 커널이 arm64와 같은 값을 내는지와 대략값을 본다.
+name: Windows ASR bench
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/windows-asr-bench.yml"
+      - "bench/run.py"
+      - "bench/asr.py"
+      - "bench/data.py"
+      - "bench/score.py"
+      - "bench/pyproject.toml"
+      - "bench/uv.lock"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    name: 변환 측정 (Windows x64, ONNX int8)
+    runs-on: windows-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+        working-directory: bench
+    env:
+      UV_PYTHON_PREFERENCE: only-managed
+      PYTHONUTF8: "1" # 요약·로그의 한국어 (러너 기본 cp1252)
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+      ORT: onnxruntime==1.32.0 # Mac 측정과 같은 판 (벤치 잠금에 넣지 않는다, 설계 8.1절)
+      ASR_REV: 550f7a719e1e60fa813c5681193ffa8fb478a924 # voyagar/Qwen3-ASR-1.7B-onnx-int8 (설계 8.6절)
+      VAD_REV: b3e3ee3cce4c11ceb63b1a0b229d916069c1ddf6 # istupakov/silero-vad-onnx (설계 5절)
+      FLEURS_REV: 70bb2e84b976b7e960aa89f1c648e09c59f894dd # google/fleurs ko_kr test (Mac 측정과 같은 파일)
+      MAC_CER: "2.74" # Mac M3 ONNX int8 FLEURS every8 언어 고정 (bench/results/summary.jsonl, 설계 8.6절)
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - name: 모델·FLEURS 캐시
+        id: cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            models/qwen3-asr-1.7b-onnx-int8
+            models/silero-vad-v6-onnx
+            data/fleurs
+          key: windows-asr-bench-${{ env.ASR_REV }}-${{ env.VAD_REV }}-${{ env.FLEURS_REV }}
+      - run: uv sync --locked # silero-vad(torch)는 darwin 표지라 깔리지 않는다
+      - name: 모델·FLEURS 받기
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          # 파일 이름을 늘어놓는다(--include는 값 하나만 받고, 이름을 함께 주면 무시된다)
+          uv run hf download voyagar/Qwen3-ASR-1.7B-onnx-int8 --revision "$ASR_REV" --local-dir ../models/qwen3-asr-1.7b-onnx-int8 \
+            config.json encoder.int4.onnx decoder_init.int4.onnx decoder_step.int4.onnx decoder_weights.int4.data embed_tokens.bin tokenizer.json
+          uv run hf download istupakov/silero-vad-onnx --revision "$VAD_REV" --local-dir ../models/silero-vad-v6-onnx \
+            silero_vad_16k_op15.onnx
+          uv run hf download google/fleurs --repo-type dataset --revision "$FLEURS_REV" \
+            parquet-data/ko_kr/test-00000-of-00001.parquet --local-dir ../data/fleurs
+      # 받자마자 저장한다: 측정이 실패한 잡도 다음 실행이 4.7GB를 다시 받지 않게(actions/cache는 잡이 성공해야 저장한다).
+      # PR에서 만든 캐시는 그 PR ref에서만 보인다: bench를 고치는 PR이 많아지면 10GB 한도에서 다른 캐시를 밀어낼 수 있다
+      - name: 모델·FLEURS 캐시 저장
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            models/qwen3-asr-1.7b-onnx-int8
+            models/silero-vad-v6-onnx
+            data/fleurs
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+      - name: 시작 전 요약 줄 수 (이 잡이 더한 줄만 고른다)
+        run: echo "BASE_LINES=$(wc -l < results/summary.jsonl)" >> "$GITHUB_ENV"
+      # 측정마다 프로세스 하나: 최대 메모리가 측정마다 따로 잡힌다. 하나가 실패해도 나머지를 잰다.
+      - name: FLEURS every8, 언어 고정, 스레드 4
+        continue-on-error: true
+        run: uv run --with "$ORT" python run.py qwen3-1.7b-onnx-int8 fleurs --lang fixed --every 8 --threads 4 --power "GitHub windows-latest"
+      - name: FLEURS every8, 언어 고정, 스레드 2
+        continue-on-error: true
+        run: uv run --with "$ORT" python run.py qwen3-1.7b-onnx-int8 fleurs --lang fixed --every 8 --threads 2 --power "GitHub windows-latest"
+      - name: 앱 경로 (Silero ONNX VAD + Transcriber), FLEURS every8, 스레드 4
+        continue-on-error: true
+        run: uv run --with "$ORT" python run.py qwen3-1.7b-onnx-int8 fleurs --lang fixed --every 8 --threads 4 --app --vad ../models/silero-vad-v6-onnx --power "GitHub windows-latest"
+      - name: 메모리 최악 경우 (30초 묶음 + 사전 50개), 스레드 4
+        continue-on-error: true
+        run: uv run --with "$ORT" python run.py qwen3-1.7b-onnx-int8 fleurs30 --lang fixed --glossary --limit 8 --threads 4 --app --vad ../models/silero-vad-v6-onnx --power "GitHub windows-latest"
+      - name: 잡 요약 (지표만)
+        if: always()
+        run: |
+          tail -n +"$((BASE_LINES + 1))" results/summary.jsonl > ../windows-asr-bench.jsonl
+          {
+            echo "## Windows 변환 측정 (x64 러너, ONNX int8)"
+            echo
+            uv run python - <<'EOF'
+          import json, os
+          rows = [json.loads(l) for l in open("../windows-asr-bench.jsonl", encoding="utf-8")]
+          mac = float(os.environ["MAC_CER"])
+          if rows:
+              c = rows[0]["cpu"]
+              print(f"러너: {c['name']}, 논리 코어 {c['cores']}, RAM {c['ram_gb']}GiB, onnxruntime {rows[0]['ort_version']}\n")
+          print("| 측정 | 스레드 | n | 오류 | CER | Mac 대비 (목표 ±0.2) | RTF | 로드 s | 최대 메모리 GB |")
+          print("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+          for r in rows:
+              name = "메모리 최악 (30초 + 사전 50)" if r["dataset"] == "fleurs30" else "앱 경로 + ONNX VAD" if r.get("app") else "FLEURS every8 고정"
+              diff = r["cer"] - mac
+              vs = f"{diff:+.2f} {'통과' if abs(diff) <= 0.2 else '넘음'}" if name == "FLEURS every8 고정" else "—"
+              print(f"| {name} | {r['threads']} | {r['n']} | {r['errors']} | {r['cer']} | {vs} | {r['rtf']} | {r['load_s']} | {r['max_rss_gb']} |")
+          if len(rows) < 4:
+              print(f"\n**측정 {4 - len(rows)}개가 끝나지 않았다.** 단계 로그를 본다.")
+          EOF
+            echo
+            echo "fleurs30의 CER은 사전에 정답 낱말이 들어 있어 품질 지표가 아니다(메모리만 본다). 디스크:"
+            echo '```'
+            df -h . | tail -n 1
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: windows-asr-bench
+          path: windows-asr-bench.jsonl
+          if-no-files-found: warn
+      - name: 측정 넷이 모두 오류 없이 끝났는가
+        run: |
+          test "$(wc -l < ../windows-asr-bench.jsonl)" -eq 4
+          ! grep -q '"errors": [1-9]' ../windows-asr-bench.jsonl

@@ -6,6 +6,7 @@
     python run.py qwen3-1.7b-onnx aihub --lang auto --glossary --threads 4   # onnxruntime (uv run --with onnxruntime==1.32.0)
     python run.py qwen3-1.7b aihub --lang auto --glossary --app [--vad ../models/silero-vad-v6-onnx]   # 앱 경로 (제품 VAD + Transcriber)
     python run.py qwen3-1.7b-onnx aihub --minutes 8   # 부분 표본: 세션마다 앞 8분 (FLEURS·HiKE는 --every K: K개마다 하나)
+    python run.py qwen3-1.7b-onnx-int8 fleurs30 --lang fixed --glossary --limit 8   # 메모리 최악 경우: 30초 묶음 + 사전 50개 (AI Hub 없이)
 
 결과:
     results/raw/<dataset>/<tag>.jsonl   전사 원문 (git 제외, AI Hub 파생 텍스트 포함)
@@ -102,7 +103,7 @@ def ort_options(n: int, config: list[str]):
 
     def session(path, sess_options=None, *a, **kw):
         opts = sess_options or ort.SessionOptions()
-        if n:
+        if n and not opts.intra_op_num_threads:  # 제품이 정한 값(VAD의 1)은 그대로 둔다: 앱 경로가 제품과 같은 조건이게
             opts.intra_op_num_threads = n
         for key, value in entries:
             opts.add_session_config_entry(key, value)
@@ -164,7 +165,7 @@ def main():
     ap.add_argument("dataset", choices=DATASETS)
     ap.add_argument("--lang", choices=["auto", "fixed"], default="fixed")
     ap.add_argument("--chunk", type=float, default=30.0)
-    ap.add_argument("--glossary", action="store_true", help="AI Hub 세션의 영문 용어를 용어집으로 넣는다")
+    ap.add_argument("--glossary", action="store_true", help="용어집을 넣는다: AI Hub는 세션의 영문 용어, fleurs30은 FLEURS 낱말 50개")
     ap.add_argument("--segments", choices=["vad", "label", "utt"], default="vad",
                     help="장시간 데이터셋 자르기: vad(제품과 같은 Silero), label(정답 발화 경계로 --chunk 이하 묶음), utt(정답 발화 하나씩)")
     ap.add_argument("--app", action="store_true", help="앱 경로: 제품 VAD(find_chunks) + Transcriber(재시도·ITN 포함). --segments는 쓰지 않는다")
@@ -295,7 +296,7 @@ def chunks_for(sample, segments: str, max_s: float) -> list[tuple[int, int]]:
 def metrics(dataset: str, rows: list[dict]) -> dict:
     refs, hyps = [r["ref"] for r in rows], [r["hyp"] for r in rows]
     empty = {"empty": sum(r["empty"] for r in rows)} if all("empty" in r for r in rows) else {}  # 빈 출력 청크 (옛 원문에는 없다)
-    if dataset == "fleurs":
+    if dataset.startswith("fleurs"):  # fleurs30: 30초 묶음 + 사전 50개 (메모리 최악 경우)
         return {"cer": round(score.cer(refs, hyps), 2), **empty}
     if dataset == "ami":
         return {"wer": round(score.wer_en(refs, hyps), 2)}
