@@ -213,7 +213,7 @@ def test_fluid_needs_models_and_helper(root, tmp_path, monkeypatch):
     ("standard", 8 * GB, False, ["vad", "asr-std", "diarizer", "aligner", "embedding", "voices"]),
     ("lite", 32 * GB, False, ["vad", "asr-lite", "diarizer"]),
     ("all", 16 * GB, False, ["vad", "asr-std", "asr-lite", "asr-ko-mix", "asr-ko-univa", "diarizer", "aligner", "embedding", "voices"]),
-    ("all", 16 * GB, True, [m.id for m in reg.MODELS]),
+    ("all", 16 * GB, True, [m.id for m in reg._mac_models()]),  # 불러올 때 계산된다: Windows CI에서도 Mac 목록(conftest)과 같게
 ])
 def test_presets(preset, memory, helper, expected):
     assert reg.preset_ids(preset, memory, helper) == expected
